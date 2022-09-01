@@ -10,7 +10,7 @@
 -- Portability :  portable
 --
 -- This module provides an library interface to the @hc-pkg@ program.
--- Currently only GHC and LHC have hc-pkg programs.
+-- Currently only GHC has hc-pkg programs.
 module Distribution.Simple.Program.Script
   ( invocationAsSystemScript
   , invocationAsShellScript
