@@ -70,7 +70,6 @@ data CompilerFlavor
   | HBC
   | Helium
   | JHC
-  | LHC
   | Eta
   | -- | @since 3.12.1.0
     -- MicroHS, see https://github.com/augustss/MicroHs
@@ -84,7 +83,7 @@ instance NFData CompilerFlavor where rnf = genericRnf
 
 knownCompilerFlavors :: [CompilerFlavor]
 knownCompilerFlavors =
-  [GHC, GHCJS, NHC, YHC, Hugs, HBC, Helium, JHC, LHC, Eta, MHS]
+  [GHC, GHCJS, NHC, YHC, Hugs, HBC, Helium, JHC, Eta, MHS]
 
 instance Pretty CompilerFlavor where
   pretty (OtherCompiler name) = Disp.text name
