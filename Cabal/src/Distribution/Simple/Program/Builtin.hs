@@ -21,7 +21,6 @@ module Distribution.Simple.Program.Builtin
   , ghcjsProgram
   , ghcjsPkgProgram
   , jhcProgram
-  , uhcProgram
   , gccProgram
   , gppProgram
   , arProgram
@@ -72,7 +71,6 @@ builtinPrograms =
   , ghcjsProgram
   , ghcjsPkgProgram
   , jhcProgram
-  , uhcProgram
   , hpcProgram
   , -- preprocessors
     hscolourProgram
@@ -185,12 +183,6 @@ jhcProgram =
         case words str of
           (_ : ver : _) -> ver
           _ -> ""
-    }
-
-uhcProgram :: Program
-uhcProgram =
-  (simpleProgram "uhc")
-    { programFindVersion = findProgramVersion "--version-dotted" id
     }
 
 hpcProgram :: Program

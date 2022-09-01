@@ -437,7 +437,6 @@ configureOptions showOrParseArgs =
         ( choiceOpt
             [ (Flag GHC, ("g", ["ghc"]), "compile with GHC")
             , (Flag GHCJS, ([], ["ghcjs"]), "compile with GHCJS")
-            , (Flag UHC, ([], ["uhc"]), "compile with UHC")
             ]
         )
     , option
