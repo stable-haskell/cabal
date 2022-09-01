@@ -225,13 +225,8 @@ defaultInstallDirs' False comp userInstall _hasLibs = do
         { prefix = installPrefix
         , bindir = "$prefix" </> "bin"
         , libdir = installLibDir
-        , libsubdir = case comp of
-            UHC -> "$pkgid"
-            _other -> "$abi" </> "$libname"
-        , dynlibdir =
-            "$libdir" </> case comp of
-              UHC -> "$pkgid"
-              _other -> "$abi"
+        , libsubdir = "$abi" </> "$libname"
+        , dynlibdir = "$libdir" </> "$abi"
         , bytecodelibdir = "$libdir" </> "$libsubdir"
         , libexecsubdir = "$abi" </> "$pkgid"
         , flibdir = "$libdir"
