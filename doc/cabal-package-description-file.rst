@@ -264,9 +264,8 @@ The syntax of the value depends on the field. Field types include:
 *identifier*
     A letter followed by zero or more alphanumerics or underscores.
 *compiler*
-    A compiler flavor (``GHC`` or ``LHC``)
-    followed by a version range. For example, ``GHC ==6.10.3``, or
-    ``LHC >=0.6 && <0.8``.
+    A compiler flavor (``GHC`` or ``MHS``)
+    followed by a version range. For example, ``GHC ==6.10.3``.
 
 Modules and preprocessors
 ^^^^^^^^^^^^^^^^^^^^^^^^^
