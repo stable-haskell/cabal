@@ -983,7 +983,7 @@ feature was added.
     The command line variant of this flag is ``--configure-option=arg``,
     which can be specified multiple times to pass multiple options.
 
-.. cfg-field:: compiler: ghc, ghcjs, jhc, lhc, or uhc
+.. cfg-field:: compiler: ghc, ghcjs, jhc, or lhc
                --compiler=compiler
     :synopsis: Compiler to build with.
 
