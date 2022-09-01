@@ -120,7 +120,6 @@ import Distribution.Version
 
 import qualified Distribution.Simple.GHC as GHC
 import qualified Distribution.Simple.GHCJS as GHCJS
-import qualified Distribution.Simple.UHC as UHC
 
 import Control.Exception
   ( try
@@ -2071,7 +2070,6 @@ getInstalledPackages verbosity comp mbWorkDir packageDBs progdb = do
   case compilerFlavor comp of
     GHC -> GHC.getInstalledPackages verbosity comp mbWorkDir packageDBs' progdb
     GHCJS -> GHCJS.getInstalledPackages verbosity mbWorkDir packageDBs' progdb
-    UHC -> UHC.getInstalledPackages verbosity comp mbWorkDir packageDBs' progdb
     flv ->
       dieWithException verbosity $ HowToFindInstalledPackages flv
   where
@@ -2504,7 +2502,6 @@ configCompilerEx (Just hcFlavor) hcPath hcPkg progdb verbosity = do
   (comp, maybePlatform, programDb) <- case hcFlavor of
     GHC -> GHC.configure verbosity hcPath hcPkg progdb
     GHCJS -> GHCJS.configure verbosity hcPath hcPkg progdb
-    UHC -> UHC.configure verbosity hcPath progdb
     _ -> dieWithException verbosity UnknownCompilerException
   return (comp, fromMaybe buildPlatform maybePlatform, programDb)
 
@@ -2524,7 +2521,6 @@ configCompiler mbFlavor hcPath progdb verbosity = do
         case hcFlavor of
           GHC -> GHC.configureCompiler verbosity hcPath progdb
           GHCJS -> GHCJS.configureCompiler verbosity hcPath progdb
-          UHC -> UHC.configure verbosity hcPath progdb
           _ -> dieWithException verbosity UnknownCompilerException
   return (comp, fromMaybe buildPlatform maybePlatform, programDb)
 

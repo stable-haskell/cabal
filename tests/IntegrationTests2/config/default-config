@@ -214,7 +214,6 @@ program-locations
   -- runghc-location:
   -- strip-location:
   -- tar-location:
-  -- uhc-location:
 
 program-default-options
   -- alex-options:
@@ -238,4 +237,3 @@ program-default-options
   -- runghc-options:
   -- strip-options:
   -- tar-options:
-  -- uhc-options:

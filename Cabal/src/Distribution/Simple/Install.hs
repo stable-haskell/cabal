@@ -75,7 +75,6 @@ import Distribution.Simple.Errors
 import qualified Distribution.Simple.GHC as GHC
 import qualified Distribution.Simple.GHCJS as GHCJS
 import Distribution.Simple.Setup.Common
-import qualified Distribution.Simple.UHC as UHC
 
 import System.Directory
   ( doesDirectoryExist
@@ -247,7 +246,6 @@ copyComponent verbosity pkg_descr lbi (CLib lib) clbi copydest = do
   case compilerFlavor (compiler lbi) of
     GHC -> GHC.installLib verbosity lbi libPref dynlibPref buildPref pkg_descr lib clbi
     GHCJS -> GHCJS.installLib verbosity lbi libPref dynlibPref buildPref pkg_descr lib clbi
-    UHC -> UHC.installLib verbosity lbi libPref dynlibPref buildPref pkg_descr lib clbi
     _ ->
       dieWithException verbosity $ CompilerNotInstalled (compilerFlavor (compiler lbi))
 copyComponent verbosity pkg_descr lbi (CFLib flib) clbi copydest = do
@@ -295,7 +293,6 @@ copyComponent verbosity pkg_descr lbi (CExe exe) clbi copydest = do
   case compilerFlavor (compiler lbi) of
     GHC -> GHC.installExe verbosity lbi binPref buildPref progFix pkg_descr exe
     GHCJS -> GHCJS.installExe verbosity lbi binPref buildPref progFix pkg_descr exe
-    UHC -> return ()
     _ ->
       dieWithException verbosity $ CompilerNotInstalled (compilerFlavor (compiler lbi))
 
