@@ -483,7 +483,7 @@ configureCompiler
   DistDirLayout
     { distProjectCacheFile
     }
-  ProjectConfig
+  projectConfig@ProjectConfig
     { projectConfigShared =
       ProjectConfigShared
         { projectConfigHcFlavor
@@ -533,15 +533,7 @@ configureCompiler
       hcFlavor = flagToMaybe projectConfigHcFlavor
       hcPath = flagToMaybe projectConfigHcPath
       hcPkg = flagToMaybe projectConfigHcPkg
-      progdb =
-        userSpecifyPaths (Map.toList (getMapLast packageConfigProgramPaths))
-          . modifyProgramSearchPath
-            ( [ ProgramSearchPathDir dir
-              | dir <- fromNubList packageConfigProgramPathExtra
-              ]
-                ++
-            )
-          $ defaultProgramDb
+      progdb = resolveProgramDb projectConfig
 
 ------------------------------------------------------------------------------
 
@@ -590,6 +582,9 @@ rebuildInstallPlan
       progsearchpath <- liftIO $ getSystemSearchPath
       let projectConfigMonitored = projectConfig{projectConfigBuildOnly = mempty}
 
+      let progdb = resolveProgramDb projectConfig
+      pkgConfigDB <- getPkgConfigDb verbosity distDirLayout progdb
+
       -- The overall improved plan is cached
       rerunIfChanged
         verbosity
@@ -609,16 +604,16 @@ rebuildInstallPlan
               )
               $ do
                 compilerEtc <- phaseConfigureCompiler projectConfig
-                _ <- phaseConfigurePrograms projectConfig compilerEtc
-                (solverPlan, pkgConfigDB, totalIndexState, activeRepos) <-
+
+                (solverPlan, totalIndexState, activeRepos) <-
                   phaseRunSolver
                     projectConfig
                     compilerEtc
+                    pkgConfigDB
                     localPackages
                     (fromMaybe mempty mbInstalledPackages)
-                ( elaboratedPlan
-                  , elaboratedShared
-                  ) <-
+
+                (elaboratedPlan, elaboratedShared) <-
                   phaseElaboratePlan
                     projectConfig
                     compilerEtc
@@ -652,39 +647,19 @@ rebuildInstallPlan
       phaseConfigureCompiler
         :: ProjectConfig
         -> Rebuild (Compiler, Platform, ProgramDb)
-      phaseConfigureCompiler = configureCompiler verbosity distDirLayout
+      phaseConfigureCompiler projectConfig = do
+        (compiler, platform, progdb) <- configureCompiler verbosity distDirLayout projectConfig
 
-      -- Configuring other programs.
-      --
-      -- Having configred the compiler, now we configure all the remaining
-      -- programs. This is to check we can find them, and to monitor them for
-      -- changes.
-      --
-      -- TODO: [required eventually] we don't actually do this yet.
-      --
-      -- We rely on the fact that the previous phase added the program config for
-      -- all local packages, but that all the programs configured so far are the
-      -- compiler program or related util programs.
-      --
-      phaseConfigurePrograms
-        :: ProjectConfig
-        -> (Compiler, Platform, ProgramDb)
-        -> Rebuild ()
-      phaseConfigurePrograms projectConfig (_, _, compilerprogdb) = do
         -- Users are allowed to specify program locations independently for
         -- each package (e.g. to use a particular version of a pre-processor
         -- for some packages). However they cannot do this for the compiler
         -- itself as that's just not going to work. So we check for this.
         liftIO $
           checkBadPerPackageCompilerPaths
-            (configuredPrograms compilerprogdb)
+            (configuredPrograms progdb)
             (getMapMappend (projectConfigSpecificPackage projectConfig))
 
-      -- TODO: [required eventually] find/configure other programs that the
-      -- user specifies.
-
-      -- TODO: [required eventually] find/configure all build-tools
-      -- but note that some of them may be built as part of the plan.
+        return (compiler, platform, progdb)
 
       -- Run the solver to get the initial install plan.
       -- This is expensive so we cache it independently.
@@ -692,15 +667,17 @@ rebuildInstallPlan
       phaseRunSolver
         :: ProjectConfig
         -> (Compiler, Platform, ProgramDb)
+        -> PkgConfigDb
         -> [PackageSpecifier UnresolvedSourcePackage]
         -> InstalledPackageIndex
-        -> Rebuild (SolverInstallPlan, PkgConfigDb, IndexUtils.TotalIndexState, IndexUtils.ActiveRepos)
+        -> Rebuild (SolverInstallPlan, IndexUtils.TotalIndexState, IndexUtils.ActiveRepos)
       phaseRunSolver
         projectConfig@ProjectConfig
           { projectConfigShared
           , projectConfigBuildOnly
           }
         (compiler, platform, progdb)
+        pkgConfigDB
         localPackages
         installedPackages =
           rerunIfChanged
@@ -721,13 +698,13 @@ rebuildInstallPlan
                   progdb
                   platform
                   corePackageDbs
+
               (sourcePkgDb, tis, ar) <-
                 getSourcePackages
                   verbosity
                   withRepoCtx
                   (solverSettingIndexState solverSettings)
                   (solverSettingActiveRepos solverSettings)
-              pkgConfigDB <- getPkgConfigDb verbosity progdb
 
               -- TODO: [code cleanup] it'd be better if the Compiler contained the
               -- ConfiguredPrograms that it needs, rather than relying on the progdb
@@ -752,7 +729,7 @@ rebuildInstallPlan
                   Left msg -> do
                     reportPlanningFailure projectConfig compiler platform localPackages
                     dieWithException verbosity $ PhaseRunSolverErr msg
-                  Right plan -> return (plan, pkgConfigDB, tis, ar)
+                  Right plan -> return (plan, tis, ar)
           where
             corePackageDbs :: [PackageDB]
             corePackageDbs =
@@ -1038,13 +1015,19 @@ getSourcePackages verbosity withRepoCtx idxState activeRepos = do
     $ repos
   return sourcePkgDbWithTIS
 
-getPkgConfigDb :: Verbosity -> ProgramDb -> Rebuild PkgConfigDb
-getPkgConfigDb verbosity progdb = do
+getPkgConfigDb :: Verbosity -> DistDirLayout -> ProgramDb -> Rebuild PkgConfigDb
+getPkgConfigDb verbosity distDirLayout progdb = do
+  systemsearchpath <- liftIO $ getSystemSearchPath
+  let progsearchpath = getProgramSearchPath progdb
   dirs <- liftIO $ getPkgConfigDbDirs verbosity progdb
-  -- Just monitor the dirs so we'll notice new .pc files.
-  -- Alternatively we could monitor all the .pc files too.
-  traverse_ monitorDirectoryStatus dirs
-  liftIO $ readPkgConfigDb verbosity progdb
+  rerunIfChanged verbosity fileMonitorPkgConfigDb (systemsearchpath, progsearchpath, dirs) $ do
+    liftIO $ info verbosity "Querying pkg-config database..."
+    -- Just monitor the dirs so we'll notice new .pc files.
+    -- Alternatively we could monitor all the .pc files too.
+    traverse_ monitorDirectoryStatus dirs
+    liftIO $ readPkgConfigDb verbosity progdb
+  where
+    fileMonitorPkgConfigDb = newFileMonitor $ distProjectCacheFile distDirLayout "pkg-config-db"
 
 -- | Select the config values to monitor for changes package source hashes.
 packageLocationsSignature

@@ -50,6 +50,7 @@ module Distribution.Client.ProjectConfig
   , resolveSolverSettings
   , BuildTimeSettings (..)
   , resolveBuildTimeSettings
+  , resolveProgramDb
 
     -- * Checking configuration
   , checkBadPerPackageCompilerPaths
@@ -154,6 +155,13 @@ import Distribution.Simple.InstallDirs
   )
 import Distribution.Simple.Program
   ( ConfiguredProgram (..)
+  , ProgramSearchPathEntry (..)
+  )
+import Distribution.Simple.Program.Db
+  ( ProgramDb
+  , defaultProgramDb
+  , modifyProgramSearchPath
+  , userSpecifyPaths
   )
 import Distribution.Simple.Setup
   ( Flag (Flag)
@@ -495,6 +503,18 @@ resolveBuildTimeSettings
         | isJust givenTemplate = True
         | isParallelBuild buildSettingNumJobs = False
         | otherwise = False
+
+-- | ProgramDb with directly user specified paths
+resolveProgramDb :: ProjectConfig -> ProgramDb
+resolveProgramDb ProjectConfig{projectConfigLocalPackages = PackageConfig{..}} =
+  userSpecifyPaths (Map.toList (getMapLast packageConfigProgramPaths))
+    . modifyProgramSearchPath
+      ( [ ProgramSearchPathDir dir
+        | dir <- fromNubList packageConfigProgramPathExtra
+        ]
+          ++
+      )
+    $ defaultProgramDb
 
 ---------------------------------------------
 -- Reading and writing project config files
