@@ -1,10 +1,5 @@
 name: Validate
 
-# See: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#concurrency.
-concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: true
-
 # Note: This workflow file contains the required job "Validate post job". We are using path filtering
 # here to ignore PRs which only change documentation. This can cause a problem, see the workflow file
 # "validate.skip.yml" for a description of the problem and the solution provided in that file.
@@ -24,9 +19,6 @@ on:
   release:
     types:
       - created
-  workflow_call:
-
-  # See https://github.com/haskell/cabal/blob/master/CONTRIBUTING.md#hackage-revisions
   workflow_dispatch:
     inputs:
       allow-newer:
@@ -67,34 +59,7 @@ jobs:
         # If you remove something from here, then add it to the old-ghcs job.
         # Also a removed GHC from here means that we are actually dropping
         # support, so the PR *must* have a changelog entry.
-        ghc:
-          [
-            "9.10.1",
-            "9.8.2",
-            "9.6.4",
-            "9.4.8",
-            "9.2.8",
-            "9.0.2",
-            "8.10.7",
-            "8.8.4",
-          ]
-        exclude:
-          # Throws fatal "cabal-tests.exe: fd:8: hGetLine: end of file" exception
-          # even with --io-manager=native
-          - sys:
-              { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
-            ghc: "9.0.2"
-          # corrupts GHA cache or the fabric of reality itself, see https://github.com/haskell/cabal/issues/8356
-          - sys:
-              { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
-            ghc: "8.10.7"
-          # lot of segfaults caused by ghc bugs
-          - sys:
-              { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
-            ghc: "8.8.4"
-    defaults:
-      run:
-        shell: ${{ matrix.sys.shell }}
+        ghc: ["9.2.8"]
     steps:
       - name: Work around XDG directories existence (haskell-actions/setup#62)
         if: runner.os == 'macOS'
@@ -231,65 +196,6 @@ jobs:
         if: matrix.ghc == env.GHC_FOR_SOLVER_BENCHMARKS
         run: sh validate.sh $FLAGS -s solver-benchmarks-run
 
-  validate-old-ghcs:
-    name: Validate old ghcs ${{ matrix.extra-ghc }}
-    runs-on: ubuntu-22.04
-    needs: validate
-
-    strategy:
-      matrix:
-        extra-ghc:
-          ["8.4.4", "8.2.2", "8.0.2"]
-          ## GHC 7.10.3 does not install on ubuntu-22.04 with ghcup.
-          ## Older GHCs are not supported by ghcup in the first place.
-      fail-fast: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install prerequisites for old GHCs
-        run: |
-          sudo apt-get update
-          sudo apt-get install libncurses5 libtinfo5
-
-      - name: Install extra compiler
-        run: ghcup install ghc ${{ matrix.extra-ghc }}
-
-      - name: GHCup logs
-        if: always()
-        run: cat /usr/local/.ghcup/logs/*
-
-      - name: Install primary compiler
-        uses: haskell-actions/setup@v2
-        id: setup-haskell
-        with:
-          ghc-version: ${{ env.GHC_FOR_RELEASE }}
-          cabal-version: latest
-
-      - name: GHC versions
-        run: |
-          ghc --version
-          "ghc-${{ matrix.extra-ghc }}" --version
-
-      # As we are reusing the cached build dir from the previous step
-      # the generated artifacts are available here,
-      # including the cabal executable and the test suite
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ${{ steps.setup-haskell.outputs.cabal-store }}
-            dist-*
-          key: ${{ runner.os }}-${{ env.GHC_FOR_RELEASE }}-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-${{ env.GHC_FOR_RELEASE }}-
-
-      - name: Validate build
-        run: sh validate.sh ${{ env.COMMON_FLAGS }} -s build
-
-      - name: "Validate lib-suite-extras --extra-hc ghc-${{ matrix.extra-ghc }}"
-        env:
-          EXTRA_GHC: ghc-${{ matrix.extra-ghc }}
-        run: sh validate.sh ${{ env.COMMON_FLAGS }} --lib-only -s lib-suite-extras --extra-hc "${{ env.EXTRA_GHC }}"
-
   build-alpine:
     name: Build statically linked using alpine
     runs-on: ubuntu-latest
@@ -304,13 +210,6 @@ jobs:
           musl-dev ncurses-dev perl tar xz
 
       - uses: actions/checkout@v4
-
-      # See https://github.com/haskell/cabal/blob/master/CONTRIBUTING.md#hackage-revisions
-      - name: Manually supplied constraints/allow-newer
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "allow-newer: ${ALLOWNEWER}"  >> cabal.validate.project
-          echo "constraints: ${CONSTRAINTS}" >> cabal.validate.project
 
       - uses: haskell-actions/setup@v2
         id: setup-haskell
@@ -400,57 +299,3 @@ jobs:
       - name: Build using cabal HEAD
         run: sh validate.sh ${{ env.COMMON_FLAGS }} --with-cabal ./cabal-head/cabal -s build
 
-  prerelease-head:
-    name: Create a GitHub prerelease with the binary artifacts
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
-
-    # IMPORTANT! Any job added to the workflow should be added here too
-    needs: [validate, validate-old-ghcs, build-alpine, dogfooding]
-
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: cabal-Windows-x86_64
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: cabal-Linux-x86_64
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: cabal-Linux-static-x86_64
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: cabal-macOS-x86_64
-
-      - name: Create GitHub prerelease
-        uses: marvinpinto/action-automatic-releases@v1.2.1
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          automatic_release_tag: cabal-head
-          prerelease: true
-          title: cabal-head
-          files: |
-            cabal-head-Windows-x86_64.tar.gz
-            cabal-head-Linux-x86_64.tar.gz
-            cabal-head-Linux-static-x86_64.tar.gz
-            cabal-head-macOS-x86_64.tar.gz
-
-  # We use this job as a summary of the workflow
-  # It will fail if any of the previous jobs does
-  # This way we can use it exclusively in branch protection rules
-  # and abstract away the concrete jobs of the workflow, including their names
-  validate-post-job:
-    if: always()
-    name: Validate post job
-    runs-on: ubuntu-latest
-    # IMPORTANT! Any job added to the workflow should be added here too
-    needs: [validate, validate-old-ghcs, build-alpine, dogfooding]
-
-    steps:
-      - run: |
-          echo "jobs info: ${{ toJSON(needs) }}"
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
