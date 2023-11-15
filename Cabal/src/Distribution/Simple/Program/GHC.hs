@@ -707,8 +707,34 @@ renderGhcOptions comp _platform@(Platform _arch os) opts
   , [ "-opta" ++ opt | opt <- ghcOptAsmOptions opts]
   , concat [ ["-pgmc", cc] | cc <- flag ghcOptCcProgram ]
 
+<<<<<<< HEAD
   -----------------
   -- Linker stuff
+=======
+          ["-optl" ++ opt | opt <- ghcOptLinkOptions opts]
+        , ["-l" ++ lib | lib <- ghcOptLinkLibs opts]
+        , ["-L" ++ dir | dir <- flags ghcOptLinkLibPath]
+        , if isOSX
+            then
+              concat
+                [ ["-framework", fmwk]
+                | fmwk <- flags ghcOptLinkFrameworks
+                ]
+            else []
+        , if isOSX
+            then
+              concat
+                [ ["-framework-path", path]
+                | path <- flags ghcOptLinkFrameworkDirs
+                ]
+            else []
+        , ["-no-hs-main" | flagBool ghcOptLinkNoHsMain]
+        , ["-dynload deploy" | not (null (flags ghcOptRPaths))]
+        , ["-optl-Wl,-rpath," ++ dir | dir <- flags ghcOptRPaths]
+        , flags ghcOptLinkModDefFiles
+        , -------------
+          -- Packages
+>>>>>>> addbcbfbb (Add extraLibDirs to runtime lib search paths of library)
 
   , [ "-optl" ++ opt | opt <- ghcOptLinkOptions opts]
   , ["-l" ++ lib     | lib <- ghcOptLinkLibs opts]
