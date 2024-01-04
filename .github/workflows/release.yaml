@@ -190,7 +190,7 @@ jobs:
       TARBALL_EXT: tar.xz
       ARCH: 32
       TZ: Asia/Singapore
-      GHC_VERSION: 9.2.8
+      GHC_VERSION: 9.2.1
       DISTRO: "Unknown"
       ARTIFACT: "i386-linux-unknown"
       ADD_CABAL_ARGS: "--enable-split-sections --enable-executable-static"
