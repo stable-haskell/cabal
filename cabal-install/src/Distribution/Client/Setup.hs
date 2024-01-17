@@ -66,6 +66,7 @@ module Distribution.Client.Setup
   , unpackCommand
   , GetFlags (..)
   , checkCommand
+  , CheckFlags (..)
   , formatCommand
   , uploadCommand
   , UploadFlags (..)
@@ -146,6 +147,7 @@ import Distribution.PackageDescription
   , LibraryName (..)
   , RepoKind (..)
   )
+import Distribution.PackageDescription.Check (CheckExplanationIDString)
 import Distribution.Parsec
   ( parsecCommaList
   )
@@ -171,6 +173,7 @@ import Distribution.Simple.Flag
   , flagToMaybe
   , fromFlagOrDefault
   , maybeToFlag
+  , mergeListFlag
   , toFlag
   )
 import Distribution.Simple.InstallDirs
@@ -286,8 +289,10 @@ globalCommand commands =
               , "gen-bounds"
               , "outdated"
               , "haddock"
+              , "haddock-project"
               , "hscolour"
               , "exec"
+              , "path"
               , "new-build"
               , "new-configure"
               , "new-repl"
@@ -301,6 +306,7 @@ globalCommand commands =
               , "new-install"
               , "new-clean"
               , "new-sdist"
+              , "new-haddock-project"
               , "list-bin"
               , -- v1 commands, stateful style
                 "v1-build"
@@ -329,6 +335,7 @@ globalCommand commands =
               , "v2-test"
               , "v2-bench"
               , "v2-haddock"
+              , "v2-haddock-project"
               , "v2-exec"
               , "v2-update"
               , "v2-install"
@@ -676,6 +683,11 @@ filterConfigureFlags flags cabalLibVersion
           -- We add a Cabal>=3.11 constraint before solving when multi-repl is
           -- enabled, so this should never trigger.
           configPromisedDependencies = assert (null $ configPromisedDependencies flags) []
+        , -- Cabal < 3.11 does not understand '--coverage-for', which is OK
+          -- because previous versions of Cabal using coverage implied
+          -- whole-package builds (cuz_coverage), and determine the path to
+          -- libraries mix dirs from the testsuite root with a small hack.
+          configCoverageFor = NoFlag
         }
 
     flags_3_7_0 =
@@ -1536,6 +1548,56 @@ genBoundsCommand =
     }
 
 -- ------------------------------------------------------------
+-- Check command
+-- ------------------------------------------------------------
+
+data CheckFlags = CheckFlags
+  { checkVerbosity :: Flag Verbosity
+  , checkIgnore :: [CheckExplanationIDString]
+  }
+  deriving (Show, Typeable)
+
+defaultCheckFlags :: CheckFlags
+defaultCheckFlags =
+  CheckFlags
+    { checkVerbosity = Flag normal
+    , checkIgnore = []
+    }
+
+checkCommand :: CommandUI CheckFlags
+checkCommand =
+  CommandUI
+    { commandName = "check"
+    , commandSynopsis = "Check the package for common mistakes."
+    , commandDescription = Just $ \_ ->
+        wrapText $
+          "Expects a .cabal package file in the current directory.\n"
+            ++ "\n"
+            ++ "Some checks correspond to the requirements to packages on Hackage. "
+            ++ "If no `Error` is reported, Hackage should accept the "
+            ++ "package. If errors are present, `check` exits with 1 and Hackage "
+            ++ "will refuse the package.\n"
+    , commandNotes = Nothing
+    , commandUsage = usageFlags "check"
+    , commandDefaultFlags = defaultCheckFlags
+    , commandOptions = checkOptions'
+    }
+
+checkOptions' :: ShowOrParseArgs -> [OptionField CheckFlags]
+checkOptions' _showOrParseArgs =
+  [ optionVerbosity
+      checkVerbosity
+      (\v flags -> flags{checkVerbosity = v})
+  , option
+      ['i']
+      ["ignore"]
+      "ignore a specific warning (e.g. --ignore=missing-upper-bounds)"
+      checkIgnore
+      (\v c -> c{checkIgnore = v ++ checkIgnore c})
+      (reqArg' "WARNING" (: []) (const []))
+  ]
+
+-- ------------------------------------------------------------
 
 -- * Update command
 
@@ -1565,25 +1627,6 @@ cleanCommand =
   Cabal.cleanCommand
     { commandUsage = \pname ->
         "Usage: " ++ pname ++ " v1-clean [FLAGS]\n"
-    }
-
-checkCommand :: CommandUI (Flag Verbosity)
-checkCommand =
-  CommandUI
-    { commandName = "check"
-    , commandSynopsis = "Check the package for common mistakes."
-    , commandDescription = Just $ \_ ->
-        wrapText $
-          "Expects a .cabal package file in the current directory.\n"
-            ++ "\n"
-            ++ "Some checks correspond to the requirements to packages on Hackage. "
-            ++ "If no `Error` is reported, Hackage should accept the "
-            ++ "package. If errors are present, `check` exits with 1 and Hackage "
-            ++ "will refuse the package.\n"
-    , commandNotes = Nothing
-    , commandUsage = usageFlags "check"
-    , commandDefaultFlags = toFlag normal
-    , commandOptions = \_ -> [optionVerbosity id const]
     }
 
 formatCommand :: CommandUI (Flag Verbosity)
@@ -3163,10 +3206,6 @@ initOptions _ =
       parsecToReadE
         ("Cannot parse dependencies: " ++)
         (parsecCommaList parsec)
-
-    mergeListFlag :: Flag [a] -> Flag [a] -> Flag [a]
-    mergeListFlag currentFlags v =
-      Flag $ concat (flagToList currentFlags ++ flagToList v)
 
 -- ------------------------------------------------------------
 

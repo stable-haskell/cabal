@@ -3,6 +3,7 @@
 
 CABALBUILD := cabal build
 CABALRUN   := cabal run
+DOCTEST    := cabal repl --with-ghc=doctest --repl-options="-w" --project-file=cabal.project.doctest
 
 # default rules
 
@@ -58,10 +59,15 @@ $(TEMPLATE_PATHS) : templates/Paths_pkg.template.hs cabal-dev-scripts/src/GenPat
 	cabal run --builddir=dist-newstyle-meta --project-file=cabal.project.meta gen-paths-module -- $< $@
 
 # generated docs
-
-buildinfo-fields-reference : phony
-	cabal build --builddir=dist-newstyle-bi --project-file=cabal.project.buildinfo buildinfo-reference-generator
-	$$(cabal list-bin --builddir=dist-newstyle-bi buildinfo-reference-generator) buildinfo-reference-generator/template.zinza | tee $@
+# Use cabal build before cabal run to avoid output of the build on stdout when running
+doc/buildinfo-fields-reference.rst : \
+  $(wildcard Cabal-syntax/src/*/*.hs Cabal-syntax/src/*/*/*.hs Cabal-syntax/src/*/*/*/*.hs) \
+  $(wildcard Cabal-described/src/Distribution/Described.hs Cabal-described/src/Distribution/Utils/*.hs) \
+  buildinfo-reference-generator/src/Main.hs \
+  buildinfo-reference-generator/template.zinza
+	cabal build --project-file=cabal.project.buildinfo buildinfo-reference-generator
+	cabal run --project-file=cabal.project.buildinfo buildinfo-reference-generator buildinfo-reference-generator/template.zinza | tee $@
+	git diff --exit-code $@
 
 # analyse-imports
 analyse-imports : phony
@@ -85,9 +91,11 @@ ghcid-cli :
 #       https://github.com/haskell/cabal/issues/8734
 #       Just as well, cabal-install(-solver) doctests (the target below) bitrotted and need some care.
 doctest :
-	cabal repl --with-ghc=doctest --build-depends=QuickCheck --build-depends=template-haskell --repl-options="-w" --project-file="cabal.project.doctest" Cabal-syntax
-	cabal repl --with-ghc=doctest --build-depends=QuickCheck --build-depends=template-haskell --repl-options="-w" --project-file="cabal.project.doctest" Cabal
-
+	$(DOCTEST) Cabal-syntax
+	$(DOCTEST) Cabal-described
+	$(DOCTEST) --build-depends=QuickCheck Cabal
+	$(DOCTEST) cabal-install-solver
+	$(DOCTEST) cabal-install
 
 # This is not run as part of validate.sh (we need hackage-security, which is tricky to get).
 doctest-cli :
