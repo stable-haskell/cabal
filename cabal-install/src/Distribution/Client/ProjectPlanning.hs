@@ -562,7 +562,7 @@ rebuildInstallPlan
               )
               $ do
                 compilerEtc <- phaseConfigureCompiler projectConfig
-
+                _ <- phaseConfigurePrograms projectConfig compilerEtc
                 (solverPlan, totalIndexState, activeRepos) <-
                   phaseRunSolver
                     projectConfig
@@ -605,19 +605,40 @@ rebuildInstallPlan
       phaseConfigureCompiler
         :: ProjectConfig
         -> Rebuild (Compiler, Platform, ProgramDb)
-      phaseConfigureCompiler projectConfig = do
-        (compiler, platform, progdb) <- configureCompiler verbosity distDirLayout projectConfig
+      phaseConfigureCompiler projectConfig =
+        configureCompiler verbosity distDirLayout projectConfig
 
+      -- Configuring other programs.
+      --
+      -- Having configred the compiler, now we configure all the remaining
+      -- programs. This is to check we can find them, and to monitor them for
+      -- changes.
+      --
+      -- TODO: [required eventually] we don't actually do this yet.
+      --
+      -- We rely on the fact that the previous phase added the program config for
+      -- all local packages, but that all the programs configured so far are the
+      -- compiler program or related util programs.
+      --
+      phaseConfigurePrograms
+        :: ProjectConfig
+        -> (Compiler, Platform, ProgramDb)
+        -> Rebuild ()
+      phaseConfigurePrograms projectConfig (_, _, compilerprogdb) = do
         -- Users are allowed to specify program locations independently for
         -- each package (e.g. to use a particular version of a pre-processor
         -- for some packages). However they cannot do this for the compiler
         -- itself as that's just not going to work. So we check for this.
         liftIO $
           checkBadPerPackageCompilerPaths
-            (configuredPrograms progdb)
+            (configuredPrograms compilerprogdb)
             (getMapMappend (projectConfigSpecificPackage projectConfig))
 
-        return (compiler, platform, progdb)
+      -- TODO: [required eventually] find/configure other programs that the
+      -- user specifies.
+
+      -- TODO: [required eventually] find/configure all build-tools
+      -- but note that some of them may be built as part of the plan.
 
       -- Run the solver to get the initial install plan.
       -- This is expensive so we cache it independently.
@@ -656,7 +677,6 @@ rebuildInstallPlan
                   progdb
                   platform
                   corePackageDbs
-
               (sourcePkgDb, tis, ar) <-
                 getSourcePackages
                   verbosity
@@ -978,15 +998,19 @@ getSourcePackages verbosity withRepoCtx idxState activeRepos = do
 
 getPkgConfigDb :: Verbosity -> DistDirLayout -> ProgramDb -> Rebuild PkgConfigDb
 getPkgConfigDb verbosity distDirLayout progdb = do
-  systemsearchpath <- liftIO $ getSystemSearchPath
-  let progsearchpath = getProgramSearchPath progdb
-  dirs <- liftIO $ getPkgConfigDbDirs verbosity progdb
-  rerunIfChanged verbosity fileMonitorPkgConfigDb (systemsearchpath, progsearchpath, dirs) $ do
-    liftIO $ info verbosity "Querying pkg-config database..."
-    -- Just monitor the dirs so we'll notice new .pc files.
-    -- Alternatively we could monitor all the .pc files too.
-    traverse_ monitorDirectoryStatus dirs
-    liftIO $ readPkgConfigDb verbosity progdb
+  mpkgConfig <- liftIO $ needProgram verbosity pkgConfigProgram progdb
+  case mpkgConfig of
+    Nothing -> do
+      liftIO $ info verbosity "Cannot find pkg-config program. Cabal will continue without solving for pkg-config constraints."
+      return NoPkgConfigDb
+    Just (pkgConfig, progdb') -> do
+      dirs <- liftIO $ getPkgConfigDbDirs verbosity progdb'
+      rerunIfChanged verbosity fileMonitorPkgConfigDb (pkgConfig, dirs) $ do
+        -- By monitoring the dirs, we'll notice new .pc files. We do not monitor the .pc files.
+        traverse_ monitorDirectoryStatus dirs
+        liftIO $ do
+          info verbosity "Querying pkg-config database..."
+          readPkgConfigDb verbosity progdb'
   where
     fileMonitorPkgConfigDb = newFileMonitor $ distProjectCacheFile distDirLayout "pkg-config-db"
 
