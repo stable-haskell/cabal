@@ -17,6 +17,10 @@ export BOOTSTRAP_HASKELL_ADJUST_CABAL_CONFIG=no
 export BOOTSTRAP_HASKELL_INSTALL_NO_STACK=yes
 export BOOTSTRAP_HASKELL_ADJUST_BASHRC=1
 
+if [ "${RUNNER_OS}" = "freebsd" ] ; then
+    export RUNNER_OS=FreeBSD
+fi
+
 if [ "${RUNNER_OS}" = "Windows" ] ; then
     # on windows use pwd to get unix style path
     CI_PROJECT_DIR="$(pwd)"
