@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'cabal-install-*'
-  schedule:
-    - cron: '0 2 * * *'
 
 jobs:
   build-linux:
@@ -226,10 +224,10 @@ jobs:
         include:
           - os: [self-hosted, Linux, ARM64]
             ARCH: ARM
-            ARTIFACT: "armv7-linux-debian10"
+            ARTIFACT: "armv7-linux-deb10"
           - os: [self-hosted, Linux, ARM64]
             ARCH: ARM64
-            ARTIFACT: "aarch64-linux-debian10"
+            ARTIFACT: "aarch64-linux-deb10"
     steps:
       - name: git config
         run: |
