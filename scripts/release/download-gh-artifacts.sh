@@ -18,18 +18,15 @@ done
 
 mkdir -p "gh-release-artifacts/cabal-${VERSION}"
 
+git archive --format=tar.gz -o "gh-release-artifacts/${RELEASE}/cabal-${TAG}-src.tar.gz" --prefix="cabal-${TAG}/" HEAD
+
 cd "gh-release-artifacts/cabal-${VERSION}"
 
 # github
 gh release download "$RELEASE"
 
-# cirrus
-curl --fail -L -o "cabal-install-${VERSION}-x86_64-portbld-freebsd.tar.xz" \
-	"https://api.cirrus-ci.com/v1/artifact/github/haskell/cabal/build/binaries/out/cabal-install-${VERSION}-x86_64-portbld-freebsd.tar.xz?branch=${RELEASE}"
-
-
 sha256sum ./* > SHA256SUMS
 gpg --detach-sign -u "${SIGNER}" SHA256SUMS
 
-gh release upload "$RELEASE" "cabal-install-${VERSION}-x86_64-portbld-freebsd.tar.xz" SHA256SUMS SHA256SUMS.sig
+gh release upload "$RELEASE" "cabal-${TAG}-src.tar.gz" SHA256SUMS SHA256SUMS.sig
 
