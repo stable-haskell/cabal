@@ -18,7 +18,7 @@ done
 
 mkdir -p "gh-release-artifacts/cabal-${VERSION}"
 
-git archive --format=tar.gz -o "gh-release-artifacts/${RELEASE}/cabal-${TAG}-src.tar.gz" --prefix="cabal-${TAG}/" HEAD
+git archive --format=tar.gz -o "gh-release-artifacts/cabal-${VERSION}/cabal-${VERSION}-src.tar.gz" --prefix="cabal-${VERSION}/" HEAD
 
 cd "gh-release-artifacts/cabal-${VERSION}"
 
@@ -28,5 +28,5 @@ gh release download "$RELEASE"
 sha256sum ./* > SHA256SUMS
 gpg --detach-sign -u "${SIGNER}" SHA256SUMS
 
-gh release upload "$RELEASE" "cabal-${TAG}-src.tar.gz" SHA256SUMS SHA256SUMS.sig
+gh release upload "$RELEASE" "cabal-${VERSION}-src.tar.gz" SHA256SUMS SHA256SUMS.sig
 

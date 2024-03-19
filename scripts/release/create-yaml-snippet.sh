@@ -7,7 +7,7 @@ RELEASE=$1
 VERSION=${RELEASE#cabal-install-v}
 
 cd "gh-release-artifacts/cabal-${VERSION}"
-BASE_URL=https://downloads.haskell.org/~cabal/cabal-install-$VERSION
+BASE_URL=https://downloads.haskell.org/ghcup/unofficial-bindists/cabal/$VERSION
 
 cat <<EOF > /dev/stdout
     $VERSION:
@@ -50,10 +50,10 @@ cat <<EOF > /dev/stdout
             '< 33': &cabal-${VERSION//./}-64-fedora27
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-fedora27.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-fedora27.tar.xz" | awk '{ print $1 }')
-			'(>= 33 && < 37)': &cabal-${VERSION//./}-64-fedora33
+            '(>= 33 && < 37)': &cabal-${VERSION//./}-64-fedora33
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-fedora33.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-fedora33.tar.xz" | awk '{ print $1 }')
-			'>= 37': &cabal-${VERSION//./}-64-fedora37
+            '>= 37': &cabal-${VERSION//./}-64-fedora37
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-fedora37.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-fedora37.tar.xz" | awk '{ print $1 }')
             unknown_versioning: *cabal-${VERSION//./}-64-fedora27
