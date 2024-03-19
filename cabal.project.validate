@@ -30,3 +30,14 @@ package cabal-testsuite
   ghc-options: -Werror
 package cabal-install
   ghc-options: -Werror
+
+constraints: tar >= 0.6.2.0,
+             bzlib-conduit >= 0.3.0.3,
+             bz2 >= 1.0.1.1,
+             bzlib >= 0.5.2.0,
+             directory >= 1.3.8.3,
+             filepath == 1.4.101.0 || == 1.4.300.1 || >= 1.5.2.0
+
+package zlib
+  flags: -pkg-config +bundled-c-zlib
+
