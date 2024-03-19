@@ -155,7 +155,7 @@ jobs:
         run: |
           ${{ matrix.platform.installCmd }} curl bash git ${{ matrix.platform.toolRequirements }}
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Run build
         run: |
@@ -168,7 +168,7 @@ jobs:
 
       - if: always()
         name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           retention-days: 2
@@ -190,7 +190,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'true'
 
@@ -201,7 +201,7 @@ jobs:
 
       - if: always()
         name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           retention-days: 2
@@ -218,7 +218,7 @@ jobs:
       DEBIAN_FRONTEND: noninteractive
       TZ: Asia/Singapore
       ARCH: ARM64
-      DISTRO: Ubuntu
+      DISTRO: Debian
       GHC_VERSION: 9.2.8
     strategy:
       fail-fast: false
@@ -226,26 +226,21 @@ jobs:
         include:
           - os: [self-hosted, Linux, ARM64]
             ARCH: ARM
-            ARTIFACT: "armv7-linux-ubuntu20"
+            ARTIFACT: "armv7-linux-debian10"
           - os: [self-hosted, Linux, ARM64]
             ARCH: ARM64
-            ARTIFACT: "aarch64-linux-ubuntu20"
+            ARTIFACT: "aarch64-linux-debian10"
     steps:
-      - uses: docker://arm64v8/ubuntu:focal
-        name: Cleanup (aarch64 linux)
-        with:
-          args: "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +"
-
       - name: git config
         run: |
           git config --global --get-all safe.directory | grep '^\*$' || git config --global --add safe.directory "*"
         shell: bash
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - if: matrix.ARCH == 'ARM'
-        uses: docker://hasufell/arm32v7-ubuntu-haskell:focal
+        uses: docker://hasufell/arm32v7-debian-haskell:10
         name: Run build (armv7 linux)
         with:
           args: bash .github/scripts/build.sh
@@ -253,7 +248,7 @@ jobs:
           ARTIFACT: ${{ matrix.ARTIFACT }}
 
       - if: matrix.ARCH == 'ARM64'
-        uses: docker://hasufell/arm64v8-ubuntu-haskell:focal
+        uses: docker://hasufell/arm64v8-debian-haskell:10
         name: Run build (aarch64 linux)
         with:
           args: bash .github/scripts/build.sh
@@ -262,7 +257,7 @@ jobs:
 
       - if: always()
         name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           retention-days: 2
@@ -283,7 +278,7 @@ jobs:
       GHC_VERSION: 9.2.8
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run build
         run: |
@@ -292,7 +287,7 @@ jobs:
 
       - if: always()
         name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           retention-days: 2
@@ -314,7 +309,7 @@ jobs:
       GHC_VERSION: 9.2.8
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run build
         run: |
@@ -325,7 +320,7 @@ jobs:
 
       - if: always()
         name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           retention-days: 2
@@ -353,7 +348,7 @@ jobs:
           taskkill /F /FI "MODULES eq msys-2.0.dll"
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run build (windows)
         run: |
@@ -365,7 +360,7 @@ jobs:
 
       - if: always()
         name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           retention-days: 2
@@ -380,10 +375,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: artifacts
           path: ./out
