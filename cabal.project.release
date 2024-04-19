@@ -14,3 +14,18 @@ constraints: tar >= 0.6.2.0,
 package zlib
   flags: -pkg-config +bundled-c-zlib
 
+packages: https://hackage.haskell.org/package/tar-0.6.2.0/tar-0.6.2.0.tar.gz
+          https://hackage.haskell.org/package/hashable-1.4.4.0/hashable-1.4.4.0.tar.gz
+	      https://hackage.haskell.org/package/unix-2.8.5.1/unix-2.8.5.1.tar.gz
+		  https://hackage.haskell.org/package/directory-1.3.8.4/directory-1.3.8.4.tar.gz
+
+allow-newer: filepath
+
+package unix
+  flags: +os-string
+
+package directory
+  flags: +os-string
+
+package Win32
+  flags: +os-string
