@@ -44,7 +44,7 @@ run cabal v2-build "${args[@]}" cabal-install
 
 mkdir -p "$CI_PROJECT_DIR/out"
 # shellcheck disable=SC2154
-cp "$(cabal list-bin "${args[@]}" cabal-install:exe:cabal)" "$CI_PROJECT_DIR/out/cabal$ext"
+cp "$(cabal -v0 list-bin "${args[@]}" cabal-install:exe:cabal)" "$CI_PROJECT_DIR/out/cabal$ext"
 cp dist-newstyle/cache/plan.json "$CI_PROJECT_DIR/out/plan.json"
 cd "$CI_PROJECT_DIR/out/"
 
