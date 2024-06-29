@@ -14,7 +14,7 @@ jobs:
       ARCH: 64
       DEBIAN_FRONTEND: noninteractive
       TZ: Asia/Singapore
-      GHC_VERSION: 9.2.8
+      GHC_VERSION: 9.8.2
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +39,13 @@ jobs:
                     , ARTIFACT: "x86_64-linux-deb11"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
+                    { image: "debian:12"
+                    , installCmd: "apt-get update && apt-get install -y"
+                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , DISTRO: "Debian"
+                    , ARTIFACT: "x86_64-linux-deb12"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    },
                     { image: "ubuntu:18.04"
                     , installCmd: "apt-get update && apt-get install -y"
                     , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
@@ -60,14 +67,28 @@ jobs:
                     , ARTIFACT: "x86_64-linux-ubuntu22.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
-                    { image: "linuxmintd/mint20-amd64"
+                    { image: "ubuntu:24.04"
+                    , installCmd: "apt-get update && apt-get install -y"
+                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses6 libtinfo6 patchelf"
+                    , DISTRO: "Ubuntu"
+                    , ARTIFACT: "x86_64-linux-ubuntu24.04"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    },
+                    { image: "linuxmintd/mint19.3-amd64"
+                    , installCmd: "apt-get update && apt-get install -y"
+                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , DISTRO: "Mint"
+                    , ARTIFACT: "x86_64-linux-mint19"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    },
+                    { image: "linuxmintd/mint20.3-amd64"
                     , installCmd: "apt-get update && apt-get install -y"
                     , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
                     , DISTRO: "Mint"
                     , ARTIFACT: "x86_64-linux-mint20"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
-                    { image: "linuxmintd/mint21-amd64"
+                    { image: "linuxmintd/mint21.3-amd64"
                     , installCmd: "apt-get update && apt-get install -y"
                     , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
                     , DISTRO: "Mint"
@@ -181,7 +202,7 @@ jobs:
       TARBALL_EXT: tar.xz
       ARCH: 32
       TZ: Asia/Singapore
-      GHC_VERSION: 9.2.1
+      GHC_VERSION: 9.8.2
       DISTRO: "Unknown"
       ARTIFACT: "i386-linux-unknown"
       ADD_CABAL_ARGS: "--enable-split-sections --enable-executable-static"
@@ -217,7 +238,6 @@ jobs:
       TZ: Asia/Singapore
       ARCH: ARM64
       DISTRO: Debian
-      GHC_VERSION: 9.2.8
     strategy:
       fail-fast: false
       matrix:
@@ -225,9 +245,11 @@ jobs:
           - os: [self-hosted, Linux, ARM64, maerwald]
             ARCH: ARM
             ARTIFACT: "armv7-linux-deb10"
+            GHC_VERSION: 9.2.8
           - os: [self-hosted, Linux, ARM64, maerwald]
             ARCH: ARM64
             ARTIFACT: "aarch64-linux-deb10"
+            GHC_VERSION: 9.8.2
     steps:
       - name: git config
         run: |
@@ -244,6 +266,7 @@ jobs:
           args: bash .github/scripts/build.sh
         env:
           ARTIFACT: ${{ matrix.ARTIFACT }}
+          GHC_VERSION: ${{ matrix.GHC_VERSION }}
 
       - if: matrix.ARCH == 'ARM64'
         uses: docker://hasufell/arm64v8-debian-haskell:10
@@ -252,6 +275,7 @@ jobs:
           args: bash .github/scripts/build.sh
         env:
           ARTIFACT: ${{ matrix.ARTIFACT }}
+          GHC_VERSION: ${{ matrix.GHC_VERSION }}
 
       - if: always()
         name: Upload artifact
@@ -265,7 +289,7 @@ jobs:
 
   build-mac-x86_64:
     name: Build binary (Mac x86_64)
-    runs-on: macOS-11
+    runs-on: macOS-12
     env:
       MACOSX_DEPLOYMENT_TARGET: 10.13
       ADD_CABAL_ARGS: ""
@@ -273,7 +297,7 @@ jobs:
       ARCH: 64
       TARBALL_EXT: tar.xz
       DISTRO: na
-      GHC_VERSION: 9.2.8
+      GHC_VERSION: 9.8.2
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -304,7 +328,7 @@ jobs:
       TARBALL_EXT: tar.xz
       DISTRO: na
       HOMEBREW_CHANGE_ARCH_TO_ARM: 1
-      GHC_VERSION: 9.2.8
+      GHC_VERSION: 9.8.2
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -335,7 +359,7 @@ jobs:
       ARCH: 64
       TARBALL_EXT: "zip"
       DISTRO: na
-      GHC_VERSION: 9.2.8
+      GHC_VERSION: 9.8.2
     steps:
       - name: install windows deps
         shell: pwsh
@@ -375,7 +399,7 @@ jobs:
       ARCH: 64
       TARBALL_EXT: tar.xz
       DISTRO: na
-      GHC_VERSION: 9.2.8
+      GHC_VERSION: 9.8.2
       RUNNER_OS: FreeBSD
     steps:
       - name: Checkout code

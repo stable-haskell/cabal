@@ -28,7 +28,7 @@ ecabal user-config init -f
 
 # https://github.com/haskell/cabal/issues/7313#issuecomment-811851884
 if [ "$(getconf LONG_BIT)" == "32" ] || [ "${DISTRO}" == "CentOS" ] ; then
-    echo 'constraints: lukko -ofd-locking' >> cabal.project.release.local
+    echo 'constraints: lukko -ofd-locking' >> cabal.release.project.local
 fi
 
 # shellcheck disable=SC2206
@@ -36,7 +36,7 @@ args=(
     -w "ghc-$GHC_VERSION"
     --disable-profiling
     --enable-executable-stripping
-    --project-file=cabal.project.release
+    --project-file=cabal.release.project
     ${ADD_CABAL_ARGS}
 )
 
