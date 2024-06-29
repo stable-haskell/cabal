@@ -37,10 +37,6 @@ env:
   GHC_FOR_COMPLETE_HACKAGE_TESTS: '9.4.8'
   COMMON_FLAGS: '-j 2 -v'
 
-  # See https://github.com/haskell/cabal/blob/master/CONTRIBUTING.md#hackage-revisions
-  ALLOWNEWER: ${{ github.event.inputs.allow-newer }}
-  CONSTRAINTS: ${{ github.event.inputs.constraints }}
-
 
 jobs:
   validate:
@@ -64,13 +60,6 @@ jobs:
           rm -rf ~/.cache/cabal
 
       - uses: actions/checkout@v4
-
-      # See https://github.com/haskell/cabal/blob/master/CONTRIBUTING.md#hackage-revisions
-      - name: Manually supplied constraints/allow-newer
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "allow-newer: ${ALLOWNEWER}"  >> cabal.validate.project
-          echo "constraints: ${CONSTRAINTS}" >> cabal.validate.project
 
       - uses: haskell-actions/setup@v2
         id: setup-haskell
