@@ -7,7 +7,7 @@ RELEASE=$1
 VERSION=${RELEASE#cabal-install-v}
 
 cd "gh-release-artifacts/cabal-${VERSION}"
-BASE_URL=https://downloads.haskell.org/ghcup/unofficial-bindists/cabal/$VERSION
+BASE_URL=https://downloads.haskell.org/~ghcup/unofficial-bindists/cabal/$VERSION
 
 cat <<EOF > /dev/stdout
     $VERSION:
@@ -23,10 +23,13 @@ cat <<EOF > /dev/stdout
             '(>= 10 && < 11)': &cabal-${VERSION//./}-64-deb10
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-deb10.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-deb10.tar.xz" | awk '{ print $1 }')
-            '( >= 11)': &cabal-${VERSION//./}-64-deb11
+            '(>= 11 && < 12)': &cabal-${VERSION//./}-64-deb11
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-deb11.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-deb11.tar.xz" | awk '{ print $1 }')
-            unknown_versioning: *cabal-${VERSION//./}-64-deb9
+            '(>= 12 && < 13)': &cabal-${VERSION//./}-64-deb12
+              dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-deb12.tar.xz
+              dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-deb12.tar.xz" | awk '{ print $1 }')
+            unknown_versioning: *cabal-${VERSION//./}-64-deb12
           Linux_Ubuntu:
             '( >= 16 && < 19 )': &cabal-${VERSION//./}-64-ubuntu18
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-ubuntu18.04.tar.xz
@@ -34,18 +37,24 @@ cat <<EOF > /dev/stdout
             '( >= 20 && < 22 )': &cabal-${VERSION//./}-64-ubuntu20
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-ubuntu20.04.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-ubuntu20.04.tar.xz" | awk '{ print $1 }')
-            '( >= 22 )': &cabal-${VERSION//./}-64-ubuntu22
+            '( >= 22 && < 24 )': &cabal-${VERSION//./}-64-ubuntu22
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-ubuntu22.04.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-ubuntu22.04.tar.xz" | awk '{ print $1 }')
-            unknown_versioning: *cabal-${VERSION//./}-64-ubuntu18
+            '( >= 24 && < 25 )': &cabal-${VERSION//./}-64-ubuntu24
+              dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-ubuntu24.04.tar.xz
+              dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-ubuntu24.04.tar.xz" | awk '{ print $1 }')
+            unknown_versioning: *cabal-${VERSION//./}-64-ubuntu24
           Linux_Mint:
+            '< 20': &cabal-${VERSION//./}-64-mint19
+              dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-mint19.tar.xz
+              dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-mint19.tar.xz" | awk '{ print $1 }')
             '(>= 20 && < 21)': &cabal-${VERSION//./}-64-mint20
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-mint20.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-mint20.tar.xz" | awk '{ print $1 }')
             '>= 21': &cabal-${VERSION//./}-64-mint21
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-mint21.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-mint21.tar.xz" | awk '{ print $1 }')
-            unknown_versioning: *cabal-${VERSION//./}-64-mint20
+            unknown_versioning: *cabal-${VERSION//./}-64-mint21
           Linux_Fedora:
             '< 33': &cabal-${VERSION//./}-64-fedora27
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-fedora27.tar.xz
@@ -56,7 +65,7 @@ cat <<EOF > /dev/stdout
             '>= 37': &cabal-${VERSION//./}-64-fedora37
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-fedora37.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-fedora37.tar.xz" | awk '{ print $1 }')
-            unknown_versioning: *cabal-${VERSION//./}-64-fedora27
+            unknown_versioning: *cabal-${VERSION//./}-64-fedora37
           Linux_CentOS:
             '( >= 7 && < 8 )': &cabal-${VERSION//./}-64-centos
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-centos7.tar.xz
@@ -69,9 +78,9 @@ cat <<EOF > /dev/stdout
             '( >= 9 )': &cabal-${VERSION//./}-64-rocky9
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-rocky9.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-rocky9.tar.xz" | awk '{ print $1 }')
-            unknown_versioning: *cabal-${VERSION//./}-64-rocky8
+            unknown_versioning: *cabal-${VERSION//./}-64-rocky9
           Linux_RedHat:
-            unknown_versioning: *cabal-${VERSION//./}-64-centos
+            unknown_versioning: *cabal-${VERSION//./}-64-rocky8
           Linux_UnknownLinux:
             unknown_versioning: &cabal-${VERSION//./}-64-unknown
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-unknown.tar.xz
@@ -83,7 +92,7 @@ cat <<EOF > /dev/stdout
             '( >= 3.19 )': &cabal-${VERSION//./}-64-alpine319
               dlUri: ${BASE_URL}/cabal-install-$VERSION-x86_64-linux-alpine319.tar.xz
               dlHash: $(sha256sum "cabal-install-$VERSION-x86_64-linux-alpine319.tar.xz" | awk '{ print $1 }')
-            unknown_versioning: *cabal-${VERSION//./}-64-unknown
+            unknown_versioning: *cabal-${VERSION//./}-64-alpine319
           Linux_Void:
             unknown_versioning: *cabal-${VERSION//./}-64-unknown
           Darwin:
