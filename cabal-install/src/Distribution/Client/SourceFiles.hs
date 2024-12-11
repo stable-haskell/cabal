@@ -28,6 +28,7 @@ import Distribution.Types.BuildInfo
 import Distribution.Types.Component
 import Distribution.Types.ComponentRequestedSpec (ComponentRequestedSpec)
 import Distribution.Types.Executable
+import Distribution.Types.ExtraSource
 import Distribution.Types.ForeignLib
 import Distribution.Types.Library
 import Distribution.Types.PackageDescription
@@ -173,11 +174,11 @@ needBuildInfo pkg_descr bi modules = do
   expandedExtraSrcFiles <- liftIO $ fmap concat . for (extraSrcFiles pkg_descr) $ \fpath -> matchDirFileGlobWithDie normal (\_ _ -> return []) (specVersion pkg_descr) root fpath
   traverse_ needIfExists $
     concat
-      [ cSources bi
-      , cxxSources bi
-      , jsSources bi
-      , cmmSources bi
-      , asmSources bi
+      [ map extraSourceFile $ cSources bi
+      , map extraSourceFile $ cxxSources bi
+      , map extraSourceFile $ jsSources bi
+      , map extraSourceFile $ cmmSources bi
+      , map extraSourceFile $ asmSources bi
       , expandedExtraSrcFiles
       ]
   for_ (installIncludes bi) $ \f ->

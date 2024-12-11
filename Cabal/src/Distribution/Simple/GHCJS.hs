@@ -123,15 +123,15 @@ configure verbosity hcPath hcPkgPath conf0 = do
       (userMaybeSpecifyPath "ghcjs" hcPath conf0)
 
   Just ghcjsGhcVersion <- findGhcjsGhcVersion verbosity (programPath ghcjsProg)
-  unless (ghcjsGhcVersion < mkVersion [8, 8]) $
-    warn verbosity $
-      "Unknown/unsupported 'ghc' version detected "
-        ++ "(Cabal "
-        ++ prettyShow cabalVersion
-        ++ " supports 'ghc' version < 8.8): "
-        ++ programPath ghcjsProg
-        ++ " is based on GHC version "
-        ++ prettyShow ghcjsGhcVersion
+  unless (ghcjsGhcVersion < mkVersion [8, 8])
+    $ warn verbosity
+    $ "Unknown/unsupported 'ghc' version detected "
+    ++ "(Cabal "
+    ++ prettyShow cabalVersion
+    ++ " supports 'ghc' version < 8.8): "
+    ++ programPath ghcjsProg
+    ++ " is based on GHC version "
+    ++ prettyShow ghcjsGhcVersion
 
   let implInfo = ghcjsVersionImplInfo ghcjsVersion ghcjsGhcVersion
 
@@ -152,17 +152,17 @@ configure verbosity hcPath hcPkgPath conf0 = do
       verbosity
       (programPath ghcjsPkgProg)
 
-  when (ghcjsVersion /= ghcjsPkgGhcjsVersion) $
-    dieWithException verbosity $
-      VersionMismatchJS
-        (programPath ghcjsProg)
-        ghcjsVersion
-        (programPath ghcjsPkgProg)
-        ghcjsPkgGhcjsVersion
+  when (ghcjsVersion /= ghcjsPkgGhcjsVersion)
+    $ dieWithException verbosity
+    $ VersionMismatchJS
+      (programPath ghcjsProg)
+      ghcjsVersion
+      (programPath ghcjsPkgProg)
+      ghcjsPkgGhcjsVersion
 
-  when (ghcjsGhcVersion /= ghcjsPkgVersion) $
-    dieWithException verbosity $
-      VersionMismatchGHCJS (programPath ghcjsProg) ghcjsGhcVersion (programPath ghcjsPkgProg) ghcjsPkgVersion
+  when (ghcjsGhcVersion /= ghcjsPkgVersion)
+    $ dieWithException verbosity
+    $ VersionMismatchGHCJS (programPath ghcjsProg) ghcjsGhcVersion (programPath ghcjsPkgProg) ghcjsPkgVersion
 
   -- Likewise we try to find the matching hsc2hs and haddock programs.
   let hsc2hsProgram' =
@@ -184,10 +184,11 @@ configure verbosity hcPath hcPkgPath conf0 = do
                         programFindLocation = guessRunghcFromGhcjsPath ghcjsProg
                     } -}
       progdb3 =
-        addKnownProgram haddockProgram' $
-          addKnownProgram hsc2hsProgram' $
-            addKnownProgram hpcProgram' $
-              {- addKnownProgram runghcProgram' -} progdb2
+        addKnownProgram haddockProgram'
+          $ addKnownProgram hsc2hsProgram'
+          $ addKnownProgram hpcProgram'
+          $
+          {- addKnownProgram runghcProgram' -} progdb2
 
   languages <- Internal.getLanguages verbosity implInfo ghcjsProg
   extensions <- Internal.getExtensions verbosity implInfo ghcjsProg
@@ -199,8 +200,9 @@ configure verbosity hcPath hcPkgPath conf0 = do
         Compiler
           { compilerId = CompilerId GHCJS ghcjsVersion
           , compilerAbiTag =
-              AbiTag $
-                "ghc" ++ intercalate "_" (map show . versionNumbers $ ghcjsGhcVersion)
+              AbiTag
+                $ "ghc"
+                ++ intercalate "_" (map show . versionNumbers $ ghcjsGhcVersion)
           , compilerCompat = [CompilerId GHC ghcjsGhcVersion]
           , compilerLanguages = languages
           , compilerExtensions = extensions
@@ -257,15 +259,15 @@ guessToolFromGhcjsPath tool ghcjsProg verbosity searchpath =
         guessGhcjs dir =
           dir
             </> (toolname ++ "-ghcjs")
-              <.> exeExtension buildPlatform
+            <.> exeExtension buildPlatform
         guessGhcjsVersioned dir suf =
           dir
             </> (toolname ++ "-ghcjs" ++ suf)
-              <.> exeExtension buildPlatform
+            <.> exeExtension buildPlatform
         guessVersioned dir suf =
           dir
             </> (toolname ++ suf)
-              <.> exeExtension buildPlatform
+            <.> exeExtension buildPlatform
         mkGuesses dir suf
           | null suf = [guessGhcjs dir, guessNormal dir]
           | otherwise =
@@ -279,11 +281,11 @@ guessToolFromGhcjsPath tool ghcjsProg verbosity searchpath =
             ++ if real_path == given_path
               then []
               else mkGuesses real_dir real_suf
-    info verbosity $
-      "looking for tool "
-        ++ toolname
-        ++ " near compiler in "
-        ++ given_dir
+    info verbosity
+      $ "looking for tool "
+      ++ toolname
+      ++ " near compiler in "
+      ++ given_dir
     debug verbosity $ "candidate locations: " ++ show guesses
     exists <- traverse doesFileExist guesses
     case [file | (file, True) <- zip guesses exists] of
@@ -408,8 +410,8 @@ getInstalledPackages'
 getInstalledPackages' verbosity packagedbs progdb =
   sequenceA
     [ do
-      pkgs <- HcPkg.dump (hcPkgInfo progdb) verbosity packagedb
-      return (packagedb, pkgs)
+        pkgs <- HcPkg.dump (hcPkgInfo progdb) verbosity packagedb
+        return (packagedb, pkgs)
     | packagedb <- packagedbs
     ]
 
@@ -526,7 +528,7 @@ buildOrReplLib mReplFlags verbosity numJobs _pkg_descr lbi lib clbi = do
   -- modules?
   let cLikeFiles = fromNubListR $ toNubListR (cSources libBi) <> toNubListR (cxxSources libBi)
       jsSrcs = jsSources libBi
-      cObjs = map (`replaceExtension` objExtension) cLikeFiles
+      cObjs = map ((`replaceExtension` objExtension) . extraSourceFile) cLikeFiles
       baseOpts = componentGhcOptions verbosity lbi libBi clbi libTargetDir
       linkJsLibOpts =
         mempty
@@ -536,7 +538,7 @@ buildOrReplLib mReplFlags verbosity numJobs _pkg_descr lbi lib clbi = do
               , "-js-lib-outputdir"
               , libTargetDir
               ]
-                ++ jsSrcs
+                ++ map extraSourceFile jsSrcs
           }
       vanillaOptsNoJsLib =
         baseOpts
@@ -582,8 +584,8 @@ buildOrReplLib mReplFlags verbosity numJobs _pkg_descr lbi lib clbi = do
             , ghcOptHPCDir = hpcdir Hpc.Dyn
             }
 
-  unless (forRepl || null (allLibModules lib clbi) && null jsSrcs && null cObjs) $
-    do
+  unless (forRepl || null (allLibModules lib clbi) && null jsSrcs && null cObjs)
+    $ do
       let vanilla = whenVanillaLib forceVanillaLib (runGhcjsProg vanillaOpts)
           shared = whenSharedLib forceSharedLib (runGhcjsProg sharedOpts)
           useDynToo =
@@ -690,7 +692,7 @@ buildOrReplLib mReplFlags verbosity numJobs _pkg_descr lbi lib clbi = do
     info verbosity "Linking..."
     let cSharedObjs =
           map
-            (`replaceExtension` ("dyn_" ++ objExtension))
+            ((`replaceExtension` ("dyn_" ++ objExtension)) . extraSourceFile)
             (cSources libBi ++ cxxSources libBi)
         compiler_id = compilerId (compiler lbi)
         sharedLibFilePath = libTargetDir </> mkSharedLibName (hostPlatform lbi) compiler_id uid
@@ -785,8 +787,8 @@ buildOrReplLib mReplFlags verbosity numJobs _pkg_descr lbi lib clbi = do
                     insts
                   _ -> []
               , ghcOptPackages =
-                  toNubListR $
-                    Internal.mkGhcOptPackages mempty clbi
+                  toNubListR
+                    $ Internal.mkGhcOptPackages mempty clbi
               , ghcOptLinkLibs = extraLibs libBi
               , ghcOptLinkLibPath = toNubListR $ extraLibDirs libBi
               , ghcOptLinkFrameworks = toNubListR $ PD.frameworks libBi
@@ -818,8 +820,8 @@ buildOrReplLib mReplFlags verbosity numJobs _pkg_descr lbi lib clbi = do
                     insts
                   _ -> []
               , ghcOptPackages =
-                  toNubListR $
-                    Internal.mkGhcOptPackages mempty clbi
+                  toNubListR
+                    $ Internal.mkGhcOptPackages mempty clbi
               , ghcOptLinkLibs = extraLibs libBi
               , ghcOptLinkLibPath = toNubListR $ extraLibDirs libBi
               }
@@ -841,11 +843,11 @@ buildOrReplLib mReplFlags verbosity numJobs _pkg_descr lbi lib clbi = do
                 Ld.combineObjectFiles verbosity lbi ldProg
                   ghciProfLibFilePath profObjectFiles
       -}
-      whenSharedLib False $
-        runGhcjsProg ghcSharedLinkArgs
+      whenSharedLib False
+        $ runGhcjsProg ghcSharedLinkArgs
 
-      whenStaticLib False $
-        runGhcjsProg ghcStaticLinkArgs
+      whenStaticLib False
+        $ runGhcjsProg ghcStaticLinkArgs
 
 -- | Start a REPL without loading any source files.
 startInterpreter
@@ -1103,8 +1105,8 @@ decodeMainIsArg arg
 --
 -- Used to correctly build and link sources.
 data BuildSources = BuildSources
-  { cSourcesFiles :: [FilePath]
-  , cxxSourceFiles :: [FilePath]
+  { cSourcesFiles :: [ExtraSource]
+  , cxxSourceFiles :: [ExtraSource]
   , inputSourceFiles :: [FilePath]
   , inputSourceModules :: [ModuleName]
   }
@@ -1146,10 +1148,10 @@ gbuildSources verbosity pkgId specVer tmpDir bm =
               -- Finally, we only enable this workaround for
               -- specVersion < 2, as 'cabal-version:>=2.0' cabal files
               -- have no excuse anymore to keep doing it wrong... ;-)
-              warn verbosity $
-                "Enabling workaround for Main module '"
-                  ++ prettyShow mainModName
-                  ++ "' listed in 'other-modules' illegally!"
+              warn verbosity
+                $ "Enabling workaround for Main module '"
+                ++ prettyShow mainModName
+                ++ "' listed in 'other-modules' illegally!"
 
               return
                 BuildSources
@@ -1168,11 +1170,11 @@ gbuildSources verbosity pkgId specVer tmpDir bm =
                   }
         else
           let (csf, cxxsf)
-                | isCxx main = (cSources bnfo, main : cxxSources bnfo)
+                | isCxx main = (cSources bnfo, extraSourceFromPath main : cxxSources bnfo)
                 -- if main is not a Haskell source
                 -- and main is not a C++ source
                 -- then we assume that it is a C source
-                | otherwise = (main : cSources bnfo, cxxSources bnfo)
+                | otherwise = (extraSourceFromPath main : cSources bnfo, cxxSources bnfo)
            in return
                 BuildSources
                   { cSourcesFiles = csf
@@ -1248,8 +1250,8 @@ gbuild verbosity numJobs pkg_descr lbi bm clbi = do
       inputModules = inputSourceModules buildSources
       isGhcDynamic = isDynamic comp
       dynamicTooSupported = supportsDynamicToo comp
-      cObjs = map (`replaceExtension` objExtension) cSrcs
-      cxxObjs = map (`replaceExtension` objExtension) cxxSrcs
+      cObjs = map ((`replaceExtension` objExtension) . extraSourceFile) cSrcs
+      cxxObjs = map ((`replaceExtension` objExtension) . extraSourceFile) cxxSrcs
       needDynamic = gbuildNeedDynamic lbi bm
       needProfiling = withProfExe lbi
 
@@ -1265,13 +1267,13 @@ gbuild verbosity numJobs pkg_descr lbi bm clbi = do
           `mappend` mempty
             { ghcOptMode = toFlag GhcModeMake
             , ghcOptInputFiles =
-                toNubListR $
-                  if package pkg_descr == fakePackageId
+                toNubListR
+                  $ if package pkg_descr == fakePackageId
                     then filter isHaskell inputFiles
                     else inputFiles
             , ghcOptInputScripts =
-                toNubListR $
-                  if package pkg_descr == fakePackageId
+                toNubListR
+                  $ if package pkg_descr == fakePackageId
                     then filter (not . isHaskell) inputFiles
                     else []
             , ghcOptInputModules = toNubListR inputModules
@@ -1326,11 +1328,11 @@ gbuild verbosity numJobs pkg_descr lbi bm clbi = do
           , ghcOptLinkLibs = extraLibs bnfo
           , ghcOptLinkLibPath = toNubListR $ extraLibDirs bnfo
           , ghcOptLinkFrameworks =
-              toNubListR $
-                PD.frameworks bnfo
+              toNubListR
+                $ PD.frameworks bnfo
           , ghcOptLinkFrameworkDirs =
-              toNubListR $
-                PD.extraFrameworkDirs bnfo
+              toNubListR
+                $ PD.extraFrameworkDirs bnfo
           , ghcOptInputFiles =
               toNubListR
                 [tmpDir </> x | x <- cObjs ++ cxxObjs]
@@ -1390,8 +1392,8 @@ gbuild verbosity numJobs pkg_descr lbi bm clbi = do
         | otherwise = doingTH && (needProfiling || needDynamic)
 
   -- Build static/dynamic object files for TH, if needed.
-  when compileForTH $
-    runGhcProg
+  when compileForTH
+    $ runGhcProg
       compileTHOpts
         { ghcOptNoLink = toFlag True
         , ghcOptNumJobs = numJobs
@@ -1415,44 +1417,44 @@ gbuild verbosity numJobs pkg_descr lbi bm clbi = do
     info verbosity "Building C++ Sources..."
     sequence_
       [ do
-        let baseCxxOpts =
-              Internal.componentCxxGhcOptions
-                verbosity
-                lbi
-                bnfo
-                clbi
-                tmpDir
-                filename
-            vanillaCxxOpts =
-              if isGhcDynamic
-                then -- Dynamic GHC requires C++ sources to be built
-                -- with -fPIC for REPL to work. See #2207.
-                  baseCxxOpts{ghcOptFPic = toFlag True}
-                else baseCxxOpts
-            profCxxOpts =
-              vanillaCxxOpts
-                `mappend` mempty
-                  { ghcOptProfilingMode = toFlag True
-                  }
-            sharedCxxOpts =
-              vanillaCxxOpts
-                `mappend` mempty
-                  { ghcOptFPic = toFlag True
-                  , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-                  }
-            opts
-              | needProfiling = profCxxOpts
-              | needDynamic = sharedCxxOpts
-              | otherwise = vanillaCxxOpts
-            -- TODO: Placing all Haskell, C, & C++ objects in a single directory
-            --       Has the potential for file collisions. In general we would
-            --       consider this a user error. However, we should strive to
-            --       add a warning if this occurs.
-            odir = fromFlag (ghcOptObjDir opts)
-        createDirectoryIfMissingVerbose verbosity True odir
-        needsRecomp <- checkNeedsRecompilation filename opts
-        when needsRecomp $
-          runGhcProg opts
+          let baseCxxOpts =
+                Internal.componentCxxGhcOptions
+                  verbosity
+                  lbi
+                  bnfo
+                  clbi
+                  tmpDir
+                  filename
+              vanillaCxxOpts =
+                if isGhcDynamic
+                  then -- Dynamic GHC requires C++ sources to be built
+                  -- with -fPIC for REPL to work. See #2207.
+                    baseCxxOpts{ghcOptFPic = toFlag True}
+                  else baseCxxOpts
+              profCxxOpts =
+                vanillaCxxOpts
+                  `mappend` mempty
+                    { ghcOptProfilingMode = toFlag True
+                    }
+              sharedCxxOpts =
+                vanillaCxxOpts
+                  `mappend` mempty
+                    { ghcOptFPic = toFlag True
+                    , ghcOptDynLinkMode = toFlag GhcDynamicOnly
+                    }
+              opts
+                | needProfiling = profCxxOpts
+                | needDynamic = sharedCxxOpts
+                | otherwise = vanillaCxxOpts
+              -- TODO: Placing all Haskell, C, & C++ objects in a single directory
+              --       Has the potential for file collisions. In general we would
+              --       consider this a user error. However, we should strive to
+              --       add a warning if this occurs.
+              odir = fromFlag (ghcOptObjDir opts)
+          createDirectoryIfMissingVerbose verbosity True odir
+          needsRecomp <- checkNeedsRecompilation (extraSourceFile filename) opts
+          when needsRecomp
+            $ runGhcProg opts
       | filename <- cxxSrcs
       ]
 
@@ -1461,40 +1463,40 @@ gbuild verbosity numJobs pkg_descr lbi bm clbi = do
     info verbosity "Building C Sources..."
     sequence_
       [ do
-        let baseCcOpts =
-              Internal.componentCcGhcOptions
-                verbosity
-                lbi
-                bnfo
-                clbi
-                tmpDir
-                filename
-            vanillaCcOpts =
-              if isGhcDynamic
-                then -- Dynamic GHC requires C sources to be built
-                -- with -fPIC for REPL to work. See #2207.
-                  baseCcOpts{ghcOptFPic = toFlag True}
-                else baseCcOpts
-            profCcOpts =
-              vanillaCcOpts
-                `mappend` mempty
-                  { ghcOptProfilingMode = toFlag True
-                  }
-            sharedCcOpts =
-              vanillaCcOpts
-                `mappend` mempty
-                  { ghcOptFPic = toFlag True
-                  , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-                  }
-            opts
-              | needProfiling = profCcOpts
-              | needDynamic = sharedCcOpts
-              | otherwise = vanillaCcOpts
-            odir = fromFlag (ghcOptObjDir opts)
-        createDirectoryIfMissingVerbose verbosity True odir
-        needsRecomp <- checkNeedsRecompilation filename opts
-        when needsRecomp $
-          runGhcProg opts
+          let baseCcOpts =
+                Internal.componentCcGhcOptions
+                  verbosity
+                  lbi
+                  bnfo
+                  clbi
+                  tmpDir
+                  filename
+              vanillaCcOpts =
+                if isGhcDynamic
+                  then -- Dynamic GHC requires C sources to be built
+                  -- with -fPIC for REPL to work. See #2207.
+                    baseCcOpts{ghcOptFPic = toFlag True}
+                  else baseCcOpts
+              profCcOpts =
+                vanillaCcOpts
+                  `mappend` mempty
+                    { ghcOptProfilingMode = toFlag True
+                    }
+              sharedCcOpts =
+                vanillaCcOpts
+                  `mappend` mempty
+                    { ghcOptFPic = toFlag True
+                    , ghcOptDynLinkMode = toFlag GhcDynamicOnly
+                    }
+              opts
+                | needProfiling = profCcOpts
+                | needDynamic = sharedCcOpts
+                | otherwise = vanillaCcOpts
+              odir = fromFlag (ghcOptObjDir opts)
+          createDirectoryIfMissingVerbose verbosity True odir
+          needsRecomp <- checkNeedsRecompilation (extraSourceFile filename) opts
+          when needsRecomp
+            $ runGhcProg opts
       | filename <- cSrcs
       ]
 
@@ -1812,15 +1814,15 @@ installExe
         exeFileName = exeName'
         fixedExeBaseName = progprefix ++ exeName' ++ progsuffix
         installBinary dest = do
-          runDbProgram verbosity ghcjsProgram (withPrograms lbi) $
-            [ "--install-executable"
-            , buildPref </> exeName' </> exeFileName
-            , "-o"
-            , dest
-            ]
-              ++ case (stripExes lbi, lookupProgram stripProgram $ withPrograms lbi) of
-                (True, Just strip) -> ["-strip-program", programPath strip]
-                _ -> []
+          runDbProgram verbosity ghcjsProgram (withPrograms lbi)
+            $ [ "--install-executable"
+              , buildPref </> exeName' </> exeFileName
+              , "-o"
+              , dest
+              ]
+            ++ case (stripExes lbi, lookupProgram stripProgram $ withPrograms lbi) of
+              (True, Just strip) -> ["-strip-program", programPath strip]
+              _ -> []
     installBinary (binDir </> fixedExeBaseName)
 
 -- | Install foreign library for GHC.
@@ -1881,12 +1883,12 @@ installLib verbosity lbi targetDir dynlibTargetDir _builtDir _pkg lib clbi = do
     whenProf $ do
       installOrdinary builtDir' targetDir (toJSLibName profileLibName)
     -- whenGHCi $ installOrdinary builtDir targetDir (toJSLibName ghciProfLibName)
-    whenShared $
-      sequence_
+    whenShared
+      $ sequence_
         [ installShared
-          builtDir'
-          dynlibTargetDir
-          (toJSLibName $ mkGenericSharedLibName platform compiler_id (l ++ f))
+            builtDir'
+            dynlibTargetDir
+            (toJSLibName $ mkGenericSharedLibName platform compiler_id (l ++ f))
         | l <- getHSLibraryName uid : extraBundledLibs (libBuildInfo lib)
         , f <- "" : extraDynLibFlavours (libBuildInfo lib)
         ]
@@ -1902,8 +1904,8 @@ installLib verbosity lbi targetDir dynlibTargetDir _builtDir _pkg lib clbi = do
         then installExecutableFile verbosity src dst
         else installOrdinaryFile verbosity src dst
 
-      when (stripLibs lbi && not isJS) $
-        Strip.stripLib
+      when (stripLibs lbi && not isJS)
+        $ Strip.stripLib
           verbosity
           (hostPlatform lbi)
           (withPrograms lbi)
@@ -1924,11 +1926,11 @@ installLib verbosity lbi targetDir dynlibTargetDir _builtDir _pkg lib clbi = do
     -- sharedLibName  = (mkSharedLibName (hostPlatform lbi) compiler_id)  uid
 
     hasLib =
-      not $
-        null (allLibModules lib clbi)
-          && null (cSources (libBuildInfo lib))
-          && null (cxxSources (libBuildInfo lib))
-          && null (jsSources (libBuildInfo lib))
+      not
+        $ null (allLibModules lib clbi)
+        && null (cSources (libBuildInfo lib))
+        && null (cxxSources (libBuildInfo lib))
+        && null (jsSources (libBuildInfo lib))
     has_code = not (componentIsIndefinite clbi)
     whenHasCode = when has_code
     whenVanilla = when (hasLib && withVanillaLib lbi)
@@ -2011,7 +2013,7 @@ pkgRoot verbosity lbi = pkgRoot'
             System.Info.arch
               ++ '-'
               : System.Info.os
-              ++ '-'
+                ++ '-'
               : prettyShow ver
           rootDir = appDir </> subdir
       -- We must create the root directory for the user package database if it

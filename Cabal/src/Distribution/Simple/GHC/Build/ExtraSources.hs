@@ -14,6 +14,7 @@ import Distribution.Utils.NubList
 
 import Distribution.Types.BuildInfo
 import Distribution.Types.Component
+import Distribution.Types.ExtraSource (ExtraSource (..), extraSourceFromPath)
 import Distribution.Types.TargetInfo
 
 import Distribution.Simple.GHC.Build.Utils
@@ -21,7 +22,7 @@ import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program.Types
 import Distribution.System (Arch (JavaScript), Platform (..))
 import Distribution.Types.ComponentLocalBuildInfo
-import Distribution.Types.Executable
+import Distribution.Types.Executable (Executable (..))
 import Distribution.Verbosity (Verbosity)
 
 import Distribution.Simple.Build.Inputs
@@ -46,19 +47,17 @@ buildAllExtraSources =
     , buildCmmSources
     ]
 
-buildCSources
-  , buildCxxSources
-  , buildJsSources
-  , buildAsmSources
-  , buildCmmSources
-    :: ConfiguredProgram
-    -- ^ The GHC configured program
-    -> FilePath
-    -- ^ The build directory for this target
-    -> PreBuildComponentInputs
-    -- ^ The context and component being built in it.
-    -> IO (NubListR FilePath)
-    -- ^ Returns the list of extra sources that were built
+type ExtraSourceBuilder =
+  ConfiguredProgram
+  -- ^ The GHC configured program
+  -> FilePath
+  -- ^ The build directory for this target
+  -> PreBuildComponentInputs
+  -- ^ The context and component being built in it.
+  -> IO (NubListR FilePath)
+  -- ^ Returns the list of extra sources that were built
+
+buildCSources :: ExtraSourceBuilder
 buildCSources =
   buildExtraSources
     "C Sources"
@@ -67,9 +66,13 @@ buildCSources =
     ( \c ->
         cSources (componentBuildInfo c)
           ++ case c of
-            CExe exe | isC (modulePath exe) -> [modulePath exe]
+            CExe exe
+              | isC (modulePath exe) ->
+                  [extraSourceFromPath (modulePath exe)]
             _otherwise -> []
     )
+
+buildCxxSources :: ExtraSourceBuilder
 buildCxxSources =
   buildExtraSources
     "C++ Sources"
@@ -78,9 +81,13 @@ buildCxxSources =
     ( \c ->
         cxxSources (componentBuildInfo c)
           ++ case c of
-            CExe exe | isCxx (modulePath exe) -> [modulePath exe]
+            CExe exe
+              | isCxx (modulePath exe) ->
+                  [extraSourceFromPath (modulePath exe)]
             _otherwise -> []
     )
+
+buildJsSources :: ExtraSourceBuilder
 buildJsSources ghcProg buildTargetDir = do
   Platform hostArch _ <- hostPlatform <$> localBuildInfo
   let hasJsSupport = hostArch == JavaScript
@@ -99,12 +106,16 @@ buildJsSources ghcProg buildTargetDir = do
     )
     ghcProg
     buildTargetDir
+
+buildAsmSources :: ExtraSourceBuilder
 buildAsmSources =
   buildExtraSources
     "Assembler Sources"
     Internal.componentAsmGhcOptions
     True
     (asmSources . componentBuildInfo)
+
+buildCmmSources :: ExtraSourceBuilder
 buildCmmSources =
   buildExtraSources
     "C-- Sources"
@@ -118,7 +129,7 @@ buildCmmSources =
 buildExtraSources
   :: String
   -- ^ String describing the extra sources being built, for printing.
-  -> (Verbosity -> LocalBuildInfo -> BuildInfo -> ComponentLocalBuildInfo -> FilePath -> FilePath -> GhcOptions)
+  -> (Verbosity -> LocalBuildInfo -> BuildInfo -> ComponentLocalBuildInfo -> FilePath -> ExtraSource -> GhcOptions)
   -- ^ Function to determine the @'GhcOptions'@ for the
   -- invocation of GHC when compiling these extra sources (e.g.
   -- @'Internal.componentCxxGhcOptions'@,
@@ -127,7 +138,7 @@ buildExtraSources
   -- ^ Some types of build sources should not be built in the dynamic way, namely, JS sources.
   -- I'm not entirely sure this remains true after we migrate to supporting GHC's JS backend rather than GHCJS.
   -- Boolean for "do we allow building these sources the dynamic way?"
-  -> (Component -> [FilePath])
+  -> (Component -> [ExtraSource])
   -- ^ View the extra sources of a component, typically from
   -- the build info (e.g. @'asmSources'@, @'cSources'@).
   -- @'Executable'@ components might additionally add the
@@ -161,6 +172,7 @@ buildExtraSources description componentSourceGhcOptions wantDyn viewSources ghcP
       forceSharedLib = doingTH && isGhcDynamic
       runGhcProg = runGHC verbosity ghcProg comp platform
 
+      buildAction :: ExtraSource -> IO ()
       buildAction sourceFile = do
         let baseSrcOpts =
               componentSourceGhcOptions
@@ -192,7 +204,7 @@ buildExtraSources description componentSourceGhcOptions wantDyn viewSources ghcP
             --       add a warning if this occurs.
             odir = fromFlag (ghcOptObjDir vanillaSrcOpts)
             compileIfNeeded opts = do
-              needsRecomp <- checkNeedsRecompilation sourceFile opts
+              needsRecomp <- checkNeedsRecompilation (extraSourceFile sourceFile) opts
               when needsRecomp $ runGhcProg opts
 
         -- TODO: This whole section can be streamlined to the
@@ -239,4 +251,4 @@ buildExtraSources description componentSourceGhcOptions wantDyn viewSources ghcP
         else do
           info verbosity ("Building " ++ description ++ "...")
           traverse_ buildAction sources
-          return (toNubListR sources)
+          return (toNubListR $ map extraSourceFile sources)

@@ -11,6 +11,7 @@ import Prelude ()
 import Distribution.Compiler (PerCompilerFlavor)
 import Distribution.ModuleName (ModuleName)
 import Distribution.Types.BuildInfo (BuildInfo)
+import Distribution.Types.ExtraSource (ExtraSource)
 import Distribution.Types.Dependency (Dependency)
 import Distribution.Types.ExeDependency (ExeDependency)
 import Distribution.Types.LegacyExeDependency (LegacyExeDependency)
@@ -77,23 +78,23 @@ class HasBuildInfo a where
   extraFrameworkDirs = buildInfo . extraFrameworkDirs
   {-# INLINE extraFrameworkDirs #-}
 
-  asmSources :: Lens' a [FilePath]
+  asmSources :: Lens' a [ExtraSource]
   asmSources = buildInfo . asmSources
   {-# INLINE asmSources #-}
 
-  cmmSources :: Lens' a [FilePath]
+  cmmSources :: Lens' a [ExtraSource]
   cmmSources = buildInfo . cmmSources
   {-# INLINE cmmSources #-}
 
-  cSources :: Lens' a [FilePath]
+  cSources :: Lens' a [ExtraSource]
   cSources = buildInfo . cSources
   {-# INLINE cSources #-}
 
-  cxxSources :: Lens' a [FilePath]
+  cxxSources :: Lens' a [ExtraSource]
   cxxSources = buildInfo . cxxSources
   {-# INLINE cxxSources #-}
 
-  jsSources :: Lens' a [FilePath]
+  jsSources :: Lens' a [ExtraSource]
   jsSources = buildInfo . jsSources
   {-# INLINE jsSources #-}
 
@@ -261,7 +262,7 @@ instance HasBuildInfo BuildInfo where
   cSources f s = fmap (\x -> s{T.cSources = x}) (f (T.cSources s))
   {-# INLINE cSources #-}
 
-  cxxSources f s = fmap (\x -> s{T.cSources = x}) (f (T.cxxSources s))
+  cxxSources f s = fmap (\x -> s{T.cxxSources = x}) (f (T.cxxSources s))
   {-# INLINE cxxSources #-}
 
   jsSources f s = fmap (\x -> s{T.jsSources = x}) (f (T.jsSources s))

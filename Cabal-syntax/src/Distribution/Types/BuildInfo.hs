@@ -19,6 +19,7 @@ import Prelude ()
 
 import Distribution.Types.Dependency
 import Distribution.Types.ExeDependency
+import Distribution.Types.ExtraSource
 import Distribution.Types.LegacyExeDependency
 import Distribution.Types.Mixin
 import Distribution.Types.PkgconfigDependency
@@ -69,13 +70,15 @@ data BuildInfo = BuildInfo
   -- ^ support frameworks for Mac OS X
   , extraFrameworkDirs :: [String]
   -- ^ extra locations to find frameworks.
-  , asmSources :: [FilePath]
-  -- ^ Assembly files.
-  , cmmSources :: [FilePath]
-  -- ^ C-- files.
-  , cSources :: [FilePath]
-  , cxxSources :: [FilePath]
-  , jsSources :: [FilePath]
+  , asmSources :: [ExtraSource]
+  -- ^ Assembly source files
+  , cmmSources :: [ExtraSource]
+  -- ^ C-- source files
+  , cSources :: [ExtraSource]
+  -- ^ C source files
+  , cxxSources :: [ExtraSource]
+  -- ^ C++ source files
+  , jsSources :: [ExtraSource]
   , hsSourceDirs :: [SymbolicPath PackageDir SourceDir]
   -- ^ where to look for the Haskell module hierarchy
   , otherModules :: [ModuleName]

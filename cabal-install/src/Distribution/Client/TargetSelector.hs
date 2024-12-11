@@ -79,7 +79,7 @@ import Distribution.PackageDescription
   , benchmarkModules
   , exeModules
   , explicitLibModules
-  , testModules
+  , testModules, ExtraSource (..)
   )
 import Distribution.PackageDescription.Configuration
   ( flattenPackageDescription
@@ -1920,8 +1920,10 @@ collectKnownComponentInfo pkg =
     , cinfoSrcDirs = ordNub (map getSymbolicPath (hsSourceDirs bi))
     , cinfoModules = ordNub (componentModules c)
     , cinfoHsFiles = ordNub (componentHsFiles c)
-    , cinfoCFiles = ordNub (cSources bi)
-    , cinfoJsFiles = ordNub (jsSources bi)
+==== BASE ====
+    , cinfoCFiles = ordNub (map getSymbolicPath $ cSources bi)
+    , cinfoJsFiles = ordNub (map getSymbolicPath $ jsSources bi)
+==== BASE ====
     }
   | c <- pkgComponents pkg
   , let bi = componentBuildInfo c

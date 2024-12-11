@@ -497,11 +497,11 @@ pkgComponentInfo pkg =
     , cinfoSrcDirs = map getSymbolicPath $ hsSourceDirs bi
     , cinfoModules = componentModules c
     , cinfoHsFiles = componentHsFiles c
-    , cinfoAsmFiles = asmSources bi
-    , cinfoCmmFiles = cmmSources bi
-    , cinfoCFiles = cSources bi
-    , cinfoCxxFiles = cxxSources bi
-    , cinfoJsFiles = jsSources bi
+    , cinfoAsmFiles = map extraSourceFile $ asmSources bi
+    , cinfoCmmFiles = map extraSourceFile $ cmmSources bi
+    , cinfoCFiles = map extraSourceFile $ cSources bi
+    , cinfoCxxFiles = map extraSourceFile $ cxxSources bi
+    , cinfoJsFiles = map extraSourceFile $ jsSources bi
     }
   | c <- pkgComponents pkg
   , let bi = componentBuildInfo c

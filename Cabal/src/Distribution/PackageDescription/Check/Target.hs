@@ -431,11 +431,11 @@ checkBuildInfoPathsContent bi = do
 -- Paths well-formedness check for BuildInfo.
 checkBuildInfoPathsWellFormedness :: Monad m => BuildInfo -> CheckM m ()
 checkBuildInfoPathsWellFormedness bi = do
-  mapM_ (checkPath False "asm-sources" PathKindFile) (asmSources bi)
-  mapM_ (checkPath False "cmm-sources" PathKindFile) (cmmSources bi)
-  mapM_ (checkPath False "c-sources" PathKindFile) (cSources bi)
-  mapM_ (checkPath False "cxx-sources" PathKindFile) (cxxSources bi)
-  mapM_ (checkPath False "js-sources" PathKindFile) (jsSources bi)
+  mapM_ (checkPath False "asm-sources" PathKindFile . extraSourceFile) (asmSources bi)
+  mapM_ (checkPath False "cmm-sources" PathKindFile . extraSourceFile) (cmmSources bi)
+  mapM_ (checkPath False "c-sources" PathKindFile . extraSourceFile) (cSources bi)
+  mapM_ (checkPath False "cxx-sources" PathKindFile . extraSourceFile) (cxxSources bi)
+  mapM_ (checkPath False "js-sources" PathKindFile . extraSourceFile) (jsSources bi)
   mapM_
     (checkPath False "install-includes" PathKindFile)
     (installIncludes bi)
@@ -501,8 +501,8 @@ checkBuildInfoFeatures bi sv = do
     (PackageBuildWarning CVExtensionsDeprecated)
 
   -- asm-sources, cmm-sources and friends only w/ spec ≥ 1.10
-  checkCVSources (asmSources bi)
-  checkCVSources (cmmSources bi)
+  checkCVSources (map extraSourceFile $ asmSources bi)
+  checkCVSources (map extraSourceFile $ cmmSources bi)
   checkCVSources (extraBundledLibs bi)
   checkCVSources (extraLibFlavours bi)
 
