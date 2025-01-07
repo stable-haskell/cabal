@@ -579,7 +579,7 @@ componentCmmGhcOptions verbosity lbi bi clbi odir extraSource =
     , ghcOptPackages = toNubListR $ mkGhcOptPackages (promisedPkgs lbi) clbi
     , ghcOptOptimisation = toGhcOptimisation (withOptimization lbi)
     , ghcOptDebugInfo = toFlag (withDebugInfo lbi)
-    , ghcOptExtra = cmmOptions bi
+    , ghcOptExtra = cmmOptions bi ++ extraSourceOpts extraSource
     , ghcOptObjDir = toFlag odir
     }
 
