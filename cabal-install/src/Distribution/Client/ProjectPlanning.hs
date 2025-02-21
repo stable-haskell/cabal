@@ -108,6 +108,7 @@ import Distribution.Client.Dependency
 import Distribution.Client.DistDirLayout
 import Distribution.Client.FetchUtils
 import Distribution.Client.HashValue
+import Distribution.Client.HookAccept (HookAccept)
 import Distribution.Client.HttpUtils
 import Distribution.Client.JobControl
 import Distribution.Client.PackageHash
@@ -535,6 +536,7 @@ configureCompiler
 --
 rebuildInstallPlan
   :: Verbosity
+  -> Map FilePath HookAccept
   -> DistDirLayout
   -> CabalDirLayout
   -> ProjectConfig
@@ -550,6 +552,7 @@ rebuildInstallPlan
   -- ^ @(improvedPlan, elaboratedPlan, _, _, _)@
 rebuildInstallPlan
   verbosity
+  hookHashes
   distDirLayout@DistDirLayout
     { distProjectRootDirectory
     , distProjectCacheFile
@@ -567,7 +570,7 @@ rebuildInstallPlan
         fileMonitorImprovedPlan
         -- react to changes in the project config,
         -- the package .cabal files and the path
-        (projectConfigMonitored, localPackages, progsearchpath)
+        (projectConfigMonitored, localPackages, progsearchpath, hookHashes)
         $ do
           -- And so is the elaborated plan that the improved plan based on
           (elaboratedPlan, elaboratedShared, totalIndexState, activeRepos) <-
@@ -577,6 +580,7 @@ rebuildInstallPlan
               ( projectConfigMonitored
               , localPackages
               , progsearchpath
+              , hookHashes
               )
               $ do
                 compilerEtc <- phaseConfigureCompiler projectConfig
@@ -683,6 +687,7 @@ rebuildInstallPlan
             , compiler
             , platform
             , programDbSignature progdb
+            , hookHashes
             )
             $ do
               installedPkgIndex <-
@@ -811,6 +816,7 @@ rebuildInstallPlan
             liftIO . runLogProgress verbosity $
               elaborateInstallPlan
                 verbosity
+                hookHashes
                 platform
                 compiler
                 progdb
@@ -1531,6 +1537,7 @@ planPackages
 -- matching that of the classic @cabal install --user@ or @--global@
 elaborateInstallPlan
   :: Verbosity
+  -> Map FilePath HookAccept
   -> Platform
   -> Compiler
   -> ProgramDb
@@ -1548,6 +1555,7 @@ elaborateInstallPlan
   -> LogProgress (ElaboratedInstallPlan, ElaboratedSharedConfig)
 elaborateInstallPlan
   verbosity
+  hookHashes
   platform
   compiler
   compilerprogdb
@@ -1571,6 +1579,7 @@ elaborateInstallPlan
           , pkgConfigCompiler = compiler
           , pkgConfigCompilerProgs = compilerprogdb
           , pkgConfigReplOptions = mempty
+          , pkgConfigHookHashes = hookHashes
           }
 
       preexistingInstantiatedPkgs :: Map UnitId FullUnitId

@@ -5,6 +5,7 @@
 module Distribution.Client.HashValue
   ( HashValue
   , hashValue
+  , hashValueFromHex
   , truncateHash
   , showHashValue
   , readFileHashValue
@@ -51,6 +52,11 @@ instance Structured HashValue
 -- | Hash some data. Currently uses SHA256.
 hashValue :: LBS.ByteString -> HashValue
 hashValue = HashValue . SHA256.hashlazy
+
+-- From a base16 encoded Bytestring to a HashValue with `Base16`'s
+-- error passing through.
+hashValueFromHex :: BS.ByteString -> Either String HashValue
+hashValueFromHex bs = HashValue <$> Base16.decode bs
 
 showHashValue :: HashValue -> String
 showHashValue (HashValue digest) = BS.unpack (Base16.encode digest)
