@@ -78,6 +78,7 @@ instance ToExpr ExeDependency
 instance ToExpr Executable
 instance ToExpr ExecutableScope
 instance ToExpr ExposedModule
+instance ToExpr ExtraSource
 instance ToExpr FlagAssignment
 instance ToExpr FlagName
 instance ToExpr ForeignLib

@@ -72,6 +72,7 @@ instance NoThunks ConfVar
 instance NoThunks Dependency
 instance NoThunks Executable
 instance NoThunks ExecutableScope
+instance NoThunks ExtraSource
 instance NoThunks FlagName
 instance NoThunks ForeignLib
 instance NoThunks ForeignLibOption
