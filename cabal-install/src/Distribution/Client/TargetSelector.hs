@@ -79,7 +79,8 @@ import Distribution.PackageDescription
   , benchmarkModules
   , exeModules
   , explicitLibModules
-  , testModules, ExtraSource (..)
+  , testModules
+  , extraSourceFile
   )
 import Distribution.PackageDescription.Configuration
   ( flattenPackageDescription
