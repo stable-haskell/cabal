@@ -129,6 +129,7 @@ data InitFlags = InitFlags
   , initializeTestSuite :: Flag Bool
   , testDirs :: Flag [String]
   , initHcPath :: Flag FilePath
+  , initHcNativePath :: Flag FilePath
   , initVerbosity :: Flag Verbosity
   , overwrite :: Flag Bool
   }

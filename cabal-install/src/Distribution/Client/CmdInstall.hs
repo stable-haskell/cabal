@@ -426,6 +426,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
 
     hcFlavor = flagToMaybe projectConfigHcFlavor
     hcPath = flagToMaybe projectConfigHcPath
+    hcNativePath = Nothing
     hcPkg = flagToMaybe projectConfigHcPkg
     extraPath = fromNubList packageConfigProgramPathExtra ++ fromNubList projectConfigProgPathExtra
 
@@ -438,8 +439,8 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
         $ configProgDb
 
   -- progDb is a program database with compiler tools configured properly
-  (compiler@Compiler{compilerId = CompilerId compilerFlavor compilerVersion}, platform, progDb) <-
-    configCompilerEx hcFlavor hcPath hcPkg preProgDb verbosity
+  (compiler@Compiler{compilerId = CompilerId compilerFlavor compilerVersion}, mbNativeCompiler, platform, progDb) <-
+    configCompilerEx hcFlavor hcPath hcNativePath hcPkg preProgDb verbosity
 
   let
     GhcImplInfo{supportsPkgEnvFiles} = getImplInfo compiler

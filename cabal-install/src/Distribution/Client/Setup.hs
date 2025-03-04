@@ -886,7 +886,7 @@ configPackageDB' cfg =
     userInstall = Cabal.fromFlagOrDefault True (configUserInstall cfg)
 
 -- | Configure the compiler, but reduce verbosity during this step.
-configCompilerAux' :: ConfigFlags -> IO (Compiler, Platform, ProgramDb)
+configCompilerAux' :: ConfigFlags -> IO (Compiler, Compiler, Platform, ProgramDb)
 configCompilerAux' configFlags = do
   let commonFlags = configCommonFlags configFlags
   configCompilerAuxEx
@@ -2059,6 +2059,7 @@ data ListFlags = ListFlags
   , listVerbosity :: Flag Verbosity
   , listPackageDBs :: [Maybe PackageDB]
   , listHcPath :: Flag FilePath
+  , listHcNativePath :: Flag FilePath
   }
   deriving (Generic)
 
@@ -2071,6 +2072,7 @@ defaultListFlags =
     , listVerbosity = toFlag normal
     , listPackageDBs = []
     , listHcPath = mempty
+    , listHcNativePath = mempty
     }
 
 listCommand :: CommandUI ListFlags
@@ -2144,6 +2146,13 @@ listOptions =
       "give the path to a particular compiler"
       listHcPath
       (\v flags -> flags{listHcPath = v})
+      (reqArgFlag "PATH")
+  , option
+      "W"
+      ["with-native-compiler"]
+      "give the path to a particular native compiler"
+      listHcNativePath
+      (\v flags -> flags{listHcNativePath = v})
       (reqArgFlag "PATH")
   ]
 
@@ -3340,6 +3349,14 @@ initOptions _ =
       \to set the bounds inferred for the 'base' package."
       IT.initHcPath
       (\v flags -> flags{IT.initHcPath = v})
+      (reqArgFlag "PATH")
+  , option
+      "W"
+      ["with-native-compiler"]
+      "give the path to a particular native compiler. For 'init', this flag is used \
+      \to set the bounds inferred for the 'base' package."
+      IT.initHcNativePath
+      (\v flags -> flags{IT.initHcNativePath = v})
       (reqArgFlag "PATH")
   , optionVerbosity IT.initVerbosity (\v flags -> flags{IT.initVerbosity = v})
   ]

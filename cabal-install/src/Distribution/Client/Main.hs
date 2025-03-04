@@ -33,7 +33,7 @@ import Distribution.Client.Setup
   , GetFlags (..)
   , GlobalFlags (..)
   , InfoFlags (..)
-  , InitFlags (initHcPath, initVerbosity)
+  , InitFlags (initHcPath, initHcNativePath, initVerbosity)
   , InstallFlags (..)
   , ListFlags (..)
   , ReportFlags (..)
@@ -522,6 +522,7 @@ wrapperAction command getCommonFlags =
               { useDistPref = distPref
               , useWorkingDir = mbWorkDir
               }
+      putStrLn "SETUP WRAPPER (3)"
       setupWrapper
         verbosity
         setupScriptOptions
@@ -547,7 +548,7 @@ configureAction (configFlags, configExFlags) extraArgs globalFlags = do
     let configFlags' = savedConfigureFlags config `mappend` configFlags
         configExFlags' = savedConfigureExFlags config `mappend` configExFlags
         globalFlags' = savedGlobalFlags config `mappend` globalFlags
-    (comp, platform, progdb) <- configCompilerAuxEx configFlags'
+    (comp, mbNativeComp, platform, progdb) <- configCompilerAuxEx configFlags'
 
     writeConfigFlags verbosity distPref (configFlags', configExFlags')
 
@@ -630,7 +631,8 @@ buildAction buildFlags extraArgs globalFlags = do
 -- 'buildAction' so that 'testAction' and 'benchmarkAction' do not invoke
 -- 'reconfigure' twice.
 build :: Verbosity -> SavedConfig -> SymbolicPath Pkg (Dir Dist) -> BuildFlags -> [String] -> IO ()
-build verbosity config distPref buildFlags extraArgs =
+build verbosity config distPref buildFlags extraArgs = do
+  putStrLn "SETUP WRAPPER (3)"
   setupWrapper
     verbosity
     setupOptions
@@ -723,7 +725,8 @@ replAction replFlags extraArgs globalFlags = do
                     }
               }
 
-      nixShell verbosity (getSymbolicPath distPref) globalFlags config $
+      nixShell verbosity (getSymbolicPath distPref) globalFlags config $ do
+        putStrLn "SETUP WRAPPER (4)"
         setupWrapper
           verbosity
           setupOptions
@@ -737,7 +740,7 @@ replAction replFlags extraArgs globalFlags = do
     -- using the sandbox package DB).
     onNoPkgDesc = do
       let configFlags = savedConfigureFlags config
-      (comp, platform, programDb) <- configCompilerAux' configFlags
+      (comp, mbNativeComp, platform, programDb) <- configCompilerAux' configFlags
       programDb' <-
         reconfigurePrograms
           verbosity
@@ -771,6 +774,7 @@ installAction (configFlags, _, installFlags, _, _, _) _ globalFlags
       config <- loadConfigOrSandboxConfig verb globalFlags
       dist <- findSavedDistPref config (setupDistPref common)
       let setupOpts = defaultSetupScriptOptions{useDistPref = dist}
+      putStrLn "SETUP WRAPPER (5)"
       setupWrapper
         verb
         setupOpts
@@ -845,7 +849,7 @@ installAction
                       }
                 }
           globalFlags' = savedGlobalFlags config `mappend` globalFlags
-      (comp, platform, progdb) <- configCompilerAux' configFlags'
+      (comp, mbNativeComp, platform, progdb) <- configCompilerAux' configFlags'
 
       -- TODO: Redesign ProgramDB API to prevent such problems as #2241 in the
       -- future.
@@ -938,6 +942,7 @@ testAction (buildFlags, testFlags) extraArgs globalFlags = do
           | otherwise = extraArgs
 
     build verbosity config distPref buildFlags' extraArgs'
+    putStrLn "SETUP WRAPPER (6)"
     setupWrapper
       verbosity
       setupOptions
@@ -1059,6 +1064,7 @@ benchmarkAction
             | otherwise = extraArgs
 
       build verbosity config' distPref buildFlags' extraArgs'
+      putStrLn "SETUP WRAPPER (7)"
       setupWrapper
         verbosity
         setupOptions
@@ -1099,6 +1105,7 @@ haddockAction haddockFlags extraArgs globalFlags = do
           defaultSetupScriptOptions
             { useDistPref = distPref
             }
+    putStrLn "SETUP WRAPPER (8)"
     setupWrapper
       verbosity
       setupScriptOptions
@@ -1134,6 +1141,7 @@ cleanAction cleanFlags extraArgs globalFlags = do
                 { setupDistPref = toFlag distPref
                 }
           }
+  putStrLn "SETUP WRAPPER (9)"
   setupWrapper
     verbosity
     setupScriptOptions
@@ -1154,12 +1162,13 @@ listAction listFlags extraArgs globalFlags = do
               configPackageDBs configFlags'
                 `mappend` listPackageDBs listFlags
           , configHcPath = listHcPath listFlags
+          , configHcNativePath = listHcNativePath listFlags
           }
       globalFlags' = savedGlobalFlags config `mappend` globalFlags
   compProgdb <-
     if listNeedsCompiler listFlags
       then do
-        (comp, _, progdb) <- configCompilerAux' configFlags
+        (comp, mbNativeComp, _, progdb) <- configCompilerAux' configFlags
         return (Just (comp, progdb))
       else return Nothing
   withRepoContext verbosity globalFlags' $ \repoContext ->
@@ -1184,7 +1193,7 @@ infoAction infoFlags extraArgs globalFlags = do
                 `mappend` infoPackageDBs infoFlags
           }
       globalFlags' = savedGlobalFlags config `mappend` globalFlags
-  (comp, _, progdb) <- configCompilerAuxEx configFlags
+  (comp, mbNativeComp, _, progdb) <- configCompilerAuxEx configFlags
   withRepoContext verbosity globalFlags' $ \repoContext ->
     List.info
       verbosity
@@ -1203,7 +1212,7 @@ fetchAction fetchFlags extraArgs globalFlags = do
   config <- loadConfig verbosity (globalConfigFile globalFlags)
   let configFlags = savedConfigureFlags config
       globalFlags' = savedGlobalFlags config `mappend` globalFlags
-  (comp, platform, progdb) <- configCompilerAux' configFlags
+  (comp, mbNativeComp, platform, progdb) <- configCompilerAux' configFlags
   withRepoContext verbosity globalFlags' $ \repoContext ->
     fetch
       verbosity
@@ -1224,7 +1233,7 @@ freezeAction freezeFlags _extraArgs globalFlags = do
   nixShell verbosity (getSymbolicPath distPref) globalFlags config $ do
     let configFlags = savedConfigureFlags config
         globalFlags' = savedGlobalFlags config `mappend` globalFlags
-    (comp, platform, progdb) <- configCompilerAux' configFlags
+    (comp, mbNativeComp, platform, progdb) <- configCompilerAux' configFlags
 
     withRepoContext verbosity globalFlags' $ \repoContext ->
       freeze
@@ -1245,7 +1254,7 @@ genBoundsAction freezeFlags _extraArgs globalFlags = do
   nixShell verbosity (getSymbolicPath distPref) globalFlags config $ do
     let configFlags = savedConfigureFlags config
         globalFlags' = savedGlobalFlags config `mappend` globalFlags
-    (comp, platform, progdb) <- configCompilerAux' configFlags
+    (comp, mbNativeComp, platform, progdb) <- configCompilerAux' configFlags
 
     withRepoContext verbosity globalFlags' $ \repoContext ->
       genBounds
@@ -1430,7 +1439,7 @@ initAction initFlags extraArgs globalFlags = do
           initFlags' = savedInitFlags confFlags `mappend` initFlags
           globalFlags' = savedGlobalFlags confFlags `mappend` globalFlags
 
-      (comp, _, progdb) <- configCompilerAux' confFlags'
+      (comp, mbNativeComp, _, progdb) <- configCompilerAux' confFlags'
 
       withRepoContext verbosity globalFlags' $ \repoContext ->
         initCmd
@@ -1442,7 +1451,7 @@ initAction initFlags extraArgs globalFlags = do
           initFlags'
 
     verbosity = fromFlag (initVerbosity initFlags)
-    compFlags = mempty{configHcPath = initHcPath initFlags}
+    compFlags = mempty{configHcPath = initHcPath initFlags, configHcNativePath = initHcNativePath initFlags}
 
 userConfigAction :: UserConfigFlags -> [String] -> Action
 userConfigAction ucflags extraArgs globalFlags = do

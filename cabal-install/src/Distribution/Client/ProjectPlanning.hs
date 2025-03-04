@@ -389,7 +389,7 @@ rebuildProjectConfig
 
           -- have to create the cache directory before configuring the compiler
           liftIO $ createDirectoryIfMissingVerbose verbosity True distProjectCacheDirectory
-          (compiler, Platform arch os, _) <- configureCompiler verbosity distDirLayout (fst (PD.ignoreConditions projectConfigSkeleton) <> cliConfig)
+          (compiler, mbNativeCompiler, Platform arch os, _) <- configureCompiler verbosity distDirLayout (fst (PD.ignoreConditions projectConfigSkeleton) <> cliConfig)
 
           let projectConfig = instantiateProjectConfigSkeletonFetchingCompiler (os, arch, compilerInfo compiler) mempty projectConfigSkeleton
           when (projectConfigDistDir (projectConfigShared $ projectConfig) /= NoFlag) $
@@ -455,7 +455,7 @@ configureCompiler
   :: Verbosity
   -> DistDirLayout
   -> ProjectConfig
-  -> Rebuild (Compiler, Platform, ProgramDb)
+  -> Rebuild (Compiler, Compiler, Platform, ProgramDb)
 configureCompiler
   verbosity
   DistDirLayout
@@ -466,6 +466,7 @@ configureCompiler
       ProjectConfigShared
         { projectConfigHcFlavor
         , projectConfigHcPath
+        , projectConfigHcNativePath
         , projectConfigHcPkg
         }
     , projectConfigLocalPackages =
@@ -482,6 +483,7 @@ configureCompiler
       fileMonitorCompiler
       ( hcFlavor
       , hcPath
+      , hcNativePath
       , hcPkg
       , progsearchpath
       , packageConfigProgramPaths
@@ -492,11 +494,12 @@ configureCompiler
         let extraPath = fromNubList packageConfigProgramPathExtra
         progdb <- liftIO $ prependProgramSearchPath verbosity extraPath [] defaultProgramDb
         let progdb' = userSpecifyPaths (Map.toList (getMapLast packageConfigProgramPaths)) progdb
-        result@(_, _, progdb'') <-
+        result@(_, _, _, progdb'') <-
           liftIO $
             Cabal.configCompilerEx
               hcFlavor
               hcPath
+              hcNativePath
               hcPkg
               progdb'
               verbosity
@@ -513,6 +516,7 @@ configureCompiler
     where
       hcFlavor = flagToMaybe projectConfigHcFlavor
       hcPath = flagToMaybe projectConfigHcPath
+      hcNativePath = flagToMaybe projectConfigHcNativePath
       hcPkg = flagToMaybe projectConfigHcPkg
 
 ------------------------------------------------------------------------------
@@ -583,7 +587,9 @@ rebuildInstallPlan
               , hookHashes
               )
               $ do
-                compilerEtc <- phaseConfigureCompiler projectConfig
+                compilerEtc@(c, c', _, _) <- phaseConfigureCompiler projectConfig
+                liftIO $ print ("compiler", compilerId c)
+                liftIO $ print ("native compiler", compilerId c')
                 _ <- phaseConfigurePrograms projectConfig compilerEtc
                 (solverPlan, pkgConfigDB, totalIndexState, activeRepos) <-
                   phaseRunSolver
@@ -626,7 +632,7 @@ rebuildInstallPlan
       --
       phaseConfigureCompiler
         :: ProjectConfig
-        -> Rebuild (Compiler, Platform, ProgramDb)
+        -> Rebuild (Compiler, Compiler, Platform, ProgramDb)
       phaseConfigureCompiler = configureCompiler verbosity distDirLayout
 
       -- Configuring other programs.
@@ -643,9 +649,9 @@ rebuildInstallPlan
       --
       phaseConfigurePrograms
         :: ProjectConfig
-        -> (Compiler, Platform, ProgramDb)
+        -> (Compiler, Compiler, Platform, ProgramDb)
         -> Rebuild ()
-      phaseConfigurePrograms projectConfig (_, _, compilerprogdb) = do
+      phaseConfigurePrograms projectConfig (_, _, _, compilerprogdb) = do
         -- Users are allowed to specify program locations independently for
         -- each package (e.g. to use a particular version of a pre-processor
         -- for some packages). However they cannot do this for the compiler
@@ -666,7 +672,7 @@ rebuildInstallPlan
       --
       phaseRunSolver
         :: ProjectConfig
-        -> (Compiler, Platform, ProgramDb)
+        -> (Compiler, Compiler, Platform, ProgramDb)
         -> [PackageSpecifier UnresolvedSourcePackage]
         -> InstalledPackageIndex
         -> Rebuild (SolverInstallPlan, Maybe PkgConfigDb, IndexUtils.TotalIndexState, IndexUtils.ActiveRepos)
@@ -675,7 +681,7 @@ rebuildInstallPlan
           { projectConfigShared
           , projectConfigBuildOnly
           }
-        (compiler, platform, progdb)
+        (compiler, mbNativeCompiler, platform, progdb)
         localPackages
         installedPackages =
           rerunIfChanged
@@ -781,7 +787,7 @@ rebuildInstallPlan
       --
       phaseElaboratePlan
         :: ProjectConfig
-        -> (Compiler, Platform, ProgramDb)
+        -> (Compiler, Compiler, Platform, ProgramDb)
         -> Maybe PkgConfigDb
         -> SolverInstallPlan
         -> [PackageSpecifier (SourcePackage (PackageLocation loc))]
@@ -797,7 +803,7 @@ rebuildInstallPlan
           , projectConfigSpecificPackage
           , projectConfigBuildOnly
           }
-        (compiler, platform, progdb)
+        (compiler, nativeCompiler, platform, progdb)
         pkgConfigDB
         solverPlan
         localPackages = do
@@ -812,13 +818,16 @@ rebuildInstallPlan
 
           defaultInstallDirs <- liftIO $ userInstallDirTemplates compiler
           let installDirs = fmap Cabal.fromFlag $ (fmap Flag defaultInstallDirs) <> (projectConfigInstallDirs projectConfigShared)
-          (elaboratedPlan, elaboratedShared) <-
+          (elaboratedPlan, elaboratedShared) <- do
+            liftIO $ putStrLn "Going to ELO!"
+            liftIO $ print (compilerId nativeCompiler)
             liftIO . runLogProgress verbosity $
               elaborateInstallPlan
                 verbosity
                 hookHashes
                 platform
                 compiler
+                nativeCompiler
                 progdb
                 pkgConfigDB
                 distDirLayout
@@ -1540,6 +1549,7 @@ elaborateInstallPlan
   -> Map FilePath HookAccept
   -> Platform
   -> Compiler
+  -> Compiler -- native compiler
   -> ProgramDb
   -> Maybe PkgConfigDb
   -> DistDirLayout
@@ -1558,6 +1568,7 @@ elaborateInstallPlan
   hookHashes
   platform
   compiler
+  nativeCompiler
   compilerprogdb
   pkgConfigDB
   distDirLayout@DistDirLayout{..}
@@ -1577,6 +1588,7 @@ elaborateInstallPlan
         ElaboratedSharedConfig
           { pkgConfigPlatform = platform
           , pkgConfigCompiler = compiler
+          , pkgConfigNativeCompiler = nativeCompiler
           , pkgConfigCompilerProgs = compilerprogdb
           , pkgConfigReplOptions = mempty
           , pkgConfigHookHashes = hookHashes
@@ -3802,7 +3814,7 @@ setupHsScriptOptions
             --   - if we commit to a Cabal version, the logic in
               Nothing
             else Just elabSetupScriptCliVersion
-      , useCompiler = Just pkgConfigCompiler
+      , useCompiler = Just pkgConfigNativeCompiler
       , usePlatform = Just pkgConfigPlatform
       , usePackageDB = elabSetupPackageDBStack
       , usePackageIndex = Nothing
@@ -4006,6 +4018,7 @@ setupHsConfigureFlags
       configProgramPathExtra = toNubList elabProgramPathExtra
       configHcFlavor = toFlag (compilerFlavor pkgConfigCompiler)
       configHcPath = mempty -- we use configProgramPaths instead
+      configHcNativePath = mempty -- we use configProgramPaths instead
       configHcPkg = mempty -- we use configProgramPaths instead
       configDumpBuildInfo = toFlag elabDumpBuildInfo
 

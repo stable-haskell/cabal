@@ -16,6 +16,7 @@ module Distribution.Simple.Program.Builtin
 
     -- * Programs that Cabal knows about
   , ghcProgram
+  , ghcNativeProgram
   , ghcPkgProgram
   , runghcProgram
   , ghcjsProgram
@@ -70,6 +71,7 @@ builtinPrograms :: [Program]
 builtinPrograms =
   [ -- compilers and related progs
     ghcProgram
+  , ghcNativeProgram
   , runghcProgram
   , ghcPkgProgram
   , ghcjsProgram
@@ -103,6 +105,37 @@ builtinPrograms =
 ghcProgram :: Program
 ghcProgram =
   (simpleProgram "ghc")
+    { programFindVersion = findProgramVersion "--numeric-version" id
+    , -- Workaround for https://gitlab.haskell.org/ghc/ghc/-/issues/8825
+      -- (spurious warning on non-english locales)
+      programPostConf = \_verbosity ghcProg ->
+        do
+          let ghcProg' =
+                ghcProg
+                  { programOverrideEnv =
+                      ("LANGUAGE", Just "en")
+                        : programOverrideEnv ghcProg
+                  }
+              -- Only the 7.8 branch seems to be affected. Fixed in 7.8.4.
+              affectedVersionRange =
+                intersectVersionRanges
+                  (laterVersion $ mkVersion [7, 8, 0])
+                  (earlierVersion $ mkVersion [7, 8, 4])
+          return $
+            maybe
+              ghcProg
+              ( \v ->
+                  if withinRange v affectedVersionRange
+                    then ghcProg'
+                    else ghcProg
+              )
+              (programVersion ghcProg)
+    , programNormaliseArgs = normaliseGhcArgs
+    }
+
+ghcNativeProgram :: Program
+ghcNativeProgram =
+  (simpleProgram "ghc0")
     { programFindVersion = findProgramVersion "--numeric-version" id
     , -- Workaround for https://gitlab.haskell.org/ghc/ghc/-/issues/8825
       -- (spurious warning on non-english locales)

@@ -77,6 +77,7 @@ import Distribution.Simple.Program
   , getDbProgramOutputCwd
   , getProgramSearchPath
   , ghcProgram
+  , ghcNativeProgram
   , ghcjsProgram
   , runDbProgramCwd
   )
@@ -312,7 +313,7 @@ data SetupScriptOptions = SetupScriptOptions
   -- ^ Is the task we are going to run an interactive foreground task,
   -- or an non-interactive background task? Based on this flag we
   -- decide whether or not to delegate ctrl+c to the spawned task
-  }
+  } deriving (Show)
 
 defaultSetupScriptOptions :: SetupScriptOptions
 defaultSetupScriptOptions =
@@ -373,8 +374,10 @@ getSetup verbosity options mpkg = do
                 (orLaterVersion (mkVersion (cabalSpecMinimumLibraryVersion (specVersion pkg))))
           }
       buildType' = buildType pkg
+  putStrLn "GETTING SETUP METHOD"
   (version, method, options'') <-
     getSetupMethod verbosity options' pkg buildType'
+  putStrLn "GOT SETUP METHOD"
   return
     Setup
       { setupMethod = method
@@ -438,6 +441,7 @@ runSetup verbosity setup args0 = do
         ++ "  After:  "
         ++ show args
         ++ "\n"
+  putStrLn $ "runSetupMethod..."
   runSetupMethod method verbosity options bt args
 
 -- | This is a horrible hack to make sure passing fancy verbosity
@@ -508,7 +512,9 @@ setupWrapper
   -> (Version -> [String])
   -> IO ()
 setupWrapper verbosity options mpkg cmd getCommonFlags getFlags getExtraArgs = do
+  putStrLn "SETUP WRAPPER"
   setup <- getSetup verbosity options mpkg
+  putStrLn "GOT SETUP!"
   let version = setupVersion setup
       extraArgs = getExtraArgs version
   flags <- getFlags version
@@ -558,6 +564,7 @@ buildTypeAction Custom = error "buildTypeAction Custom"
 
 invoke :: Verbosity -> FilePath -> [String] -> SetupScriptOptions -> IO ()
 invoke verbosity path args options = do
+  putStrLn "XXX INVOKE"
   info verbosity $ unwords (path : args)
   case useLoggingHandle options of
     Nothing -> return ()
@@ -668,6 +675,7 @@ getExternalSetupMethod verbosity options pkg bt = do
       ++ show (useDependenciesExclusive options)
   createDirectoryIfMissingVerbose verbosity True $ i setupDir
   (cabalLibVersion, mCabalLibInstalledPkgId, options') <- cabalLibVersionToUse
+  putStrLn "YYY ---"
   debug verbosity $ "Using Cabal library version " ++ prettyShow cabalLibVersion
   path <-
     if useCachedSetupExecutable
@@ -937,12 +945,14 @@ getExternalSetupMethod verbosity options pkg bt = do
       :: SetupScriptOptions
       -> IO (Compiler, ProgramDb, SetupScriptOptions)
     configureCompiler options' = do
+      print $ ("configureCompiler: use-compiler", fmap compilerId (useCompiler options'))
       (comp, progdb) <- case useCompiler options' of
         Just comp -> return (comp, useProgramDb options')
         Nothing -> do
-          (comp, _, progdb) <-
+          (comp, mbNativeComp, _, progdb) <-
             configCompilerEx
               (Just GHC)
+              Nothing
               Nothing
               Nothing
               (useProgramDb options')
@@ -1065,12 +1075,13 @@ getExternalSetupMethod verbosity options pkg bt = do
         when (outOfDate || forceCompile) $ do
           debug verbosity "Setup executable needs to be updated, compiling..."
           (compiler, progdb, options'') <- configureCompiler options'
+          print ("configureCompiler: compiler", compilerId compiler)
           pkgDbs <- traverse (traverse (makeRelativeToDirS mbWorkDir)) (coercePackageDBStack (usePackageDB options''))
           let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion
               (program, extraOpts) =
                 case compilerFlavor compiler of
                   GHCJS -> (ghcjsProgram, ["-build-runner"])
-                  _ -> (ghcProgram, [])
+                  _ -> (ghcNativeProgram, [])
                     -- FIXME: don't enable -threaded unconditionnally: we may
                     -- only have vanilla libraries (but maybe we don't have them
                     -- either?)
@@ -1133,7 +1144,9 @@ getExternalSetupMethod verbosity options pkg bt = do
                         -- when compiling a Simple Setup.hs file.
                   , ghcOptExtensionMap = Map.fromList . Simple.compilerExtensions $ compiler
                   }
+          print ("building renderGhcOptions", compilerId compiler)
           let ghcCmdLine = renderGhcOptions compiler platform ghcOptions
+          print (program, ghcCmdLine)
           when (useVersionMacros options') $
             rewriteFileEx verbosity (i cppMacrosFile) $
               generatePackageVersionMacros (pkgVersion $ package pkg) (map snd selectedDeps)

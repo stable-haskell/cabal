@@ -368,6 +368,7 @@ buildAndRegisterUnpackedPackage
         -> IO ()
       setup cmd getCommonFlags flags args =
         withLogging $ \mLogFileHandle -> do
+          putStrLn "SETUP WRAPPER (10)"
           setupWrapper
             verbosity
             scriptOptions
@@ -389,7 +390,8 @@ buildAndRegisterUnpackedPackage
         -> (Version -> flags)
         -> (Version -> [String])
         -> IO ()
-      setupInteractive cmd getCommonFlags flags args =
+      setupInteractive cmd getCommonFlags flags args = do
+        putStrLn "SETUP WRAPPER (11)"
         setupWrapper
           verbosity
           scriptOptions{isInteractive = True}
@@ -471,6 +473,8 @@ buildInplaceUnpackedPackage
 
         buildResult :: BuildResultMisc
         buildResult = (docsResult, testsResult)
+
+    putStrLn "buildInplaceUnpackedPackage"
 
     buildAndRegisterUnpackedPackage
       verbosity
@@ -678,6 +682,8 @@ buildAndInstallUnpackedPackage
     -- TODO: [required feature] sudo re-exec
 
     initLogFile
+
+    putStrLn "buildAndInstallUnpackedPackage"
 
     buildAndRegisterUnpackedPackage
       verbosity

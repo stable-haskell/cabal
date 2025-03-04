@@ -465,7 +465,7 @@ configure_setupHooks
     let verbosity = fromFlag (configVerbosity cfg)
         distPref = fromFlag $ configDistPref cfg
         mbWorkDir = flagToMaybe $ configWorkingDir cfg
-    (lbc0, comp, platform, enabledComps) <- preConfigurePackage cfg g_pkg_descr
+    (lbc0, comp, compNative, platform, enabledComps) <- preConfigurePackage cfg g_pkg_descr
 
     -- Package-wide pre-configure hook
     lbc1 <-
@@ -547,7 +547,7 @@ configure_setupHooks
 preConfigurePackage
   :: ConfigFlags
   -> GenericPackageDescription
-  -> IO (LBC.LocalBuildConfig, Compiler, Platform, ComponentRequestedSpec)
+  -> IO (LBC.LocalBuildConfig, Compiler, Compiler, Platform, ComponentRequestedSpec)
 preConfigurePackage cfg g_pkg_descr = do
   let verbosity = fromFlag $ configVerbosity cfg
 
@@ -615,12 +615,14 @@ preConfigurePackage cfg g_pkg_descr = do
   -- programDb:  location and args of all programs we're
   --                  building with
   ( comp :: Compiler
+    , compNative :: Compiler
     , compPlatform :: Platform
     , programDb00 :: ProgramDb
     ) <-
     configCompilerEx
       (flagToMaybe (configHcFlavor cfg))
       (flagToMaybe (configHcPath cfg))
+      (flagToMaybe (configHcNativePath cfg))
       (flagToMaybe (configHcPkg cfg))
       programDbPre
       (lessVerbose verbosity)
@@ -636,7 +638,7 @@ preConfigurePackage cfg g_pkg_descr = do
     interpretSymbolicPath mbWorkDir builddir
 
   lbc <- computeLocalBuildConfig cfg comp programDb00
-  return (lbc, comp, compPlatform, enabled)
+  return (lbc, comp, compNative, compPlatform, enabled)
 
 computeLocalBuildConfig
   :: ConfigFlags
@@ -2477,7 +2479,7 @@ ccLdOptionsBuildInfo cflags ldflags ldflags_static =
 
 configCompilerAuxEx
   :: ConfigFlags
-  -> IO (Compiler, Platform, ProgramDb)
+  -> IO (Compiler, Compiler, Platform, ProgramDb)
 configCompilerAuxEx cfg = do
   programDb <- mkProgramDb cfg defaultProgramDb
   let common = configCommonFlags cfg
@@ -2485,26 +2487,28 @@ configCompilerAuxEx cfg = do
   configCompilerEx
     (flagToMaybe $ configHcFlavor cfg)
     (flagToMaybe $ configHcPath cfg)
+    (flagToMaybe $ configHcNativePath cfg)
     (flagToMaybe $ configHcPkg cfg)
     programDb
     verbosity
 
 configCompilerEx
   :: Maybe CompilerFlavor
-  -> Maybe FilePath
-  -> Maybe FilePath
+  -> Maybe FilePath -- ^ given compiler location
+  -> Maybe FilePath -- ^ given native compiler location
+  -> Maybe FilePath -- ^ given compiler package location
   -> ProgramDb
   -> Verbosity
-  -> IO (Compiler, Platform, ProgramDb)
-configCompilerEx Nothing _ _ _ verbosity = dieWithException verbosity UnknownCompilerException
-configCompilerEx (Just hcFlavor) hcPath hcPkg progdb verbosity = do
-  (comp, maybePlatform, programDb) <- case hcFlavor of
-    GHC -> GHC.configure verbosity hcPath hcPkg progdb
-    GHCJS -> GHCJS.configure verbosity hcPath hcPkg progdb
-    UHC -> UHC.configure verbosity hcPath hcPkg progdb
-    HaskellSuite{} -> HaskellSuite.configure verbosity hcPath hcPkg progdb
+  -> IO (Compiler, Compiler, Platform, ProgramDb)
+configCompilerEx Nothing _ _ _ _ verbosity = dieWithException verbosity UnknownCompilerException
+configCompilerEx (Just hcFlavor) hcPath hcNativePath hcPkg progdb verbosity = do
+  (comp, nativeComp, maybePlatform, programDb) <- case hcFlavor of
+    GHC -> GHC.configure verbosity hcPath hcNativePath hcPkg progdb
+    -- GHCJS -> GHCJS.configure verbosity hcPath hcPkg progdb
+    -- UHC -> UHC.configure verbosity hcPath hcPkg progdb
+    -- HaskellSuite{} -> HaskellSuite.configure verbosity hcPath hcPkg progdb
     _ -> dieWithException verbosity UnknownCompilerException
-  return (comp, fromMaybe buildPlatform maybePlatform, programDb)
+  return (comp, nativeComp, fromMaybe buildPlatform maybePlatform, programDb)
 
 -- -----------------------------------------------------------------------------
 -- Testing C lib and header dependencies

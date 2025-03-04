@@ -2078,7 +2078,8 @@ installUnpackedPackage
         Exception.bracket
           (traverse (\path -> openFile path AppendMode) mLogPath)
           (traverse_ hClose)
-          ( \logFileHandle ->
+          ( \logFileHandle -> do
+              putStrLn "SETUP WRAPPER (-1)"
               setupWrapper
                 verbosity
                 scriptOptions

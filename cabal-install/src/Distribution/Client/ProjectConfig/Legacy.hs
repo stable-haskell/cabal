@@ -690,6 +690,7 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       { configCommonFlags = commonFlags
       , configHcFlavor = projectConfigHcFlavor
       , configHcPath = projectConfigHcPath
+      , configHcNativePath = projectConfigHcNativePath
       , configHcPkg = projectConfigHcPkg
       , -- configProgramPathExtra    = projectConfigProgPathExtra DELETE ME
       configInstallDirs = projectConfigInstallDirs
@@ -1065,6 +1066,7 @@ convertToLegacyAllPackageConfig
           , configProgramPathExtra = mempty
           , configHcFlavor = projectConfigHcFlavor
           , configHcPath = projectConfigHcPath
+          , configHcNativePath = mempty
           , configHcPkg = projectConfigHcPkg
           , configInstantiateWith = mempty
           , configVanillaLib = mempty
@@ -1141,6 +1143,7 @@ convertToLegacyPerPackageConfig PackageConfig{..} =
         , configProgramPathExtra = packageConfigProgramPathExtra
         , configHcFlavor = mempty
         , configHcPath = mempty
+        , configHcNativePath = mempty
         , configHcPkg = mempty
         , configInstantiateWith = mempty
         , configVanillaLib = packageConfigVanillaLib

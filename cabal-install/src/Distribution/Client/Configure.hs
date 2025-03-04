@@ -166,6 +166,7 @@ configure
   configFlags
   configExFlags
   extraArgs = do
+    putStrLn "WHEEEEEEEEEEEEEE"
     installedPkgIndex <- getInstalledPackages verbosity comp packageDBs progdb
     sourcePkgDb <- getSourcePackages verbosity repoCtxt
     pkgConfigDb <- readPkgConfigDb verbosity progdb
@@ -200,6 +201,7 @@ configure
           "solver failed to find a solution:\n"
             ++ message
             ++ "\nTrying configure anyway."
+        putStrLn "SETUP WRAPPER (2)"
         setupWrapper
           verbosity
           (setupScriptOptions installedPkgIndex Nothing)
@@ -501,7 +503,8 @@ configurePackage
   scriptOptions
   configFlags
   (ReadyPackage (ConfiguredPackage ipid spkg flags stanzas deps))
-  extraArgs =
+  extraArgs = do
+    putStrLn "SETUP WRAPPER (Conf)"
     setupWrapper
       verbosity
       scriptOptions

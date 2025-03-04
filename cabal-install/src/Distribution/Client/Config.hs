@@ -386,6 +386,7 @@ instance Semigroup SavedConfig where
           , IT.extraDoc = combineMonoid savedInitFlags IT.extraDoc
           , IT.homepage = combine IT.homepage
           , IT.initHcPath = combine IT.initHcPath
+          , IT.initHcNativePath = combine IT.initHcNativePath
           , IT.initVerbosity = combine IT.initVerbosity
           , IT.initializeTestSuite = combine IT.initializeTestSuite
           , IT.interactive = combine IT.interactive
@@ -488,6 +489,7 @@ instance Semigroup SavedConfig where
           , configInstantiateWith = lastNonEmpty configInstantiateWith
           , configHcFlavor = combine configHcFlavor
           , configHcPath = combine configHcPath
+          , configHcNativePath = combine configHcNativePath
           , configHcPkg = combine configHcPkg
           , configVanillaLib = combine configVanillaLib
           , configProfLib = combine configProfLib

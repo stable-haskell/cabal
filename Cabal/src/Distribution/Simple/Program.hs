@@ -108,6 +108,7 @@ module Distribution.Simple.Program
 
     -- * Programs that Cabal knows about
   , ghcProgram
+  , ghcNativeProgram
   , ghcPkgProgram
   , ghcjsProgram
   , ghcjsPkgProgram

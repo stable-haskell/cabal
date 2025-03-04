@@ -298,6 +298,7 @@ withContextAndSelectors
   -> IO b
 withContextAndSelectors noTargets kind flags@NixStyleFlags{..} targetStrings globalFlags cmd act =
   withTemporaryTempDirectory $ \mkTmpDir -> do
+    putStrLn "YO!"
     (tc, ctx) <-
       withProjectOrGlobalConfig
         ignoreProject
@@ -379,7 +380,7 @@ withContextAndSelectors noTargets kind flags@NixStyleFlags{..} targetStrings glo
           projectCfgSkeleton <- readProjectBlockFromScript verbosity httpTransport (distDirLayout ctx) (takeFileName script) scriptContents
 
           createDirectoryIfMissingVerbose verbosity True (distProjectCacheDirectory $ distDirLayout ctx)
-          (compiler, platform@(Platform arch os), _) <- runRebuild projectRoot $ configureCompiler verbosity (distDirLayout ctx) (fst (ignoreConditions projectCfgSkeleton) <> projectConfig ctx)
+          (compiler, mbNativeCompiler, platform@(Platform arch os), _) <- runRebuild projectRoot $ configureCompiler verbosity (distDirLayout ctx) (fst (ignoreConditions projectCfgSkeleton) <> projectConfig ctx)
 
           let projectCfg = instantiateProjectConfigSkeletonFetchingCompiler (os, arch, compilerInfo compiler) mempty projectCfgSkeleton
 

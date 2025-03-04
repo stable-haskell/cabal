@@ -140,7 +140,7 @@ findSavedDistPref config flagDistPref = do
 -- cannot be read.
 getPersistOrConfigCompiler
   :: ConfigFlags
-  -> IO (Compiler, Platform, ProgramDb)
+  -> IO (Compiler, Compiler, Platform, ProgramDb)
 getPersistOrConfigCompiler configFlags = do
   let common = configCommonFlags configFlags
   distPref <- findDistPrefOrDefault (setupDistPref common)
@@ -150,6 +150,7 @@ getPersistOrConfigCompiler configFlags = do
     Just lbi ->
       return
         ( LocalBuildInfo.compiler lbi
+        , LocalBuildInfo.nativeCompiler lbi
         , LocalBuildInfo.hostPlatform lbi
         , LocalBuildInfo.withPrograms lbi
         )

@@ -519,7 +519,8 @@ rebuildTarget
             void $ waitAsyncPackageDownload verbosity downloadMap pkg
           _ -> return ()
         return $ BuildResult DocsNotTried TestsNotTried Nothing
-    | otherwise =
+    | otherwise = do
+        putStrLn "rebuildTarget"
         -- We rely on the 'BuildStatus' to decide which phase to start from:
         case pkgBuildStatus of
           BuildStatusDownload -> downloadPhase

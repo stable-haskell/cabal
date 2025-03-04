@@ -119,7 +119,7 @@ buildCommand =
 
 data BuildFlags = BuildFlags
   { buildOnlyConfigure :: Flag Bool
-  }
+  } deriving (Show)
 
 defaultBuildFlags :: BuildFlags
 defaultBuildFlags =
@@ -181,8 +181,11 @@ buildAction flags@NixStyleFlags{extraFlags = buildFlags, ..} targetStrings globa
         return (elaboratedPlan'', targets)
 
     printPlan verbosity baseCtx buildCtx
-
+    putStrLn "buildAction"
+    print (configHcNativePath configFlags)
+    putStrLn "runProjectBuildPhase..."
     buildOutcomes <- runProjectBuildPhase verbosity baseCtx buildCtx
+    putStrLn "runProjectPostBuildPhase..."
     runProjectPostBuildPhase verbosity baseCtx buildCtx buildOutcomes
   where
     verbosity = fromFlagOrDefault normal (setupVerbosity $ configCommonFlags configFlags)

@@ -461,7 +461,8 @@ runProjectBuildPhase _ ProjectBaseContext{buildSettings} _
 runProjectBuildPhase
   verbosity
   ProjectBaseContext{..}
-  ProjectBuildContext{..} =
+  ProjectBuildContext{..} = do
+    putStrLn "runProjectBuildPhase"
     fmap (Map.union (previousBuildOutcomes pkgsBuildStatus)) $
       rebuildTargets
         verbosity
@@ -1130,6 +1131,17 @@ printPlan
                       Setup.Flag MaximumOptimisation -> "2"
                       Setup.NoFlag -> "1"
                    )
+            -- FIXME: this should be optional if pkgConfigNativeCompiler /= pkgConfigCompiler
+            , "("
+            , "-W " ++ (showCompilerId . pkgConfigNativeCompiler) elaboratedShared
+            , "-O"
+              ++ ( case globalOptimization <> localOptimization of
+                     Setup.Flag NoOptimisation -> "0"
+                     Setup.Flag NormalOptimisation -> "1"
+                     Setup.Flag MaximumOptimisation -> "2"
+                     Setup.NoFlag -> "1"
+                   )
+            , ")"
             ]
           ++ "\n"
 

@@ -105,6 +105,8 @@ data ConfigFlags = ConfigFlags
   --  compiler, e.g. GHC.
   , configHcPath :: Flag FilePath
   -- ^ given compiler location
+  , configHcNativePath :: Flag FilePath
+  -- ^ given native compiler location
   , configHcPkg :: Flag FilePath
   -- ^ given hc-pkg location
   , configVanillaLib :: Flag Bool
@@ -282,6 +284,7 @@ instance Eq ConfigFlags where
       && equal configProgramPathExtra
       && equal configHcFlavor
       && equal configHcPath
+      && equal configHcNativePath
       && equal configHcPkg
       && equal configVanillaLib
       && equal configProfLib
@@ -454,6 +457,13 @@ configureOptions showOrParseArgs =
         "give the path to a particular compiler"
         configHcPath
         (\v flags -> flags{configHcPath = v})
+        (reqArgFlag "PATH")
+    , option
+        "W"
+        ["with-native-compiler"]
+        "give the path to a particular native compiler"
+        configHcNativePath
+        (\v flags -> flags{configHcNativePath = v})
         (reqArgFlag "PATH")
     , option
         ""
@@ -1087,7 +1097,7 @@ instance Semigroup ConfigFlags where
 -- @autoconf@.
 configureArgs :: Bool -> ConfigFlags -> [String]
 configureArgs bcHack flags =
-  hc_flag
+  hc_flag ++ hc_native_flag
     ++ optFlag "with-hc-pkg" configHcPkg
     ++ optFlag' "prefix" prefix
     ++ optFlag' "bindir" bindir
@@ -1101,10 +1111,17 @@ configureArgs bcHack flags =
       (_, Flag hc_path) -> [hc_flag_name ++ hc_path]
       (Flag hc, NoFlag) -> [hc_flag_name ++ prettyShow hc]
       (NoFlag, NoFlag) -> []
+    hc_native_flag = case configHcNativePath flags of
+      (Flag hc_path) -> [hc_native_flag_name ++ hc_path]
+      NoFlag -> []
+
     hc_flag_name
       -- TODO kill off thic bc hack when defaultUserHooks is removed.
       | bcHack = "--with-hc="
       | otherwise = "--with-compiler="
+
+    hc_native_flag_name = "--with-native-compiler="
+
     optFlag name config_field = case config_field flags of
       Flag p -> ["--" ++ name ++ "=" ++ p]
       NoFlag -> []

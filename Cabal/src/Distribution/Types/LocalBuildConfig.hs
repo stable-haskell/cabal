@@ -57,6 +57,8 @@ data PackageBuildDescr = PackageBuildDescr
   -- ^ What components were enabled during configuration, and why.
   , compiler :: Compiler
   -- ^ The compiler we're building with
+  , nativeCompiler :: Compiler
+  -- ^ The native compiler we're building Setup and build-tools with.
   , hostPlatform :: Platform
   -- ^ The platform we're building for
   , pkgDescrFile :: Maybe (SymbolicPath Pkg File)

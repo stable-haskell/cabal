@@ -192,6 +192,7 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigIgnoreProject :: Flag Bool
   , projectConfigHcFlavor :: Flag CompilerFlavor
   , projectConfigHcPath :: Flag FilePath
+  , projectConfigHcNativePath :: Flag FilePath
   , projectConfigHcPkg :: Flag FilePath
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode

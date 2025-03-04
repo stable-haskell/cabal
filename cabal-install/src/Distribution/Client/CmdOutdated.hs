@@ -323,7 +323,7 @@ outdatedAction (ProjectFlags{flagProjectDir, flagProjectFile}, OutdatedFlags{..}
       dieWithException verbosity OutdatedAction
 
     sourcePkgDb <- IndexUtils.getSourcePackages verbosity repoContext
-    (comp, platform, _progdb) <- configCompilerAux' configFlags
+    (comp, mbNativeComp, platform, _progdb) <- configCompilerAux' configFlags
     deps <-
       if freezeFile
         then depsFromFreezeFile verbosity

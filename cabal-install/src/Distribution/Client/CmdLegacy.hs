@@ -71,7 +71,7 @@ wrapperAction command getCommonFlags =
               }
 
       let command' = command{commandName = T.unpack . T.replace "v1-" "" . T.pack . commandName $ command}
-
+      putStrLn "SETUP WRAPPER (legacy)"
       setupWrapper
         verbosity'
         setupScriptOptions

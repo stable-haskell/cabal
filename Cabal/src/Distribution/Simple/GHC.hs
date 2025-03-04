@@ -109,7 +109,7 @@ import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import qualified Distribution.Simple.PackageIndex as PackageIndex
 import Distribution.Simple.PreProcess.Types
 import Distribution.Simple.Program
-import Distribution.Simple.Program.Builtin (runghcProgram)
+import Distribution.Simple.Program.Builtin (runghcProgram, ghcNativeProgram)
 import Distribution.Simple.Program.GHC
 import qualified Distribution.Simple.Program.HcPkg as HcPkg
 import qualified Distribution.Simple.Program.Strip as Strip
@@ -151,113 +151,139 @@ import Distribution.Simple.Setup.Build
 
 configure
   :: Verbosity
-  -> Maybe FilePath
-  -> Maybe FilePath
+  -> Maybe FilePath -- ^ given compiler location
+  -> Maybe FilePath -- ^ given native compiler location
+  -> Maybe FilePath -- ^ given compiler package location
   -> ProgramDb
-  -> IO (Compiler, Maybe Platform, ProgramDb)
-configure verbosity hcPath hcPkgPath conf0 = do
-  (ghcProg, ghcVersion, progdb1) <-
-    requireProgramVersion
-      verbosity
-      ghcProgram
-      (orLaterVersion (mkVersion [7, 0, 1]))
-      (userMaybeSpecifyPath "ghc" hcPath conf0)
-  let implInfo = ghcVersionImplInfo ghcVersion
+  -> IO (Compiler, Compiler, Maybe Platform, ProgramDb)
+configure verbosity hcPath hcNativePath hcPkgPath conf0 = do
+    conf verbosity hcPath hcNativePath hcPkgPath conf0
+  where
+    conf :: Verbosity -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath -> ProgramDb
+         -> IO (Compiler, Compiler, Maybe Platform, ProgramDb)
+    conf verbosity hcPath hcNativePath hcPkgPath conf0 = do
+      print ("conf", hcPath, hcNativePath, hcPkgPath)
+      (ghcProg, ghcVersion, progdb0) <-
+        requireProgramVersion
+          verbosity
+          ghcProgram
+          (orLaterVersion (mkVersion [7, 0, 1]))
+          (userMaybeSpecifyPath "ghc" hcPath conf0)
 
-  -- Cabal currently supports ghc >= 7.0.1 && < 9.12
-  -- ... and the following odd development version
-  unless (ghcVersion < mkVersion [9, 12]) $
-    warn verbosity $
-      "Unknown/unsupported 'ghc' version detected "
-        ++ "(Cabal "
-        ++ prettyShow cabalVersion
-        ++ " supports 'ghc' version < 9.12): "
-        ++ programPath ghcProg
-        ++ " is version "
-        ++ prettyShow ghcVersion
+      (ghcProg', ghcVersion', progdb1) <-
+        requireProgramVersion
+          verbosity
+          ghcNativeProgram
+          (orLaterVersion (mkVersion [7, 0, 1]))
+          (userMaybeSpecifyPath "ghc0" hcNativePath progdb0)
 
-  -- This is slightly tricky, we have to configure ghc first, then we use the
-  -- location of ghc to help find ghc-pkg in the case that the user did not
-  -- specify the location of ghc-pkg directly:
-  (ghcPkgProg, ghcPkgVersion, progdb2) <-
-    requireProgramVersion
-      verbosity
-      ghcPkgProgram
-        { programFindLocation = guessGhcPkgFromGhcPath ghcProg
-        }
-      anyVersion
-      (userMaybeSpecifyPath "ghc-pkg" hcPkgPath progdb1)
+      -- Cabal currently supports ghc >= 7.0.1 && < 9.12
+      -- ... and the following odd development version
+      unless (ghcVersion < mkVersion [9, 12]) $
+        warn verbosity $
+          "Unknown/unsupported 'ghc' version detected "
+            ++ "(Cabal "
+            ++ prettyShow cabalVersion
+            ++ " supports 'ghc' version < 9.12): "
+            ++ programPath ghcProg
+            ++ " is version "
+            ++ prettyShow ghcVersion
 
-  when (ghcVersion /= ghcPkgVersion) $
-    dieWithException verbosity $
-      VersionMismatchGHC (programPath ghcProg) ghcVersion (programPath ghcPkgProg) ghcPkgVersion
-  -- Likewise we try to find the matching hsc2hs and haddock programs.
-  let hsc2hsProgram' =
-        hsc2hsProgram
-          { programFindLocation = guessHsc2hsFromGhcPath ghcProg
-          }
-      haddockProgram' =
-        haddockProgram
-          { programFindLocation = guessHaddockFromGhcPath ghcProg
-          }
-      hpcProgram' =
-        hpcProgram
-          { programFindLocation = guessHpcFromGhcPath ghcProg
-          }
-      runghcProgram' =
-        runghcProgram
-          { programFindLocation = guessRunghcFromGhcPath ghcProg
-          }
-      progdb3 =
-        addKnownProgram haddockProgram' $
-          addKnownProgram hsc2hsProgram' $
-            addKnownProgram hpcProgram' $
-              addKnownProgram runghcProgram' progdb2
+      -- This is slightly tricky, we have to configure ghc first, then we use the
+      -- location of ghc to help find ghc-pkg in the case that the user did not
+      -- specify the location of ghc-pkg directly:
+      (ghcPkgProg, ghcPkgVersion, progdb2) <-
+        requireProgramVersion
+          verbosity
+          ghcPkgProgram
+            { programFindLocation = guessGhcPkgFromGhcPath ghcProg
+            }
+          anyVersion
+          (userMaybeSpecifyPath "ghc-pkg" hcPkgPath progdb1)
 
-  languages <- Internal.getLanguages verbosity implInfo ghcProg
-  extensions0 <- Internal.getExtensions verbosity implInfo ghcProg
+      when (ghcVersion /= ghcPkgVersion) $
+        dieWithException verbosity $
+          VersionMismatchGHC (programPath ghcProg) ghcVersion (programPath ghcPkgProg) ghcPkgVersion
+      -- Likewise we try to find the matching hsc2hs and haddock programs.
+      let hsc2hsProgram' =
+            hsc2hsProgram
+              { programFindLocation = guessHsc2hsFromGhcPath ghcProg
+              }
+          haddockProgram' =
+            haddockProgram
+              { programFindLocation = guessHaddockFromGhcPath ghcProg
+              }
+          hpcProgram' =
+            hpcProgram
+              { programFindLocation = guessHpcFromGhcPath ghcProg
+              }
+          runghcProgram' =
+            runghcProgram
+              { programFindLocation = guessRunghcFromGhcPath ghcProg
+              }
+          progdb3 =
+            addKnownProgram haddockProgram' $
+              addKnownProgram hsc2hsProgram' $
+                addKnownProgram hpcProgram' $
+                  addKnownProgram runghcProgram' progdb2
 
-  ghcInfo <- Internal.getGhcInfo verbosity implInfo ghcProg
-  let ghcInfoMap = Map.fromList ghcInfo
-      filterJS = if ghcVersion < mkVersion [9, 8] then filterExt JavaScriptFFI else id
-      extensions =
-        -- workaround https://gitlab.haskell.org/ghc/ghc/-/issues/11214
-        filterJS $
-          -- see 'filterExtTH' comment below
-          filterExtTH $
-            extensions0
 
-      -- starting with GHC 8.0, `TemplateHaskell` will be omitted from
-      -- `--supported-extensions` when it's not available.
-      -- for older GHCs we can use the "Have interpreter" property to
-      -- filter out `TemplateHaskell`
-      filterExtTH
-        | ghcVersion < mkVersion [8]
-        , Just "NO" <- Map.lookup "Have interpreter" ghcInfoMap =
-            filterExt TemplateHaskell
-        | otherwise = id
+      (comp, compPlatform, progdb4) <- mkCompiler verbosity ghcProg ghcVersion progdb3
+      (comp', compPlatform', progdb5) <- mkCompiler verbosity ghcProg' ghcVersion' progdb4
 
-      filterExt ext = filter ((/= EnableExtension ext) . fst)
+      return (comp, comp', compPlatform, progdb5)
 
-      compilerId :: CompilerId
-      compilerId = CompilerId GHC ghcVersion
+    mkCompiler :: Verbosity -> ConfiguredProgram -> Version -> ProgramDb -> IO (Compiler, Maybe Platform, ProgramDb)
+    mkCompiler verbosity ghcProg ghcVersion progdb = do
+      --   vvvv
+      -- > TODO <: do the same (ghcInfo, ... ) for the ghcNativeProg
+      --   ^^^^
+      let implInfo = ghcVersionImplInfo ghcVersion
 
-      compilerAbiTag :: AbiTag
-      compilerAbiTag = maybe NoAbiTag AbiTag (Map.lookup "Project Unit Id" ghcInfoMap >>= stripPrefix (prettyShow compilerId <> "-"))
+      languages <- Internal.getLanguages verbosity implInfo ghcProg
+      extensions0 <- Internal.getExtensions verbosity implInfo ghcProg
+      ghcInfo <- Internal.getGhcInfo verbosity implInfo ghcProg
 
-  let comp =
-        Compiler
-          { compilerId
-          , compilerAbiTag
-          , compilerCompat = []
-          , compilerLanguages = languages
-          , compilerExtensions = extensions
-          , compilerProperties = ghcInfoMap
-          }
-      compPlatform = Internal.targetPlatform ghcInfo
-      -- configure gcc and ld
-      progdb4 = Internal.configureToolchain implInfo ghcProg ghcInfoMap progdb3
-  return (comp, compPlatform, progdb4)
+      let ghcInfoMap = Map.fromList ghcInfo
+          filterJS = if ghcVersion < mkVersion [9, 8] then filterExt JavaScriptFFI else id
+          extensions =
+            -- workaround https://gitlab.haskell.org/ghc/ghc/-/issues/11214
+            filterJS $
+              -- see 'filterExtTH' comment below
+              filterExtTH $
+                extensions0
+
+          -- starting with GHC 8.0, `TemplateHaskell` will be omitted from
+          -- `--supported-extensions` when it's not available.
+          -- for older GHCs we can use the "Have interpreter" property to
+          -- filter out `TemplateHaskell`
+          filterExtTH
+            | ghcVersion < mkVersion [8]
+            , Just "NO" <- Map.lookup "Have interpreter" ghcInfoMap =
+                filterExt TemplateHaskell
+            | otherwise = id
+
+          filterExt ext = filter ((/= EnableExtension ext) . fst)
+
+          compilerId :: CompilerId
+          compilerId = CompilerId GHC ghcVersion
+
+          compilerAbiTag :: AbiTag
+          compilerAbiTag = maybe NoAbiTag AbiTag (Map.lookup "Project Unit Id" ghcInfoMap >>= stripPrefix (prettyShow compilerId <> "-"))
+
+      let comp =
+            Compiler
+              { compilerId
+              , compilerAbiTag
+              , compilerCompat = []
+              , compilerLanguages = languages
+              , compilerExtensions = extensions
+              , compilerProperties = ghcInfoMap
+              }
+          compPlatform = Internal.targetPlatform ghcInfo
+          -- configure gcc and ld
+          progdb' = Internal.configureToolchain implInfo ghcProg ghcInfoMap progdb
+      return (comp, compPlatform, progdb')
 
 -- | Given something like /usr/local/bin/ghc-6.6.1(.exe) we try and find
 -- the corresponding tool; e.g. if the tool is ghc-pkg, we try looking

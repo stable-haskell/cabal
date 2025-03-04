@@ -248,7 +248,7 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags', ..} cliTargetStrings glo
     if not $ fromFlagOrDefault False (pathCompiler pathFlags)
       then pure Nothing
       else do
-        (compiler, _, progDb) <- runRebuild (distProjectRootDirectory . distDirLayout $ baseCtx) $ configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
+        (compiler, mbNativeCompiler, _, progDb) <- runRebuild (distProjectRootDirectory . distDirLayout $ baseCtx) $ configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
         compilerProg <- requireCompilerProg verbosity compiler
         (configuredCompilerProg, _) <- requireProgram verbosity compilerProg progDb
         pure $ Just $ mkCompilerInfo configuredCompilerProg compiler
