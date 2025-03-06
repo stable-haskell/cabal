@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -freduction-depth=0 #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Data.TreeDiff.Instances.Cabal () where
 
 import Data.TreeDiff
@@ -106,6 +107,7 @@ instance ToExpr ExeDependency
 instance ToExpr Executable
 instance ToExpr ExecutableScope
 instance ToExpr ExposedModule
+instance ToExpr ExtraSource
 instance ToExpr FlagAssignment
 instance ToExpr FlagName
 instance ToExpr ForeignLib
