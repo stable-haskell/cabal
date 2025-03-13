@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
@@ -66,7 +67,7 @@ import qualified Distribution.Simple.Flag as Flag
 import Distribution.Simple.Setup (CommonSetupFlags (..), HaddockFlags (..), HaddockProjectFlags (..), defaultCommonSetupFlags, defaultHaddockFlags, defaultHaddockProjectFlags, toFlag)
 import Distribution.System
 import Distribution.Text
-import Distribution.Utils.LogProgress
+import Distribution.Utils.LogProgress (runLogProgress')
 import Distribution.Utils.Path (FileOrDir (File), Pkg, SymbolicPath, unsafeMakeSymbolicPath)
 import Distribution.Version
 
@@ -690,7 +691,8 @@ testTargetSelectorAmbiguous reportSubCase = do
     withCFiles exe files =
       exe{buildInfo = (buildInfo exe){cSources = map (mkExtraSource . unsafeMakeSymbolicPath) files}}
 
-    mkExtraSource x = ExtraSource x []
+    mkExtraSource :: SymbolicPath Pkg File -> ExtraSource Pkg
+    mkExtraSource x = ExtraSourcePkg x []
 
     withHsSrcDirs :: Executable -> [FilePath] -> Executable
     withHsSrcDirs exe srcDirs =
