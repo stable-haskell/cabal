@@ -1,6 +1,6 @@
 module Distribution.Solver.Modular.IndexConversion
-    ( convPIs
-    ) where
+  ( convPIs
+  ) where
 
 import Distribution.Solver.Compat.Prelude
 import Prelude ()
@@ -11,22 +11,22 @@ import qualified Distribution.Compat.NonEmptySet as NonEmptySet
 import qualified Data.Set as S
 
 import qualified Distribution.InstalledPackageInfo as IPI
-import Distribution.Compiler
-import Distribution.Package                          -- from Cabal
-import Distribution.Simple.BuildToolDepends          -- from Cabal
-import Distribution.Types.ExeDependency              -- from Cabal
-import Distribution.Types.PkgconfigDependency        -- from Cabal
-import Distribution.Types.ComponentName              -- from Cabal
-import Distribution.Types.CondTree                   -- from Cabal
-import Distribution.Types.MungedPackageId            -- from Cabal
-import Distribution.Types.MungedPackageName          -- from Cabal
-import Distribution.PackageDescription               -- from Cabal
-import Distribution.PackageDescription.Configuration
+import           Distribution.Compiler
+import           Distribution.Package
+import           Distribution.Simple.BuildToolDepends
+import           Distribution.Simple.Compiler (compilerInfo)
+import           Distribution.Types.ExeDependency
+import           Distribution.Types.PkgconfigDependency
+import           Distribution.Types.ComponentName
+import           Distribution.Types.CondTree
+import           Distribution.Types.MungedPackageId
+import           Distribution.Types.MungedPackageName
+import           Distribution.PackageDescription
+import           Distribution.PackageDescription.Configuration
 import qualified Distribution.Simple.PackageIndex as SI
-import Distribution.System
+import           Distribution.System
 
-import           Distribution.Solver.Types.ComponentDeps
-                   ( Component(..), componentNameToComponent )
+import           Distribution.Solver.Types.ComponentDeps ( Component(..), componentNameToComponent )
 import           Distribution.Solver.Types.Flag
 import           Distribution.Solver.Types.LabeledPackageConstraint
 import           Distribution.Solver.Types.OptionalStanza
@@ -34,13 +34,15 @@ import           Distribution.Solver.Types.PackageConstraint
 import qualified Distribution.Solver.Types.PackageIndex as CI
 import           Distribution.Solver.Types.Settings
 import           Distribution.Solver.Types.SourcePackage
+import           Distribution.Solver.Types.Toolchain
+import qualified Distribution.Solver.Types.Stage as Stage
 
-import Distribution.Solver.Modular.Dependency as D
-import Distribution.Solver.Modular.Flag as F
-import Distribution.Solver.Modular.Index
-import Distribution.Solver.Modular.Package
-import Distribution.Solver.Modular.Tree
-import Distribution.Solver.Modular.Version
+import           Distribution.Solver.Modular.Dependency as D
+import           Distribution.Solver.Modular.Flag as F
+import           Distribution.Solver.Modular.Index
+import           Distribution.Solver.Modular.Package
+import           Distribution.Solver.Modular.Tree
+import           Distribution.Solver.Modular.Version
 
 -- | Convert both the installed package index and the source package
 -- index into one uniform solver index.
@@ -53,59 +55,75 @@ import Distribution.Solver.Modular.Version
 -- resolving these situations. However, the right thing to do is to
 -- fix the problem there, so for now, shadowing is only activated if
 -- explicitly requested.
-convPIs :: OS -> Arch -> CompilerInfo -> Map PN [LabeledPackageConstraint]
-        -> ShadowPkgs -> StrongFlags -> SolveExecutables
-        -> SI.InstalledPackageIndex -> CI.PackageIndex (SourcePackage loc)
-        -> Index
-convPIs os arch comp constraints sip strfl solveExes iidx sidx =
-  mkIndex $
-  convIPI' sip iidx ++ convSPI' os arch comp constraints strfl solveExes sidx
+convPIs
+  :: Staged Toolchain
+  -> Map PN [LabeledPackageConstraint]
+  -> ShadowPkgs
+  -> StrongFlags
+  -> SolveExecutables
+  -> Staged SI.InstalledPackageIndex
+  -> CI.PackageIndex (SourcePackage loc)
+  -> Index
+convPIs toolchains' constraints sip strfl solveExes iidx sidx =
+  mkIndex $ convIPI' sip iidx ++ convSPI' toolchains' constraints strfl solveExes sidx
+    -- [ foldMap
+    --     (\(stage, idx) -> convIPI' stage sip idx)
+    --     (tabulate iidx)
+    -- , foldMap
+    --     (\(stage, Toolchain{toolchainCompiler = comp, toolchainPlatform = Platform arch os}) ->
+    --       convSPI' stage os arch comp constraints strfl solveExes sidx
+    --     )
+    --     toolchains'
+    -- ]
 
 -- | Convert a Cabal installed package index to the simpler,
 -- more uniform index format of the solver.
-convIPI' :: ShadowPkgs -> SI.InstalledPackageIndex -> [(PN, I, PInfo)]
-convIPI' (ShadowPkgs sip) idx =
+convIPI' :: ShadowPkgs -> Staged SI.InstalledPackageIndex -> [(PN, I, PInfo)]
+convIPI' (ShadowPkgs sip) =
+  Stage.foldMapWithKey (\stage idx -> 
     -- apply shadowing whenever there are multiple installed packages with
     -- the same version
-    [ maybeShadow (convIP idx pkg)
-    -- IMPORTANT to get internal libraries. See
-    -- Note [Index conversion with internal libraries]
-    | (_, pkgs) <- SI.allPackagesBySourcePackageIdAndLibName idx
-    , (maybeShadow, pkg) <- zip (id : repeat shadow) pkgs ]
+    [ maybeShadow (convIP stage idx pkg)
+    | -- IMPORTANT to get internal libraries. See Note [Index conversion with internal libraries]
+      (_, pkgs) <- SI.allPackagesBySourcePackageIdAndLibName idx
+    , (maybeShadow, pkg) <- zip (id : repeat shadow) pkgs
+    ])
   where
-
     -- shadowing is recorded in the package info
     shadow (pn, i, PInfo fdeps comps fds _)
       | sip = (pn, i, PInfo fdeps comps fds (Just Shadowed))
-    shadow x                                     = x
+    shadow x = x
 
 -- | Extract/recover the package ID from an installed package info, and convert it to a solver's I.
-convId :: IPI.InstalledPackageInfo -> (PN, I)
-convId ipi = (pn, I ver $ Inst $ IPI.installedUnitId ipi)
-  where MungedPackageId mpn ver = mungedId ipi
-        -- HACK. See Note [Index conversion with internal libraries]
-        pn = encodeCompatPackageName mpn
+convId :: Stage -> IPI.InstalledPackageInfo -> (PN, I)
+convId stage ipi = (pn, I stage ver $ Inst $ IPI.installedUnitId ipi)
+  where
+    MungedPackageId mpn ver = mungedId ipi
+    -- HACK. See Note [Index conversion with internal libraries]
+    pn = encodeCompatPackageName mpn
 
 -- | Convert a single installed package into the solver-specific format.
-convIP :: SI.InstalledPackageIndex -> IPI.InstalledPackageInfo -> (PN, I, PInfo)
-convIP idx ipi =
-  case traverse (convIPId (DependencyReason pn M.empty S.empty) comp idx) (IPI.depends ipi) of
-        Left u    -> (pn, i, PInfo [] M.empty M.empty (Just (Broken u)))
-        Right fds -> (pn, i, PInfo fds components M.empty Nothing)
- where
-  -- TODO: Handle sub-libraries and visibility.
-  components =
-      M.singleton (ExposedLib LMainLibName)
-                  ComponentInfo {
-                      compIsVisible = IsVisible True
-                    , compIsBuildable = IsBuildable True
-                    }
+convIP :: Stage -> SI.InstalledPackageIndex -> IPI.InstalledPackageInfo -> (PN, I, PInfo)
+convIP stage idx ipi =
+  case traverse (convIPId stage (DependencyReason pn M.empty S.empty) comp idx) (IPI.depends ipi) of
+    Left u -> (pn, i, PInfo [] M.empty M.empty (Just (Broken u)))
+    Right fds -> (pn, i, PInfo fds components M.empty Nothing)
+  where
+    -- TODO: Handle sub-libraries and visibility.
+    components =
+      M.singleton
+        (ExposedLib LMainLibName)
+        ComponentInfo
+          { compIsVisible = IsVisible True
+          , compIsBuildable = IsBuildable True
+          }
 
-  (pn, i) = convId ipi
+    (pn, i) = convId stage ipi
 
-  -- 'sourceLibName' is unreliable, but for now we only really use this for
-  -- primary libs anyways
-  comp = componentNameToComponent $ CLibName $ IPI.sourceLibName ipi
+    -- 'sourceLibName' is unreliable, but for now we only really use this for
+    -- primary libs anyways
+    comp = componentNameToComponent $ CLibName $ IPI.sourceLibName ipi
+
 -- TODO: Installed packages should also store their encapsulations!
 
 -- Note [Index conversion with internal libraries]
@@ -141,31 +159,51 @@ convIP idx ipi =
 -- May return Nothing if the package can't be found in the index. That
 -- indicates that the original package having this dependency is broken
 -- and should be ignored.
-convIPId :: DependencyReason PN -> Component -> SI.InstalledPackageIndex -> UnitId -> Either UnitId (FlaggedDep PN)
-convIPId dr comp idx ipid =
+convIPId :: Stage -> DependencyReason PN -> Component -> SI.InstalledPackageIndex -> UnitId -> Either UnitId (FlaggedDep PN)
+convIPId stage dr comp idx ipid =
   case SI.lookupUnitId idx ipid of
-    Nothing  -> Left ipid
-    Just ipi -> let (pn, i) = convId ipi
-                    name = ExposedLib LMainLibName  -- TODO: Handle sub-libraries.
-                in  Right (D.Simple (LDep dr (Dep (PkgComponent pn name) (Fixed i))) comp)
-                -- NB: something we pick up from the
-                -- InstalledPackageIndex is NEVER an executable
+    Nothing -> Left ipid
+    Just ipi ->
+      let (pn, i) = convId stage ipi
+          name = ExposedLib LMainLibName -- TODO: Handle sub-libraries.
+       in Right (D.Simple (LDep dr (Dep (PkgComponent pn name) (Fixed i))) comp)
+
+-- NB: something we pick up from the
+-- InstalledPackageIndex is NEVER an executable
 
 -- | Convert a cabal-install source package index to the simpler,
 -- more uniform index format of the solver.
-convSPI' :: OS -> Arch -> CompilerInfo -> Map PN [LabeledPackageConstraint]
-         -> StrongFlags -> SolveExecutables
-         -> CI.PackageIndex (SourcePackage loc) -> [(PN, I, PInfo)]
-convSPI' os arch cinfo constraints strfl solveExes =
-    L.map (convSP os arch cinfo constraints strfl solveExes) . CI.allPackages
+convSPI'
+  :: Staged Toolchain
+  -> Map PN [LabeledPackageConstraint]
+  -> StrongFlags
+  -> SolveExecutables
+  -> CI.PackageIndex (SourcePackage loc)
+  -> [(PN, I, PInfo)]
+convSPI' toolchains constraints strfl solveExes sidx =
+  Stage.foldMapWithKey (\stage toolchain ->
+    let  
+        Platform arch os = toolchainPlatform toolchain
+        cinfo = compilerInfo (toolchainCompiler toolchain)
+    in
+      L.map (convSP stage os arch cinfo constraints strfl solveExes) (CI.allPackages sidx)
+  ) toolchains
 
 -- | Convert a single source package into the solver-specific format.
-convSP :: OS -> Arch -> CompilerInfo -> Map PN [LabeledPackageConstraint]
-       -> StrongFlags -> SolveExecutables -> SourcePackage loc -> (PN, I, PInfo)
-convSP os arch cinfo constraints strfl solveExes (SourcePackage (PackageIdentifier pn pv) gpd _ _pl) =
-  let i = I pv InRepo
+convSP
+  :: Stage
+  -> OS
+  -> Arch
+  -> CompilerInfo
+  -> Map PN [LabeledPackageConstraint]
+  -> StrongFlags
+  -> SolveExecutables
+  -> SourcePackage loc
+  -> (PN, I, PInfo)
+convSP stage os arch cinfo constraints strfl solveExes (SourcePackage (PackageIdentifier pn pv) gpd _ _pl) =
+  let i = I stage pv InRepo
       pkgConstraints = fromMaybe [] $ M.lookup pn constraints
-  in  (pn, i, convGPD os arch cinfo pkgConstraints strfl solveExes pn gpd)
+   in (pn, i, convGPD os arch cinfo pkgConstraints strfl solveExes pn gpd)
 
 -- We do not use 'flattenPackageDescription' or 'finalizePD'
 -- from 'Distribution.PackageDescription.Configuration' here, because we

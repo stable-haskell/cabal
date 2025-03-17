@@ -758,7 +758,7 @@ rebuildInstallPlan
         -> InstalledPackageIndex
         -> Rebuild
             ( SolverInstallPlan
-            , Staged (Maybe PkgConfigDb)
+            , Staged (Toolchain, InstalledPackageIndex, Maybe PkgConfigDb)
             , IndexUtils.TotalIndexState
             , IndexUtils.ActiveRepos
             )
@@ -781,9 +781,6 @@ rebuildInstallPlan
             , hookHashes
             )
             $ do
-              installedPkgIndex <-
-                traverse (\t -> getInstalledPackages verbosity t corePackageDbs) toolchains
-
               (sourcePkgDb, tis, ar) <-
                 getSourcePackages
                   verbosity
@@ -791,7 +788,10 @@ rebuildInstallPlan
                   (solverSettingIndexState solverSettings)
                   (solverSettingActiveRepos solverSettings)
 
-              pkgConfigDB <- traverse (\t -> getPkgConfigDb verbosity (toolchainProgramDb t)) toolchains
+              toolchains' <- for toolchains $ \t -> do
+                ipi <- getInstalledPackages verbosity t corePackageDbs
+                pkgConfigDb <- getPkgConfigDb verbosity (toolchainProgramDb t)
+                return (t, ipi, pkgConfigDb)
 
               -- TODO: [code cleanup] it'd be better if the Compiler contained the
               -- ConfiguredPrograms that it needs, rather than relying on the progdb
@@ -804,18 +804,18 @@ rebuildInstallPlan
                   foldProgress logMsg (pure . Left) (pure . Right) $
                     planPackages
                       verbosity
-                      toolchains
                       solverSettings
-                      installedPkgIndex
+                      toolchains'
                       sourcePkgDb
-                      pkgConfigDB
                       localPackages
                       localPackagesEnabledStanzas
+
                 case planOrError of
                   Left msg -> do
                     -- reportPlanningFailure projectConfig (hostToolchain toolchains) localPackages
                     dieWithException verbosity $ PhaseRunSolverErr msg
-                  Right plan -> return (plan, pkgConfigDB, tis, ar)
+
+                  Right plan -> return (plan, toolchains', tis, ar)
           where
             corePackageDbs :: PackageDBStackCWD
             corePackageDbs =
@@ -971,7 +971,7 @@ rebuildInstallPlan
         -> Rebuild ElaboratedInstallPlan
       phaseImprovePlan elaboratedPlan elaboratedShared = do
         liftIO $ debug verbosity "Improving the install plan..."
-        improvedPlan <- InstallPlan.installedM canBeImproved elaboratedPlan
+        improvedPlan <- InstallPlan.installedM (liftIO . canBeImproved) elaboratedPlan
         liftIO $ debugNoWrap verbosity (showElaboratedInstallPlan improvedPlan)
         -- TODO: [nice to have] having checked which packages from the store
         -- we're using, it may be sensible to sanity check those packages
@@ -1288,9 +1288,7 @@ getPackageSourceHashes verbosity withRepoCtx solverPlan = do
 planPackages
   :: Verbosity
   -> SolverSettings
-  -> Staged Toolchain
-  -> Staged InstalledPackageIndex
-  -> Staged (Maybe PkgConfigDb)
+  -> Staged (Toolchain, InstalledPackageIndex, Maybe PkgConfigDb)
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> Map PackageName (Map OptionalStanza Bool)
@@ -1298,15 +1296,12 @@ planPackages
 planPackages
   verbosity
   SolverSettings{..}
-  toolchains
-  installedPkgs
-  pkgConfigDB
+ toolchains'
   sourcePkgs
   localPackages
   pkgStanzasEnable =
     resolveDependencies
-      toolchains
-      pkgConfigDB
+      toolchains'
       resolverParams
     where
       -- TODO: [nice to have] disable multiple instances restriction in
@@ -1339,19 +1334,16 @@ planPackages
           . setPreferenceDefault
             ( if Cabal.asBool solverSettingPreferOldest
                 then PreferAllOldest
-                else PreferLatestForSelected
+                else PreferAllLatest
             )
-          {-(if solverSettingUpgradeDeps
-               then PreferAllLatest
-               else PreferLatestForSelected)-}
-
           . removeLowerBounds solverSettingAllowOlder
           . removeUpperBounds solverSettingAllowNewer
-          . addDefaultSetupDependencies
-            ( mkDefaultSetupDeps compiler platform
-                . PD.packageDescription
-                . srcpkgDescription
-            )
+          -- TODO
+          -- . addDefaultSetupDependencies
+          --   ( mkDefaultSetupDeps compiler platform
+          --       . PD.packageDescription
+          --       . srcpkgDescription
+          --   )
           . addSetupCabalMinVersionConstraint setupMinCabalVersionConstraint
           . addSetupCabalMaxVersionConstraint setupMaxCabalVersionConstraint
           . addPreferences

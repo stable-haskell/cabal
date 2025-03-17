@@ -18,6 +18,14 @@ import Distribution.Solver.Modular.Flag
 import Distribution.Solver.Modular.Package
 import Distribution.Solver.Modular.Tree
 
+newtype MonoidalMap k v = MonoidalMap (Map k v)
+
+instance (Ord k, Semigroup v) => Semigroup (MonoidalMap k v) where
+  (MonoidalMap l) <> (MonoidalMap r) = MonoidalMap (M.unionWith (<>) l r)
+
+instance (Ord k, Monoid v) => Monoid (MonoidalMap k v) where
+  mempty = mempty
+  
 -- | An index contains information about package instances. This is a nested
 -- dictionary. Package names are mapped to instances, which in turn is mapped
 -- to info.

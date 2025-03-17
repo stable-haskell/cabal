@@ -114,7 +114,6 @@ import Distribution.PackageDescription.Configuration
   )
 import qualified Distribution.PackageDescription.Configuration as PD
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
-import qualified Distribution.Simple.PackageIndex as InstalledPackageIndex
 import Distribution.Simple.Setup
   ( asBool
   )
@@ -135,6 +134,7 @@ import Distribution.Verbosity
   )
 import Distribution.Version
 
+import Distribution.Client.ProjectPlanning.Types (Toolchain, Toolchains)
 import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.ConstraintSource
@@ -153,6 +153,7 @@ import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Stage
 import Distribution.Solver.Types.Variable
 
 import Control.Exception
@@ -163,8 +164,6 @@ import Data.List
   )
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Distribution.Client.ProjectPlanning.Types (Toolchains)
-import Distribution.Solver.Types.Stage
 
 -- ------------------------------------------------------------
 
@@ -176,11 +175,13 @@ import Distribution.Solver.Types.Stage
 -- relatively low level but many kinds of high level policies can be
 -- implemented in terms of adjustments to the parameters.
 data DepResolverParams = DepResolverParams
-  { depResolverTargets :: Set PackageName
+  { depResolverToolchains :: Staged Toolchain
+  , depResolverPkgConfigDb :: Staged (Maybe PkgConfigDb)
+  , depResolverInstalledPkgIndex :: Staged InstalledPackageIndex
+  , depResolverTargets :: Set PackageName
   , depResolverConstraints :: [LabeledPackageConstraint]
   , depResolverPreferences :: [PackagePreference]
   , depResolverPreferenceDefault :: PackagesPreferenceDefault
-  , depResolverInstalledPkgIndex :: Staged InstalledPackageIndex
   , depResolverSourcePkgIndex :: PackageIndex.PackageIndex UnresolvedSourcePackage
   , depResolverReorderGoals :: ReorderGoals
   , depResolverCountConflicts :: CountConflicts
@@ -276,16 +277,19 @@ showPackagePreference (PackageStanzasPreference pn st) =
   prettyShow pn ++ " " ++ show st
 
 basicDepResolverParams
-  :: Staged InstalledPackageIndex
+  :: Staged Toolchain
+  -> Staged InstalledPackageIndex
   -> PackageIndex.PackageIndex UnresolvedSourcePackage
   -> DepResolverParams
-basicDepResolverParams installedPkgIndex sourcePkgIndex =
+basicDepResolverParams toolchains installedPkgIndex sourcePkgIndex =
   DepResolverParams
-    { depResolverTargets = Set.empty
+    { depResolverToolchains = toolchains
+    , depResolverPkgConfigDb = Staged (const Nothing)
+    , depResolverInstalledPkgIndex = installedPkgIndex
+    , depResolverTargets = Set.empty
     , depResolverConstraints = []
     , depResolverPreferences = []
     , depResolverPreferenceDefault = PreferAllLatest
-    , depResolverInstalledPkgIndex = installedPkgIndex
     , depResolverSourcePkgIndex = sourcePkgIndex
     , depResolverReorderGoals = ReorderGoals False
     , depResolverCountConflicts = CountConflicts True
@@ -490,31 +494,31 @@ addSourcePackages pkgs params =
           pkgs
     }
 
+requireFromSourceByPackageName :: ConstraintSource -> [PackageName] -> DepResolverParams -> DepResolverParams
+requireFromSourceByPackageName cs names =
+  addConstraints
+    [ LabeledPackageConstraint
+      (PackageConstraint (ScopeAnyQualifier name) PackagePropertySource)
+      cs
+    | name <- names
+    ]
+
 hideInstalledPackagesSpecificBySourcePackageId
   :: [PackageId]
   -> DepResolverParams
   -> DepResolverParams
-hideInstalledPackagesSpecificBySourcePackageId pkgids params =
-  -- TODO: this should work using exclude constraints instead
-  params
-    { depResolverInstalledPkgIndex =
-        fmap
-          (\idx -> foldl' (flip InstalledPackageIndex.deleteSourcePackageId) idx pkgids)
-          (depResolverInstalledPkgIndex params)
-    }
+hideInstalledPackagesSpecificBySourcePackageId pkgids =
+  requireFromSourceByPackageName
+    ConstraintHideInstalledPackagesSpecificBySourcePackageId
+    [packageName pkgId | pkgId <- pkgids]
 
-hideInstalledPackagesAllVersions
-  :: [PackageName]
-  -> DepResolverParams
-  -> DepResolverParams
-hideInstalledPackagesAllVersions pkgnames params =
-  -- TODO: this should work using exclude constraints instead
-  params
-    { depResolverInstalledPkgIndex =
-        fmap
-          (\idx -> foldl' (flip InstalledPackageIndex.deletePackageName) idx pkgnames)
-          (depResolverInstalledPkgIndex params)
-    }
+-- -- TODO: this should work using exclude constraints instead
+-- params
+--   { depResolverInstalledPkgIndex =
+--       fmap
+--         (\idx -> foldl' (flip InstalledPackageIndex.deleteSourcePackageId) idx pkgids)
+--         (depResolverInstalledPkgIndex params)
+--   }
 
 -- | Remove upper bounds in dependencies using the policy specified by the
 -- 'AllowNewer' argument (all/some/none).
@@ -696,15 +700,26 @@ upgradeDependencies = setPreferenceDefault PreferAllLatest
 
 reinstallTargets :: DepResolverParams -> DepResolverParams
 reinstallTargets params =
-  hideInstalledPackagesAllVersions (Set.toList $ depResolverTargets params) params
+  addConstraints
+    [ LabeledPackageConstraint
+      ( PackageConstraint
+          (ScopeAnyQualifier pkgName)
+          PackagePropertySource
+      )
+      ConstraintSourceProfiledDynamic
+    | pkgName <- toList (depResolverTargets params)
+    ]
+    params
 
 -- | A basic solver policy on which all others are built.
 basicInstallPolicy
-  :: Staged InstalledPackageIndex
+  :: Toolchains
+  -> Staged InstalledPackageIndex
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
 basicInstallPolicy
+  toolchains
   installedPkgIndex
   (SourcePackageDb sourcePkgIndex sourcePkgPrefs)
   pkgSpecifiers =
@@ -721,6 +736,7 @@ basicInstallPolicy
       . addSourcePackages
         [pkg | SpecificSourcePackage pkg <- pkgSpecifiers]
       $ basicDepResolverParams
+        toolchains
         installedPkgIndex
         sourcePkgIndex
 
@@ -729,13 +745,15 @@ basicInstallPolicy
 --
 -- It extends the 'basicInstallPolicy' with a policy on setup deps.
 standardInstallPolicy
-  :: Staged InstalledPackageIndex
+  :: Staged Toolchain
+  -> Staged InstalledPackageIndex
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
-standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers =
+standardInstallPolicy toolchains installedPkgIndex sourcePkgDb pkgSpecifiers =
   addDefaultSetupDependencies mkDefaultSetupDeps $
     basicInstallPolicy
+      toolchains
       installedPkgIndex
       sourcePkgDb
       pkgSpecifiers
@@ -782,14 +800,16 @@ runSolver = modularResolver
 -- a 'Progress' structure that can be unfolded to provide progress information,
 -- logging messages and the final result or an error.
 resolveDependencies
-  :: Toolchains
+  :: Staged Toolchain
   -> Staged (Maybe PkgConfigDb)
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
-resolveDependencies toolchains pkgConfigDB params =
+resolveDependencies toolchains pkgConfigDBs params =
   let platform = error "TODO"
       comp = error "TODO"
-   in Step (showDepResolverParams finalparams) $
+   in
+
+        Step (showDepResolverParams finalparams) $
         fmap (validateSolverResult platform comp indGoals) $
           runSolver
             ( SolverConfig
@@ -811,7 +831,7 @@ resolveDependencies toolchains pkgConfigDB params =
             )
             toolchains
             installedPkgIndex
-            pkgConfigDB
+            pkgConfigDBs
             sourcePkgIndex
             preferences
             constraints
@@ -865,6 +885,8 @@ interpretPackagesPreference _selected defaultPref prefs =
     versionPref :: PackageName -> [VersionRange]
     versionPref pkgname =
       fromMaybe [anyVersion] (Map.lookup pkgname versionPrefs)
+
+    versionPrefs :: Map PackageName [VersionRange]
     versionPrefs =
       Map.fromListWith
         (++)
@@ -874,15 +896,20 @@ interpretPackagesPreference _selected defaultPref prefs =
 
     installPref :: PackageName -> InstalledPreference
     installPref pkgname =
-      fromMaybe (installPrefDefault pkgname) (Map.lookup pkgname installPrefs)
+      fromMaybe
+        (installPrefDefault pkgname)
+        (Map.lookup pkgname installPrefs)
     installPrefs =
       Map.fromList
         [ (pkgname, pref)
         | PackageInstalledPreference pkgname pref <- prefs
         ]
+
+    installPrefDefault :: PackageName -> InstalledPreference
     installPrefDefault = case defaultPref of
       PreferAllLatest -> const Preference.PreferLatest
       PreferAllOldest -> const Preference.PreferOldest
+
     -- PreferAllInstalled -> const Preference.PreferInstalled
     -- PreferLatestForSelected -> \pkgname ->
     --   -- When you say cabal install foo, what you really mean is, prefer the
@@ -894,6 +921,8 @@ interpretPackagesPreference _selected defaultPref prefs =
     stanzasPref :: PackageName -> [OptionalStanza]
     stanzasPref pkgname =
       fromMaybe [] (Map.lookup pkgname stanzasPrefs)
+
+    stanzasPrefs :: Map PackageName [OptionalStanza]
     stanzasPrefs =
       Map.fromListWith
         (\a b -> nub (a ++ b))
@@ -1140,11 +1169,13 @@ resolveWithoutDependencies
   -> Either [ResolveNoDepsError] [UnresolvedSourcePackage]
 resolveWithoutDependencies
   ( DepResolverParams
+      _toolchains
+      _pkgConfigDbs
+      _installedPkgs
       targets
       constraints
       prefs
       defpref
-      _installedPkgIndex
       sourcePkgIndex
       _reorderGoals
       _countConflicts

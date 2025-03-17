@@ -44,6 +44,7 @@ import Distribution.Solver.Modular.Tree
 import qualified Distribution.Solver.Modular.PSQ as PSQ
 
 import Distribution.Simple.Setup (BooleanFlag(..))
+import Distribution.Solver.Types.Stage (Staged)
 
 #ifdef DEBUG_TRACETREE
 import qualified Distribution.Solver.Modular.ConflictSet as CS
@@ -89,9 +90,9 @@ newtype PruneAfterFirstSuccess = PruneAfterFirstSuccess Bool
 -- before exploration.
 --
 solve :: SolverConfig                         -- ^ solver parameters
-      -> CompilerInfo
+      -> Staged CompilerInfo
+      -> Staged (Maybe PkgConfigDb)
       -> Index                                -- ^ all available packages as an index
-      -> Maybe PkgConfigDb                    -- ^ available pkg-config pkgs
       -> (PN -> PackagePreferences)           -- ^ preferences
       -> M.Map PN [LabeledPackageConstraint]  -- ^ global constraints
       -> S.Set PN                             -- ^ global goals

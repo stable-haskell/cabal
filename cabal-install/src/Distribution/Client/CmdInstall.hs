@@ -53,7 +53,7 @@ import Distribution.Client.IndexUtils
   , getSourcePackages
   )
 import qualified Distribution.Client.InstallPlan as InstallPlan
--- import Distribution.Client.InstallSymlink
+import Distribution.Client.InstallSymlink
   ( Symlink (..)
   , promptRun
   , symlinkBinary
