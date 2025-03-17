@@ -97,7 +97,7 @@ solve :: SolverConfig                         -- ^ solver parameters
       -> M.Map PN [LabeledPackageConstraint]  -- ^ global constraints
       -> S.Set PN                             -- ^ global goals
       -> RetryLog Message SolverFailure (Assignment, RevDepMap)
-solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
+solve sc cinfo pkgConfigDB idx userPrefs userConstraints userGoals =
   explorePhase      .
   traceTree "cycles.json" id .
   detectCycles      .
@@ -119,7 +119,9 @@ solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
                                           (fineGrainedConflicts sc)
                                           (countConflicts sc)
                                           idx
+                                          
     detectCycles     = detectCyclesPhase
+
     heuristicsPhase  =
       let
           sortGoals = case goalOrder sc of
@@ -132,19 +134,24 @@ solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
           PruneAfterFirstSuccess prune = pruneAfterFirstSuccess sc
       in sortGoals .
          (if prune then P.pruneAfterFirstSuccess else id)
+
     preferencesPhase = P.preferLinked .
                        P.preferPackagePreferences userPrefs
+
     validationPhase  = P.enforcePackageConstraints userConstraints .
                        P.enforceManualFlags userConstraints
+
     validationCata   = P.enforceSingleInstanceRestriction .
                        validateLinking idx .
-                       validateTree cinfo idx pkgConfigDB
+                       validateTree cinfo pkgConfigDB idx
+
     prunePhase       = (if asBool (avoidReinstalls sc) then P.avoidReinstalls (const True) else id) .
                        (case onlyConstrained sc of
                           OnlyConstrainedAll ->
                             P.onlyConstrained pkgIsExplicit
                           OnlyConstrainedNone ->
                             id)
+
     buildPhase       = buildTree idx (independentGoals sc) (S.toList userGoals)
 
     allExplicit = M.keysSet userConstraints `S.union` userGoals

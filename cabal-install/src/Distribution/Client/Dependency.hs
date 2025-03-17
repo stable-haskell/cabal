@@ -176,7 +176,7 @@ import qualified Data.Set as Set
 -- implemented in terms of adjustments to the parameters.
 data DepResolverParams = DepResolverParams
   { depResolverToolchains :: Staged Toolchain
-  , depResolverPkgConfigDb :: Staged (Maybe PkgConfigDb)
+  , depResolverPkgConfigDbs :: Staged (Maybe PkgConfigDb)
   , depResolverInstalledPkgIndex :: Staged InstalledPackageIndex
   , depResolverTargets :: Set PackageName
   , depResolverConstraints :: [LabeledPackageConstraint]
@@ -284,7 +284,7 @@ basicDepResolverParams
 basicDepResolverParams toolchains installedPkgIndex sourcePkgIndex =
   DepResolverParams
     { depResolverToolchains = toolchains
-    , depResolverPkgConfigDb = Staged (const Nothing)
+    , depResolverPkgConfigDbs = Staged (const Nothing)
     , depResolverInstalledPkgIndex = installedPkgIndex
     , depResolverTargets = Set.empty
     , depResolverConstraints = []
@@ -805,38 +805,35 @@ resolveDependencies
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
 resolveDependencies toolchains pkgConfigDBs params =
-  let platform = error "TODO"
-      comp = error "TODO"
-   in
-
-        Step (showDepResolverParams finalparams) $
-        fmap (validateSolverResult platform comp indGoals) $
-          runSolver
-            ( SolverConfig
-                reordGoals
-                cntConflicts
-                fineGrained
-                minimize
-                indGoals
-                noReinstalls
-                shadowing
-                strFlags
-                onlyConstrained_
-                maxBkjumps
-                enableBj
-                solveExes
-                order
-                verbosity
-                (PruneAfterFirstSuccess False)
-            )
-            toolchains
-            installedPkgIndex
-            pkgConfigDBs
-            sourcePkgIndex
-            preferences
-            constraints
-            targets
+  Step (showDepResolverParams finalparams) $
+    fmap (validateSolverResult (error "TODO") (error "TODO") indGoals) $
+      runSolver
+        sc
+        toolchains
+        pkgConfigDBs
+        installedPkgIndex
+        sourcePkgIndex
+        preferences
+        constraints
+        targets
   where
+    sc =
+      SolverConfig
+        reordGoals
+        cntConflicts
+        fineGrained
+        minimize
+        indGoals
+        noReinstalls
+        shadowing
+        strFlags
+        onlyConstrained_
+        maxBkjumps
+        enableBj
+        solveExes
+        order
+        verbosity
+        (PruneAfterFirstSuccess False)
     finalparams@( DepResolverParams
                     { depResolverTargets = targets
                     , depResolverConstraints = constraints
@@ -1053,7 +1050,7 @@ configuredPackageProblems
 configuredPackageProblems
   platform
   cinfo
-  (SolverPackage _qpn pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps') =
+  (SolverPackage _stage _qpn pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps') =
     [ DuplicateFlag flag
     | flag <- PD.findDuplicateFlagAssignments specifiedFlags
     ]

@@ -560,8 +560,8 @@ extendRequiredComponents eqpn available = foldM extendSingle
 
 
 -- | Interface.
-validateTree :: CompilerInfo -> Index -> Maybe PkgConfigDb -> Tree d c -> Tree d c
-validateTree cinfo idx pkgConfigDb t = runValidate (validate t) VS {
+validateTree :: CompilerInfo -> Maybe PkgConfigDb -> Index -> Tree d c -> Tree d c
+validateTree cinfo pkgConfigDb idx t = runValidate (validate t) VS {
     supportedExt        = maybe (const True) -- if compiler has no list of extensions, we assume everything is supported
                                 (\ es -> let s = S.fromList es in \ x -> S.member x s)
                                 (compilerInfoExtensions cinfo)

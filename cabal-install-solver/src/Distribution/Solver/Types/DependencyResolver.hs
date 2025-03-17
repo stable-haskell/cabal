@@ -26,7 +26,9 @@ import Distribution.Solver.Types.Toolchain (Toolchain)
 -- solving the package dependency problem and we want to make it easy to swap
 -- in alternatives.
 --
-type DependencyResolver loc = Staged (Toolchain, InstalledPackageIndex, Maybe PkgConfigDb)
+type DependencyResolver loc = Staged Toolchain
+                           -> Staged (Maybe PkgConfigDb)
+                           -> Staged InstalledPackageIndex
                            -> PackageIndex (SourcePackage loc)
                            -> (PackageName -> PackagePreferences)
                            -> [LabeledPackageConstraint]

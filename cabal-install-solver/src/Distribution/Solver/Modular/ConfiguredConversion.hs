@@ -19,29 +19,32 @@ import           Distribution.Solver.Types.SolverId
 import           Distribution.Solver.Types.SolverPackage
 import           Distribution.Solver.Types.InstSolverPackage
 import           Distribution.Solver.Types.SourcePackage
+import           Distribution.Solver.Types.Stage (Staged (..))
 
 -- | Converts from the solver specific result @CP QPN@ into
 -- a 'ResolverPackage', which can then be converted into
 -- the install plan.
-convCP :: SI.InstalledPackageIndex ->
+convCP :: Staged SI.InstalledPackageIndex ->
           CI.PackageIndex (SourcePackage loc) ->
           CP QPN -> ResolverPackage loc
 convCP iidx sidx (CP qpi fa es ds) =
   case qpi of
     -- Installed
-    (PI qpn (I _ _ (Inst pi)))  ->
+    (PI qpn (I s _ (Inst pi)))  ->
       PreExisting $
                   InstSolverPackage {
+                    instSolverStage = s,
                     instSolverQPN = qpn,
-                    instSolverPkgIPI = fromMaybe (error "convCP: lookupUnitId failed") $ SI.lookupUnitId iidx pi,
+                    instSolverPkgIPI = fromMaybe (error "convCP: lookupUnitId failed") $ SI.lookupUnitId (getStage iidx s) pi,
                     instSolverPkgLibDeps = fmap fst ds',
                     instSolverPkgExeDeps = fmap snd ds'
                   }
     -- "In repo" i.e. a source package
-    (PI qpn@(Q _path pn) (I _ v InRepo)) ->
+    (PI qpn@(Q _path pn) (I s v InRepo)) ->
       let pi = PackageIdentifier pn v in
       Configured $
                   SolverPackage {
+                      solverPkgStage = s,
                       solverPkgQPN = qpn,
                       solverPkgSource = fromMaybe (error "convCP: lookupPackageId failed") $ CI.lookupPackageId sidx pi,
                       solverPkgFlags = fa,
