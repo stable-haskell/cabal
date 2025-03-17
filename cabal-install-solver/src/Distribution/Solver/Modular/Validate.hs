@@ -35,6 +35,7 @@ import Distribution.Solver.Types.PackagePath
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb, pkgConfigPkgIsPresent)
 import Distribution.Types.LibraryName
 import Distribution.Types.PkgconfigVersionRange
+import Distribution.Solver.Types.Stage (Staged (..), Stage)
 
 -- In practice, most constraints are implication constraints (IF we have made
 -- a number of choices, THEN we also have to ensure that). We call constraints
@@ -88,8 +89,8 @@ import Distribution.Types.PkgconfigVersionRange
 
 -- | The state needed during validation.
 data ValidateState = VS {
-  supportedExt        :: Extension -> Bool,
-  supportedLang       :: Language  -> Bool,
+  supportedExt        :: Stage -> Extension -> Bool,
+  supportedLang       :: Stage -> Language  -> Bool,
   presentPkgs         :: Maybe (PkgconfigName -> PkgconfigVersionRange  -> Bool),
   index               :: Index,
 
@@ -378,15 +379,19 @@ extractNewDeps v b fa sa = go
 --
 -- Either returns a witness of the conflict that would arise during the merge,
 -- or the successfully extended assignment.
-extend :: (Extension -> Bool)            -- ^ is a given extension supported
-       -> (Language  -> Bool)            -- ^ is a given language supported
-       -> Maybe (PkgconfigName -> PkgconfigVersionRange -> Bool) -- ^ is a given pkg-config requirement satisfiable
+extend :: (Extension -> Bool)
+       -- ^ is a given extension supported
+       -> (Language  -> Bool)
+       -- ^ is a given language supported
+       -> Maybe (PkgconfigName -> PkgconfigVersionRange -> Bool)
+       -- ^ is a given pkg-config requirement satisfiable
        -> [LDep QPN]
        -> PPreAssignment
        -> Either Conflict PPreAssignment
-extend extSupported langSupported pkgPresent newactives ppa = foldM extendSingle ppa newactives
-  where
+extend extSupported langSupported pkgPresent newactives ppa =
+  foldM extendSingle ppa newactives
 
+  where
     extendSingle :: PPreAssignment -> LDep QPN -> Either Conflict PPreAssignment
     extendSingle a (LDep dr (Ext  ext ))  =
       if extSupported  ext  then Right a
@@ -560,14 +565,13 @@ extendRequiredComponents eqpn available = foldM extendSingle
 
 
 -- | Interface.
-validateTree :: CompilerInfo -> Maybe PkgConfigDb -> Index -> Tree d c -> Tree d c
+validateTree :: Staged CompilerInfo -> Maybe PkgConfigDb -> Index -> Tree d c -> Tree d c
 validateTree cinfo pkgConfigDb idx t = runValidate (validate t) VS {
-    supportedExt        = maybe (const True) -- if compiler has no list of extensions, we assume everything is supported
-                                (\ es -> let s = S.fromList es in \ x -> S.member x s)
-                                (compilerInfoExtensions cinfo)
-  , supportedLang       = maybe (const True)
-                                (flip L.elem) -- use list lookup because language list is small and no Ord instance
-                                (compilerInfoLanguages  cinfo)
+    supportedExt        = -- if compiler has no list of extensions, we assume everything is supported
+                          let extSet = fmap (fmap S.fromList . compilerInfoExtensions) cinfo
+                          in  maybe (const True) (flip S.member) . getStage extSet
+  , supportedLang       = let langSet = fmap (fmap S.fromList . compilerInfoLanguages) cinfo
+                          in  maybe (const True) (flip S.member) . getStage langSet
   , presentPkgs         = pkgConfigPkgIsPresent <$> pkgConfigDb
   , index               = idx
   , saved               = M.empty
