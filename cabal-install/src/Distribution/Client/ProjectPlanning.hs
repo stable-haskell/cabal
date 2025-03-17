@@ -167,6 +167,7 @@ import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Stage as Stage
 
 import Distribution.ModuleName
 import Distribution.Package
@@ -221,8 +222,6 @@ import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Simple.LocalBuildInfo as Cabal
 import qualified Distribution.Simple.Setup as Cabal
 import qualified Distribution.Solver.Types.ComponentDeps as CD
-import Distribution.Solver.Types.Stage
-import Distribution.Solver.Types.Toolchain
 
 import qualified Distribution.Compat.Graph as Graph
 
@@ -403,7 +402,12 @@ rebuildProjectConfig
           let fetchCompiler = do
                 -- have to create the cache directory before configuring the compiler
                 liftIO $ createDirectoryIfMissingVerbose verbosity True distProjectCacheDirectory
-                Toolchains{hostToolchain = Toolchain{toolchainCompiler = compiler, toolchainPlatform = Platform arch os}} <- configureCompiler verbosity distDirLayout (fst (PD.ignoreConditions projectConfigSkeleton) <> cliConfig)
+                toolchains <- configureCompiler verbosity distDirLayout (fst (PD.ignoreConditions projectConfigSkeleton) <> cliConfig)
+                -- FIXME: what compiler to use here?
+                let Toolchain
+                      { toolchainCompiler = compiler
+                      , toolchainPlatform = Platform arch os
+                      } = getStage toolchains Host
                 return (os, arch, compiler)
 
           (projectConfig, _compiler) <- instantiateProjectConfigSkeletonFetchingCompiler fetchCompiler mempty projectConfigSkeleton
@@ -509,7 +513,7 @@ configureCompiler
         defdb <- liftIO $ resolveProgramDb verbosity projectConfigLocalPackages
 
         buildToolchain <- do
-          (compiler, platform, progdb) <-
+          (toolchainCompiler, toolchainPlatform, toolchainProgramDb) <-
             liftIO $
               Cabal.configCompilerEx
                 hcFlavor
@@ -524,11 +528,11 @@ configureCompiler
           -- the compiler will configure (and it does vary between compilers).
           -- We do know however that the compiler will only configure the
           -- programs it cares about, and those are the ones we monitor here.
-          monitorFiles (programsMonitorFiles progdb)
-          return Toolchain{toolchainCompiler = compiler, toolchainPlatform = platform, toolchainProgramDb = progdb}
+          monitorFiles (programsMonitorFiles toolchainProgramDb)
+          return Toolchain{..}
 
         hostToolchain <- do
-          (compiler, platform, progdb) <-
+          (toolchainCompiler, toolchainPlatform, toolchainProgramDb) <-
             liftIO $
               Cabal.configCompilerEx
                 hostHcFlavor
@@ -543,10 +547,10 @@ configureCompiler
           -- the compiler will configure (and it does vary between compilers).
           -- We do know however that the compiler will only configure the
           -- programs it cares about, and those are the ones we monitor here.
-          monitorFiles (programsMonitorFiles progdb)
-          return Toolchain{toolchainCompiler = compiler, toolchainPlatform = platform, toolchainProgramDb = progdb}
+          monitorFiles (programsMonitorFiles toolchainProgramDb)
+          return Toolchain{..}
 
-        return Toolchains{buildToolchain, hostToolchain}
+        return (Stage.index [(Build, buildToolchain), (Host, hostToolchain)])
     where
       hcFlavor = flagToMaybe projectConfigHcFlavor
       hcPath = flagToMaybe projectConfigHcPath
@@ -662,8 +666,10 @@ rebuildInstallPlan
               $ do
                 toolchains <- phaseConfigureToolchain projectConfig
 
-                liftIO $ print ("build compiler", compilerId $ toolchainCompiler $ buildToolchain toolchains)
-                liftIO $ print ("host compiler", compilerId $ toolchainCompiler $ hostToolchain toolchains)
+                liftIO $ do
+                  putStrLn "Toolchains:"
+                  for_ (tabulate toolchains) $ \(s, t) ->
+                    putStrLn $ unwords [show s, show (compilerId (toolchainCompiler t))]
 
                 -- _ <- phaseConfigurePrograms projectConfig compilerEtc
                 (solverPlan, pkgConfigDB, totalIndexState, activeRepos) <-
@@ -672,9 +678,8 @@ rebuildInstallPlan
                     toolchains
                     localPackages
                     (fromMaybe mempty mbInstalledPackages)
-                ( elaboratedPlan
-                  , elaboratedShared
-                  ) <-
+
+                (elaboratedPlan , elaboratedShared) <-
                   phaseElaboratePlan
                     projectConfig
                     toolchains
@@ -751,7 +756,12 @@ rebuildInstallPlan
         -> Toolchains
         -> [PackageSpecifier UnresolvedSourcePackage]
         -> InstalledPackageIndex
-        -> Rebuild (SolverInstallPlan, Maybe PkgConfigDb, IndexUtils.TotalIndexState, IndexUtils.ActiveRepos)
+        -> Rebuild
+            ( SolverInstallPlan
+            , Staged (Maybe PkgConfigDb)
+            , IndexUtils.TotalIndexState
+            , IndexUtils.ActiveRepos
+            )
       phaseRunSolver
         projectConfig@ProjectConfig
           { projectConfigShared
@@ -759,7 +769,8 @@ rebuildInstallPlan
           }
         toolchains
         localPackages
-        installedPackages =
+        _installedPackages =
+          -- \^-- TODO. Why do we even have this?
           rerunIfChanged
             verbosity
             fileMonitorSolverPlan
@@ -771,10 +782,7 @@ rebuildInstallPlan
             )
             $ do
               installedPkgIndex <-
-                getInstalledPackages
-                  verbosity
-                  (buildToolchain toolchains)
-                  corePackageDbs
+                traverse (\t -> getInstalledPackages verbosity t corePackageDbs) toolchains
 
               (sourcePkgDb, tis, ar) <-
                 getSourcePackages
@@ -783,7 +791,7 @@ rebuildInstallPlan
                   (solverSettingIndexState solverSettings)
                   (solverSettingActiveRepos solverSettings)
 
-              pkgConfigDB <- getPkgConfigDb verbosity (toolchainProgramDb $ buildToolchain toolchains)
+              pkgConfigDB <- traverse (\t -> getPkgConfigDb verbosity (toolchainProgramDb t)) toolchains
 
               -- TODO: [code cleanup] it'd be better if the Compiler contained the
               -- ConfiguredPrograms that it needs, rather than relying on the progdb
@@ -796,16 +804,16 @@ rebuildInstallPlan
                   foldProgress logMsg (pure . Left) (pure . Right) $
                     planPackages
                       verbosity
-                      (hostToolchain toolchains)
+                      toolchains
                       solverSettings
-                      (installedPackages <> installedPkgIndex)
+                      installedPkgIndex
                       sourcePkgDb
                       pkgConfigDB
                       localPackages
                       localPackagesEnabledStanzas
                 case planOrError of
                   Left msg -> do
-                    reportPlanningFailure projectConfig (hostToolchain toolchains) localPackages
+                    -- reportPlanningFailure projectConfig (hostToolchain toolchains) localPackages
                     dieWithException verbosity $ PhaseRunSolverErr msg
                   Right plan -> return (plan, pkgConfigDB, tis, ar)
           where
@@ -889,8 +897,14 @@ rebuildInstallPlan
               (packageLocationsSignature solverPlan)
               $ getPackageSourceHashes verbosity withRepoCtx solverPlan
 
-          defaultInstallDirs <- liftIO $ userInstallDirTemplates (toolchainCompiler (hostToolchain toolchains))
-          let installDirs = fmap Cabal.fromFlag $ (fmap Flag defaultInstallDirs) <> (projectConfigInstallDirs projectConfigShared)
+          installDirs <-
+            traverse
+              ( \t -> do
+                  defaultInstallDirs <- liftIO $ userInstallDirTemplates (toolchainCompiler t)
+                  return $ fmap Cabal.fromFlag $ (fmap Flag defaultInstallDirs) <> (projectConfigInstallDirs projectConfigShared)
+              )
+              toolchains
+
           (elaboratedPlan, elaboratedShared) <-
             liftIO . runLogProgress verbosity $
               elaborateInstallPlan
@@ -908,12 +922,14 @@ rebuildInstallPlan
                 projectConfigAllPackages
                 projectConfigLocalPackages
                 (getMapMappend projectConfigSpecificPackage)
+                
           let instantiatedPlan =
                 instantiateInstallPlan
                   cabalStoreDirLayout
                   installDirs
                   elaboratedShared
                   elaboratedPlan
+                  
           liftIO $ debugNoWrap verbosity (showElaboratedInstallPlan instantiatedPlan)
           return (instantiatedPlan, elaboratedShared)
           where
@@ -955,11 +971,7 @@ rebuildInstallPlan
         -> Rebuild ElaboratedInstallPlan
       phaseImprovePlan elaboratedPlan elaboratedShared = do
         liftIO $ debug verbosity "Improving the install plan..."
-        storePkgIdSet <- getStoreEntries cabalStoreDirLayout compiler
-        let improvedPlan =
-              improveInstallPlanWithInstalledPackages
-                storePkgIdSet
-                elaboratedPlan
+        improvedPlan <- InstallPlan.installedM canBeImproved elaboratedPlan
         liftIO $ debugNoWrap verbosity (showElaboratedInstallPlan improvedPlan)
         -- TODO: [nice to have] having checked which packages from the store
         -- we're using, it may be sensible to sanity check those packages
@@ -967,7 +979,9 @@ rebuildInstallPlan
         -- matches up as expected, e.g. no dangling deps, files deleted.
         return improvedPlan
         where
-          compiler = toolchainCompiler (hostToolchain (pkgConfigToolchains elaboratedShared))
+          canBeImproved pkg = do
+            let Toolchain{toolchainCompiler} = getStage (pkgConfigToolchains elaboratedShared) (elabStage pkg)
+            doesStoreEntryExist cabalStoreDirLayout toolchainCompiler (installedUnitId pkg)
 
 -- | If a 'PackageSpecifier' refers to a single package, return Just that
 -- package.
@@ -1273,26 +1287,25 @@ getPackageSourceHashes verbosity withRepoCtx solverPlan = do
 
 planPackages
   :: Verbosity
-  -> Toolchain
   -> SolverSettings
-  -> InstalledPackageIndex
+  -> Staged Toolchain
+  -> Staged InstalledPackageIndex
+  -> Staged (Maybe PkgConfigDb)
   -> SourcePackageDb
-  -> Maybe PkgConfigDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> Map PackageName (Map OptionalStanza Bool)
   -> Progress String String SolverInstallPlan
 planPackages
   verbosity
-  Toolchain{toolchainCompiler = compiler, toolchainPlatform = platform}
   SolverSettings{..}
-  installedPkgIndex
-  sourcePkgDb
+  toolchains
+  installedPkgs
   pkgConfigDB
+  sourcePkgs
   localPackages
   pkgStanzasEnable =
     resolveDependencies
-      platform
-      (compilerInfo compiler)
+      toolchains
       pkgConfigDB
       resolverParams
     where
@@ -1413,8 +1426,8 @@ planPackages
         -- Note: we don't use the standardInstallPolicy here, since that uses
         -- its own addDefaultSetupDependencies that is not appropriate for us.
         basicInstallPolicy
-          installedPkgIndex
-          sourcePkgDb
+          installedPkgs
+          sourcePkgs
           localPackages
 
       -- While we can talk to older Cabal versions (we need to be able to
@@ -2100,7 +2113,6 @@ elaborateInstallPlan
 
             elab0@ElaboratedConfiguredPackage{..} =
               elaborateSolverToCommon pkg
-
 
             modShape = case find (matchElabPkg (== (CLibName LMainLibName))) comps of
               Nothing -> emptyModuleShape
@@ -4001,7 +4013,7 @@ setupHsConfigureFlags
   mkSymbolicPath
   plan
   (ReadyPackage elab@ElaboratedConfiguredPackage{..})
-  sharedConfig@ElaboratedSharedConfig{pkgConfigToolchains = Toolchains{buildToolchain}}
+  sharedConfig@ElaboratedSharedConfig{pkgConfigToolchains}
   configCommonFlags = do
     -- explicitly clear, then our package db stack
     -- TODO: [required eventually] have to do this differently for older Cabal versions
@@ -4304,7 +4316,7 @@ setupHsHaddockFlags
   -> Cabal.HaddockFlags
 setupHsHaddockFlags
   (ElaboratedConfiguredPackage{..})
-  (ElaboratedSharedConfig{pkgConfigToolchains = Toolchains{buildToolchain}})
+  (ElaboratedSharedConfig{pkgConfigToolchains})
   _buildTimeSettings
   common =
     Cabal.HaddockFlags
@@ -4448,11 +4460,11 @@ packageHashConfigInputs
   :: ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> PackageHashConfigInputs
-packageHashConfigInputs shared@ElaboratedSharedConfig{pkgConfigToolchains = Toolchains{buildToolchain}} pkg =
+packageHashConfigInputs shared pkg =
   PackageHashConfigInputs
-    { pkgHashCompilerId = compilerId (toolchainCompiler buildToolchain)
-    , pkgHashCompilerABI = compilerAbiTag (toolchainCompiler buildToolchain)
-    , pkgHashPlatform = toolchainPlatform buildToolchain
+    { pkgHashCompilerId = compilerId toolchainCompiler
+    , pkgHashCompilerABI = compilerAbiTag toolchainCompiler
+    , pkgHashPlatform = toolchainPlatform
     , pkgHashFlagAssignment = elabFlagAssignment
     , pkgHashConfigureScriptArgs = elabConfigureScriptArgs
     , pkgHashVanillaLib = withVanillaLib
@@ -4499,6 +4511,7 @@ packageHashConfigInputs shared@ElaboratedSharedConfig{pkgConfigToolchains = Tool
     , pkgHashHaddockUseUnicode = elabHaddockUseUnicode
     }
   where
+    Toolchain{toolchainCompiler, toolchainPlatform} = getStage (pkgConfigToolchains shared) elabStage
     ElaboratedConfiguredPackage{..} = normaliseConfiguredPackage shared pkg
     LBC.BuildOptions{..} = elabBuildOptions
 

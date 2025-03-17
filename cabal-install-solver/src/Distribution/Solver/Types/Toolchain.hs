@@ -1,9 +1,9 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Distribution.Solver.Types.Toolchain
   ( Toolchain (..)
   , Toolchains (..)
-  , toolchainFor
   ) where
 
 import Distribution.Compat.Prelude
@@ -11,8 +11,10 @@ import Prelude ()
 
 import Distribution.Simple.Compiler
 import Distribution.Simple.Program.Db
-import Distribution.Solver.Types.Stage (Stage (..))
+import Distribution.Solver.Types.Stage (Stage (..), Staged)
 import Distribution.System
+import Data.Maybe (fromJust)
+import Distribution.Utils.Structured (Structured(..))
 
 ---------------------------
 -- Toolchain
@@ -35,15 +37,43 @@ instance Eq Toolchain where
 instance Binary Toolchain
 instance Structured Toolchain
 
-data Toolchains = Toolchains
-  { buildToolchain :: Toolchain
-  , hostToolchain :: Toolchain
-  }
-  deriving (Eq, Show, Generic, Typeable)
+type Toolchains = Staged Toolchain
 
-toolchainFor :: Stage -> Toolchains -> Toolchain
-toolchainFor Build = buildToolchain
-toolchainFor Host = hostToolchain
+-- data Toolchains = Toolchains
+--   { getToolchain :: Stage -> Toolchain
+--   }
+--   deriving (Generic, Typeable)
 
-instance Binary Toolchains
-instance Structured Toolchains
+-- instance Eq Toolchains where
+--   lhs == rhs =
+--     all
+--       (\stage -> getToolchain lhs stage == getToolchain rhs stage)
+--       [minBound .. maxBound]
+
+-- instance Show Toolchains where
+--   showsPrec _ toolchains =
+--     showList
+--       [ (stage, getToolchain toolchains stage)
+--       | stage <- [minBound .. maxBound]
+--       ]
+
+-- -- toolchainFor :: Stage -> Toolchains -> Toolchain
+-- -- toolchainFor Build = buildToolchain
+-- -- toolchainFor Host = hostToolchain
+
+-- instance Binary Toolchains where
+--   put toolchains = put (tabulate toolchains)
+--   -- TODO this could be done better
+--   get = do
+--     t <- get
+--     return (Toolchains (\s -> fromJust (lookup s t))) 
+    
+-- -- TODO: I have no idea if this is right
+-- instance Structured Toolchains where
+--   structure _ = structure (Proxy :: Proxy [(Stage, Toolchain)])
+
+-- tabulate :: Toolchains -> [(Stage, Toolchain)]
+-- tabulate toolchains =
+--   [ (stage, getToolchain toolchains stage)
+--   | stage <- [minBound .. maxBound]
+--   ]

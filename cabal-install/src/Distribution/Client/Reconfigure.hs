@@ -17,7 +17,7 @@ import Distribution.Simple.Utils
 import Distribution.Utils.Path
 
 import Distribution.Client.Config (SavedConfig (..))
-import Distribution.Client.Configure (readConfigFlags)
+-- import Distribution.Client.Configure (readConfigFlags)
 import Distribution.Client.Nix (findNixExpr, inNixShell, nixInstantiate)
 import Distribution.Client.Sandbox (findSavedDistPref, updateInstallDirs)
 import Distribution.Client.Sandbox.PackageEnvironment

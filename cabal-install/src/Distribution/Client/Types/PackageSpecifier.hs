@@ -48,12 +48,18 @@ pkgSpecifierConstraints (NamedPackage name props) = map toLpc props
         (PackageConstraint (scopeToplevel name) prop)
         ConstraintSourceUserTarget
 pkgSpecifierConstraints (SpecificSourcePackage pkg) =
-  [LabeledPackageConstraint pc ConstraintSourceUserTarget]
+  [ LabeledPackageConstraint versionConstraint ConstraintSourceUserTarget
+  , LabeledPackageConstraint sourceConstraint ConstraintSourceUserTarget
+  ]
   where
-    pc =
+    versionConstraint =
       PackageConstraint
         (ScopeTarget $ packageName pkg)
         (PackagePropertyVersion $ thisVersion (packageVersion pkg))
+    sourceConstraint =
+      PackageConstraint
+        (ScopeTarget $ packageName pkg)
+        PackagePropertySource
 
 mkNamedPackage :: PackageIdentifier -> PackageSpecifier pkg
 mkNamedPackage pkgId =

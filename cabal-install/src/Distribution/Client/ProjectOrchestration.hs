@@ -504,7 +504,7 @@ runProjectPostBuildPhase
     --        - delete stale lib registrations
     --        - delete stale package dirs
 
-    postBuildStatus <-
+    _postBuildStatus <-
       updatePostBuildProjectStatus
         verbosity
         distDirLayout
@@ -512,30 +512,30 @@ runProjectPostBuildPhase
         pkgsBuildStatus
         buildOutcomes
 
-    -- Write the .ghc.environment file (if allowed by the env file write policy).
-    let writeGhcEnvFilesPolicy =
-          projectConfigWriteGhcEnvironmentFilesPolicy . projectConfigShared $
-            projectConfig
+    -- -- Write the .ghc.environment file (if allowed by the env file write policy).
+    -- let writeGhcEnvFilesPolicy =
+    --       projectConfigWriteGhcEnvironmentFilesPolicy . projectConfigShared $
+    --         projectConfig
 
-        shouldWriteGhcEnvironment :: Bool
-        shouldWriteGhcEnvironment =
-          case fromFlagOrDefault
-            NeverWriteGhcEnvironmentFiles
-            writeGhcEnvFilesPolicy of
-            AlwaysWriteGhcEnvironmentFiles -> True
-            NeverWriteGhcEnvironmentFiles -> False
-            WriteGhcEnvironmentFilesOnlyForGhc844AndNewer ->
-              let compiler = toolchainCompiler $ buildToolchain $ pkgConfigToolchains elaboratedShared
-                  ghcCompatVersion = compilerCompatVersion GHC compiler
-               in maybe False (>= mkVersion [8, 4, 4]) ghcCompatVersion
+    --     shouldWriteGhcEnvironment :: Bool
+    --     shouldWriteGhcEnvironment =
+    --       case fromFlagOrDefault
+    --         NeverWriteGhcEnvironmentFiles
+    --         writeGhcEnvFilesPolicy of
+    --         AlwaysWriteGhcEnvironmentFiles -> True
+    --         NeverWriteGhcEnvironmentFiles -> False
+    --         WriteGhcEnvironmentFilesOnlyForGhc844AndNewer ->
+    --           let compiler = toolchainCompiler $ buildToolchain $ pkgConfigToolchains elaboratedShared
+    --               ghcCompatVersion = compilerCompatVersion GHC compiler
+    --            in maybe False (>= mkVersion [8, 4, 4]) ghcCompatVersion
 
-    when shouldWriteGhcEnvironment $
-      void $
-        writePlanGhcEnvironment
-          (distProjectRootDirectory distDirLayout)
-          elaboratedPlanOriginal
-          elaboratedShared
-          postBuildStatus
+    -- when shouldWriteGhcEnvironment $
+    --   void $
+    --     writePlanGhcEnvironment
+    --       (distProjectRootDirectory distDirLayout)
+    --       elaboratedPlanOriginal
+    --       elaboratedShared
+    --       postBuildStatus
 
     -- Write the build reports
     writeBuildReports buildSettings bc elaboratedPlanToExecute buildOutcomes

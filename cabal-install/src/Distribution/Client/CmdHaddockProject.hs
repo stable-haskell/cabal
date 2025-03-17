@@ -15,7 +15,7 @@ import Distribution.Client.DistDirLayout
   , StoreDirLayout (..)
   , distBuildDirectory
   )
-import Distribution.Client.InstallPlan (foldPlanPackage)
+-- import Distribution.Client.InstallPlan (foldPlanPackage)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import qualified Distribution.Client.NixStyleOptions as NixStyleOptions
 import Distribution.Client.ProjectOrchestration

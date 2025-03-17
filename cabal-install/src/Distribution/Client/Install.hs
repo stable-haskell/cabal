@@ -83,7 +83,7 @@ import Distribution.Client.Config
   ( defaultReportsDir
   , defaultUserInstall
   )
-import Distribution.Client.Configure
+-- import Distribution.Client.Configure
   ( checkConfigExFlags
   , chooseCabalVersion
   , configureSetupScript
@@ -98,7 +98,7 @@ import Distribution.Client.IndexUtils as IndexUtils
   ( getInstalledPackages
   , getSourcePackagesAtIndexState
   )
-import Distribution.Client.InstallPlan (InstallPlan)
+-- import Distribution.Client.InstallPlan (InstallPlan)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import qualified Distribution.Client.InstallSymlink as InstallSymlink
   ( symlinkBinaries

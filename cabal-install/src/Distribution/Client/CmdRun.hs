@@ -37,7 +37,7 @@ import Distribution.Client.Errors
 import Distribution.Client.GlobalFlags
   ( defaultGlobalFlags
   )
-import Distribution.Client.InstallPlan
+-- import Distribution.Client.InstallPlan
   ( foldPlanPackage
   , toList
   )

@@ -125,7 +125,7 @@ library
         Distribution.Client.Compat.Semaphore
         Distribution.Client.Compat.Tar
         Distribution.Client.Config
-        Distribution.Client.Configure
+        -- Distribution.Client.Configure
         Distribution.Client.Dependency
         Distribution.Client.Dependency.Types
         Distribution.Client.DistDirLayout
@@ -160,7 +160,7 @@ library
         Distribution.Client.Init.Simple
         Distribution.Client.Init.Types
         Distribution.Client.Init.Utils
-        Distribution.Client.Install
+        -- Distribution.Client.Install
         Distribution.Client.InstallPlan
         Distribution.Client.InstallSymlink
         Distribution.Client.JobControl
@@ -186,7 +186,7 @@ library
         Distribution.Client.ProjectPlanning.SetupPolicy
         Distribution.Client.ProjectPlanning.Types
         Distribution.Client.RebuildMonad
-        Distribution.Client.Reconfigure
+        -- Distribution.Client.Reconfigure
         Distribution.Client.ReplFlags
         Distribution.Client.Run
         Distribution.Client.Sandbox

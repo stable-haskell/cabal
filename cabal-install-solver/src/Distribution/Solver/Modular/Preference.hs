@@ -103,11 +103,11 @@ preferPackagePreferences pcs =
     addWeights [
           \pn _  opt -> preferred pn opt
         , \pn vs opt -> case preference pn of
-                          PreferInstalled -> installed opt
+                          -- PreferInstalled -> installed opt
                           PreferLatest    -> latest vs opt
                           PreferOldest    -> oldest vs opt
         , \pn vs opt -> case preference pn of
-                          PreferInstalled -> latest vs opt
+                          -- PreferInstalled -> latest vs opt
                           PreferLatest    -> installed opt
                           PreferOldest    -> installed opt
         ]

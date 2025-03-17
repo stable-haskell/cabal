@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -71,8 +72,8 @@ import Distribution.Client.Types hiding
 
 import Distribution.Package
 import Distribution.Simple.Compiler
-import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
+import Distribution.Solver.Types.Stage
 
 import Distribution.Compat.Graph (IsNode (..))
 import Distribution.Simple.Utils
@@ -342,9 +343,7 @@ rebuildTargets
   distDirLayout@DistDirLayout{..}
   storeDirLayout
   installPlan
-  sharedPackageConfig@ElaboratedSharedConfig
-    { pkgConfigToolchains = Toolchains{hostToolchain = Toolchain{toolchainCompiler = compiler, toolchainProgramDb = progdb}}
-    }
+  sharedPackageConfig
   pkgsBuildStatus
   buildSettings@BuildTimeSettings
     { buildSettingNumJobs
@@ -364,11 +363,11 @@ rebuildTargets
 
         createDirectoryIfMissingVerbose verbosity True distBuildRootDirectory
         createDirectoryIfMissingVerbose verbosity True distTempDirectory
-        traverse_ (createPackageDBIfMissing verbosity compiler progdb) packageDBsToUse
+        createPackageDBsIfMissing
 
         -- Concurrency control: create the job controller and concurrency limits
         -- for downloading, building and installing.
-        withJobControl (newJobControlFromParStrat verbosity (Just compiler) buildSettingNumJobs Nothing) $ \jobControl -> do
+        withJobControl (newJobControlFromParStrat buildSettingNumJobs Nothing) $ \jobControl -> do
           -- Before traversing the install plan, preemptively find all packages that
           -- will need to be downloaded and start downloading them.
           asyncDownloadPackages
@@ -408,19 +407,52 @@ rebuildTargets
         projectConfigWithBuilderRepoContext
           verbosity
           buildSettings
-      packageDBsToUse =
-        -- all the package dbs we may need to create
-        (Set.toList . Set.fromList)
-          [ pkgdb
-          | InstallPlan.Configured elab <- InstallPlan.toList installPlan
-          , pkgdb <-
-              concat
-                [ elabBuildPackageDBStack elab
-                , elabRegisterPackageDBStack elab
-                , elabSetupPackageDBStack elab
-                ]
-          ]
 
+      createPackageDBsIfMissing :: IO ()
+      createPackageDBsIfMissing =
+        for_ (InstallPlan.toList installPlan) $ \case
+          InstallPlan.Configured elab -> do
+            let pkgdbs =
+                  (Set.toList . Set.fromList) $
+                    concat
+                      [ elabBuildPackageDBStack elab
+                      , elabRegisterPackageDBStack elab
+                      , elabSetupPackageDBStack elab
+                      ]
+            for_ pkgdbs $ \case
+              SpecificPackageDB dbPath -> do
+                exists <- Cabal.doesPackageDBExist dbPath
+                let Toolchain{toolchainCompiler, toolchainProgramDb} =
+                      getStage (pkgConfigToolchains sharedPackageConfig) (elabStage elab)
+                unless exists $ do
+                  createDirectoryIfMissingVerbose verbosity True (takeDirectory dbPath)
+                  Cabal.createPackageDB verbosity toolchainCompiler toolchainProgramDb False dbPath
+              _ -> pure ()
+          _ -> pure ()
+
+      -- createPackageDBIfMissing _ _ _ _ = return ()
+
+      -- -- all the package dbs we may need to create
+      -- (Set.toList . Set.fromList)
+      --   [ pkgdb
+      --   | InstallPlan.Configured elab <- InstallPlan.toList installPlan
+      --   , pkgdb <-
+      --       concat
+      --         [ elabBuildPackageDBStack elab
+      --         , elabRegisterPackageDBStack elab
+      --         , elabSetupPackageDBStack elab
+      --         ]
+      --   ]
+      -- createPackageDBIfMissing
+      --   verbosity
+      --   compiler
+      --   progdb
+      --   (SpecificPackageDB dbPath) = do
+      --     exists <- Cabal.doesPackageDBExist dbPath
+      --     unless exists $ do
+      --       createDirectoryIfMissingVerbose verbosity True (takeDirectory dbPath)
+      --       Cabal.createPackageDB verbosity compiler progdb False dbPath
+      -- createPackageDBIfMissing _ _ _ _ = return ()
       offlineError :: BuildOutcomes
       offlineError = Map.fromList . map makeBuildOutcome $ packagesToDownload
         where
@@ -455,25 +487,6 @@ rebuildTargets
           isRemote (RepoTarballPackage{}) = True
           isRemote (RemoteSourceRepoPackage _ _) = True
           isRemote _ = False
-
--- | Create a package DB if it does not currently exist. Note that this action
--- is /not/ safe to run concurrently.
-createPackageDBIfMissing
-  :: Verbosity
-  -> Compiler
-  -> ProgramDb
-  -> PackageDBCWD
-  -> IO ()
-createPackageDBIfMissing
-  verbosity
-  compiler
-  progdb
-  (SpecificPackageDB dbPath) = do
-    exists <- Cabal.doesPackageDBExist dbPath
-    unless exists $ do
-      createDirectoryIfMissingVerbose verbosity True (takeDirectory dbPath)
-      Cabal.createPackageDB verbosity compiler progdb False dbPath
-createPackageDBIfMissing _ _ _ _ = return ()
 
 -- | Given all the context and resources, (re)build an individual package.
 rebuildTarget
@@ -790,7 +803,7 @@ unpackPackageTarball verbosity tarball parentdir pkgid pkgTextOverride =
       parentdir
         </> pkgsubdir
         </> prettyShow pkgname
-        <.> "cabal"
+          <.> "cabal"
     pkgsubdir = prettyShow pkgid
     pkgname = packageName pkgid
 

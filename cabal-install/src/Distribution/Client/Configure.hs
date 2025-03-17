@@ -130,6 +130,7 @@ import Distribution.Version
   )
 
 import Distribution.Client.Errors
+import Distribution.Solver.Types.Toolchain (Toolchains)
 
 -- | Choose the Cabal version such that the setup scripts compiled against this
 -- version will support the given command-line flags. Currently, it implements no
@@ -382,8 +383,7 @@ checkConfigExFlags verbosity installedPkgIndex sourcePkgIndex flags = do
 -- and all its dependencies.
 planLocalPackage
   :: Verbosity
-  -> Compiler
-  -> Platform
+  -> Toolchains
   -> ConfigFlags
   -> ConfigExFlags
   -> InstalledPackageIndex
@@ -392,8 +392,7 @@ planLocalPackage
   -> IO (Progress String String SolverInstallPlan)
 planLocalPackage
   verbosity
-  comp
-  platform
+  toolchains
   configFlags
   configExFlags
   installedPkgIndex

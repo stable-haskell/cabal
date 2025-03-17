@@ -163,6 +163,8 @@ import Data.List
   )
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Distribution.Client.ProjectPlanning.Types (Toolchains)
+import Distribution.Solver.Types.Stage
 
 -- ------------------------------------------------------------
 
@@ -178,7 +180,7 @@ data DepResolverParams = DepResolverParams
   , depResolverConstraints :: [LabeledPackageConstraint]
   , depResolverPreferences :: [PackagePreference]
   , depResolverPreferenceDefault :: PackagesPreferenceDefault
-  , depResolverInstalledPkgIndex :: InstalledPackageIndex
+  , depResolverInstalledPkgIndex :: Staged InstalledPackageIndex
   , depResolverSourcePkgIndex :: PackageIndex.PackageIndex UnresolvedSourcePackage
   , depResolverReorderGoals :: ReorderGoals
   , depResolverCountConflicts :: CountConflicts
@@ -274,7 +276,7 @@ showPackagePreference (PackageStanzasPreference pn st) =
   prettyShow pn ++ " " ++ show st
 
 basicDepResolverParams
-  :: InstalledPackageIndex
+  :: Staged InstalledPackageIndex
   -> PackageIndex.PackageIndex UnresolvedSourcePackage
   -> DepResolverParams
 basicDepResolverParams installedPkgIndex sourcePkgIndex =
@@ -282,7 +284,7 @@ basicDepResolverParams installedPkgIndex sourcePkgIndex =
     { depResolverTargets = Set.empty
     , depResolverConstraints = []
     , depResolverPreferences = []
-    , depResolverPreferenceDefault = PreferLatestForSelected
+    , depResolverPreferenceDefault = PreferAllLatest
     , depResolverInstalledPkgIndex = installedPkgIndex
     , depResolverSourcePkgIndex = sourcePkgIndex
     , depResolverReorderGoals = ReorderGoals False
@@ -496,10 +498,9 @@ hideInstalledPackagesSpecificBySourcePackageId pkgids params =
   -- TODO: this should work using exclude constraints instead
   params
     { depResolverInstalledPkgIndex =
-        foldl'
-          (flip InstalledPackageIndex.deleteSourcePackageId)
+        fmap
+          (\idx -> foldl' (flip InstalledPackageIndex.deleteSourcePackageId) idx pkgids)
           (depResolverInstalledPkgIndex params)
-          pkgids
     }
 
 hideInstalledPackagesAllVersions
@@ -510,10 +511,9 @@ hideInstalledPackagesAllVersions pkgnames params =
   -- TODO: this should work using exclude constraints instead
   params
     { depResolverInstalledPkgIndex =
-        foldl'
-          (flip InstalledPackageIndex.deletePackageName)
+        fmap
+          (\idx -> foldl' (flip InstalledPackageIndex.deletePackageName) idx pkgnames)
           (depResolverInstalledPkgIndex params)
-          pkgnames
     }
 
 -- | Remove upper bounds in dependencies using the policy specified by the
@@ -700,7 +700,7 @@ reinstallTargets params =
 
 -- | A basic solver policy on which all others are built.
 basicInstallPolicy
-  :: InstalledPackageIndex
+  :: Staged InstalledPackageIndex
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
@@ -729,7 +729,7 @@ basicInstallPolicy
 --
 -- It extends the 'basicInstallPolicy' with a policy on setup deps.
 standardInstallPolicy
-  :: InstalledPackageIndex
+  :: Staged InstalledPackageIndex
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
@@ -782,63 +782,64 @@ runSolver = modularResolver
 -- a 'Progress' structure that can be unfolded to provide progress information,
 -- logging messages and the final result or an error.
 resolveDependencies
-  :: Platform
-  -> CompilerInfo
-  -> Maybe PkgConfigDb
+  :: Toolchains
+  -> Staged (Maybe PkgConfigDb)
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
-resolveDependencies platform comp pkgConfigDB params =
-  Step (showDepResolverParams finalparams) $
-    fmap (validateSolverResult platform comp indGoals) $
-      runSolver
-        ( SolverConfig
-            reordGoals
-            cntConflicts
-            fineGrained
-            minimize
-            indGoals
-            noReinstalls
-            shadowing
-            strFlags
-            onlyConstrained_
-            maxBkjumps
-            enableBj
-            solveExes
-            order
-            verbosity
-            (PruneAfterFirstSuccess False)
-        )
-        platform
-        comp
-        installedPkgIndex
-        sourcePkgIndex
-        pkgConfigDB
-        preferences
-        constraints
-        targets
+resolveDependencies toolchains pkgConfigDB params =
+  let platform = error "TODO"
+      comp = error "TODO"
+   in Step (showDepResolverParams finalparams) $
+        fmap (validateSolverResult platform comp indGoals) $
+          runSolver
+            ( SolverConfig
+                reordGoals
+                cntConflicts
+                fineGrained
+                minimize
+                indGoals
+                noReinstalls
+                shadowing
+                strFlags
+                onlyConstrained_
+                maxBkjumps
+                enableBj
+                solveExes
+                order
+                verbosity
+                (PruneAfterFirstSuccess False)
+            )
+            toolchains
+            installedPkgIndex
+            pkgConfigDB
+            sourcePkgIndex
+            preferences
+            constraints
+            targets
   where
     finalparams@( DepResolverParams
-                    targets
-                    constraints
-                    prefs
-                    defpref
-                    installedPkgIndex
-                    sourcePkgIndex
-                    reordGoals
-                    cntConflicts
-                    fineGrained
-                    minimize
-                    indGoals
-                    noReinstalls
-                    shadowing
-                    strFlags
-                    _allowBootLibs
-                    onlyConstrained_
-                    maxBkjumps
-                    enableBj
-                    solveExes
-                    order
-                    verbosity
+                    { depResolverTargets = targets
+                    , depResolverConstraints = constraints
+                    , depResolverPreferences = prefs
+                    , depResolverPreferenceDefault = defpref
+                    , depResolverInstalledPkgIndex = installedPkgIndex
+                    , depResolverSourcePkgIndex = sourcePkgIndex
+                    , depResolverReorderGoals = reordGoals
+                    , depResolverCountConflicts = cntConflicts
+                    , depResolverFineGrainedConflicts = fineGrained
+                    , depResolverMinimizeConflictSet = minimize
+                    , depResolverIndependentGoals = indGoals
+                    , depResolverAvoidReinstalls = noReinstalls
+                    , depResolverShadowPkgs = shadowing
+                    , depResolverStrongFlags = strFlags
+                    , depResolverAllowBootLibInstalls = _allowBootLibs
+                    , depResolverOnlyConstrained = onlyConstrained_
+                    , depResolverMaxBackjumps = maxBkjumps
+                    , depResolverEnableBackjumping = enableBj
+                    , depResolverSolveExecutables = solveExes
+                    , depResolverGoalOrder = order
+                    , depResolverVerbosity = verbosity
+                    }
                   ) =
         if asBool (depResolverAllowBootLibInstalls params)
           then params
@@ -854,7 +855,7 @@ interpretPackagesPreference
   -> PackagesPreferenceDefault
   -> [PackagePreference]
   -> (PackageName -> PackagePreferences)
-interpretPackagesPreference selected defaultPref prefs =
+interpretPackagesPreference _selected defaultPref prefs =
   \pkgname ->
     PackagePreferences
       (versionPref pkgname)
@@ -882,13 +883,13 @@ interpretPackagesPreference selected defaultPref prefs =
     installPrefDefault = case defaultPref of
       PreferAllLatest -> const Preference.PreferLatest
       PreferAllOldest -> const Preference.PreferOldest
-      PreferAllInstalled -> const Preference.PreferInstalled
-      PreferLatestForSelected -> \pkgname ->
-        -- When you say cabal install foo, what you really mean is, prefer the
-        -- latest version of foo, but the installed version of everything else
-        if pkgname `Set.member` selected
-          then Preference.PreferLatest
-          else Preference.PreferInstalled
+    -- PreferAllInstalled -> const Preference.PreferInstalled
+    -- PreferLatestForSelected -> \pkgname ->
+    --   -- When you say cabal install foo, what you really mean is, prefer the
+    --   -- latest version of foo, but the installed version of everything else
+    --   if pkgname `Set.member` selected
+    --     then Preference.PreferLatest
+    --     else Preference.PreferInstalled
 
     stanzasPref :: PackageName -> [OptionalStanza]
     stanzasPref pkgname =
@@ -1143,7 +1144,7 @@ resolveWithoutDependencies
       constraints
       prefs
       defpref
-      installedPkgIndex
+      _installedPkgIndex
       sourcePkgIndex
       _reorderGoals
       _countConflicts
@@ -1185,16 +1186,18 @@ resolveWithoutDependencies
           bestByPrefs :: UnresolvedSourcePackage -> UnresolvedSourcePackage -> Ordering
           bestByPrefs = comparing $ \pkg ->
             (installPref pkg, versionPref pkg, packageVersion pkg)
+
           installPref :: UnresolvedSourcePackage -> Bool
           installPref = case preferInstalled of
             Preference.PreferLatest -> const False
             Preference.PreferOldest -> const False
-            Preference.PreferInstalled ->
-              not
-                . null
-                . InstalledPackageIndex.lookupSourcePackageId
-                  installedPkgIndex
-                . packageId
+          -- Preference.PreferInstalled ->
+          --   not
+          --     . null
+          --     . InstalledPackageIndex.lookupSourcePackageId
+          --       installedPkgIndex
+          --     . packageId
+
           versionPref :: Package a => a -> Int
           versionPref pkg =
             length . filter (packageVersion pkg `withinRange`) $

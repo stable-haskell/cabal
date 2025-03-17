@@ -50,6 +50,7 @@ data PackagesPreferenceDefault
     --
     -- * This is enabled by --prefer-oldest.
     PreferAllOldest
+  {- 
   | -- | Always prefer the installed versions over ones that would need to be
     -- installed. Secondarily, prefer latest versions (eg the latest installed
     -- version or if there are none then the latest source version).
@@ -59,4 +60,5 @@ data PackagesPreferenceDefault
     --
     -- * This is the standard policy for install.
     PreferLatestForSelected
+  -}
   deriving (Show)
