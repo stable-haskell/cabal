@@ -117,6 +117,7 @@ import Distribution.Backpack.FullUnitId
 import Distribution.Backpack.LinkedComponent
 import Distribution.Backpack.ModuleShape
 import Distribution.CabalSpecVersion
+
 -- import qualified Distribution.Client.BuildReports.Storage as BuildReports
 import Distribution.Client.Compat.Prelude
 import Distribution.Client.Config
@@ -362,7 +363,13 @@ rebuildProjectConfig
     , distProjectCacheDirectory
     , distProjectFile
     }
-  cliConfig = do
+  cliConfig@ProjectConfig
+    { projectConfigShared =
+      ProjectConfigShared
+        { projectConfigIgnoreProject
+        , projectConfigConfigFile
+        }
+    } = do
     progsearchpath <- liftIO $ getSystemSearchPath
 
     let fileMonitorProjectConfig = newFileMonitor (distProjectCacheFile "config")
@@ -372,7 +379,7 @@ rebuildProjectConfig
       return
         ( configPath
         , distProjectFile ""
-        , (projectConfigHcFlavor, projectConfigHcPath, projectConfigHcPkg)
+        , toolchainCacheKey
         , progsearchpath
         , packageConfigProgramPaths
         , packageConfigProgramPathExtra
@@ -392,12 +399,9 @@ rebuildProjectConfig
                 -- have to create the cache directory before configuring the compiler
                 liftIO $ createDirectoryIfMissingVerbose verbosity True distProjectCacheDirectory
                 toolchains <- configureCompiler verbosity distDirLayout (fst (PD.ignoreConditions projectConfigSkeleton) <> cliConfig)
-                -- FIXME: what compiler to use here?
-                let Toolchain
-                      { toolchainCompiler = compiler
-                      , toolchainPlatform = Platform arch os
-                      } = getStage toolchains Host
-                return (os, arch, compiler)
+                -- NOTE: project config is always resolved with the host compiler
+                let Toolchain{toolchainCompiler, toolchainPlatform = Platform arch os} = getStage toolchains Host
+                return (os, arch, toolchainCompiler)
 
           (projectConfig, _compiler) <- instantiateProjectConfigSkeletonFetchingCompiler fetchCompiler mempty projectConfigSkeleton
           when (projectConfigDistDir (projectConfigShared $ projectConfig) /= NoFlag) $
@@ -410,6 +414,7 @@ rebuildProjectConfig
           [ text "-" <+> docProjectConfigPath path
           | Explicit path <- Set.toList . (if verbosity >= verbose then id else onlyTopLevelProvenance) $ projectConfigProvenance projectConfig
           ]
+
     unless (null configfiles)
       $ notice (verboseStderr verbosity)
         . render
@@ -419,8 +424,14 @@ rebuildProjectConfig
 
     return (projectConfig <> cliConfig, localPackages)
     where
-      ProjectConfigShared{projectConfigHcFlavor, projectConfigHcPath, projectConfigHcPkg, projectConfigIgnoreProject, projectConfigConfigFile} =
-        projectConfigShared cliConfig
+      toolchainCacheKey =
+        ( projectConfigBuildHcFlavor (projectConfigShared cliConfig)
+        , projectConfigBuildHcPath (projectConfigShared cliConfig)
+        , projectConfigBuildHcPkg (projectConfigShared cliConfig)
+        , projectConfigHcFlavor (projectConfigShared cliConfig)
+        , projectConfigHcPath (projectConfigShared cliConfig)
+        , projectConfigHcPkg (projectConfigShared cliConfig)
+        )
 
       PackageConfig{packageConfigProgramPaths, packageConfigProgramPathExtra} =
         projectConfigLocalPackages cliConfig
@@ -475,9 +486,9 @@ configureCompiler
         { projectConfigHcFlavor
         , projectConfigHcPath
         , projectConfigHcPkg
-        , projectConfigHostHcFlavor
-        , projectConfigHostHcPath
-        , projectConfigHostHcPkg
+        , projectConfigBuildHcFlavor
+        , projectConfigBuildHcPath
+        , projectConfigBuildHcPkg
         }
     , projectConfigLocalPackages =
       projectConfigLocalPackages@PackageConfig
@@ -492,9 +503,7 @@ configureCompiler
     rerunIfChanged
       verbosity
       fileMonitorCompiler
-      ( hcFlavor
-      , hcPath
-      , hcPkg
+      ( cacheKey
       , progsearchpath
       , packageConfigProgramPaths
       , packageConfigProgramPathExtra
@@ -506,13 +515,7 @@ configureCompiler
 
         buildToolchain <- do
           (toolchainCompiler, toolchainPlatform, toolchainProgramDb) <-
-            liftIO $
-              Cabal.configCompilerEx
-                hcFlavor
-                hcPath
-                hcPkg
-                defdb
-                verbosity
+            liftIO $ Cabal.configCompilerEx buildHcFlavor buildHcPath buildHcPkg defdb verbosity
 
           -- Note that we added the user-supplied program locations and args
           -- for /all/ programs, not just those for the compiler prog and
@@ -525,13 +528,7 @@ configureCompiler
 
         hostToolchain <- do
           (toolchainCompiler, toolchainPlatform, toolchainProgramDb) <-
-            liftIO $
-              Cabal.configCompilerEx
-                hostHcFlavor
-                hostHcPath
-                hostHcPkg
-                defdb
-                verbosity
+            liftIO $ Cabal.configCompilerEx hostHcFlavor hostHcPath hostHcPkg defdb verbosity
 
           -- Note that we added the user-supplied program locations and args
           -- for /all/ programs, not just those for the compiler prog and
@@ -544,12 +541,15 @@ configureCompiler
 
         return (Stage.index [(Build, buildToolchain), (Host, hostToolchain)])
     where
-      hcFlavor = flagToMaybe projectConfigHcFlavor
-      hcPath = flagToMaybe projectConfigHcPath
-      hcPkg = flagToMaybe projectConfigHcPkg
-      hostHcFlavor = flagToMaybe projectConfigHostHcFlavor <|> flagToMaybe projectConfigHcFlavor
-      hostHcPath = flagToMaybe projectConfigHostHcPath <|> flagToMaybe projectConfigHcPath
-      hostHcPkg = flagToMaybe projectConfigHostHcPkg <|> flagToMaybe projectConfigHcPkg
+      hostHcFlavor = flagToMaybe projectConfigHcFlavor
+      hostHcPath = flagToMaybe projectConfigHcPath
+      hostHcPkg = flagToMaybe projectConfigHcPkg
+      -- Use the host compiler if a separate build compiler is not specified
+      buildHcFlavor = flagToMaybe projectConfigBuildHcFlavor <|> flagToMaybe projectConfigHcFlavor
+      buildHcPath = flagToMaybe projectConfigBuildHcPath <|> flagToMaybe projectConfigHcPath
+      buildHcPkg = flagToMaybe projectConfigBuildHcPkg <|> flagToMaybe projectConfigHcPkg
+
+      cacheKey = (hostHcFlavor, hostHcPath, hostHcPkg, buildHcFlavor, buildHcPath, buildHcPkg)
 
 {- Note [Caching the result of configuring the compiler]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -682,7 +682,7 @@ rebuildInstallPlan
                 phaseMaintainPlanOutputs elaboratedPlan elaboratedShared
                 return (elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
 
-          -- | Given the 'InstalledPackageIndex' for a nix-style package store, and an
+          -- \| Given the 'InstalledPackageIndex' for a nix-style package store, and an
           -- 'ElaboratedInstallPlan', replace configured source packages by installed
           -- packages from the store whenever they exist.
           --

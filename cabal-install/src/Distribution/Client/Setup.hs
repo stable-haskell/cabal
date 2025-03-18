@@ -920,9 +920,9 @@ data ConfigExFlags = ConfigExFlags
   , configAllowOlder :: Maybe AllowOlder
   , configWriteGhcEnvironmentFilesPolicy
       :: Flag WriteGhcEnvironmentFilesPolicy
-  , configHostHcFlavor :: Flag CompilerFlavor
-  , configHostHcPath :: Flag FilePath
-  , configHostHcPkg :: Flag FilePath
+  , configBuildHcFlavor :: Flag CompilerFlavor
+  , configBuildHcPath :: Flag FilePath
+  , configBuildHcPkg :: Flag FilePath
   }
   deriving (Eq, Show, Generic)
 
@@ -1051,29 +1051,18 @@ configureExOptions _showOrParseArgs src =
           writeGhcEnvironmentFilesPolicyPrinter
       )
   , option
-      []
-      ["host-compiler"]
-      "host compiler"
-      configHostHcFlavor
-      (\v flags -> flags{configHostHcFlavor = v})
-      ( choiceOpt
-          [ (Flag GHC, ("g", ["ghc"]), "compile with GHC")
-          , (Flag GHCJS, ([], ["ghcjs"]), "compile with GHCJS")
-          ]
-      )
-  , option
       "W"
-      ["with-host-compiler", "with-host-hc"]
+      ["with-build-compiler", "with-host-hc"]
       "give the path to the compiler for the host toolchain"
-      configHostHcPath
-      (\v flags -> flags{configHostHcPath = v})
+      configBuildHcPath
+      (\v flags -> flags{configBuildHcPath = v})
       (reqArgFlag "PATH")
   , option
       ""
-      ["with-host-hc-pkg"]
-      "give the path to the package tool for the host toolchain"
-      configHostHcPkg
-      (\v flags -> flags{configHostHcPkg = v})
+      ["with-build-hc-pkg"]
+      "give the path to the package tool for the build toolchain"
+      configBuildHcPkg
+      (\v flags -> flags{configBuildHcPkg = v})
       (reqArgFlag "PATH")
   ]
 
