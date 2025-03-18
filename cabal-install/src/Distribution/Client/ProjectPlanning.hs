@@ -677,9 +677,9 @@ rebuildInstallPlan
                     projectConfig
                     toolchains
                     localPackages
-                    (fromMaybe mempty mbInstalledPackages)
+                -- (fromMaybe mempty mbInstalledPackages)
 
-                (elaboratedPlan , elaboratedShared) <-
+                (elaboratedPlan, elaboratedShared) <-
                   phaseElaboratePlan
                     projectConfig
                     toolchains
@@ -755,7 +755,7 @@ rebuildInstallPlan
         :: ProjectConfig
         -> Toolchains
         -> [PackageSpecifier UnresolvedSourcePackage]
-        -> InstalledPackageIndex
+        -- -> InstalledPackageIndex
         -> Rebuild
             ( SolverInstallPlan
             , Staged (Toolchain, InstalledPackageIndex, Maybe PkgConfigDb)
@@ -768,8 +768,9 @@ rebuildInstallPlan
           , projectConfigBuildOnly
           }
         toolchains
-        localPackages
-        _installedPackages =
+        localPackages =
+          -- _installedPackages
+
           -- \^-- TODO. Why do we even have this?
           rerunIfChanged
             verbosity
@@ -788,10 +789,8 @@ rebuildInstallPlan
                   (solverSettingIndexState solverSettings)
                   (solverSettingActiveRepos solverSettings)
 
-              toolchains' <- for toolchains $ \t -> do
-                ipi <- getInstalledPackages verbosity t corePackageDbs
-                pkgConfigDb <- getPkgConfigDb verbosity (toolchainProgramDb t)
-                return (t, ipi, pkgConfigDb)
+              ipis <- liftIO $ fmap (\t -> getInstalledPackages verbosity t corePackageDbs) toolchains
+              pkgConfigDbs <- liftIO $ fmap (getPkgConfigDb verbosity . toolchainProgramDb) toolchains
 
               -- TODO: [code cleanup] it'd be better if the Compiler contained the
               -- ConfiguredPrograms that it needs, rather than relying on the progdb
@@ -805,7 +804,9 @@ rebuildInstallPlan
                     planPackages
                       verbosity
                       solverSettings
-                      toolchains'
+                      toolchains
+                      ipis
+                      pkgConfigDbs
                       sourcePkgDb
                       localPackages
                       localPackagesEnabledStanzas
@@ -814,7 +815,6 @@ rebuildInstallPlan
                   Left msg -> do
                     -- reportPlanningFailure projectConfig (hostToolchain toolchains) localPackages
                     dieWithException verbosity $ PhaseRunSolverErr msg
-
                   Right plan -> return (plan, toolchains', tis, ar)
           where
             corePackageDbs :: PackageDBStackCWD
@@ -922,14 +922,14 @@ rebuildInstallPlan
                 projectConfigAllPackages
                 projectConfigLocalPackages
                 (getMapMappend projectConfigSpecificPackage)
-                
+
           let instantiatedPlan =
                 instantiateInstallPlan
                   cabalStoreDirLayout
                   installDirs
                   elaboratedShared
                   elaboratedPlan
-                  
+
           liftIO $ debugNoWrap verbosity (showElaboratedInstallPlan instantiatedPlan)
           return (instantiatedPlan, elaboratedShared)
           where
@@ -1288,7 +1288,9 @@ getPackageSourceHashes verbosity withRepoCtx solverPlan = do
 planPackages
   :: Verbosity
   -> SolverSettings
-  -> Staged (Toolchain, InstalledPackageIndex, Maybe PkgConfigDb)
+  -> Staged Toolchain
+  -> Staged InstalledPackageIndex
+  -> Staged (Maybe PkgConfigDb)
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> Map PackageName (Map OptionalStanza Bool)
@@ -1296,12 +1298,15 @@ planPackages
 planPackages
   verbosity
   SolverSettings{..}
- toolchains'
+  toolchains
+  installedPkgs
+  pkgConfigDbs
   sourcePkgs
   localPackages
   pkgStanzasEnable =
     resolveDependencies
-      toolchains'
+      toolchains
+      pkgConfigDbs
       resolverParams
     where
       -- TODO: [nice to have] disable multiple instances restriction in
@@ -1418,83 +1423,10 @@ planPackages
         -- Note: we don't use the standardInstallPolicy here, since that uses
         -- its own addDefaultSetupDependencies that is not appropriate for us.
         basicInstallPolicy
+          toolchains
           installedPkgs
           sourcePkgs
           localPackages
-
-      -- While we can talk to older Cabal versions (we need to be able to
-      -- do so for custom Setup scripts that require older Cabal lib
-      -- versions), we have problems talking to some older versions that
-      -- don't support certain features.
-      --
-      -- For example, Cabal-1.16 and older do not know about build targets.
-      -- Even worse, 1.18 and older only supported the --constraint flag
-      -- with source package ids, not --dependency with installed package
-      -- ids. That is bad because we cannot reliably select the right
-      -- dependencies in the presence of multiple instances (i.e. the
-      -- store). See issue #3932. So we require Cabal 1.20 as a minimum.
-      --
-      -- Moreover, lib:Cabal generally only supports the interface of
-      -- current and past compilers; in fact recent lib:Cabal versions
-      -- will warn when they encounter a too new or unknown GHC compiler
-      -- version (c.f. #415). To avoid running into unsupported
-      -- configurations we encode the compatibility matrix as lower
-      -- bounds on lib:Cabal here (effectively corresponding to the
-      -- respective major Cabal version bundled with the respective GHC
-      -- release).
-      --
-      -- GHC 9.2   needs  Cabal >= 3.6
-      -- GHC 9.0   needs  Cabal >= 3.4
-      -- GHC 8.10  needs  Cabal >= 3.2
-      -- GHC 8.8   needs  Cabal >= 3.0
-      -- GHC 8.6   needs  Cabal >= 2.4
-      -- GHC 8.4   needs  Cabal >= 2.2
-      -- GHC 8.2   needs  Cabal >= 2.0
-      -- GHC 8.0   needs  Cabal >= 1.24
-      -- GHC 7.10  needs  Cabal >= 1.22
-      --
-      -- (NB: we don't need to consider older GHCs as Cabal >= 1.20 is
-      -- the absolute lower bound)
-      --
-      -- TODO: long-term, this compatibility matrix should be
-      --       stored as a field inside 'Distribution.Compiler.Compiler'
-      setupMinCabalVersionConstraint
-        | isGHC, compVer >= mkVersion [9, 10] = mkVersion [3, 12]
-        | isGHC, compVer >= mkVersion [9, 6] = mkVersion [3, 10]
-        | isGHC, compVer >= mkVersion [9, 4] = mkVersion [3, 8]
-        | isGHC, compVer >= mkVersion [9, 2] = mkVersion [3, 6]
-        | isGHC, compVer >= mkVersion [9, 0] = mkVersion [3, 4]
-        | isGHC, compVer >= mkVersion [8, 10] = mkVersion [3, 2]
-        | isGHC, compVer >= mkVersion [8, 8] = mkVersion [3, 0]
-        | isGHC, compVer >= mkVersion [8, 6] = mkVersion [2, 4]
-        | isGHC, compVer >= mkVersion [8, 4] = mkVersion [2, 2]
-        | isGHC, compVer >= mkVersion [8, 2] = mkVersion [2, 0]
-        | isGHC, compVer >= mkVersion [8, 0] = mkVersion [1, 24]
-        | isGHC, compVer >= mkVersion [7, 10] = mkVersion [1, 22]
-        | otherwise = mkVersion [1, 20]
-        where
-          isGHC = compFlav `elem` [GHC, GHCJS]
-          compFlav = compilerFlavor compiler
-          compVer = compilerVersion compiler
-
-      -- As we can't predict the future, we also place a global upper
-      -- bound on the lib:Cabal version we know how to interact with:
-      --
-      -- The upper bound is computed by incrementing the current major
-      -- version twice in order to allow for the current version, as
-      -- well as the next adjacent major version (one of which will not
-      -- be released, as only "even major" versions of Cabal are
-      -- released to Hackage or bundled with proper GHC releases).
-      --
-      -- For instance, if the current version of cabal-install is an odd
-      -- development version, e.g.  Cabal-2.1.0.0, then we impose an
-      -- upper bound `setup.Cabal < 2.3`; if `cabal-install` is on a
-      -- stable/release even version, e.g. Cabal-2.2.1.0, the upper
-      -- bound is `setup.Cabal < 2.4`. This gives us enough flexibility
-      -- when dealing with development snapshots of Cabal and cabal-install.
-      --
-      setupMaxCabalVersionConstraint =
-        alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion
 
 ------------------------------------------------------------------------------
 
@@ -1681,7 +1613,7 @@ elaborateInstallPlan
         :: (SolverId -> [ElaboratedPlanPackage])
         -> SolverPackage UnresolvedPkgLoc
         -> LogProgress [ElaboratedConfiguredPackage]
-      elaborateSolverToComponents mapDep spkg@(SolverPackage qpn _ _ _ deps0 exe_deps0) =
+      elaborateSolverToComponents mapDep spkg@(SolverPackage _stage _qpn _ _ _ deps0 exe_deps0) =
         case mkComponentsGraph (elabEnabledSpec elab0) pd of
           Right g -> do
             let src_comps = componentsGraphToList g
@@ -2070,7 +2002,8 @@ elaborateInstallPlan
       elaborateSolverToPackage
         pkgWhyNotPerComponent
         pkg@( SolverPackage
-                qpn
+                _stage
+                _qpn
                 (SourcePackage pkgid _gpd _srcloc _descOverride)
                 _flags
                 _stanzas
@@ -2173,7 +2106,8 @@ elaborateInstallPlan
         -> ElaboratedConfiguredPackage
       elaborateSolverToCommon
         pkg@( SolverPackage
-                qpn
+                _stage
+                _qpn
                 (SourcePackage pkgid gdesc srcloc descOverride)
                 flags
                 stanzas
@@ -4601,3 +4535,77 @@ determineCoverageFor configuredPkg plan =
 
     isIndefiniteOrInstantiation :: ModuleShape -> Bool
     isIndefiniteOrInstantiation = not . Set.null . modShapeRequires
+
+-- While we can talk to older Cabal versions (we need to be able to
+-- do so for custom Setup scripts that require older Cabal lib
+-- versions), we have problems talking to some older versions that
+-- don't support certain features.
+--
+-- For example, Cabal-1.16 and older do not know about build targets.
+-- Even worse, 1.18 and older only supported the --constraint flag
+-- with source package ids, not --dependency with installed package
+-- ids. That is bad because we cannot reliably select the right
+-- dependencies in the presence of multiple instances (i.e. the
+-- store). See issue #3932. So we require Cabal 1.20 as a minimum.
+--
+-- Moreover, lib:Cabal generally only supports the interface of
+-- current and past compilers; in fact recent lib:Cabal versions
+-- will warn when they encounter a too new or unknown GHC compiler
+-- version (c.f. #415). To avoid running into unsupported
+-- configurations we encode the compatibility matrix as lower
+-- bounds on lib:Cabal here (effectively corresponding to the
+-- respective major Cabal version bundled with the respective GHC
+-- release).
+--
+-- GHC 9.2   needs  Cabal >= 3.6
+-- GHC 9.0   needs  Cabal >= 3.4
+-- GHC 8.10  needs  Cabal >= 3.2
+-- GHC 8.8   needs  Cabal >= 3.0
+-- GHC 8.6   needs  Cabal >= 2.4
+-- GHC 8.4   needs  Cabal >= 2.2
+-- GHC 8.2   needs  Cabal >= 2.0
+-- GHC 8.0   needs  Cabal >= 1.24
+-- GHC 7.10  needs  Cabal >= 1.22
+--
+-- (NB: we don't need to consider older GHCs as Cabal >= 1.20 is
+-- the absolute lower bound)
+--
+-- TODO: long-term, this compatibility matrix should be
+--       stored as a field inside 'Distribution.Compiler.Compiler'
+setupMinCabalVersionConstraint compiler
+  | isGHC, compVer >= mkVersion [9, 10] = mkVersion [3, 12]
+  | isGHC, compVer >= mkVersion [9, 6] = mkVersion [3, 10]
+  | isGHC, compVer >= mkVersion [9, 4] = mkVersion [3, 8]
+  | isGHC, compVer >= mkVersion [9, 2] = mkVersion [3, 6]
+  | isGHC, compVer >= mkVersion [9, 0] = mkVersion [3, 4]
+  | isGHC, compVer >= mkVersion [8, 10] = mkVersion [3, 2]
+  | isGHC, compVer >= mkVersion [8, 8] = mkVersion [3, 0]
+  | isGHC, compVer >= mkVersion [8, 6] = mkVersion [2, 4]
+  | isGHC, compVer >= mkVersion [8, 4] = mkVersion [2, 2]
+  | isGHC, compVer >= mkVersion [8, 2] = mkVersion [2, 0]
+  | isGHC, compVer >= mkVersion [8, 0] = mkVersion [1, 24]
+  | isGHC, compVer >= mkVersion [7, 10] = mkVersion [1, 22]
+  | otherwise = mkVersion [1, 20]
+  where
+    isGHC = compFlav `elem` [GHC, GHCJS]
+    compFlav = compilerFlavor compiler
+    compVer = compilerVersion compiler
+
+-- As we can't predict the future, we also place a global upper
+-- bound on the lib:Cabal version we know how to interact with:
+--
+-- The upper bound is computed by incrementing the current major
+-- version twice in order to allow for the current version, as
+-- well as the next adjacent major version (one of which will not
+-- be released, as only "even major" versions of Cabal are
+-- released to Hackage or bundled with proper GHC releases).
+--
+-- For instance, if the current version of cabal-install is an odd
+-- development version, e.g.  Cabal-2.1.0.0, then we impose an
+-- upper bound `setup.Cabal < 2.3`; if `cabal-install` is on a
+-- stable/release even version, e.g. Cabal-2.2.1.0, the upper
+-- bound is `setup.Cabal < 2.4`. This gives us enough flexibility
+-- when dealing with development snapshots of Cabal and cabal-install.
+--
+setupMaxCabalVersionConstraint =
+  alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion

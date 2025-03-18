@@ -66,13 +66,15 @@ mapWeightsWithKey :: Ord w2
                   => (k -> w1 -> w2)
                   -> WeightedPSQ w1 k v
                   -> WeightedPSQ w2 k v
-mapWeightsWithKey f (WeightedPSQ xs) = fromList $
-                                       L.map (\ (w, k, v) -> (f k w, k, v)) xs
+mapWeightsWithKey f (WeightedPSQ xs) =
+  fromList $ L.map (\ (w, k, v) -> (f k w, k, v)) xs
 
 -- | /O(N)/. Update the values.
-mapWithKey :: (k -> v1 -> v2) -> WeightedPSQ w k v1 -> WeightedPSQ w k v2
-mapWithKey f (WeightedPSQ xs) = WeightedPSQ $
-                                L.map (\ (w, k, v) -> (w, k, f k v)) xs
+mapWithKey :: (k -> v1 -> v2)
+           -> WeightedPSQ w k v1
+           -> WeightedPSQ w k v2
+mapWithKey f (WeightedPSQ xs) =
+  WeightedPSQ $ L.map (\ (w, k, v) -> (w, k, f k v)) xs
 
 -- | /O(N)/. Traverse and update values in some applicative functor.
 traverseWithKey

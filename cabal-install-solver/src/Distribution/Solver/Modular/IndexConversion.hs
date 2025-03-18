@@ -66,15 +66,6 @@ convPIs
   -> Index
 convPIs toolchains' constraints sip strfl solveExes iidx sidx =
   mkIndex $ convIPI' sip iidx ++ convSPI' toolchains' constraints strfl solveExes sidx
-    -- [ foldMap
-    --     (\(stage, idx) -> convIPI' stage sip idx)
-    --     (tabulate iidx)
-    -- , foldMap
-    --     (\(stage, Toolchain{toolchainCompiler = comp, toolchainPlatform = Platform arch os}) ->
-    --       convSPI' stage os arch comp constraints strfl solveExes sidx
-    --     )
-    --     toolchains'
-    -- ]
 
 -- | Convert a Cabal installed package index to the simpler,
 -- more uniform index format of the solver.
@@ -173,6 +164,11 @@ convIPId stage dr comp idx ipid =
 
 -- | Convert a cabal-install source package index to the simpler,
 -- more uniform index format of the solver.
+-- NOTE: The package description of source package can depent on the platform
+-- and compiler version. Here we decide to convert a single source package
+-- into multiple index entries, one for each stage, where the conditionals are
+-- resolved. This choice might incour in high memory consumption and it might
+-- be worth looking for a different approach.
 convSPI'
   :: Staged Toolchain
   -> Map PN [LabeledPackageConstraint]

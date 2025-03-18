@@ -19,10 +19,10 @@ import qualified Data.Map as M
 import Data.Set (isSubsetOf)
 import Distribution.Compat.Graph
          ( IsNode(..) )
-import Distribution.Compiler
-         ( CompilerInfo )
 import Distribution.Solver.Modular.Assignment
          ( Assignment, toCPs )
+import Distribution.Solver.Modular.Configured
+         ( CP (..) )
 import Distribution.Solver.Modular.ConfiguredConversion
          ( convCP )
 import qualified Distribution.Solver.Modular.ConflictSet as CS
@@ -40,6 +40,7 @@ import Distribution.Solver.Modular.Solver
          ( SolverConfig(..), PruneAfterFirstSuccess(..), solve )
 import Distribution.Solver.Types.DependencyResolver
 import Distribution.Solver.Types.LabeledPackageConstraint
+import Distribution.Solver.Types.OptionalStanza (showStanzas, optStanzaSetNull)
 import Distribution.Solver.Types.PackageConstraint
 import Distribution.Solver.Types.PackagePath
 import Distribution.Solver.Types.PackagePreferences
@@ -47,22 +48,20 @@ import Distribution.Solver.Types.PkgConfigDb
          ( PkgConfigDb )
 import Distribution.Solver.Types.Progress
 import Distribution.Solver.Types.Variable
-import Distribution.System
-         ( Platform(..) )
+import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
+
+import Distribution.Simple.Compiler
+         ( CompilerInfo, compilerInfo )
 import Distribution.Simple.Setup
          ( BooleanFlag(..) )
 import Distribution.Simple.Utils
          ( ordNubBy )
 import Distribution.Verbosity
-import Distribution.Solver.Modular.Configured (CP (..))
-import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
+
 import Distribution.Pretty (Pretty (..))
 import Text.PrettyPrint (text, vcat, Doc, nest, ($+$)) 
-import Distribution.Solver.Types.OptionalStanza (showStanzas, optStanzaSetNull)
 import Distribution.Types.Flag (nullFlagAssignment)
-import Distribution.Solver.Types.Toolchain (Toolchain(..), Staged)
-import Distribution.Simple.Compiler (compilerInfo)
-import Distribution.Simple.PackageIndex (InstalledPackageIndex)
+import Distribution.Solver.Types.Toolchain (Staged, Toolchain (..))
 
 
 showCP :: CP QPN -> Doc
@@ -83,11 +82,13 @@ showCP (CP qpi fa es ds) =
 -- solver. Performs the necessary translations before and after.
 modularResolver :: SolverConfig -> DependencyResolver loc
 modularResolver sc toolchains pkgConfigDbs iidx sidx pprefs pcs pns = do
-    (assignment, revdepmap) <- solve' sc toolchains pkgConfigDbs idx pprefs gcs pns
+    (assignment, revdepmap) <- solve' sc cinfo pkgConfigDbs idx pprefs gcs pns
     let cp = toCPs assignment revdepmap
     Step (show (vcat (map showCP cp))) $
         return $ postprocess assignment revdepmap
   where
+      cinfo = compilerInfo . toolchainCompiler <$> toolchains
+      
       -- Indices have to be converted into solver-specific uniform index.
       idx    = convPIs toolchains gcs (shadowPkgs sc) (strongFlags sc) (solveExecutables sc) iidx sidx
 
@@ -140,21 +141,21 @@ modularResolver sc toolchains pkgConfigDbs iidx sidx pprefs pcs pns = do
 -- complete, i.e., it shows the whole chain of dependencies from the user
 -- targets to the conflicting packages.
 solve' :: SolverConfig
-       -> Staged Toolchain
+       -> Staged CompilerInfo
        -> Staged (Maybe PkgConfigDb)
        -> Index
        -> (PN -> PackagePreferences)
        -> Map PN [LabeledPackageConstraint]
        -> Set PN
        -> Progress String String (Assignment, RevDepMap)
-solve' sc toolchains pkgConfigDb idx pprefs gcs pns =
+solve' sc cinfo pkgConfigDb idx pprefs gcs pns =
     toProgress $ retry (runSolver printFullLog sc) createErrorMsg
   where
     runSolver :: Bool -> SolverConfig
               -> RetryLog String SolverFailure (Assignment, RevDepMap)
     runSolver keepLog sc' =
         displayLogMessages keepLog $
-        solve sc' toolchains pkgConfigDb idx pprefs gcs pns
+        solve sc' cinfo pkgConfigDb idx pprefs gcs pns
 
     createErrorMsg :: SolverFailure
                    -> RetryLog String String (Assignment, RevDepMap)

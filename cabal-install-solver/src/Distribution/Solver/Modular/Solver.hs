@@ -49,7 +49,7 @@ import Distribution.Solver.Types.Stage (Staged)
 #ifdef DEBUG_TRACETREE
 import qualified Distribution.Solver.Modular.ConflictSet as CS
 import qualified Distribution.Solver.Modular.WeightedPSQ as W
-import qualified Distribution.Deprecated.Text as T
+import           Distribution.Solver.Modular.Version (showVer)
 
 import Debug.Trace.Tree (gtraceJson)
 import Debug.Trace.Tree.Simple
@@ -211,7 +211,7 @@ instance GSimpleTree (Tree d c) where
 
       -- Show package choice
       goP :: QPN -> POption -> Tree d c -> (String, SimpleTree)
-      goP _        (POption (I ver _loc) Nothing)  subtree = (T.display ver, go subtree)
+      goP _        (POption (I _stage ver _loc) Nothing)  subtree = (showVer ver, go subtree)
       goP (Q _ pn) (POption _           (Just pp)) subtree = (showQPN (Q pp pn), go subtree)
 
       -- Show flag or stanza choice
