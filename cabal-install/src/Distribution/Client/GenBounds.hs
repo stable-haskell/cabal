@@ -15,9 +15,9 @@ module Distribution.Client.GenBounds
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import Distribution.Client.Freeze
-  ( getFreezePkgs
-  )
+-- import Distribution.Client.Freeze
+--   ( getFreezePkgs
+--   )
 import Distribution.Client.Setup
   ( FreezeFlags (..)
   , GlobalFlags (..)

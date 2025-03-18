@@ -136,14 +136,14 @@ import qualified Distribution.Client.CmdUpdate as CmdUpdate
 
 import Distribution.Client.Check as Check (check)
 -- import Distribution.Client.Configure (configure, writeConfigFlags)
-import Distribution.Client.Fetch (fetch)
-import Distribution.Client.Freeze (freeze)
-import Distribution.Client.GenBounds (genBounds)
+-- import Distribution.Client.Fetch (fetch)
+-- import Distribution.Client.Freeze (freeze)
+-- import Distribution.Client.GenBounds (genBounds)
 -- import Distribution.Client.Install (install)
 
 -- import Distribution.Client.Clean            (clean)
 
-import Distribution.Client.Get (get)
+-- import Distribution.Client.Get (get)
 import Distribution.Client.Init (initCmd)
 import Distribution.Client.Manpage (manpageCmd)
 import Distribution.Client.ManpageFlags (ManpageFlags (..))

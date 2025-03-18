@@ -135,7 +135,7 @@ library
         Distribution.Client.FileMonitor
         -- Distribution.Client.Freeze
         Distribution.Client.GZipUtils
-        Distribution.Client.GenBounds
+        -- Distribution.Client.GenBounds
         -- Distribution.Client.Get
         Distribution.Client.Glob
         Distribution.Client.GlobalFlags
