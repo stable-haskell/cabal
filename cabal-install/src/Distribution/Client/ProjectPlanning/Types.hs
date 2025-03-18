@@ -61,6 +61,8 @@ module Distribution.Client.ProjectPlanning.Types
     -- * Toolchain
   , Toolchain (..)
   , Toolchains
+  , Stage(..)
+  , Staged(..)
 
     -- * Setup script
   , SetupScriptStyle (..)
@@ -114,7 +116,7 @@ import Distribution.Simple.Utils (ordNub)
 import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.OptionalStanza
-import Distribution.Solver.Types.Stage
+import Distribution.Solver.Types.Stage (Staged(..))
 import Distribution.Solver.Types.Toolchain
 import Distribution.Types.ComponentRequestedSpec
 import qualified Distribution.Types.LocalBuildConfig as LBC

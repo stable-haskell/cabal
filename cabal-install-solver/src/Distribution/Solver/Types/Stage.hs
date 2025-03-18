@@ -1,7 +1,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 
 module Distribution.Solver.Types.Stage
   ( Stage (..)
@@ -50,6 +50,9 @@ instance Show a => Show (Staged a) where
 
 instance Foldable Staged where
   foldMap f (Staged gs) = foldMap (f . gs) [minBound..maxBound]
+
+instance Traversable Staged where
+  traverse f = fmap index . traverse (traverse f) . tabulate
 
 instance Binary a => Binary (Staged a) where
   put staged = put (tabulate staged)

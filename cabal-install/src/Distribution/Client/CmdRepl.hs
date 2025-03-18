@@ -112,7 +112,7 @@ import Distribution.Simple.Utils
   ( debugNoWrap
   , dieWithException
   , withTempDirectoryEx
-  , wrapText
+  , wrapText, warn
   )
 import Distribution.Solver.Types.ConstraintSource
   ( ConstraintSource (ConstraintSourceMultiRepl)
@@ -200,6 +200,7 @@ import System.FilePath
   , splitSearchPath
   , (</>)
   )
+import Distribution.Solver.Types.Stage
 
 replCommand :: CommandUI (NixStyleFlags ReplFlags)
 replCommand =
@@ -402,13 +403,14 @@ replAction flags@NixStyleFlags{extraFlags = r@ReplFlags{..}, ..} targetStrings g
               , targetsMap = targets
               }
 
-          ElaboratedSharedConfig{pkgConfigToolchains = Toolchains{hostToolchain = Toolchain{toolchainCompiler = compiler}}} = elaboratedShared'
-
           repl_flags = case originalComponent of
             Just oci -> generateReplFlags includeTransitive elaboratedPlan' oci
             Nothing -> []
 
-        return (buildCtx, compiler, configureReplOptions & lReplOptionsFlags %~ (++ repl_flags), targets)
+        let Toolchain{..} = getStage (pkgConfigToolchains elaboratedShared') Host
+        warn verbosity "WIP: Assuming host toolchain, result might be wrong"
+
+        return (buildCtx, toolchainCompiler, configureReplOptions & lReplOptionsFlags %~ (++ repl_flags), targets)
 
     -- Multi Repl implementation see: https://well-typed.com/blog/2023/03/cabal-multi-unit/ for
     -- a high-level overview about how everything fits together.

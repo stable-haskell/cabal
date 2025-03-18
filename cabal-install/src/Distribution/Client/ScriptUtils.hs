@@ -71,6 +71,9 @@ import Distribution.Client.ProjectPlanning
   , ElaboratedSharedConfig (..)
   , configureCompiler
   )
+import Distribution.Client.ProjectPlanning.Types
+  ( Toolchain (..)
+  )
 import Distribution.Client.RebuildMonad
   ( runRebuild
   )
@@ -195,7 +198,7 @@ import qualified Data.ByteString.Char8 as BS
 import Data.ByteString.Lazy ()
 import qualified Data.Set as S
 import Distribution.Client.Errors
-import Distribution.Client.ProjectPlanning.Types (Toolchain (..), Toolchains (..))
+import Distribution.Solver.Types.Stage (Stage (..), getStage)
 import Distribution.Utils.Path
   ( unsafeMakeSymbolicPath
   )
@@ -379,7 +382,14 @@ withContextAndSelectors noTargets kind flags@NixStyleFlags{..} targetStrings glo
           projectCfgSkeleton <- readProjectBlockFromScript verbosity httpTransport (distDirLayout baseCtx) (takeFileName script) scriptContents
 
           createDirectoryIfMissingVerbose verbosity True (distProjectCacheDirectory $ distDirLayout baseCtx)
-          Toolchains{buildToolchain = Toolchain{toolchainPlatform = platform@(Platform arch os), toolchainCompiler = compiler}} <- runRebuild projectRoot $ configureCompiler verbosity (distDirLayout baseCtx) (fst (ignoreConditions projectCfgSkeleton) <> projectConfig baseCtx)
+
+          toolchains <-
+            runRebuild projectRoot $ configureCompiler verbosity (distDirLayout baseCtx) (fst (ignoreConditions projectCfgSkeleton) <> projectConfig baseCtx)
+
+          let Toolchain
+                { toolchainCompiler = compiler
+                , toolchainPlatform = platform@(Platform arch os)
+                } = getStage toolchains Host
 
           (projectCfg, _) <- instantiateProjectConfigSkeletonFetchingCompiler (pure (os, arch, compiler)) mempty projectCfgSkeleton
 
@@ -471,14 +481,13 @@ updateContextAndWriteProjectFile ctx scriptPath scriptExecutable = do
   let projectRoot = distProjectRootDirectory $ distDirLayout ctx
 
   absScript <- unsafeMakeSymbolicPath . makeRelative (normalise projectRoot) <$> canonicalizePath scriptPath
-  let
-    sourcePackage =
-      fakeProjectSourcePackage projectRoot
-        & lSrcpkgDescription . L.condExecutables
-          .~ [(scriptComponentName scriptPath, CondNode executable (targetBuildDepends $ buildInfo executable) [])]
-    executable =
-      scriptExecutable
-        & L.modulePath .~ absScript
+  let sourcePackage =
+        fakeProjectSourcePackage projectRoot
+          & lSrcpkgDescription . L.condExecutables
+            .~ [(scriptComponentName scriptPath, CondNode executable (targetBuildDepends $ buildInfo executable) [])]
+      executable =
+        scriptExecutable
+          & L.modulePath .~ absScript
 
   updateContextAndWriteProjectFile' ctx sourcePackage
 
@@ -589,10 +598,13 @@ fakeProjectSourcePackage projectRoot = sourcePackage
 movedExePath :: UnqualComponentName -> DistDirLayout -> ElaboratedSharedConfig -> ElaboratedConfiguredPackage -> Maybe FilePath
 movedExePath selectedComponent distDirLayout elabShared elabConfigured = do
   exe <- find ((== selectedComponent) . exeName) . executables $ elabPkgDescription elabConfigured
-  let CompilerId flavor _ = (compilerId . toolchainCompiler . buildToolchain . pkgConfigToolchains) elabShared
+  let CompilerId flavor _ = compilerId toolchainCompiler
   opts <- lookup flavor (perCompilerFlavorToList . options $ buildInfo exe)
   let projectRoot = distProjectRootDirectory distDirLayout
   fmap (projectRoot </>) . lookup "-o" $ reverse (zip opts (drop 1 opts))
+
+  where
+    Toolchain{..} = getStage (pkgConfigToolchains elabShared) (elabStage elabConfigured)
 
 -- Lenses
 

@@ -90,7 +90,6 @@ import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
 import qualified Distribution.Simple.Setup as Cabal
 
-import Distribution.Solver.Types.Stage
 import Distribution.Types.BuildType
 import Distribution.Types.PackageDescription.Lens (componentModules)
 

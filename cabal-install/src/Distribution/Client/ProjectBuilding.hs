@@ -73,7 +73,6 @@ import Distribution.Client.Types hiding
 import Distribution.Package
 import Distribution.Simple.Compiler
 import qualified Distribution.Simple.Register as Cabal
-import Distribution.Solver.Types.Stage
 
 import Distribution.Compat.Graph (IsNode (..))
 import Distribution.Simple.Utils

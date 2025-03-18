@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 
 -- |
@@ -41,7 +40,7 @@ import Distribution.Client.ProjectConfig.Types
   )
 import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
-import Distribution.Client.ProjectPlanning.Types (Toolchain (..), Toolchains (..))
+import Distribution.Client.ProjectPlanning.Types (Toolchain (..))
 import Distribution.Client.RebuildMonad (runRebuild)
 import Distribution.Client.ScriptUtils
 import Distribution.Client.Setup
@@ -55,6 +54,7 @@ import qualified Distribution.Client.Utils.Json as Json
 import Distribution.Client.Version
   ( cabalInstallVersion
   )
+import Distribution.Solver.Types.Stage
 import Distribution.ReadE
   ( ReadE (ReadE)
   )
@@ -76,6 +76,7 @@ import Distribution.Simple.Program
 import Distribution.Simple.Utils
   ( die'
   , dieWithException
+  , warn
   , withOutputMarker
   , wrapText
   )
@@ -245,10 +246,12 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags', ..} cliTargetStrings glo
       then pure Nothing
       else do
         let projectRoot = distProjectRootDirectory (distDirLayout baseCtx)
-        Toolchains{buildToolchain} <- runRebuild projectRoot $ configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
-        compilerProg <- requireCompilerProg verbosity (toolchainCompiler buildToolchain)
-        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg (toolchainProgramDb buildToolchain)
-        pure $ Just $ mkCompilerInfo configuredCompilerProg (toolchainCompiler buildToolchain)
+        toolchains <- runRebuild projectRoot $ configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
+        let Toolchain{..} = getStage toolchains Host
+        compilerProg <- requireCompilerProg verbosity toolchainCompiler
+        warn verbosity "WIP: Assuming host toolchain, result might be wrong"
+        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg toolchainProgramDb
+        pure $ Just $ mkCompilerInfo configuredCompilerProg toolchainCompiler
 
   paths <- for (fromFlagOrDefault [] $ pathDirectories pathFlags) $ \p -> do
     t <- getPathLocation baseCtx p

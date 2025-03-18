@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module Distribution.Client.CmdHaddockProject
   ( haddockProjectCommand
   , haddockProjectAction
@@ -15,7 +16,7 @@ import Distribution.Client.DistDirLayout
   , StoreDirLayout (..)
   , distBuildDirectory
   )
--- import Distribution.Client.InstallPlan (foldPlanPackage)
+import Distribution.Client.InstallPlan (foldPlanPackage)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import qualified Distribution.Client.NixStyleOptions as NixStyleOptions
 import Distribution.Client.ProjectOrchestration
@@ -38,8 +39,8 @@ import Distribution.Client.ProjectPlanning
   )
 import Distribution.Client.ProjectPlanning.Types
   ( Toolchain (..)
-  , Toolchains (..)
   , elabDistDirParams
+  , getStage
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -70,7 +71,7 @@ import Distribution.Simple.Flag
   , fromFlag
   , fromFlagOrDefault
   )
-import Distribution.Simple.Haddock (createHaddockIndex)
+-- import Distribution.Simple.Haddock (createHaddockIndex)
 import Distribution.Simple.InstallDirs
   ( toPathTemplate
   )
@@ -292,10 +293,12 @@ haddockProjectAction flags _extraArgs globalFlags = do
               False -> do
                 let pkg_descr = elabPkgDescription package
                     unitId = unUnitId (elabUnitId package)
+                    Toolchain{toolchainCompiler} =
+                      getStage (pkgConfigToolchains sharedConfig') (elabStage package)
                     packageDir =
                       storePackageDirectory
                         (cabalStoreDirLayout cabalLayout)
-                        (toolchainCompiler $ buildToolchain $ pkgConfigToolchains sharedConfig')
+                        toolchainCompiler
                         (elabUnitId package)
                     -- TODO: use `InstallDirTemplates`
                     docDir = packageDir </> "share" </> "doc" </> "html"
@@ -315,7 +318,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
       -- generate index, content, etc.
       --
 
-      let (missingHaddocks, packageInfos') = partitionEithers packageInfos
+      let (missingHaddocks, _packageInfos') = partitionEithers packageInfos
       when (not (null missingHaddocks)) $ do
         warn verbosity "missing haddocks for some packages from the store"
         -- Show the package list if `-v1` is passed; it's usually a long list.
@@ -324,28 +327,30 @@ haddockProjectAction flags _extraArgs globalFlags = do
         -- `documentation: True` in the global config).
         info verbosity (intercalate "\n" missingHaddocks)
 
-      let flags' =
-            flags
-              { haddockProjectDir = Flag outputDir
-              , haddockProjectInterfaces =
-                  Flag
-                    [ ( interfacePath
-                      , Just url
-                      , Just url
-                      , visibility
-                      )
-                    | (url, interfacePath, visibility) <- packageInfos'
-                    ]
-              , haddockProjectUseUnicode = NoFlag
-              }
-      -- NOTE: this lives in Cabal
-      createHaddockIndex
-        verbosity
-        (toolchainProgramDb $ buildToolchain $ pkgConfigToolchains sharedConfig')
-        (toolchainCompiler $ buildToolchain $ pkgConfigToolchains sharedConfig')
-        (toolchainPlatform $ buildToolchain $ pkgConfigToolchains sharedConfig')
-        Nothing
-        flags'
+      warn verbosity "createHaddockIndex not implemented"
+
+      -- let flags' =
+      --       flags
+      --         { haddockProjectDir = Flag outputDir
+      --         , haddockProjectInterfaces =
+      --             Flag
+      --               [ ( interfacePath
+      --                 , Just url
+      --                 , Just url
+      --                 , visibility
+      --                 )
+      --               | (url, interfacePath, visibility) <- packageInfos'
+      --               ]
+      --         , haddockProjectUseUnicode = NoFlag
+      --         }
+      -- -- NOTE: this lives in Cabal
+      -- createHaddockIndex
+      --   verbosity
+      --   (toolchainProgramDb $ buildToolchain $ pkgConfigToolchains sharedConfig')
+      --   (toolchainCompiler $ buildToolchain $ pkgConfigToolchains sharedConfig')
+      --   (toolchainPlatform $ buildToolchain $ pkgConfigToolchains sharedConfig')
+      --   Nothing
+      --   flags'
   where
     -- build all packages with appropriate haddock flags
     commonFlags = haddockProjectCommonFlags flags

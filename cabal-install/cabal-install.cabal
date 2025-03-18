@@ -112,7 +112,7 @@ library
         Distribution.Client.CmdListBin
         Distribution.Client.CmdPath
         Distribution.Client.CmdOutdated
-        Distribution.Client.CmdRepl
+        -- Distribution.Client.CmdRepl
         Distribution.Client.CmdRun
         Distribution.Client.CmdSdist
         Distribution.Client.CmdTarget

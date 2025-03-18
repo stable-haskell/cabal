@@ -133,31 +133,30 @@ import Distribution.Client.TargetSelector
   , readTargetSelectors
   , reportTargetSelectorProblems
   )
-import Distribution.Client.Types
-  ( DocsResult (..)
-  , GenericReadyPackage (..)
-  , PackageLocation (..)
-  , PackageSpecifier (..)
-  , SourcePackageDb (..)
-  , TestsResult (..)
-  , UnresolvedSourcePackage
-  -- , WriteGhcEnvironmentFilesPolicy (..)
+import Distribution.Client.Types.PackageLocation
+  ( UnresolvedSourcePackage
+  )
+import Distribution.Client.Types.PackageSpecifier
+  ( PackageSpecifier
+  )
+import Distribution.Client.Types.ReadyPackage
+  ( GenericReadyPackage (ReadyPackage)
+  )
+import Distribution.Client.Types.SourcePackageDb
+  ( SourcePackageDb (SourcePackageDb, packageIndex)
   )
 import Distribution.Solver.Types.PackageIndex
   ( lookupPackageName
   )
 
-import Distribution.Client.BuildReports.Anonymous (cabalInstallID)
-import qualified Distribution.Client.BuildReports.Anonymous as BuildReports
-import qualified Distribution.Client.BuildReports.Storage as BuildReports
-  ( storeLocal
-  )
+-- import Distribution.Client.BuildReports.Anonymous (cabalInstallID)
+-- import qualified Distribution.Client.BuildReports.Anonymous as BuildReports
+-- import qualified Distribution.Client.BuildReports.Storage as BuildReports
+--   ( storeLocal
+--   )
 
 import Distribution.Client.HttpUtils
 import Distribution.Client.Setup hiding (packageName)
-import Distribution.Compiler
-  ( CompilerFlavor (GHC)
-  )
 import Distribution.Types.ComponentName
   ( componentNameString
   )
@@ -182,15 +181,11 @@ import Distribution.Package
 import Distribution.Simple.Command (commandShowOptions)
 import Distribution.Simple.Compiler
   ( OptimisationLevel (..)
-  , compilerCompatVersion
-  , compilerId
-  , compilerInfo
   , showCompilerId
   )
 import Distribution.Simple.Configure (computeEffectiveProfiling)
 import Distribution.Simple.Flag
   ( flagToMaybe
-  , fromFlagOrDefault
   )
 import Distribution.Simple.LocalBuildInfo
   ( ComponentName (..)
@@ -207,9 +202,6 @@ import Distribution.Simple.Utils
   , ordNub
   , warn
   )
-import Distribution.System
-  ( Platform (Platform)
-  )
 import Distribution.Types.Flag
   ( FlagAssignment
   , diffFlagAssignment
@@ -220,10 +212,7 @@ import Distribution.Utils.NubList
   )
 import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity
-import Distribution.Version
-  ( mkVersion
-  )
-import Distribution.Solver.Types.Stage
+
 #ifdef MIN_VERSION_unix
 import           System.Posix.Signals (sigKILL, sigSEGV)
 
@@ -496,7 +485,7 @@ runProjectPostBuildPhase _ ProjectBaseContext{buildSettings} _ _
 runProjectPostBuildPhase
   verbosity
   ProjectBaseContext{..}
-  bc@ProjectBuildContext{..}
+  ProjectBuildContext{..}
   buildOutcomes = do
     -- Update other build artefacts
     -- TODO: currently none, but could include:
