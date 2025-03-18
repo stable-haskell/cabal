@@ -672,7 +672,7 @@ rebuildInstallPlan
                     putStrLn $ unwords [show s, show (compilerId (toolchainCompiler t))]
 
                 -- _ <- phaseConfigurePrograms projectConfig compilerEtc
-                (solverPlan, pkgConfigDB, totalIndexState, activeRepos) <-
+                (solverPlan, _, pkgConfigDBs, totalIndexState, activeRepos) <-
                   phaseRunSolver
                     projectConfig
                     toolchains
@@ -683,7 +683,7 @@ rebuildInstallPlan
                   phaseElaboratePlan
                     projectConfig
                     toolchains
-                    pkgConfigDB
+                    pkgConfigDBs
                     solverPlan
                     localPackages
 
@@ -758,7 +758,8 @@ rebuildInstallPlan
         -- -> InstalledPackageIndex
         -> Rebuild
             ( SolverInstallPlan
-            , Staged (Toolchain, InstalledPackageIndex, Maybe PkgConfigDb)
+            , Staged InstalledPackageIndex
+            , Staged (Maybe PkgConfigDb)
             , IndexUtils.TotalIndexState
             , IndexUtils.ActiveRepos
             )
@@ -789,8 +790,8 @@ rebuildInstallPlan
                   (solverSettingIndexState solverSettings)
                   (solverSettingActiveRepos solverSettings)
 
-              ipis <- liftIO $ fmap (\t -> getInstalledPackages verbosity t corePackageDbs) toolchains
-              pkgConfigDbs <- liftIO $ fmap (getPkgConfigDb verbosity . toolchainProgramDb) toolchains
+              ipis <- for toolchains (\t -> getInstalledPackages verbosity t corePackageDbs)
+              pkgConfigDbs <- for toolchains (getPkgConfigDb verbosity . toolchainProgramDb)
 
               -- TODO: [code cleanup] it'd be better if the Compiler contained the
               -- ConfiguredPrograms that it needs, rather than relying on the progdb
@@ -815,7 +816,7 @@ rebuildInstallPlan
                   Left msg -> do
                     -- reportPlanningFailure projectConfig (hostToolchain toolchains) localPackages
                     dieWithException verbosity $ PhaseRunSolverErr msg
-                  Right plan -> return (plan, toolchains', tis, ar)
+                  Right plan -> return (plan, ipis, pkgConfigDbs, tis, ar)
           where
             corePackageDbs :: PackageDBStackCWD
             corePackageDbs =
@@ -868,8 +869,8 @@ rebuildInstallPlan
       --
       phaseElaboratePlan
         :: ProjectConfig
-        -> Toolchains
-        -> Maybe PkgConfigDb
+        -> Staged Toolchain
+        -> Staged (Maybe PkgConfigDb)
         -> SolverInstallPlan
         -> [PackageSpecifier (SourcePackage (PackageLocation loc))]
         -> Rebuild
@@ -898,12 +899,9 @@ rebuildInstallPlan
               $ getPackageSourceHashes verbosity withRepoCtx solverPlan
 
           installDirs <-
-            traverse
-              ( \t -> do
-                  defaultInstallDirs <- liftIO $ userInstallDirTemplates (toolchainCompiler t)
-                  return $ fmap Cabal.fromFlag $ (fmap Flag defaultInstallDirs) <> (projectConfigInstallDirs projectConfigShared)
-              )
-              toolchains
+            for toolchains $ \t -> do
+              defaultInstallDirs <- liftIO $ userInstallDirTemplates (toolchainCompiler t)
+              return $ fmap Cabal.fromFlag $ (fmap Flag defaultInstallDirs) <> (projectConfigInstallDirs projectConfigShared)
 
           (elaboratedPlan, elaboratedShared) <-
             liftIO . runLogProgress verbosity $
@@ -1534,14 +1532,14 @@ planPackages
 elaborateInstallPlan
   :: Verbosity
   -> Map FilePath HookAccept
-  -> Toolchains
-  -> Maybe PkgConfigDb
+  -> Staged Toolchain
+  -> Staged (Maybe PkgConfigDb)
   -> DistDirLayout
   -> StoreDirLayout
   -> SolverInstallPlan
   -> [PackageSpecifier (SourcePackage (PackageLocation loc))]
   -> Map PackageId PackageSourceHash
-  -> InstallDirs.InstallDirTemplates
+  -> Staged InstallDirs.InstallDirTemplates
   -> ProjectConfigShared
   -> PackageConfig
   -> PackageConfig
@@ -3843,7 +3841,6 @@ userInstallDirTemplates compiler = do
   InstallDirs.defaultInstallDirs
     (compilerFlavor compiler)
     True -- user install
-    False -- unused
 
 storePackageInstallDirs
   :: StoreDirLayout
