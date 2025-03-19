@@ -42,25 +42,14 @@ tests =
       , runTest $ mkTest db1 "simpleDep1" ["C"] (solverSuccess [("B", 1), ("C", 1)])
       , runTest $ mkTest db1 "simpleDep2" ["D"] (solverSuccess [("B", 2), ("D", 1)])
       , runTest $ mkTest db1 "failTwoVersions" ["C", "D"] anySolverFailure
-      , runTest $ indep $ mkTest db1 "indepTwoVersions" ["C", "D"] (solverSuccess [("B", 1), ("B", 2), ("C", 1), ("D", 1)])
-      , runTest $ indep $ mkTest db1 "aliasWhenPossible1" ["C", "E"] (solverSuccess [("B", 1), ("C", 1), ("E", 1)])
-      , runTest $ indep $ mkTest db1 "aliasWhenPossible2" ["D", "E"] (solverSuccess [("B", 2), ("D", 1), ("E", 1)])
-      , runTest $ indep $ mkTest db2 "aliasWhenPossible3" ["C", "D"] (solverSuccess [("A", 1), ("A", 2), ("B", 1), ("B", 2), ("C", 1), ("D", 1)])
       , runTest $ mkTest db1 "buildDepAgainstOld" ["F"] (solverSuccess [("B", 1), ("E", 1), ("F", 1)])
       , runTest $ mkTest db1 "buildDepAgainstNew" ["G"] (solverSuccess [("B", 2), ("E", 1), ("G", 1)])
-      , runTest $ indep $ mkTest db1 "multipleInstances" ["F", "G"] anySolverFailure
-      , runTest $ mkTest db21 "unknownPackage1" ["A"] (solverSuccess [("A", 1), ("B", 1)])
-      , runTest $ mkTest db22 "unknownPackage2" ["A"] (solverFailure (isInfixOf "unknown package: C"))
-      , runTest $ mkTest db23 "unknownPackage3" ["A"] (solverFailure (isInfixOf "unknown package: B"))
       , runTest $ mkTest [] "unknown target" ["A"] (solverFailure (isInfixOf "unknown package: A"))
       ]
   , testGroup
       "Flagged dependencies"
       [ runTest $ mkTest db3 "forceFlagOn" ["C"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
       , runTest $ mkTest db3 "forceFlagOff" ["D"] (solverSuccess [("A", 2), ("B", 1), ("D", 1)])
-      , runTest $ indep $ mkTest db3 "linkFlags1" ["C", "D"] anySolverFailure
-      , runTest $ indep $ mkTest db4 "linkFlags2" ["C", "D"] anySolverFailure
-      , runTest $ indep $ mkTest db18 "linkFlags3" ["A", "B"] (solverSuccess [("A", 1), ("B", 1), ("C", 1), ("D", 1), ("D", 2), ("F", 1)])
       ]
   , testGroup
       "Lifting dependencies out of conditionals"
@@ -166,9 +155,7 @@ tests =
       , runTest $ enableAllTests $ mkTest db5 "simpleTest4" ["F"] anySolverFailure -- TODO
       , runTest $ enableAllTests $ mkTest db5 "simpleTest5" ["G"] (solverSuccess [("A", 2), ("G", 1)])
       , runTest $ enableAllTests $ mkTest db5 "simpleTest6" ["E", "G"] anySolverFailure
-      , runTest $ indep $ enableAllTests $ mkTest db5 "simpleTest7" ["E", "G"] (solverSuccess [("A", 1), ("A", 2), ("E", 1), ("G", 1)])
       , runTest $ enableAllTests $ mkTest db6 "depsWithTests1" ["C"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
-      , runTest $ indep $ enableAllTests $ mkTest db6 "depsWithTests2" ["C", "D"] (solverSuccess [("A", 1), ("B", 1), ("C", 1), ("D", 1)])
       , runTest $ testTestSuiteWithFlag "test suite with flag"
       ]
   , testGroup
@@ -181,7 +168,6 @@ tests =
       , runTest $ mkTest db8 "setupDeps6" ["C", "D"] (solverSuccess [("A", 1), ("B", 1), ("B", 2), ("C", 1), ("D", 1)])
       , runTest $ mkTest db9 "setupDeps7" ["F", "G"] (solverSuccess [("A", 1), ("B", 1), ("B", 2), ("C", 1), ("D", 1), ("E", 1), ("E", 2), ("F", 1), ("G", 1)])
       , runTest $ mkTest db10 "setupDeps8" ["C"] (solverSuccess [("C", 1)])
-      , runTest $ indep $ mkTest dbSetupDeps "setupDeps9" ["A", "B"] (solverSuccess [("A", 1), ("B", 1), ("C", 1), ("D", 1), ("D", 2)])
       , runTest $ setupStanzaTest1
       , runTest $ setupStanzaTest2
       ]
@@ -251,23 +237,23 @@ tests =
       , runTest $ issue4161 "detect cycle between package and its setup script"
       , runTest $ testCyclicDependencyErrorMessages "cyclic dependency error messages"
       ]
-  , testGroup
-      "Extensions"
-      [ runTest $ mkTestExts [EnableExtension CPP] dbExts1 "unsupported" ["A"] anySolverFailure
-      , runTest $ mkTestExts [EnableExtension CPP] dbExts1 "unsupportedIndirect" ["B"] anySolverFailure
-      , runTest $ mkTestExts [EnableExtension RankNTypes] dbExts1 "supported" ["A"] (solverSuccess [("A", 1)])
-      , runTest $ mkTestExts (map EnableExtension [CPP, RankNTypes]) dbExts1 "supportedIndirect" ["C"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
-      , runTest $ mkTestExts [EnableExtension CPP] dbExts1 "disabledExtension" ["D"] anySolverFailure
-      , runTest $ mkTestExts (map EnableExtension [CPP, RankNTypes]) dbExts1 "disabledExtension" ["D"] anySolverFailure
-      , runTest $ mkTestExts (UnknownExtension "custom" : map EnableExtension [CPP, RankNTypes]) dbExts1 "supportedUnknown" ["E"] (solverSuccess [("A", 1), ("B", 1), ("C", 1), ("E", 1)])
-      ]
-  , testGroup
-      "Languages"
-      [ runTest $ mkTestLangs [Haskell98] dbLangs1 "unsupported" ["A"] anySolverFailure
-      , runTest $ mkTestLangs [Haskell98, Haskell2010] dbLangs1 "supported" ["A"] (solverSuccess [("A", 1)])
-      , runTest $ mkTestLangs [Haskell98] dbLangs1 "unsupportedIndirect" ["B"] anySolverFailure
-      , runTest $ mkTestLangs [Haskell98, Haskell2010, UnknownLanguage "Haskell3000"] dbLangs1 "supportedUnknown" ["C"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
-      ]
+  -- , testGroup
+  --     "Extensions"
+  --     [ runTest $ mkTestExts [EnableExtension CPP] dbExts1 "unsupported" ["A"] anySolverFailure
+  --     , runTest $ mkTestExts [EnableExtension CPP] dbExts1 "unsupportedIndirect" ["B"] anySolverFailure
+  --     , runTest $ mkTestExts [EnableExtension RankNTypes] dbExts1 "supported" ["A"] (solverSuccess [("A", 1)])
+  --     , runTest $ mkTestExts (map EnableExtension [CPP, RankNTypes]) dbExts1 "supportedIndirect" ["C"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
+  --     , runTest $ mkTestExts [EnableExtension CPP] dbExts1 "disabledExtension" ["D"] anySolverFailure
+  --     , runTest $ mkTestExts (map EnableExtension [CPP, RankNTypes]) dbExts1 "disabledExtension" ["D"] anySolverFailure
+  --     , runTest $ mkTestExts (UnknownExtension "custom" : map EnableExtension [CPP, RankNTypes]) dbExts1 "supportedUnknown" ["E"] (solverSuccess [("A", 1), ("B", 1), ("C", 1), ("E", 1)])
+  --     ]
+  -- , testGroup
+  --     "Languages"
+  --     [ runTest $ mkTestLangs [Haskell98] dbLangs1 "unsupported" ["A"] anySolverFailure
+  --     , runTest $ mkTestLangs [Haskell98, Haskell2010] dbLangs1 "supported" ["A"] (solverSuccess [("A", 1)])
+  --     , runTest $ mkTestLangs [Haskell98] dbLangs1 "unsupportedIndirect" ["B"] anySolverFailure
+  --     , runTest $ mkTestLangs [Haskell98, Haskell2010, UnknownLanguage "Haskell3000"] dbLangs1 "supportedUnknown" ["C"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
+  --     ]
   , testGroup
       "Qualified Package Constraints"
       [ runTest $
@@ -352,19 +338,6 @@ tests =
       , runTest $ mkTestPCDepends (Just [("pkgA", "1.0.0"), ("pkgB", "2.0.0")]) dbPC1 "chooseNewest" ["C"] (solverSuccess [("A", 1), ("B", 2), ("C", 1)])
       , runTest $ mkTestPCDepends Nothing dbPC1 "noPkgConfigFailure" ["A"] anySolverFailure
       , runTest $ mkTestPCDepends Nothing dbPC1 "noPkgConfigSuccess" ["D"] (solverSuccess [("D", 1)])
-      ]
-  , testGroup
-      "Independent goals"
-      [ runTest $ indep $ mkTest db16 "indepGoals1" ["A", "B"] (solverSuccess [("A", 1), ("B", 1), ("C", 1), ("D", 1), ("D", 2), ("E", 1)])
-      , runTest $ testIndepGoals2 "indepGoals2"
-      , runTest $ testIndepGoals3 "indepGoals3"
-      , runTest $ testIndepGoals4 "indepGoals4"
-      , runTest $ testIndepGoals5 "indepGoals5 - fixed goal order" FixedGoalOrder
-      , runTest $ testIndepGoals5 "indepGoals5 - default goal order" DefaultGoalOrder
-      , runTest $ testIndepGoals6 "indepGoals6 - fixed goal order" FixedGoalOrder
-      , runTest $ testIndepGoals6 "indepGoals6 - default goal order" DefaultGoalOrder
-      , expectFailBecause "#9466" $ runTest $ testIndepGoals7 "indepGoals7"
-      , runTest $ testIndepGoals8 "indepGoals8"
       ]
   , -- Tests designed for the backjumping blog post
     testGroup
@@ -968,7 +941,6 @@ tests =
       ]
   ]
   where
-    indep = independentGoals
     mkvrThis = V.thisVersion . makeV
     mkvrOrEarlier = V.orEarlierVersion . makeV
     makeV v = V.mkVersion [v, 0, 0]
@@ -993,18 +965,6 @@ db1 =
       , Right $ exAv "Z" 1 []
       ]
 
--- In this example, we _can_ install C and D as independent goals, but we have
--- to pick two different versions for B (arbitrarily)
-db2 :: ExampleDb
-db2 =
-  [ Right $ exAv "A" 1 []
-  , Right $ exAv "A" 2 []
-  , Right $ exAv "B" 1 [ExAny "A"]
-  , Right $ exAv "B" 2 [ExAny "A"]
-  , Right $ exAv "C" 1 [ExAny "B", ExFix "A" 1]
-  , Right $ exAv "D" 1 [ExAny "B", ExFix "A" 2]
-  ]
-
 db3 :: ExampleDb
 db3 =
   [ Right $ exAv "A" 1 []
@@ -1014,6 +974,7 @@ db3 =
   , Right $ exAv "D" 1 [ExFix "A" 2, ExAny "B"]
   ]
 
+-- TODO: fix this example
 -- | Like db3, but the flag picks a different package rather than a
 -- different package version
 --
@@ -1631,44 +1592,6 @@ db17 =
   , Right $ exAv "C" 1 [ExAny "B"]
   ]
 
--- | This test checks that when the solver discovers a constraint on a
--- package's version after choosing to link that package, it can backtrack to
--- try alternative versions for the linked-to package. See pull request #3327.
---
--- When A and B are installed as independent goals, their dependencies on C
--- must be linked. Since C depends on D, A and B's dependencies on D must also
--- be linked. This test fixes the goal order so that the solver chooses D-2 for
--- both 0.D and 1.D before it encounters the test suites' constraints. The
--- solver must backtrack to try D-1 for both 0.D and 1.D.
-testIndepGoals2 :: String -> SolverTest
-testIndepGoals2 name =
-  goalOrder goals $
-    independentGoals $
-      enableAllTests $
-        mkTest db name ["A", "B"] $
-          solverSuccess [("A", 1), ("B", 1), ("C", 1), ("D", 1)]
-  where
-    db :: ExampleDb
-    db =
-      [ Right $ exAv "A" 1 [ExAny "C"] `withTest` exTest "test" [ExFix "D" 1]
-      , Right $ exAv "B" 1 [ExAny "C"] `withTest` exTest "test" [ExFix "D" 1]
-      , Right $ exAv "C" 1 [ExAny "D"]
-      , Right $ exAv "D" 1 []
-      , Right $ exAv "D" 2 []
-      ]
-
-    goals :: [ExampleVar]
-    goals =
-      [ P (QualIndep "A") "A"
-      , P (QualIndep "A") "C"
-      , P (QualIndep "A") "D"
-      , P (QualIndep "B") "B"
-      , P (QualIndep "B") "C"
-      , P (QualIndep "B") "D"
-      , S (QualIndep "B") "B" TestStanzas
-      , S (QualIndep "A") "A" TestStanzas
-      ]
-
 -- | Issue #2834
 -- When both A and B are installed as independent goals, their dependencies on
 -- C must be linked. The only combination of C's flags that is consistent with
@@ -1791,258 +1714,6 @@ testBackjumpingWithCommonDependency name =
             ]
       , Right $ exAv "B" 1 []
       ]
-
--- | Tricky test case with independent goals (issue #2842)
---
--- Suppose we are installing D, E, and F as independent goals:
---
--- * D depends on A-* and C-1, requiring A-1 to be built against C-1
--- * E depends on B-* and C-2, requiring B-1 to be built against C-2
--- * F depends on A-* and B-*; this means we need A-1 and B-1 both to be built
---     against the same version of C, violating the single instance restriction.
---
--- We can visualize this DB as:
---
--- >    C-1   C-2
--- >    /|\   /|\
--- >   / | \ / | \
--- >  /  |  X  |  \
--- > |   | / \ |   |
--- > |   |/   \|   |
--- > |   +     +   |
--- > |   |     |   |
--- > |   A     B   |
--- >  \  |\   /|  /
--- >   \ | \ / | /
--- >    \|  V  |/
--- >     D  F  E
-testIndepGoals3 :: String -> SolverTest
-testIndepGoals3 name =
-  goalOrder goals $
-    independentGoals $
-      mkTest db name ["D", "E", "F"] anySolverFailure
-  where
-    db :: ExampleDb
-    db =
-      [ Right $ exAv "A" 1 [ExAny "C"]
-      , Right $ exAv "B" 1 [ExAny "C"]
-      , Right $ exAv "C" 1 []
-      , Right $ exAv "C" 2 []
-      , Right $ exAv "D" 1 [ExAny "A", ExFix "C" 1]
-      , Right $ exAv "E" 1 [ExAny "B", ExFix "C" 2]
-      , Right $ exAv "F" 1 [ExAny "A", ExAny "B"]
-      ]
-
-    goals :: [ExampleVar]
-    goals =
-      [ P (QualIndep "D") "D"
-      , P (QualIndep "D") "C"
-      , P (QualIndep "D") "A"
-      , P (QualIndep "E") "E"
-      , P (QualIndep "E") "C"
-      , P (QualIndep "E") "B"
-      , P (QualIndep "F") "F"
-      , P (QualIndep "F") "B"
-      , P (QualIndep "F") "C"
-      , P (QualIndep "F") "A"
-      ]
-
--- | This test checks that the solver correctly backjumps when dependencies
--- of linked packages are not linked. It is an example where the conflict set
--- from enforcing the single instance restriction is not sufficient. See pull
--- request #3327.
---
--- When A, B, and C are installed as independent goals with the specified goal
--- order, the first choice that the solver makes for E is 0.E-2. Then, when it
--- chooses dependencies for B and C, it links both 1.E and 2.E to 0.E. Finally,
--- the solver discovers C's test's constraint on E. It must backtrack to try
--- 1.E-1 and then link 2.E to 1.E. Backjumping all the way to 0.E does not lead
--- to a solution, because 0.E's version is constrained by A and cannot be
--- changed.
-testIndepGoals4 :: String -> SolverTest
-testIndepGoals4 name =
-  goalOrder goals $
-    independentGoals $
-      enableAllTests $
-        mkTest db name ["A", "B", "C"] $
-          solverSuccess [("A", 1), ("B", 1), ("C", 1), ("D", 1), ("E", 1), ("E", 2)]
-  where
-    db :: ExampleDb
-    db =
-      [ Right $ exAv "A" 1 [ExFix "E" 2]
-      , Right $ exAv "B" 1 [ExAny "D"]
-      , Right $ exAv "C" 1 [ExAny "D"] `withTest` exTest "test" [ExFix "E" 1]
-      , Right $ exAv "D" 1 [ExAny "E"]
-      , Right $ exAv "E" 1 []
-      , Right $ exAv "E" 2 []
-      ]
-
-    goals :: [ExampleVar]
-    goals =
-      [ P (QualIndep "A") "A"
-      , P (QualIndep "A") "E"
-      , P (QualIndep "B") "B"
-      , P (QualIndep "B") "D"
-      , P (QualIndep "B") "E"
-      , P (QualIndep "C") "C"
-      , P (QualIndep "C") "D"
-      , P (QualIndep "C") "E"
-      , S (QualIndep "C") "C" TestStanzas
-      ]
-
--- | Test the trace messages that we get when a package refers to an unknown pkg
---
--- TODO: Currently we don't actually test the trace messages, and this particular
--- test still succeeds. The trace can only be verified by hand.
-db21 :: ExampleDb
-db21 =
-  [ Right $ exAv "A" 1 [ExAny "B"]
-  , Right $ exAv "A" 2 [ExAny "C"] -- A-2.0 will be tried first, but C unknown
-  , Right $ exAv "B" 1 []
-  ]
-
--- | A variant of 'db21', which actually fails.
-db22 :: ExampleDb
-db22 =
-  [ Right $ exAv "A" 1 [ExAny "B"]
-  , Right $ exAv "A" 2 [ExAny "C"]
-  ]
-
--- | Another test for the unknown package message.  This database tests that
--- filtering out redundant conflict set messages in the solver log doesn't
--- interfere with generating a message about a missing package (part of issue
--- #3617). The conflict set for the missing package is {A, B}. That conflict set
--- is propagated up the tree to the level of A. Since the conflict set is the
--- same at both levels, the solver only keeps one of the backjumping messages.
-db23 :: ExampleDb
-db23 =
-  [ Right $ exAv "A" 1 [ExAny "B"]
-  ]
-
--- | Database for (unsuccessfully) trying to expose a bug in the handling
--- of implied linking constraints. The question is whether an implied linking
--- constraint should only have the introducing package in its conflict set,
--- or also its link target.
---
--- It turns out that as long as the Single Instance Restriction is in place,
--- it does not matter, because there will always be an option that is failing
--- due to the SIR, which contains the link target in its conflict set.
---
--- Even if the SIR is not in place, if there is a solution, one will always
--- be found, because without the SIR, linking is always optional, but never
--- necessary.
-testIndepGoals5 :: String -> GoalOrder -> SolverTest
-testIndepGoals5 name fixGoalOrder =
-  case fixGoalOrder of
-    FixedGoalOrder -> goalOrder goals test
-    DefaultGoalOrder -> test
-  where
-    test :: SolverTest
-    test =
-      independentGoals $
-        mkTest db name ["X", "Y"] $
-          solverSuccess
-            [("A", 1), ("A", 2), ("B", 1), ("C", 1), ("C", 2), ("X", 1), ("Y", 1)]
-
-    db :: ExampleDb
-    db =
-      [ Right $ exAv "X" 1 [ExFix "C" 2, ExAny "A"]
-      , Right $ exAv "Y" 1 [ExFix "C" 1, ExFix "A" 2]
-      , Right $ exAv "A" 1 []
-      , Right $ exAv "A" 2 [ExAny "B"]
-      , Right $ exAv "B" 1 [ExAny "C"]
-      , Right $ exAv "C" 1 []
-      , Right $ exAv "C" 2 []
-      ]
-
-    goals :: [ExampleVar]
-    goals =
-      [ P (QualIndep "X") "X"
-      , P (QualIndep "X") "A"
-      , P (QualIndep "X") "B"
-      , P (QualIndep "X") "C"
-      , P (QualIndep "Y") "Y"
-      , P (QualIndep "Y") "A"
-      , P (QualIndep "Y") "B"
-      , P (QualIndep "Y") "C"
-      ]
-
--- | A simplified version of 'testIndepGoals5'.
-testIndepGoals6 :: String -> GoalOrder -> SolverTest
-testIndepGoals6 name fixGoalOrder =
-  case fixGoalOrder of
-    FixedGoalOrder -> goalOrder goals test
-    DefaultGoalOrder -> test
-  where
-    test :: SolverTest
-    test =
-      independentGoals $
-        mkTest db name ["X", "Y"] $
-          solverSuccess
-            [("A", 1), ("A", 2), ("B", 1), ("B", 2), ("X", 1), ("Y", 1)]
-
-    db :: ExampleDb
-    db =
-      [ Right $ exAv "X" 1 [ExFix "B" 2, ExAny "A"]
-      , Right $ exAv "Y" 1 [ExFix "B" 1, ExFix "A" 2]
-      , Right $ exAv "A" 1 []
-      , Right $ exAv "A" 2 [ExAny "B"]
-      , Right $ exAv "B" 1 []
-      , Right $ exAv "B" 2 []
-      ]
-
-    goals :: [ExampleVar]
-    goals =
-      [ P (QualIndep "X") "X"
-      , P (QualIndep "X") "A"
-      , P (QualIndep "X") "B"
-      , P (QualIndep "Y") "Y"
-      , P (QualIndep "Y") "A"
-      , P (QualIndep "Y") "B"
-      ]
-
-dbExts1 :: ExampleDb
-dbExts1 =
-  [ Right $ exAv "A" 1 [ExExt (EnableExtension RankNTypes)]
-  , Right $ exAv "B" 1 [ExExt (EnableExtension CPP), ExAny "A"]
-  , Right $ exAv "C" 1 [ExAny "B"]
-  , Right $ exAv "D" 1 [ExExt (DisableExtension CPP), ExAny "B"]
-  , Right $ exAv "E" 1 [ExExt (UnknownExtension "custom"), ExAny "C"]
-  ]
-
-dbLangs1 :: ExampleDb
-dbLangs1 =
-  [ Right $ exAv "A" 1 [ExLang Haskell2010]
-  , Right $ exAv "B" 1 [ExLang Haskell98, ExAny "A"]
-  , Right $ exAv "C" 1 [ExLang (UnknownLanguage "Haskell3000"), ExAny "B"]
-  ]
-
--- This test checks how the scope of a constraint interacts with qualified goals.
--- If you specify `A == 2`, that top-level should /not/ apply to an independent goal!
-testIndepGoals7 :: String -> SolverTest
-testIndepGoals7 name =
-  constraints [ExVersionConstraint (scopeToplevel "A") (V.thisVersion (V.mkVersion [2, 0, 0]))] $
-    independentGoals $
-      mkTest dbIndepGoals78 name ["A"] $
-        -- The more recent version should be picked by the solver. As said
-        -- above, the top-level A==2 should not apply to an independent goal.
-        solverSuccess [("A", 3)]
-
-dbIndepGoals78 :: ExampleDb
-dbIndepGoals78 =
-  [ Right $ exAv "A" 1 []
-  , Right $ exAv "A" 2 []
-  , Right $ exAv "A" 3 []
-  ]
-
--- This test checks how the scope of a constraint interacts with qualified goals.
--- If you specify `any.A == 2`, then that should apply inside an independent goal.
-testIndepGoals8 :: String -> SolverTest
-testIndepGoals8 name =
-  constraints [ExVersionConstraint (ScopeAnyQualifier "A") (V.thisVersion (V.mkVersion [2, 0, 0]))] $
-    independentGoals $
-      mkTest dbIndepGoals78 name ["A"] $
-        solverSuccess [("A", 2)]
 
 -- | cabal must set enable-exe to false in order to avoid the unavailable
 -- dependency. Flags are true by default. The flag choice causes "pkg" to

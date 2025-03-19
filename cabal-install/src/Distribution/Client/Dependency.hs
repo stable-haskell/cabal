@@ -48,7 +48,6 @@ module Distribution.Client.Dependency
   , setCountConflicts
   , setFineGrainedConflicts
   , setMinimizeConflictSet
-  , setIndependentGoals
   , setAvoidReinstalls
   , setShadowPkgs
   , setStrongFlags
@@ -184,7 +183,6 @@ data DepResolverParams = DepResolverParams
   , depResolverCountConflicts :: CountConflicts
   , depResolverFineGrainedConflicts :: FineGrainedConflicts
   , depResolverMinimizeConflictSet :: MinimizeConflictSet
-  , depResolverIndependentGoals :: IndependentGoals
   , depResolverAvoidReinstalls :: AvoidReinstalls
   , depResolverShadowPkgs :: ShadowPkgs
   , depResolverStrongFlags :: StrongFlags
@@ -227,8 +225,6 @@ showDepResolverParams p =
     ++ show (asBool (depResolverFineGrainedConflicts p))
     ++ "\nminimize conflict set: "
     ++ show (asBool (depResolverMinimizeConflictSet p))
-    ++ "\nindependent goals: "
-    ++ show (asBool (depResolverIndependentGoals p))
     ++ "\navoid reinstalls: "
     ++ show (asBool (depResolverAvoidReinstalls p))
     ++ "\nshadow packages: "
@@ -289,7 +285,6 @@ basicDepResolverParams installedPkgIndex sourcePkgIndex =
     , depResolverCountConflicts = CountConflicts True
     , depResolverFineGrainedConflicts = FineGrainedConflicts True
     , depResolverMinimizeConflictSet = MinimizeConflictSet False
-    , depResolverIndependentGoals = IndependentGoals False
     , depResolverAvoidReinstalls = AvoidReinstalls False
     , depResolverShadowPkgs = ShadowPkgs False
     , depResolverStrongFlags = StrongFlags False
@@ -364,12 +359,6 @@ setMinimizeConflictSet :: MinimizeConflictSet -> DepResolverParams -> DepResolve
 setMinimizeConflictSet minimize params =
   params
     { depResolverMinimizeConflictSet = minimize
-    }
-
-setIndependentGoals :: IndependentGoals -> DepResolverParams -> DepResolverParams
-setIndependentGoals indep params =
-  params
-    { depResolverIndependentGoals = indep
     }
 
 setAvoidReinstalls :: AvoidReinstalls -> DepResolverParams -> DepResolverParams
@@ -789,14 +778,13 @@ resolveDependencies
   -> Progress String String SolverInstallPlan
 resolveDependencies platform comp pkgConfigDB params =
   Step (showDepResolverParams finalparams) $
-    fmap (validateSolverResult platform comp indGoals) $
+    fmap (validateSolverResult platform comp) $
       runSolver
         ( SolverConfig
             reordGoals
             cntConflicts
             fineGrained
             minimize
-            indGoals
             noReinstalls
             shadowing
             strFlags
@@ -828,7 +816,6 @@ resolveDependencies platform comp pkgConfigDB params =
                     cntConflicts
                     fineGrained
                     minimize
-                    indGoals
                     noReinstalls
                     shadowing
                     strFlags
@@ -911,12 +898,11 @@ interpretPackagesPreference selected defaultPref prefs =
 validateSolverResult
   :: Platform
   -> CompilerInfo
-  -> IndependentGoals
   -> [ResolverPackage UnresolvedPkgLoc]
   -> SolverInstallPlan
-validateSolverResult platform comp indepGoals pkgs =
+validateSolverResult platform comp pkgs =
   case planPackagesProblems platform comp pkgs of
-    [] -> case SolverInstallPlan.new indepGoals graph of
+    [] -> case SolverInstallPlan.new graph of
       Right plan -> plan
       Left problems -> error (formatPlanProblems problems)
     problems -> error (formatPkgProblems problems)
@@ -1149,7 +1135,6 @@ resolveWithoutDependencies
       _countConflicts
       _fineGrained
       _minimizeConflictSet
-      _indGoals
       _avoidReinstalls
       _shadowing
       _strFlags

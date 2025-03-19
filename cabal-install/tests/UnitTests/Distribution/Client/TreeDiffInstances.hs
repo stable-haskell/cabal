@@ -49,7 +49,6 @@ instance ToExpr CountConflicts
 instance ToExpr FineGrainedConflicts
 instance ToExpr HashValue
 instance ToExpr HookAccept
-instance ToExpr IndependentGoals
 instance ToExpr InstallMethod
 instance ToExpr InstallOutcome
 instance ToExpr LocalRepo
