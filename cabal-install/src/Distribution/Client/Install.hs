@@ -597,7 +597,6 @@ planPackages
               then Nothing
               else Just maxBackjumps
           )
-          . setIndependentGoals independentGoals
           . setReorderGoals reorderGoals
           . setCountConflicts countConflicts
           . setFineGrainedConflicts fineGrainedConflicts
@@ -667,7 +666,6 @@ planPackages
       countConflicts = fromFlag (installCountConflicts installFlags)
       fineGrainedConflicts = fromFlag (installFineGrainedConflicts installFlags)
       minimizeConflictSet = fromFlag (installMinimizeConflictSet installFlags)
-      independentGoals = fromFlag (installIndependentGoals installFlags)
       avoidReinstalls = fromFlag (installAvoidReinstalls installFlags)
       shadowPkgs = fromFlag (installShadowPkgs installFlags)
       strongFlags = fromFlag (installStrongFlags installFlags)
