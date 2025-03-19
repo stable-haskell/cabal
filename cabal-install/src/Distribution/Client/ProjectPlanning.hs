@@ -163,7 +163,6 @@ import Distribution.Solver.Types.InstSolverPackage
 import Distribution.Solver.Types.LabeledPackageConstraint
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PkgConfigDb
-import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
@@ -1278,7 +1277,6 @@ planPackages
       resolverParams :: DepResolverParams
       resolverParams =
         setMaxBackjumps solverSettingMaxBackjumps
-          . setIndependentGoals solverSettingIndependentGoals
           . setReorderGoals solverSettingReorderGoals
           . setCountConflicts solverSettingCountConflicts
           . setFineGrainedConflicts solverSettingFineGrainedConflicts
@@ -2704,7 +2702,6 @@ extractElabBuildStyle _ = BuildAndInstall
 instantiateInstallPlan :: StoreDirLayout -> InstallDirs.InstallDirTemplates -> ElaboratedSharedConfig -> ElaboratedInstallPlan -> ElaboratedInstallPlan
 instantiateInstallPlan storeDirLayout defaultInstallDirs elaboratedShared plan =
   InstallPlan.new
-    (IndependentGoals False)
     (Graph.fromDistinctList (Map.elems ready_map))
   where
     pkgs = InstallPlan.toList plan
@@ -3234,7 +3231,7 @@ pruneInstallPlanToTargets
   -> ElaboratedInstallPlan
   -> ElaboratedInstallPlan
 pruneInstallPlanToTargets targetActionType perPkgTargetsMap elaboratedPlan =
-  InstallPlan.new (InstallPlan.planIndepGoals elaboratedPlan)
+  InstallPlan.new
     . Graph.fromDistinctList
     -- We have to do the pruning in two passes
     . pruneInstallPlanPass2
@@ -3696,7 +3693,7 @@ pruneInstallPlanToDependencies pkgTargets installPlan =
         (isJust . InstallPlan.lookup installPlan)
         (Set.toList pkgTargets)
     )
-    $ fmap (InstallPlan.new (InstallPlan.planIndepGoals installPlan))
+    $ fmap InstallPlan.new
       . checkBrokenDeps
       . Graph.fromDistinctList
       . filter (\pkg -> installedUnitId pkg `Set.notMember` pkgTargets)
