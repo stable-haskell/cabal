@@ -64,6 +64,7 @@ import Test.QuickCheck
   )
 import Test.QuickCheck.GenericArbitrary (genericArbitrary)
 import Test.QuickCheck.Instances.Cabal ()
+import Distribution.Solver.Types.Stage (Stage)
 
 -- note: there are plenty of instances defined in ProjectConfig test file.
 -- they should be moved here or into Cabal-quickcheck
@@ -322,6 +323,10 @@ instance Arbitrary a => Arbitrary (OptionalStanzaMap a) where
     return $ optStanzaTabulate $ \x -> case x of
       TestStanzas -> x1
       BenchStanzas -> x2
+
+instance Arbitrary Stage where
+  arbitrary = genericArbitrary
+  shrink = genericShrink
 
 -------------------------------------------------------------------------------
 -- BuildReport
