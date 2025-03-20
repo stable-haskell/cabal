@@ -48,6 +48,7 @@ import UnitTests.Distribution.Solver.Modular.QuickCheck.Utils
   ( ArbitraryOrd (..)
   , testPropertyWithSeed
   )
+import Distribution.Solver.Types.Stage (Stage)
 
 tests :: [TestTree]
 tests =
@@ -588,6 +589,12 @@ instance Arbitrary OptionalStanza where
   shrink BenchStanzas = [TestStanzas]
   shrink TestStanzas = []
 
+instance Arbitrary Stage where
+  arbitrary = elements [minBound .. maxBound]
+
+  shrink stage =
+    [stage' | stage' <- [minBound .. maxBound], stage' /= stage]
+
 instance ArbitraryOrd pn => ArbitraryOrd (Variable pn)
 instance ArbitraryOrd a => ArbitraryOrd (P.Qualified a)
 instance ArbitraryOrd P.PackagePath
@@ -599,6 +606,7 @@ instance ArbitraryOrd ShortText where
   arbitraryCompare = do
     strc <- arbitraryCompare
     pure $ \l r -> strc (fromShortText l) (fromShortText r)
+instance ArbitraryOrd Stage
 
 deriving instance Generic (Variable pn)
 deriving instance Generic (P.Qualified a)
