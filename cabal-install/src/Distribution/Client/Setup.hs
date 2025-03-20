@@ -162,7 +162,7 @@ import Distribution.ReadE
   )
 import Distribution.Simple.Command hiding (boolOpt, boolOpt')
 import qualified Distribution.Simple.Command as Command
-import Distribution.Simple.Compiler (Compiler, PackageDB, PackageDBStack)
+import Distribution.Simple.Compiler (Compiler, CompilerFlavor (..), PackageDB, PackageDBStack)
 import Distribution.Simple.Configure
   ( computeEffectiveProfiling
   , configCompilerAuxEx
@@ -920,6 +920,9 @@ data ConfigExFlags = ConfigExFlags
   , configAllowOlder :: Maybe AllowOlder
   , configWriteGhcEnvironmentFilesPolicy
       :: Flag WriteGhcEnvironmentFilesPolicy
+  , configBuildHcFlavor :: Flag CompilerFlavor
+  , configBuildHcPath :: Flag FilePath
+  , configBuildHcPkg :: Flag FilePath
   }
   deriving (Eq, Show, Generic)
 
@@ -1047,6 +1050,20 @@ configureExOptions _showOrParseArgs src =
           writeGhcEnvironmentFilesPolicyParser
           writeGhcEnvironmentFilesPolicyPrinter
       )
+  , option
+      "W"
+      ["with-build-compiler", "with-build-hc"]
+      "give the path to the compiler for the build stage"
+      configBuildHcPath
+      (\v flags -> flags{configBuildHcPath = v})
+      (reqArgFlag "PATH")
+  , option
+      ""
+      ["with-build-hc-pkg"]
+      "give the path to the package tool for the build stage"
+      configBuildHcPkg
+      (\v flags -> flags{configBuildHcPkg = v})
+      (reqArgFlag "PATH")
   ]
 
 writeGhcEnvironmentFilesPolicyParser :: ReadE (Flag WriteGhcEnvironmentFilesPolicy)

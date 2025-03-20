@@ -704,6 +704,10 @@ convertLegacyAllPackageFlags
 convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags projectFlags projectConfigMultiRepl =
   ProjectConfigShared{..}
   where
+    projectConfigPackageDBs = (fmap . fmap) (interpretPackageDB Nothing) projectConfigPackageDBs_
+    projectConfigHookHashes = mempty -- :: Map FilePath HookAccept
+    projectConfigDistDir = fmap getSymbolicPath projectConfigAbsoluteDistDir
+
     GlobalFlags
       { globalConfigFile = projectConfigConfigFile
       , globalRemoteRepos = projectConfigRemoteRepos
@@ -713,8 +717,6 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       , globalStoreDir = projectConfigStoreDir
       } = globalFlags
 
-    projectConfigPackageDBs = (fmap . fmap) (interpretPackageDB Nothing) projectConfigPackageDBs_
-    projectConfigHookHashes = mempty -- :: Map FilePath HookAccept
     ConfigFlags
       { configCommonFlags = commonFlags
       , configHcFlavor = projectConfigHcFlavor
@@ -730,8 +732,6 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       { setupDistPref = projectConfigAbsoluteDistDir
       } = commonFlags
 
-    projectConfigDistDir = fmap getSymbolicPath projectConfigAbsoluteDistDir
-
     ConfigExFlags
       { configCabalVersion = projectConfigCabalVersion
       , configExConstraints = projectConfigConstraints
@@ -741,6 +741,9 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       , configAllowNewer = projectConfigAllowNewer
       , configWriteGhcEnvironmentFilesPolicy =
         projectConfigWriteGhcEnvironmentFilesPolicy
+      , configBuildHcFlavor = projectConfigBuildHcFlavor
+      , configBuildHcPath = projectConfigBuildHcPath
+      , configBuildHcPkg = projectConfigBuildHcPkg
       } = configExFlags
 
     InstallFlags
@@ -1021,6 +1024,9 @@ convertToLegacySharedConfig
           , configAllowNewer = projectConfigAllowNewer
           , configWriteGhcEnvironmentFilesPolicy =
               projectConfigWriteGhcEnvironmentFilesPolicy
+          , configBuildHcFlavor = projectConfigBuildHcFlavor
+          , configBuildHcPath = projectConfigBuildHcPath
+          , configBuildHcPkg = projectConfigBuildHcPkg
           }
 
       installFlags =
