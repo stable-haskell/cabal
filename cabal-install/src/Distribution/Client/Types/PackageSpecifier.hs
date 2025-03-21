@@ -11,7 +11,7 @@ module Distribution.Client.Types.PackageSpecifier
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import Distribution.Package (Package (..), PackageIdentifier (..), packageName, packageVersion)
+import Distribution.Package (Package (..), PackageIdentifier (..), packageName)
 import Distribution.Types.PackageName (PackageName)
 import Distribution.Version (nullVersion, thisVersion)
 
@@ -48,12 +48,12 @@ pkgSpecifierConstraints (NamedPackage name props) = map toLpc props
         (PackageConstraint (scopeToplevel name) prop)
         ConstraintSourceUserTarget
 pkgSpecifierConstraints (SpecificSourcePackage pkg) =
-  [LabeledPackageConstraint pc ConstraintSourceUserTarget]
+  [LabeledPackageConstraint sourceConstraint ConstraintSourceUserTarget]
   where
-    pc =
+    sourceConstraint =
       PackageConstraint
         (ScopeTarget $ packageName pkg)
-        (PackagePropertyVersion $ thisVersion (packageVersion pkg))
+        PackagePropertySource
 
 mkNamedPackage :: PackageIdentifier -> PackageSpecifier pkg
 mkNamedPackage pkgId =

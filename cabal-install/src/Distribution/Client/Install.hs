@@ -588,6 +588,7 @@ planPackages
       platform
       (compilerInfo comp)
       pkgConfigDb
+      installedPkgIndex
       resolverParams
       >>= if onlyDeps then pruneInstallPlan pkgSpecifiers else return
     where
@@ -649,7 +650,6 @@ planPackages
           -- doesn't understand how to install them
           . setSolveExecutables (SolveExecutables False)
           $ standardInstallPolicy
-            installedPkgIndex
             sourcePkgDb
             pkgSpecifiers
 

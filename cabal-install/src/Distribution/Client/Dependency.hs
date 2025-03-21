@@ -177,7 +177,6 @@ data DepResolverParams = DepResolverParams
   , depResolverConstraints :: [LabeledPackageConstraint]
   , depResolverPreferences :: [PackagePreference]
   , depResolverPreferenceDefault :: PackagesPreferenceDefault
-  , depResolverInstalledPkgIndex :: InstalledPackageIndex
   , depResolverSourcePkgIndex :: PackageIndex.PackageIndex UnresolvedSourcePackage
   , depResolverReorderGoals :: ReorderGoals
   , depResolverCountConflicts :: CountConflicts
@@ -270,16 +269,14 @@ showPackagePreference (PackageStanzasPreference pn st) =
   prettyShow pn ++ " " ++ show st
 
 basicDepResolverParams
-  :: InstalledPackageIndex
-  -> PackageIndex.PackageIndex UnresolvedSourcePackage
+  :: PackageIndex.PackageIndex UnresolvedSourcePackage
   -> DepResolverParams
-basicDepResolverParams installedPkgIndex sourcePkgIndex =
+basicDepResolverParams sourcePkgIndex =
   DepResolverParams
     { depResolverTargets = Set.empty
     , depResolverConstraints = []
     , depResolverPreferences = []
     , depResolverPreferenceDefault = PreferLatestForSelected
-    , depResolverInstalledPkgIndex = installedPkgIndex
     , depResolverSourcePkgIndex = sourcePkgIndex
     , depResolverReorderGoals = ReorderGoals False
     , depResolverCountConflicts = CountConflicts True
@@ -477,33 +474,20 @@ addSourcePackages pkgs params =
           pkgs
     }
 
+-- FIXME this actually works by package name, not by package id
 hideInstalledPackagesSpecificBySourcePackageId
   :: [PackageId]
   -> DepResolverParams
   -> DepResolverParams
-hideInstalledPackagesSpecificBySourcePackageId pkgids params =
-  -- TODO: this should work using exclude constraints instead
-  params
-    { depResolverInstalledPkgIndex =
-        foldl'
-          (flip InstalledPackageIndex.deleteSourcePackageId)
-          (depResolverInstalledPkgIndex params)
-          pkgids
-    }
-
-hideInstalledPackagesAllVersions
-  :: [PackageName]
-  -> DepResolverParams
-  -> DepResolverParams
-hideInstalledPackagesAllVersions pkgnames params =
-  -- TODO: this should work using exclude constraints instead
-  params
-    { depResolverInstalledPkgIndex =
-        foldl'
-          (flip InstalledPackageIndex.deletePackageName)
-          (depResolverInstalledPkgIndex params)
-          pkgnames
-    }
+hideInstalledPackagesSpecificBySourcePackageId pkgids =
+  addConstraints
+    [ LabeledPackageConstraint
+      (PackageConstraint (ScopeAnyQualifier name) PackagePropertySource)
+      -- FIXME
+      ConstraintSourceUnknown
+    | pkgId <- pkgids
+    , let name = packageName pkgId
+    ]
 
 -- | Remove upper bounds in dependencies using the policy specified by the
 -- 'AllowNewer' argument (all/some/none).
@@ -685,17 +669,24 @@ upgradeDependencies = setPreferenceDefault PreferAllLatest
 
 reinstallTargets :: DepResolverParams -> DepResolverParams
 reinstallTargets params =
-  hideInstalledPackagesAllVersions (Set.toList $ depResolverTargets params) params
+  addConstraints
+    [ LabeledPackageConstraint
+      ( PackageConstraint
+          (ScopeAnyQualifier pkgName)
+          PackagePropertySource
+      )
+      ConstraintSourceProfiledDynamic
+    | pkgName <- Set.toList (depResolverTargets params)
+    ]
+    params
 
 -- | A basic solver policy on which all others are built.
 basicInstallPolicy
-  :: InstalledPackageIndex
-  -> SourcePackageDb
+  :: SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
 basicInstallPolicy
-  installedPkgIndex
-  (SourcePackageDb sourcePkgIndex sourcePkgPrefs)
+    (SourcePackageDb sourcePkgIndex sourcePkgPrefs)
   pkgSpecifiers =
     addPreferences
       [ PackageVersionPreference name ver
@@ -710,7 +701,6 @@ basicInstallPolicy
       . addSourcePackages
         [pkg | SpecificSourcePackage pkg <- pkgSpecifiers]
       $ basicDepResolverParams
-        installedPkgIndex
         sourcePkgIndex
 
 -- | The policy used by all the standard commands, install, fetch, freeze etc
@@ -718,14 +708,12 @@ basicInstallPolicy
 --
 -- It extends the 'basicInstallPolicy' with a policy on setup deps.
 standardInstallPolicy
-  :: InstalledPackageIndex
-  -> SourcePackageDb
+  :: SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
-standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers =
+standardInstallPolicy sourcePkgDb pkgSpecifiers =
   addDefaultSetupDependencies mkDefaultSetupDeps $
     basicInstallPolicy
-      installedPkgIndex
       sourcePkgDb
       pkgSpecifiers
   where
@@ -774,9 +762,10 @@ resolveDependencies
   :: Platform
   -> CompilerInfo
   -> Maybe PkgConfigDb
+  -> InstalledPackageIndex
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
-resolveDependencies platform comp pkgConfigDB params =
+resolveDependencies platform comp pkgConfigDB installedPkgIndex params =
   Step (showDepResolverParams finalparams) $
     fmap (validateSolverResult platform comp) $
       runSolver
@@ -810,7 +799,6 @@ resolveDependencies platform comp pkgConfigDB params =
                     constraints
                     prefs
                     defpref
-                    installedPkgIndex
                     sourcePkgIndex
                     reordGoals
                     cntConflicts
@@ -1122,6 +1110,7 @@ configuredPackageProblems
 -- It simply means preferences for installed packages will be ignored.
 resolveWithoutDependencies
   :: DepResolverParams
+  -> InstalledPackageIndex
   -> Either [ResolveNoDepsError] [UnresolvedSourcePackage]
 resolveWithoutDependencies
   ( DepResolverParams
@@ -1129,7 +1118,6 @@ resolveWithoutDependencies
       constraints
       prefs
       defpref
-      installedPkgIndex
       sourcePkgIndex
       _reorderGoals
       _countConflicts
@@ -1145,7 +1133,7 @@ resolveWithoutDependencies
       _onlyConstrained
       _order
       _verbosity
-    ) =
+    ) installedPkgIndex =
     collectEithers $ map selectPackage (Set.toList targets)
     where
       selectPackage :: PackageName -> Either ResolveNoDepsError UnresolvedSourcePackage

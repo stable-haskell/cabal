@@ -1269,6 +1269,7 @@ planPackages
       platform
       (compilerInfo comp)
       pkgConfigDB
+      installedPkgIndex
       resolverParams
     where
       -- TODO: [nice to have] disable multiple instances restriction in
@@ -1387,7 +1388,6 @@ planPackages
         -- Note: we don't use the standardInstallPolicy here, since that uses
         -- its own addDefaultSetupDependencies that is not appropriate for us.
         basicInstallPolicy
-          installedPkgIndex
           sourcePkgDb
           localPackages
 

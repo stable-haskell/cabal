@@ -215,6 +215,7 @@ planPackages
           platform
           (compilerInfo comp)
           pkgConfigDb
+          installedPkgIndex
           resolverParams
 
     return $ pruneInstallPlan installPlan pkgSpecifiers
@@ -244,7 +245,7 @@ planPackages
                in LabeledPackageConstraint pc ConstraintSourceFreeze
             | pkgSpecifier <- pkgSpecifiers
             ]
-          $ standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers
+          $ standardInstallPolicy sourcePkgDb pkgSpecifiers
 
       logMsg message rest = debug verbosity message >> rest
 

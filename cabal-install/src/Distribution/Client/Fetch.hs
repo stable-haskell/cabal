@@ -177,6 +177,7 @@ planPackages
               platform
               (compilerInfo comp)
               pkgConfigDb
+              installedPkgIndex
               resolverParams
 
         -- The packages we want to fetch are those packages the 'InstallPlan'
@@ -188,7 +189,7 @@ planPackages
           ]
     | otherwise =
         either (dieWithException verbosity . PlanPackages . unlines . map show) return $
-          resolveWithoutDependencies resolverParams
+          resolveWithoutDependencies resolverParams installedPkgIndex
     where
       resolverParams :: DepResolverParams
       resolverParams =
@@ -219,7 +220,7 @@ planPackages
           -- already installed. Since we want to get the source packages of
           -- things we might have installed (but not have the sources for).
           . reinstallTargets
-          $ standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers
+          $ standardInstallPolicy sourcePkgDb pkgSpecifiers
 
       includeDependencies = fromFlag (fetchDeps fetchFlags)
       logMsg message rest = debug verbosity message >> rest
