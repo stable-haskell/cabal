@@ -46,7 +46,7 @@ type PId = UnitId
 -- package instance via its 'PId'.
 --
 -- TODO: More information is needed about the repo.
-data Loc = Inst PId | InRepo
+data Loc = Inst PId | InRepo PackageName
   deriving (Eq, Ord, Show)
 
 -- | Instance. A version number and a location.
@@ -55,13 +55,8 @@ data I = I Stage Ver Loc
 
 -- | String representation of an instance.
 showI :: I -> String
-showI (I s v InRepo)     = showVer v ++ " (" ++ showStage s ++ ")"
-showI (I s v (Inst uid)) = showVer v ++ "/installed" ++ extractPackageAbiHash uid ++ " (" ++ showStage s ++ ")"
-  where
-    extractPackageAbiHash xs =
-      case first reverse $ break (=='-') $ reverse (prettyShow xs) of
-        (ys, []) -> ys
-        (ys, _)  -> '-' : ys
+showI (I s v (InRepo pn)) = intercalate ":" [showStage s, "source", prettyShow (PackageIdentifier pn v)]
+showI (I s _v (Inst uid)) = intercalate ":" [showStage s, "installed", prettyShow uid]
 
 -- | Package instance. A package name and an instance.
 data PI qpn = PI qpn I
