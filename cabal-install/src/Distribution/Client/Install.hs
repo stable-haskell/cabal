@@ -438,6 +438,17 @@ makeInstallContext
     (sourcePkgDb, _, _) <- getSourcePackagesAtIndexState verbosity repoCtxt idxState Nothing
     pkgConfigDb <- readPkgConfigDb verbosity progdb
 
+    -- installedPkgIndex <- for toolchains $ \Toolchain{..} -> do
+    --     iidx <- getInstalledPackages verbosity toolchainCompiler packageDBs toolchainProgramDb
+    --     checkConfigExFlags
+    --       verbosity
+    --       iidx
+    --       (packageIndex sourcePkgDb)
+    --       configExFlags
+    --     return iidx
+        
+    -- pkgConfigDb <- for toolchains $ \Toolchain{..} -> readPkgConfigDb verbosity toolchainProgramDb
+
     checkConfigExFlags
       verbosity
       installedPkgIndex

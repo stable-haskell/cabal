@@ -1,6 +1,9 @@
 -------------------------------------------------------------------------------
 -------------------------------------------------------------------------------
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+{-# OPTIONS_GHC -Wno-unused-matches #-}
+{-# OPTIONS_GHC -Wno-unused-local-binds #-}
 
 -- |
 -- Module      :  Distribution.Client.Exec
@@ -45,8 +48,8 @@ import Distribution.Client.ProjectOrchestration
   )
 import Distribution.Client.ProjectPlanOutput
   ( PostBuildProjectStatus
-  , argsEquivalentOfGhcEnvironmentFile
-  , createPackageEnvironment
+  -- , argsEquivalentOfGhcEnvironmentFile
+  -- , createPackageEnvironment
   , updatePostBuildProjectStatus
   )
 import Distribution.Client.ProjectPlanning
@@ -55,7 +58,8 @@ import Distribution.Client.ProjectPlanning
   )
 import qualified Distribution.Client.ProjectPlanning as Planning
 import Distribution.Client.ProjectPlanning.Types
-  ( dataDirsEnvironmentForPlan
+  ( Toolchain (..)
+  , dataDirsEnvironmentForPlan
   )
 import Distribution.Client.Setup
   ( ConfigFlags (configCommonFlags)
@@ -108,6 +112,7 @@ import Prelude ()
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Distribution.Client.Errors
+import Distribution.Solver.Types.Stage
 
 execCommand :: CommandUI (NixStyleFlags ())
 execCommand =
@@ -170,7 +175,9 @@ execAction flags@NixStyleFlags{..} extraArgs globalFlags = do
 
   -- Some dependencies may have executables. Let's put those on the PATH.
   let extraPaths = pathAdditions baseCtx buildCtx
-      pkgProgs = pkgConfigCompilerProgs (elaboratedShared buildCtx)
+      -- NOTE: only build-stage dependencies make sense here
+      pkgProgs = toolchainProgramDb $ getStage (pkgConfigToolchains (elaboratedShared buildCtx)) Build
+      --
       extraEnvVars =
         dataDirsEnvironmentForPlan
           (distDirLayout baseCtx)
@@ -179,53 +186,57 @@ execAction flags@NixStyleFlags{..} extraArgs globalFlags = do
   programDb <-
     prependProgramSearchPath verbosity extraPaths extraEnvVars pkgProgs
 
-  -- Now that we have the packages, set up the environment. We accomplish this
-  -- by creating an environment file that selects the databases and packages we
-  -- computed in the previous step, and setting an environment variable to
-  -- point at the file.
-  -- In case ghc is too old to support environment files,
-  -- we pass the same info as arguments
-  let compiler = pkgConfigCompiler $ elaboratedShared buildCtx
-      envFilesSupported = supportsPkgEnvFiles (getImplInfo compiler)
-  case extraArgs of
-    [] -> dieWithException verbosity SpecifyAnExecutable
-    exe : args -> do
-      (program, _) <- requireProgram verbosity (simpleProgram exe) programDb
-      let argOverrides =
-            argsEquivalentOfGhcEnvironmentFile
-              compiler
-              (distDirLayout baseCtx)
-              (elaboratedPlanOriginal buildCtx)
-              buildStatus
-          programIsConfiguredCompiler =
-            matchCompilerPath
-              (elaboratedShared buildCtx)
-              program
-          argOverrides' =
-            if envFilesSupported
-              || not programIsConfiguredCompiler
-              then []
-              else argOverrides
-
-      ( if envFilesSupported
-          then withTempEnvFile verbosity baseCtx buildCtx buildStatus
-          else \f -> f []
-        )
-        $ \envOverrides -> do
-          let program' =
-                withOverrides
-                  envOverrides
-                  argOverrides'
-                  program
-              invocation = programInvocation program' args
-              dryRun =
-                buildSettingDryRun (buildSettings baseCtx)
-                  || buildSettingOnlyDownload (buildSettings baseCtx)
-
-          if dryRun
-            then notice verbosity "Running of executable suppressed by flag(s)"
-            else runProgramInvocation verbosity invocation
+  -- TODO
+  error "Not implemented"
   where
+    -- -- Now that we have the packages, set up the environment. We accomplish this
+    -- -- by creating an environment file that selects the databases and packages we
+    -- -- computed in the previous step, and setting an environment variable to
+    -- -- point at the file.
+    -- -- In case ghc is too old to support environment files,
+    -- -- we pass the same info as arguments
+    -- -- let compiler = toolchainCompiler $ buildToolchain $ pkgConfigToolchains $ elaboratedShared buildCtx
+    --     -- envFilesSupported = supportsPkgEnvFiles (getImplInfo compiler)
+    -- case extraArgs of
+    --   [] -> dieWithException verbosity SpecifyAnExecutable
+    --   exe : args -> do
+    --     (program, _) <- requireProgram verbosity (simpleProgram exe) programDb
+    --     let
+    --         -- argOverrides =
+    --         --   argsEquivalentOfGhcEnvironmentFile
+    --         --     compiler
+    --         --     (distDirLayout baseCtx)
+    --         --     (elaboratedPlanOriginal buildCtx)
+    --         --     buildStatus
+    --         programIsConfiguredCompiler =
+    --           matchCompilerPath
+    --             (elaboratedShared buildCtx)
+    --             program
+    --         -- argOverrides' =
+    --         --   if envFilesSupported
+    --         --     || not programIsConfiguredCompiler
+    --         --     then []
+    --         --     else argOverrides
+
+    --     -- ( if envFilesSupported
+    --     --     then withTempEnvFile verbosity baseCtx buildCtx buildStatus
+    --     --     else \f -> f []
+    --     --   )
+    --     --   $ \envOverrides -> do
+    --     --     let program' =
+    --     --           withOverrides
+    --     --             envOverrides
+    --     --             argOverrides'
+    --     --             program
+    --     --         invocation = programInvocation program' args
+    --     --         dryRun =
+    --     --           buildSettingDryRun (buildSettings baseCtx)
+    --     --             || buildSettingOnlyDownload (buildSettings baseCtx)
+
+    --     --     if dryRun
+    --     --       then notice verbosity "Running of executable suppressed by flag(s)"
+    --     --       else runProgramInvocation verbosity invocation
+
     verbosity = fromFlagOrDefault normal (setupVerbosity $ configCommonFlags configFlags)
     cliConfig =
       commandLineFlagsToProjectConfig
@@ -238,40 +249,40 @@ execAction flags@NixStyleFlags{..} extraArgs globalFlags = do
         , programDefaultArgs = programDefaultArgs program ++ args
         }
 
-matchCompilerPath :: ElaboratedSharedConfig -> ConfiguredProgram -> Bool
-matchCompilerPath elaboratedShared program =
-  programPath program
-    `elem` (programPath <$> configuredCompilers)
-  where
-    configuredCompilers = configuredPrograms $ pkgConfigCompilerProgs elaboratedShared
+-- matchCompilerPath :: ElaboratedSharedConfig -> ConfiguredProgram -> Bool
+-- matchCompilerPath elaboratedShared program =
+--   programPath program
+--     `elem` (programPath <$> configuredCompilers)
+--   where
+--     configuredCompilers = configuredPrograms $ toolchainProgramDb $ buildToolchain $ pkgConfigToolchains elaboratedShared
 
--- | Execute an action with a temporary .ghc.environment file reflecting the
--- current environment. The action takes an environment containing the env
--- variable which points ghc to the file.
-withTempEnvFile
-  :: Verbosity
-  -> ProjectBaseContext
-  -> ProjectBuildContext
-  -> PostBuildProjectStatus
-  -> ([(String, Maybe String)] -> IO a)
-  -> IO a
-withTempEnvFile verbosity baseCtx buildCtx buildStatus action = do
-  let tmpDirTemplate = distTempDirectory (distDirLayout baseCtx)
-  createDirectoryIfMissingVerbose verbosity True tmpDirTemplate
-  withTempDirectory
-    verbosity
-    tmpDirTemplate
-    "environment."
-    ( \tmpDir -> do
-        envOverrides <-
-          createPackageEnvironment
-            verbosity
-            tmpDir
-            (elaboratedPlanToExecute buildCtx)
-            (elaboratedShared buildCtx)
-            buildStatus
-        action envOverrides
-    )
+-- -- | Execute an action with a temporary .ghc.environment file reflecting the
+-- -- current environment. The action takes an environment containing the env
+-- -- variable which points ghc to the file.
+-- withTempEnvFile
+--   :: Verbosity
+--   -> ProjectBaseContext
+--   -> ProjectBuildContext
+--   -> PostBuildProjectStatus
+--   -> ([(String, Maybe String)] -> IO a)
+--   -> IO a
+-- withTempEnvFile verbosity baseCtx buildCtx buildStatus action = do
+--   let tmpDirTemplate = distTempDirectory (distDirLayout baseCtx)
+--   createDirectoryIfMissingVerbose verbosity True tmpDirTemplate
+--   withTempDirectory
+--     verbosity
+--     tmpDirTemplate
+--     "environment."
+--     ( \tmpDir -> do
+--         envOverrides <-
+--           createPackageEnvironment
+--             verbosity
+--             tmpDir
+--             (elaboratedPlanToExecute buildCtx)
+--             (elaboratedShared buildCtx)
+--             buildStatus
+--         action envOverrides
+--     )
 
 -- | Get paths to all dependency executables to be included in PATH.
 pathAdditions :: ProjectBaseContext -> ProjectBuildContext -> [FilePath]
