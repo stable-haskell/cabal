@@ -141,6 +141,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage as SourcePackage
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.Client.ProjectConfig
 import Distribution.Client.Utils
@@ -585,10 +586,9 @@ planPackages
   pkgConfigDb
   pkgSpecifiers =
     resolveDependencies
-      platform
-      (compilerInfo comp)
-      pkgConfigDb
-      installedPkgIndex
+      (Stage.always (compilerInfo comp, platform))
+      (Stage.always pkgConfigDb)
+      (Stage.always installedPkgIndex)
       resolverParams
       >>= if onlyDeps then pruneInstallPlan pkgSpecifiers else return
     where

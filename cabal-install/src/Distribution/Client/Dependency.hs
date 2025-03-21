@@ -152,6 +152,7 @@ import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Toolchain
 import Distribution.Solver.Types.Variable
 
 import Control.Exception
@@ -759,15 +760,14 @@ runSolver = modularResolver
 -- a 'Progress' structure that can be unfolded to provide progress information,
 -- logging messages and the final result or an error.
 resolveDependencies
-  :: Platform
-  -> CompilerInfo
-  -> Maybe PkgConfigDb
-  -> InstalledPackageIndex
+  :: Staged (CompilerInfo, Platform)
+  -> Staged (Maybe PkgConfigDb)
+  -> Staged InstalledPackageIndex
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
-resolveDependencies platform comp pkgConfigDB installedPkgIndex params =
+resolveDependencies toolchains pkgConfigDBs installedPkgIndex params =
   Step (showDepResolverParams finalparams) $
-    fmap (validateSolverResult platform comp) $
+    fmap (validateSolverResult toolchains) $
       runSolver
         ( SolverConfig
             reordGoals
@@ -785,11 +785,10 @@ resolveDependencies platform comp pkgConfigDB installedPkgIndex params =
             verbosity
             (PruneAfterFirstSuccess False)
         )
-        platform
-        comp
+        toolchains
+        pkgConfigDBs
         installedPkgIndex
         sourcePkgIndex
-        pkgConfigDB
         preferences
         constraints
         targets
@@ -884,12 +883,11 @@ interpretPackagesPreference selected defaultPref prefs =
 -- | Make an install plan from the output of the dep resolver.
 -- It checks that the plan is valid, or it's an error in the dep resolver.
 validateSolverResult
-  :: Platform
-  -> CompilerInfo
+  :: Staged (CompilerInfo, Platform)
   -> [ResolverPackage UnresolvedPkgLoc]
   -> SolverInstallPlan
-validateSolverResult platform comp pkgs =
-  case planPackagesProblems platform comp pkgs of
+validateSolverResult toolchains pkgs =
+  case planPackagesProblems toolchains pkgs of
     [] -> case SolverInstallPlan.new graph of
       Right plan -> plan
       Left problems -> error (formatPlanProblems problems)
@@ -934,14 +932,13 @@ showPlanPackageProblem (DuplicatePackageSolverId pid dups) =
     ++ " duplicate instances."
 
 planPackagesProblems
-  :: Platform
-  -> CompilerInfo
+  :: Staged (CompilerInfo, Platform)
   -> [ResolverPackage UnresolvedPkgLoc]
   -> [PlanPackageProblem]
-planPackagesProblems platform cinfo pkgs =
+planPackagesProblems toolchains pkgs =
   [ InvalidConfiguredPackage pkg packageProblems
   | Configured pkg <- pkgs
-  , let packageProblems = configuredPackageProblems platform cinfo pkg
+  , let packageProblems = configuredPackageProblems toolchains pkg
   , not (null packageProblems)
   ]
     ++ [ DuplicatePackageSolverId (Graph.nodeKey aDup) dups
@@ -990,14 +987,12 @@ showPackageProblem (InvalidDep dep pkgid) =
 -- in the configuration given by the flag assignment, all the package
 -- dependencies are satisfied by the specified packages.
 configuredPackageProblems
-  :: Platform
-  -> CompilerInfo
+  :: Staged (CompilerInfo, Platform)
   -> SolverPackage UnresolvedPkgLoc
   -> [PackageProblem]
 configuredPackageProblems
-  platform
-  cinfo
-  (SolverPackage pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps') =
+  toolchains
+  (SolverPackage stage _qpn pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps') =
     [ DuplicateFlag flag
     | flag <- PD.findDuplicateFlagAssignments specifiedFlags
     ]
@@ -1033,6 +1028,7 @@ configuredPackageProblems
           compare
           (sort $ map PD.flagName (PD.genPackageFlags (srcpkgDescription pkg)))
           (sort $ map fst (PD.unFlagAssignment specifiedFlags)) -- TODO
+
       packageSatisfiesDependency :: PackageIdentifier -> Dependency -> Bool
       packageSatisfiesDependency
         (PackageIdentifier name version)
@@ -1070,8 +1066,8 @@ configuredPackageProblems
           specifiedFlags
           compSpec
           (const Satisfied)
-          platform
-          cinfo
+          (snd (getStage toolchains stage))
+          (fst (getStage toolchains stage))
           []
           (srcpkgDescription pkg) of
           Right (resolvedPkg, _) ->

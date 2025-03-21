@@ -38,6 +38,7 @@ import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb, readPkgConfigDb)
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.Client.Errors
 import Distribution.Package
@@ -174,10 +175,9 @@ planPackages
         installPlan <-
           foldProgress logMsg (dieWithException verbosity . PlanPackages . show) return $
             resolveDependencies
-              platform
-              (compilerInfo comp)
-              pkgConfigDb
-              installedPkgIndex
+              (Stage.always (compilerInfo comp, platform))
+              (Stage.always pkgConfigDb)
+              (Stage.always installedPkgIndex)
               resolverParams
 
         -- The packages we want to fetch are those packages the 'InstallPlan'
