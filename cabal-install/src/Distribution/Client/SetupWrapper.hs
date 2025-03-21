@@ -806,7 +806,7 @@ getExternalSetupMethod verbosity options pkg bt = do
               , SetupScriptOptions
               )
         installedVersion = do
-          (comp, progdb, options') <- configureCompiler options
+          (comp, progdb, options') <- configureToolchains options
           (version, mipkgid, options'') <-
             installedCabalVersion
               options'
@@ -935,10 +935,10 @@ getExternalSetupMethod verbosity options pkg bt = do
               _ -> False
             latestVersion = version
 
-    configureCompiler
+    configureToolchains
       :: SetupScriptOptions
       -> IO (Compiler, ProgramDb, SetupScriptOptions)
-    configureCompiler options' = do
+    configureToolchains options' = do
       (comp, progdb) <- case useCompiler options' of
         Just comp -> return (comp, useProgramDb options')
         Nothing -> do
@@ -1066,7 +1066,7 @@ getExternalSetupMethod verbosity options pkg bt = do
         let outOfDate = setupHsNewer || cabalVersionNewer
         when (outOfDate || forceCompile) $ do
           debug verbosity "Setup executable needs to be updated, compiling..."
-          (compiler, progdb, options'') <- configureCompiler options'
+          (compiler, progdb, options'') <- configureToolchains options'
           pkgDbs <- traverse (traverse (makeRelativeToDirS mbWorkDir)) (coercePackageDBStack (usePackageDB options''))
           let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion
               (program, extraOpts) =
