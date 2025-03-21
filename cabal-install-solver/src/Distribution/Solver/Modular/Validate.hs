@@ -190,7 +190,7 @@ validate = go
 
     -- What to do for package nodes ...
     goP :: QPN -> POption -> Validate (Tree d c) -> Validate (Tree d c)
-    goP qpn@(Q _pp pn) (POption i _mpp) r = do
+    goP qpn@(Q (PackagePath _stage _) pn) (POption i _mpp) r = do
       PA ppa pfa psa <- asks pa    -- obtain current preassignment
       extSupported   <- asks supportedExt  -- obtain the supported extensions
       langSupported  <- asks supportedLang -- obtain the supported languages
@@ -200,6 +200,7 @@ validate = go
       aComps         <- asks availableComponents
       rComps         <- asks requiredComponents
       -- obtain dependencies and index-dictated exclusions introduced by the choice
+      let I stage _vr _loc = i
       let (PInfo deps comps _ mfr) = idx ! pn ! i
       -- qualify the deps in the current scope
       let qdeps = qualifyDeps qpn deps
@@ -207,8 +208,8 @@ validate = go
       -- plus the dependency information we have for that instance
       let newactives = extractAllDeps pfa psa qdeps
       -- We now try to extend the partial assignment with the new active constraints.
-      let mnppa = extend ({- FIXME -} extSupported Host) ({- FIXME -} langSupported Host) ({- FIXME -} pkgPresent Host) newactives
-                   =<< extendWithPackageChoice (PI qpn i) ppa
+      let mnppa = extend (extSupported stage) (langSupported stage) (pkgPresent stage) newactives
+                  =<< extendWithPackageChoice (PI qpn i) ppa
       -- In case we continue, we save the scoped dependencies
       let nsvd = M.insert qpn qdeps svd
       case mfr of
@@ -233,7 +234,7 @@ validate = go
 
     -- What to do for flag nodes ...
     goF :: QFN -> Bool -> Validate (Tree d c) -> Validate (Tree d c)
-    goF qfn@(FN qpn _f) b r = do
+    goF qfn@(FN qpn@(Q (PackagePath stage _) _) _f) b r = do
       PA ppa pfa psa <- asks pa -- obtain current preassignment
       extSupported   <- asks supportedExt  -- obtain the supported extensions
       langSupported  <- asks supportedLang -- obtain the supported languages
@@ -255,7 +256,7 @@ validate = go
       let newactives = extractNewDeps (F qfn) b npfa psa qdeps
           mNewRequiredComps = extendRequiredComponents qpn aComps rComps newactives
       -- As in the package case, we try to extend the partial assignment.
-      let mnppa = extend ({- FIXME -} extSupported Host) ({- FIXME -} langSupported Host) ({- FIXME -} pkgPresent Host) newactives ppa
+      let mnppa = extend (extSupported stage) (langSupported stage) (pkgPresent stage) newactives ppa
       case liftM2 (,) mnppa mNewRequiredComps of
         Left (c, fr)         -> return (Fail c fr) -- inconsistency found
         Right (nppa, rComps') ->
@@ -263,7 +264,7 @@ validate = go
 
     -- What to do for stanza nodes (similar to flag nodes) ...
     goS :: QSN -> Bool -> Validate (Tree d c) -> Validate (Tree d c)
-    goS qsn@(SN qpn _f) b r = do
+    goS qsn@(SN qpn@(Q (PackagePath stage _) _) _f) b r = do
       PA ppa pfa psa <- asks pa -- obtain current preassignment
       extSupported   <- asks supportedExt  -- obtain the supported extensions
       langSupported  <- asks supportedLang -- obtain the supported languages
@@ -285,7 +286,7 @@ validate = go
       let newactives = extractNewDeps (S qsn) b pfa npsa qdeps
           mNewRequiredComps = extendRequiredComponents qpn aComps rComps newactives
       -- As in the package case, we try to extend the partial assignment.
-      let mnppa = extend ({- FIXME -} extSupported Host) ({- FIXME -} langSupported Host) ({- FIXME -} pkgPresent Host) newactives ppa
+      let mnppa = extend (extSupported stage) (langSupported stage) (pkgPresent stage) newactives ppa
       case liftM2 (,) mnppa mNewRequiredComps of
         Left (c, fr)         -> return (Fail c fr) -- inconsistency found
         Right (nppa, rComps') ->

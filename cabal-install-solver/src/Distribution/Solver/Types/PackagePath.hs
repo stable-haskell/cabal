@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Distribution.Solver.Types.PackagePath
     ( PackagePath(..)
     , Qualifier(..)
@@ -12,14 +13,20 @@ module Distribution.Solver.Types.PackagePath
 import Distribution.Solver.Compat.Prelude
 import Prelude ()
 import Distribution.Package (PackageName)
-import Distribution.Pretty (pretty, flatStyle)
+import Distribution.Pretty (pretty, flatStyle, Pretty)
 import qualified Text.PrettyPrint as Disp
+import Distribution.Solver.Types.Stage (Stage)
 
-data PackagePath = PackagePath Qualifier
+data PackagePath = PackagePath Stage Qualifier
   deriving (Eq, Ord, Show, Generic)
 
 instance Binary PackagePath
 instance Structured PackagePath
+
+instance Pretty PackagePath where
+  pretty (PackagePath stage qualifier) =
+    pretty stage <<>> Disp.text ":" <<>> pretty qualifier
+
 -- | Qualifier of a package within a namespace (see 'PackagePath')
 data Qualifier =
     -- | Top-level dependency in this namespace
@@ -50,13 +57,16 @@ data Qualifier =
 instance Binary Qualifier
 instance Structured Qualifier
 
+instance Pretty Qualifier where
+  pretty QualToplevel = Disp.text "toplevel"
+  pretty (QualSetup pn) = pretty pn <<>> Disp.text ":setup"
+  pretty (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
+                            pretty pn2 <<>> Disp.text ":exe"
+
 -- | Pretty-prints a qualifier. The result is either empty or
 -- ends in a period, so it can be prepended onto a package name.
 dispQualifier :: Qualifier -> Disp.Doc
-dispQualifier QualToplevel = Disp.empty
-dispQualifier (QualSetup pn)  = pretty pn <<>> Disp.text ":setup."
-dispQualifier (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
-                                 pretty pn2 <<>> Disp.text ":exe."
+dispQualifier = pretty
 
 -- | A qualified entity. Pairs a package path with the entity.
 data Qualified a = Q PackagePath a
@@ -68,10 +78,13 @@ instance (Structured a) => Structured (Qualified a)
 -- | Qualified package name.
 type QPN = Qualified PackageName
 
+instance Pretty (Qualified PackageName) where
+  pretty (Q (PackagePath stage qual) pn) =
+    pretty stage <<>> Disp.colon <<>> pretty qual <<>> Disp.char '.' <<>> pretty pn
+
 -- | Pretty-prints a qualified package name.
 dispQPN :: QPN -> Disp.Doc
-dispQPN (Q (PackagePath qual) pn) =
-  dispQualifier qual <<>> pretty pn
+dispQPN = pretty
 
 -- | String representation of a qualified package name.
 showQPN :: QPN -> String

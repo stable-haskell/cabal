@@ -190,7 +190,7 @@ convSP
   -> SourcePackage loc
   -> (PN, I, PInfo)
 convSP stage os arch cinfo constraints strfl solveExes (SourcePackage (PackageIdentifier pn pv) gpd _ _pl) =
-  let i = I stage pv InRepo
+  let i = I stage pv (InRepo pn)
       pkgConstraints = fromMaybe [] $ M.lookup pn constraints
   in  (pn, i, convGPD os arch cinfo pkgConstraints strfl solveExes pn gpd)
 

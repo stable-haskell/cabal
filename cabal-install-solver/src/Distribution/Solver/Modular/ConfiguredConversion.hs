@@ -43,7 +43,7 @@ convCP iidx sidx (CP qpi fa es ds) =
         ipkg = fromMaybe (error "convCP: lookupUnitId failed") $
           SI.lookupUnitId (getStage iidx s) pi
     -- "In repo" i.e. a source package
-    (PI qpn@(Q _path pn) (I s v InRepo)) ->
+    (PI qpn@(Q _path pn) (I s v (InRepo _pn))) ->
       let pi = PackageIdentifier pn v in
       Configured $
                   SolverPackage {
@@ -60,7 +60,7 @@ convCP iidx sidx (CP qpi fa es ds) =
     ds' = fmap (partitionEithers . map convConfId) ds
 
 convConfId :: PI QPN -> Either SolverId {- is lib -} SolverId {- is exe -}
-convConfId (PI (Q (PackagePath q) pn) (I _ v loc)) =
+convConfId (PI (Q (PackagePath _ q) pn) (I _ v loc)) =
     case loc of
         Inst pi -> Left (PreExistingId sourceId pi)
         _otherwise
