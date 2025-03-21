@@ -40,6 +40,7 @@ import Distribution.Client.ProjectConfig.Types
   )
 import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
+import Distribution.Client.ProjectPlanning.Types (Toolchain (..))
 import Distribution.Client.RebuildMonad (runRebuild)
 import Distribution.Client.ScriptUtils
 import Distribution.Client.Setup
@@ -53,6 +54,7 @@ import qualified Distribution.Client.Utils.Json as Json
 import Distribution.Client.Version
   ( cabalInstallVersion
   )
+import Distribution.Solver.Types.Stage
 import Distribution.ReadE
   ( ReadE (ReadE)
   )
@@ -74,6 +76,7 @@ import Distribution.Simple.Program
 import Distribution.Simple.Utils
   ( die'
   , dieWithException
+  , warn
   , withOutputMarker
   , wrapText
   )
@@ -242,10 +245,13 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags', ..} cliTargetStrings glo
     if not $ fromFlagOrDefault False (pathCompiler pathFlags)
       then pure Nothing
       else do
-        (compiler, _, progDb) <- runRebuild (distProjectRootDirectory . distDirLayout $ baseCtx) $ configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
-        compilerProg <- requireCompilerProg verbosity compiler
-        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg progDb
-        pure $ Just $ mkCompilerInfo configuredCompilerProg compiler
+        let projectRoot = distProjectRootDirectory (distDirLayout baseCtx)
+        toolchains <- runRebuild projectRoot $ configureToolchains verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
+        warn verbosity "WIP: Assuming host toolchain, result might be wrong"
+        let Toolchain{..} = getStage toolchains Host
+        compilerProg <- requireCompilerProg verbosity toolchainCompiler
+        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg toolchainProgramDb
+        pure $ Just $ mkCompilerInfo configuredCompilerProg toolchainCompiler
 
   paths <- for (fromFlagOrDefault [] $ pathDirectories pathFlags) $ \p -> do
     t <- getPathLocation baseCtx p

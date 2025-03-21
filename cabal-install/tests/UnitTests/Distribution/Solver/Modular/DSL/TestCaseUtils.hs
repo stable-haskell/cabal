@@ -51,6 +51,7 @@ import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.Variable
 import UnitTests.Distribution.Solver.Modular.DSL
 import UnitTests.Options
+import qualified Distribution.Solver.Types.Stage as Stage
 
 maxBackjumps :: Maybe Int -> SolverTest -> SolverTest
 maxBackjumps mbj test = test{testMaxBackjumps = mbj}
@@ -298,13 +299,13 @@ runTest SolverTest{..} = askOption $ \(OptionShowSolverLog showSolverLog) ->
     toQPN q pn = P.Q pp (C.mkPackageName pn)
       where
         pp = case q of
-          QualNone -> P.PackagePath P.QualToplevel
+          QualNone -> P.PackagePath Stage.Host P.QualToplevel
           QualSetup s ->
-            P.PackagePath
+            P.PackagePath Stage.Host
               (P.QualSetup (C.mkPackageName s))
           QualIndepSetup _ s ->
-            P.PackagePath
+            P.PackagePath Stage.Host
               (P.QualSetup (C.mkPackageName s))
           QualExe p1 p2 ->
-            P.PackagePath
+            P.PackagePath Stage.Host
               (P.QualExe (C.mkPackageName p1) (C.mkPackageName p2))

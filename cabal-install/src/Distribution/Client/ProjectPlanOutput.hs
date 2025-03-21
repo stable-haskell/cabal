@@ -15,6 +15,9 @@ module Distribution.Client.ProjectPlanOutput
   , createPackageEnvironment
   , writePlanGhcEnvironment
   , argsEquivalentOfGhcEnvironmentFile
+
+    -- TODO: only to avoid a warning
+  , Distribution.Client.ProjectPlanOutput.renderGhcEnvironmentFile
   ) where
 
 import Distribution.Client.DistDirLayout
@@ -32,6 +35,7 @@ import qualified Distribution.Client.Utils.Json as J
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 
 import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import qualified Distribution.Compat.Binary as Binary
 import Distribution.Compat.Graph (Graph, Node)
@@ -46,12 +50,6 @@ import Distribution.Simple.BuildPaths
   )
 import Distribution.Simple.Compiler
 import Distribution.Simple.GHC
-  ( GhcEnvironmentFileEntry (..)
-  , GhcImplInfo (supportsPkgEnvFiles)
-  , getImplInfo
-  , simpleGhcEnvironmentFile
-  , writeGhcEnvironmentFile
-  )
 import Distribution.Simple.Utils
 import Distribution.System
 import Distribution.Types.Version
@@ -106,16 +104,25 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
   J.object
     [ "cabal-version" J..= jdisplay cabalInstallVersion
     , "cabal-lib-version" J..= jdisplay cabalVersion
-    , "compiler-id"
-        J..= (J.String . showCompilerId . pkgConfigCompiler)
-          elaboratedSharedConfig
-    , "os" J..= jdisplay os
-    , "arch" J..= jdisplay arch
+    , "toolchains"
+        J..= J.Object
+          [ (stageJ stage) J..= toolchainJ toolchain
+          | (stage, toolchain) <- Stage.tabulate toolchains
+          ]
     , "install-plan" J..= installPlanToJ elaboratedInstallPlan
     ]
   where
-    plat :: Platform
-    plat@(Platform arch os) = pkgConfigPlatform elaboratedSharedConfig
+    toolchains = pkgConfigToolchains elaboratedSharedConfig
+
+    stageJ Stage.Build = "build"
+    stageJ Stage.Host = "host"
+
+    toolchainJ Toolchain{toolchainCompiler, toolchainPlatform = Platform arch os} =
+      J.Object
+        [ "compiler-id" J..= J.String (showCompilerId toolchainCompiler)
+        , "arch" J..= (jdisplay arch)
+        , "os" J..= (jdisplay os)
+        ]
 
     installPlanToJ :: ElaboratedInstallPlan -> [J.Value]
     installPlanToJ = map planPackageToJ . InstallPlan.toList
@@ -204,6 +211,9 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               ]
                 ++ bin_file (compSolverName comp)
       where
+        Toolchain{toolchainPlatform = plat} =
+          Stage.getStage toolchains (elabStage elab)
+
         -- \| Only add build-info file location if the Setup.hs CLI
         -- is recent enough to be able to generate build info files.
         -- Otherwise, write 'null'.
@@ -795,23 +805,23 @@ createPackageEnvironment
   -> IO [(String, Maybe String)]
 createPackageEnvironment
   verbosity
-  path
-  elaboratedPlan
-  elaboratedShared
-  buildStatus
-    | compilerFlavor (pkgConfigCompiler elaboratedShared) == GHC =
-        do
-          envFileM <-
-            writePlanGhcEnvironment
-              path
-              elaboratedPlan
-              elaboratedShared
-              buildStatus
-          case envFileM of
-            Just envFile -> return [("GHC_ENVIRONMENT", Just envFile)]
-            Nothing -> do
-              warn verbosity "the configured version of GHC does not support reading package lists from the environment; commands that need the current project's package database are likely to fail"
-              return []
+  _path
+  _elaboratedPlan
+  _elaboratedShared
+  _buildStatus
+    -- | compilerFlavor (pkgConfigCompiler elaboratedShared) == GHC =
+    --     do
+    --       envFileM <-
+    --         writePlanGhcEnvironment
+    --           path
+    --           elaboratedPlan
+    --           elaboratedShared
+    --           buildStatus
+    --       case envFileM of
+    --         Just envFile -> return [("GHC_ENVIRONMENT", Just envFile)]
+    --         Nothing -> do
+    --           warn verbosity "the configured version of GHC does not support reading package lists from the environment; commands that need the current project's package database are likely to fail"
+    --           return []
     | otherwise =
         do
           warn verbosity "package environment configuration is not supported for the currently configured compiler; commands that need the current project's package database are likely to fail"
@@ -826,27 +836,28 @@ writePlanGhcEnvironment
   -> ElaboratedSharedConfig
   -> PostBuildProjectStatus
   -> IO (Maybe FilePath)
-writePlanGhcEnvironment
-  path
-  elaboratedInstallPlan
-  ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigPlatform = platform
-    }
-  postBuildStatus
-    | compilerFlavor compiler == GHC
-    , supportsPkgEnvFiles (getImplInfo compiler) =
-        -- TODO: check ghcjs compat
-        fmap Just $
-          writeGhcEnvironmentFile
-            path
-            platform
-            (compilerVersion compiler)
-            ( renderGhcEnvironmentFile
-                path
-                elaboratedInstallPlan
-                postBuildStatus
-            )
+-- TODO: does this make sense in a cross compilation context?
+-- writePlanGhcEnvironment
+--   path
+--   elaboratedInstallPlan
+--   ElaboratedSharedConfig
+--     { pkgConfigCompiler = compiler
+--     , pkgConfigPlatform = platform
+--     }
+--   postBuildStatus
+--     | compilerFlavor compiler == GHC
+--     , supportsPkgEnvFiles (getImplInfo compiler) =
+--         -- TODO: check ghcjs compat
+--         fmap Just $
+--           writeGhcEnvironmentFile
+--             path
+--             platform
+--             (compilerVersion compiler)
+--             ( renderGhcEnvironmentFile
+--                 path
+--                 elaboratedInstallPlan
+--                 postBuildStatus
+--             )
 -- TODO: [required eventually] support for writing user-wide package
 -- environments, e.g. like a global project, but we would not put the
 -- env file in the home dir, rather it lives under ~/.ghc/
