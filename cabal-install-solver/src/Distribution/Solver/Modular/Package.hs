@@ -23,6 +23,7 @@ import Distribution.Pretty (prettyShow)
 
 import Distribution.Solver.Modular.Version
 import Distribution.Solver.Types.PackagePath
+import Distribution.Solver.Types.Stage (Stage, showStage)
 
 -- | A package name.
 type PN = PackageName
@@ -49,13 +50,13 @@ data Loc = Inst PId | InRepo
   deriving (Eq, Ord, Show)
 
 -- | Instance. A version number and a location.
-data I = I Ver Loc
+data I = I Stage Ver Loc
   deriving (Eq, Ord, Show)
 
 -- | String representation of an instance.
 showI :: I -> String
-showI (I v InRepo)   = showVer v
-showI (I v (Inst uid)) = showVer v ++ "/installed" ++ extractPackageAbiHash uid
+showI (I s v InRepo)     = showVer v ++ " (" ++ showStage s ++ ")"
+showI (I s v (Inst uid)) = showVer v ++ "/installed" ++ extractPackageAbiHash uid ++ " (" ++ showStage s ++ ")"
   where
     extractPackageAbiHash xs =
       case first reverse $ break (=='-') $ reverse (prettyShow xs) of
@@ -71,5 +72,5 @@ showPI :: PI QPN -> String
 showPI (PI qpn i) = showQPN qpn ++ "-" ++ showI i
 
 instI :: I -> Bool
-instI (I _ (Inst _)) = True
+instI (I _ _ (Inst _)) = True
 instI _              = False
