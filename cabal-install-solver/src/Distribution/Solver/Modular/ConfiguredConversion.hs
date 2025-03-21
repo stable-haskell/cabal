@@ -6,8 +6,6 @@ import Data.Maybe
 import Prelude hiding (pi)
 import Data.Either (partitionEithers)
 
-import Distribution.Package (UnitId, packageId)
-
 import qualified Distribution.Simple.PackageIndex as SI
 
 import Distribution.Solver.Modular.Configured
@@ -21,41 +19,48 @@ import           Distribution.Solver.Types.SolverId
 import           Distribution.Solver.Types.SolverPackage
 import           Distribution.Solver.Types.InstSolverPackage
 import           Distribution.Solver.Types.SourcePackage
+import           Distribution.Solver.Types.Stage (Staged (..))
 
 -- | Converts from the solver specific result @CP QPN@ into
 -- a 'ResolverPackage', which can then be converted into
 -- the install plan.
-convCP :: SI.InstalledPackageIndex ->
+convCP :: Staged SI.InstalledPackageIndex ->
           CI.PackageIndex (SourcePackage loc) ->
           CP QPN -> ResolverPackage loc
 convCP iidx sidx (CP qpi fa es ds) =
-  case convPI qpi of
-    Left  pi -> PreExisting $
+  case qpi of
+    -- Installed
+    (PI qpn (I s _ (Inst pi)))  ->
+      PreExisting $
                   InstSolverPackage {
-                    instSolverPkgIPI = fromJust $ SI.lookupUnitId iidx pi,
+                    instSolverPkgIPI = ipkg,
+                    instSolverStage = s,
+                    instSolverQPN = qpn,
                     instSolverPkgLibDeps = fmap fst ds',
                     instSolverPkgExeDeps = fmap snd ds'
                   }
-    Right pi -> Configured $
+      where
+        ipkg = fromMaybe (error "convCP: lookupUnitId failed") $
+          SI.lookupUnitId (getStage iidx s) pi
+    -- "In repo" i.e. a source package
+    (PI qpn@(Q _path pn) (I s v InRepo)) ->
+      let pi = PackageIdentifier pn v in
+      Configured $
                   SolverPackage {
-                      solverPkgSource = srcpkg,
+                      solverPkgStage = s,
+                      solverPkgQPN = qpn,
+                      solverPkgSource = fromMaybe (error "convCP: lookupPackageId failed") $ CI.lookupPackageId sidx pi,
                       solverPkgFlags = fa,
                       solverPkgStanzas = es,
                       solverPkgLibDeps = fmap fst ds',
                       solverPkgExeDeps = fmap snd ds'
                     }
-      where
-        srcpkg = fromMaybe (error "convCP: lookupPackageId failed") $ CI.lookupPackageId sidx pi
   where
     ds' :: ComponentDeps ([SolverId] {- lib -}, [SolverId] {- exe -})
     ds' = fmap (partitionEithers . map convConfId) ds
 
-convPI :: PI QPN -> Either UnitId PackageId
-convPI (PI _ (I _ (Inst pi))) = Left pi
-convPI pi                     = Right (packageId (either id id (convConfId pi)))
-
 convConfId :: PI QPN -> Either SolverId {- is lib -} SolverId {- is exe -}
-convConfId (PI (Q (PackagePath q) pn) (I v loc)) =
+convConfId (PI (Q (PackagePath q) pn) (I _ v loc)) =
     case loc of
         Inst pi -> Left (PreExistingId sourceId pi)
         _otherwise

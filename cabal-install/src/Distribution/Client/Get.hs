@@ -128,7 +128,7 @@ get verbosity repoCtxt globalFlags getFlags userTargets = do
   pkgs <-
     either (dieWithException verbosity . PkgSpecifierException . map show) return $
       resolveWithoutDependencies
-        (resolverParams sourcePkgDb pkgSpecifiers)
+        (resolverParams sourcePkgDb pkgSpecifiers) mempty
 
   unless (null prefix) $
     createDirectoryIfMissing True prefix
@@ -148,7 +148,7 @@ get verbosity repoCtxt globalFlags getFlags userTargets = do
     resolverParams :: SourcePackageDb -> [PackageSpecifier UnresolvedSourcePackage] -> DepResolverParams
     resolverParams sourcePkgDb pkgSpecifiers =
       -- TODO: add command-line constraint and preference args for unpack
-      standardInstallPolicy mempty sourcePkgDb pkgSpecifiers
+      standardInstallPolicy sourcePkgDb pkgSpecifiers
 
     onlyPkgDescr = fromFlagOrDefault False (getOnlyPkgDescr getFlags)
 

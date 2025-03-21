@@ -18,7 +18,6 @@ import Test.Tasty.ExpectedFailure
 -- Cabal
 import Language.Haskell.Extension
   ( Extension (..)
-  , KnownExtension (..)
   , Language (..)
   )
 
@@ -351,7 +350,6 @@ tests =
       , runTest $ mkTest dbBJ5 "bj5" ["A"] (solverSuccess [("A", 1), ("B", 1), ("D", 1)])
       , runTest $ mkTest dbBJ6 "bj6" ["A"] (solverSuccess [("A", 1), ("B", 1)])
       , runTest $ mkTest dbBJ7 "bj7" ["A"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
-      , runTest $ indep $ mkTest dbBJ8 "bj8" ["A", "B"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
       ]
   , testGroup
       "main library dependencies"
@@ -945,8 +943,6 @@ tests =
     mkvrOrEarlier = V.orEarlierVersion . makeV
     makeV v = V.mkVersion [v, 0, 0]
 
-data GoalOrder = FixedGoalOrder | DefaultGoalOrder
-
 {-------------------------------------------------------------------------------
   Specific example database for the tests
 -------------------------------------------------------------------------------}
@@ -972,50 +968,6 @@ db3 =
   , Right $ exAv "B" 1 [exFlagged "flagB" [ExFix "A" 1] [ExFix "A" 2]]
   , Right $ exAv "C" 1 [ExFix "A" 1, ExAny "B"]
   , Right $ exAv "D" 1 [ExFix "A" 2, ExAny "B"]
-  ]
-
--- TODO: fix this example
--- | Like db3, but the flag picks a different package rather than a
--- different package version
---
--- In db3 we cannot install C and D as independent goals because:
---
--- * The multiple instance restriction says C and D _must_ share B
--- * Since C relies on A-1, C needs B to be compiled with flagB on
--- * Since D relies on A-2, D needs B to be compiled with flagB off
--- * Hence C and D have incompatible requirements on B's flags.
---
--- However, _even_ if we don't check explicitly that we pick the same flag
--- assignment for 0.B and 1.B, we will still detect the problem because
--- 0.B depends on 0.A-1, 1.B depends on 1.A-2, hence we cannot link 0.A to
--- 1.A and therefore we cannot link 0.B to 1.B.
---
--- In db4 the situation however is trickier. We again cannot install
--- packages C and D as independent goals because:
---
--- * As above, the multiple instance restriction says that C and D _must_ share B
--- * Since C relies on Ax-2, it requires B to be compiled with flagB off
--- * Since D relies on Ay-2, it requires B to be compiled with flagB on
--- * Hence C and D have incompatible requirements on B's flags.
---
--- But now this requirement is more indirect. If we only check dependencies
--- we don't see the problem:
---
--- * We link 0.B to 1.B
--- * 0.B relies on Ay-1
--- * 1.B relies on Ax-1
---
--- We will insist that 0.Ay will be linked to 1.Ay, and 0.Ax to 1.Ax, but since
--- we only ever assign to one of these, these constraints are never broken.
-db4 :: ExampleDb
-db4 =
-  [ Right $ exAv "Ax" 1 []
-  , Right $ exAv "Ax" 2 []
-  , Right $ exAv "Ay" 1 []
-  , Right $ exAv "Ay" 2 []
-  , Right $ exAv "B" 1 [exFlagged "flagB" [ExFix "Ax" 1] [ExFix "Ay" 1]]
-  , Right $ exAv "C" 1 [ExFix "Ax" 2, ExAny "B"]
-  , Right $ exAv "D" 1 [ExFix "Ay" 2, ExAny "B"]
   ]
 
 -- | Simple database containing one package with a manual flag.
@@ -1239,24 +1191,6 @@ db10 =
       , Left a2
       , Right $ exAv "C" 1 [ExFix "A" 2] `withSetupDeps` [ExFix "A" 1]
       ]
-
--- | This database tests that a package's setup dependencies are correctly
--- linked when the package is linked. See pull request #3268.
---
--- When A and B are installed as independent goals, their dependencies on C must
--- be linked, due to the single instance restriction. Since C depends on D, 0.D
--- and 1.D must be linked. C also has a setup dependency on D, so 0.C-setup.D
--- and 1.C-setup.D must be linked. However, D's two link groups must remain
--- independent. The solver should be able to choose D-1 for C's library and D-2
--- for C's setup script.
-dbSetupDeps :: ExampleDb
-dbSetupDeps =
-  [ Right $ exAv "A" 1 [ExAny "C"]
-  , Right $ exAv "B" 1 [ExAny "C"]
-  , Right $ exAv "C" 1 [ExFix "D" 1] `withSetupDeps` [ExFix "D" 2]
-  , Right $ exAv "D" 1 []
-  , Right $ exAv "D" 2 []
-  ]
 
 -- | Tests for dealing with base shims
 db11 :: ExampleDb
@@ -1539,46 +1473,6 @@ testCyclicDependencyErrorMessages name =
     goals :: [ExampleVar]
     goals = [P QualNone ("pkg-" ++ [c]) | c <- ['A' .. 'E']]
 
--- | Check that the solver can backtrack after encountering the SIR (issue #2843)
---
--- When A and B are installed as independent goals, the single instance
--- restriction prevents B from depending on C.  This database tests that the
--- solver can backtrack after encountering the single instance restriction and
--- choose the only valid flag assignment (-flagA +flagB):
---
--- > flagA flagB  B depends on
--- >  On    _     C-*
--- >  Off   On    E-*               <-- only valid flag assignment
--- >  Off   Off   D-2.0, C-*
---
--- Since A depends on C-* and D-1.0, and C-1.0 depends on any version of D,
--- we must build C-1.0 against D-1.0. Since B depends on D-2.0, we cannot have
--- C in the transitive closure of B's dependencies, because that would mean we
--- would need two instances of C: one built against D-1.0 and one built against
--- D-2.0.
-db16 :: ExampleDb
-db16 =
-  [ Right $ exAv "A" 1 [ExAny "C", ExFix "D" 1]
-  , Right $
-      exAv
-        "B"
-        1
-        [ ExFix "D" 2
-        , exFlagged
-            "flagA"
-            [ExAny "C"]
-            [ exFlagged
-                "flagB"
-                [ExAny "E"]
-                [ExAny "C"]
-            ]
-        ]
-  , Right $ exAv "C" 1 [ExAny "D"]
-  , Right $ exAv "D" 1 []
-  , Right $ exAv "D" 2 []
-  , Right $ exAv "E" 1 []
-  ]
-
 -- Try to get the solver to backtrack while satisfying
 -- reject-unconstrained-dependencies: both the first and last versions of A
 -- require packages outside the closed set, so it will have to try the
@@ -1590,46 +1484,6 @@ db17 =
   , Right $ exAv "A" 3 [ExAny "C"]
   , Right $ exAv "B" 1 []
   , Right $ exAv "C" 1 [ExAny "B"]
-  ]
-
--- | Issue #2834
--- When both A and B are installed as independent goals, their dependencies on
--- C must be linked. The only combination of C's flags that is consistent with
--- A and B's dependencies on D is -flagA +flagB. This database tests that the
--- solver can backtrack to find the right combination of flags (requiring F, but
--- not E or G) and apply it to both 0.C and 1.C.
---
--- > flagA flagB  C depends on
--- >  On    _     D-1, E-*
--- >  Off   On    F-*        <-- Only valid choice
--- >  Off   Off   D-2, G-*
---
--- The single instance restriction means we cannot have one instance of C
--- built against D-1 and one instance built against D-2; since A depends on
--- D-1, and B depends on C-2, it is therefore important that C cannot depend
--- on any version of D.
-db18 :: ExampleDb
-db18 =
-  [ Right $ exAv "A" 1 [ExAny "C", ExFix "D" 1]
-  , Right $ exAv "B" 1 [ExAny "C", ExFix "D" 2]
-  , Right $
-      exAv
-        "C"
-        1
-        [ exFlagged
-            "flagA"
-            [ExFix "D" 1, ExAny "E"]
-            [ exFlagged
-                "flagB"
-                [ExAny "F"]
-                [ExFix "D" 2, ExAny "G"]
-            ]
-        ]
-  , Right $ exAv "D" 1 []
-  , Right $ exAv "D" 2 []
-  , Right $ exAv "E" 1 []
-  , Right $ exAv "F" 1 []
-  , Right $ exAv "G" 1 []
   ]
 
 -- | When both values for flagA introduce package B, the solver should be able
@@ -1990,14 +1844,6 @@ dbBJ7 =
   , Right $ exAv "B" 1 [ExFix "C" 1]
   , Right $ exAv "C" 1 []
   , Right $ exAv "C" 2 []
-  ]
-
--- | Conflict sets for SIR (C shared subgoal of independent goals A, B)
-dbBJ8 :: ExampleDb
-dbBJ8 =
-  [ Right $ exAv "A" 1 [ExAny "C"]
-  , Right $ exAv "B" 1 [ExAny "C"]
-  , Right $ exAv "C" 1 []
   ]
 
 {-------------------------------------------------------------------------------
