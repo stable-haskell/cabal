@@ -220,9 +220,9 @@ data ProgressAction =
 
 blurb :: ProgressAction -> String
 blurb = \case
-  Trying -> "trying: "
-  Skipping -> "skipping: "
-  Rejecting -> "rejecting: "
+  Trying -> "trying "
+  Skipping -> "skipping "
+  Rejecting -> "rejecting "
 
 blurbQFNBool :: ProgressAction -> QFN -> Bool -> String
 blurbQFNBool a q b = blurb a ++ Flag.showQFNBool q b
@@ -239,8 +239,8 @@ blurbOptions a q ps = blurb a ++ showOptions q ps
 showOption :: QPN -> POption -> String
 showOption qpn@(Q _pp pn) (POption i linkedTo) =
   case linkedTo of
-    Nothing  -> showPI (PI qpn i) -- Consistent with prior to POption
-    Just pp' -> showQPN qpn ++ "~>" ++ showPI (PI (Q pp' pn) i)
+    Nothing  -> showQPN qpn ++ " == " ++ showI i
+    Just pp' -> showQPN qpn ++ " ~> " ++ showQPN (Q pp' pn)
 
 -- | Shows a mixed list of instances and versions in a human-friendly way,
 -- abbreviated.

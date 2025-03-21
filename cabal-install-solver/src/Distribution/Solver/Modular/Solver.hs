@@ -44,7 +44,7 @@ import Distribution.Solver.Modular.Tree
 import qualified Distribution.Solver.Modular.PSQ as PSQ
 
 import Distribution.Simple.Setup (BooleanFlag(..))
-import Distribution.Solver.Types.Stage (Staged)
+import Distribution.Solver.Types.Stage (Staged, Stage(..))
 
 #ifdef DEBUG_TRACETREE
 import qualified Distribution.Solver.Modular.ConflictSet as CS
@@ -251,5 +251,5 @@ _removeGR = trav go
    dummy =
        DependencyGoal $
        DependencyReason
-           (Q (PackagePath QualToplevel) (mkPackageName "$"))
+           (Q (PackagePath Host QualToplevel) (mkPackageName "$"))
            M.empty S.empty

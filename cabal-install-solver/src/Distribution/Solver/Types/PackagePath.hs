@@ -14,8 +14,9 @@ import Prelude ()
 import Distribution.Package (PackageName)
 import Distribution.Pretty (pretty, flatStyle)
 import qualified Text.PrettyPrint as Disp
+import Distribution.Solver.Types.Stage (Stage)
 
-data PackagePath = PackagePath Qualifier
+data PackagePath = PackagePath Stage Qualifier
   deriving (Eq, Ord, Show, Generic)
 
 instance Binary PackagePath
@@ -70,8 +71,8 @@ type QPN = Qualified PackageName
 
 -- | Pretty-prints a qualified package name.
 dispQPN :: QPN -> Disp.Doc
-dispQPN (Q (PackagePath qual) pn) =
-  dispQualifier qual <<>> pretty pn
+dispQPN (Q (PackagePath stage qual) pn) =
+  pretty stage <<>> Disp.text ":" <<>> dispQualifier qual <<>> pretty pn
 
 -- | String representation of a qualified package name.
 showQPN :: QPN -> String
