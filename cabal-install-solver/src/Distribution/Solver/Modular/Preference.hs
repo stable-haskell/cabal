@@ -341,7 +341,7 @@ avoidReinstalls p = go
           let installed = [ v | (_, POption (I _ v (Inst _)) _, _) <- W.toList cs ]
           in  W.mapWithKey (notReinstall installed) cs
 
-        notReinstall vs (POption (I _ v InRepo) _) _ | v `elem` vs =
+        notReinstall vs (POption (I _ v (InRepo _pn)) _) _ | v `elem` vs =
           Fail (varToConflictSet (P qpn)) CannotReinstall
         notReinstall _ _ x =
           x
@@ -420,9 +420,9 @@ deferSetupExeChoices = go
     go x                    = x
 
     noSetupOrExe :: Goal QPN -> Bool
-    noSetupOrExe (Goal (P (Q (PackagePath (QualSetup _)) _)) _) = False
-    noSetupOrExe (Goal (P (Q (PackagePath (QualExe _ _)) _)) _) = False
-    noSetupOrExe _                                                  = True
+    noSetupOrExe (Goal (P (Q (PackagePath _ (QualSetup _)) _)) _) = False
+    noSetupOrExe (Goal (P (Q (PackagePath _ (QualExe _ _)) _)) _) = False
+    noSetupOrExe _                                                = True
 
 -- | Transformation that tries to avoid making weak flag choices early.
 -- Weak flags are trivial flags (not influencing dependencies) or such
