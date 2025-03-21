@@ -47,24 +47,25 @@ import Distribution.Solver.Types.PkgConfigDb
          ( PkgConfigDb )
 import Distribution.Solver.Types.Progress
 import Distribution.Solver.Types.Variable
-import Distribution.System
-         ( Platform(..) )
+
 import Distribution.Simple.Setup
          ( BooleanFlag(..) )
 import Distribution.Simple.Utils
          ( ordNubBy )
 import Distribution.Verbosity
+import Distribution.Solver.Types.Toolchain
 
 
 -- | Ties the two worlds together: classic cabal-install vs. the modular
 -- solver. Performs the necessary translations before and after.
 modularResolver :: SolverConfig -> DependencyResolver loc
-modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns =
-  uncurry postprocess <$> -- convert install plan
-  solve' sc cinfo idx pkgConfigDB pprefs gcs pns
-    where
+modularResolver sc toolchains pkgConfigDbs iidx sidx pprefs pcs pns = do
+    uncurry postprocess <$> solve' sc cinfo pkgConfigDbs idx pprefs gcs pns
+  where
+      cinfo = fst <$> toolchains
+
       -- Indices have to be converted into solver-specific uniform index.
-      idx    = convPIs os arch cinfo gcs (shadowPkgs sc) (strongFlags sc) (solveExecutables sc) iidx sidx
+      idx    = convPIs toolchains gcs (shadowPkgs sc) (strongFlags sc) (solveExecutables sc) iidx sidx
       -- Constraints have to be converted into a finite map indexed by PN.
       gcs    = M.fromListWith (++) (map pair pcs)
         where
@@ -114,21 +115,21 @@ modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns
 -- complete, i.e., it shows the whole chain of dependencies from the user
 -- targets to the conflicting packages.
 solve' :: SolverConfig
-       -> CompilerInfo
+       -> Staged CompilerInfo
+       -> Staged (Maybe PkgConfigDb)
        -> Index
-       -> Maybe PkgConfigDb
        -> (PN -> PackagePreferences)
        -> Map PN [LabeledPackageConstraint]
        -> Set PN
        -> Progress String String (Assignment, RevDepMap)
-solve' sc cinfo idx pkgConfigDB pprefs gcs pns =
+solve' sc cinfo pkgConfigDb idx pprefs gcs pns =
     toProgress $ retry (runSolver printFullLog sc) createErrorMsg
   where
     runSolver :: Bool -> SolverConfig
               -> RetryLog String SolverFailure (Assignment, RevDepMap)
     runSolver keepLog sc' =
         displayLogMessages keepLog $
-        solve sc' cinfo idx pkgConfigDB pprefs gcs pns
+        solve sc' cinfo pkgConfigDb idx pprefs gcs pns
 
     createErrorMsg :: SolverFailure
                    -> RetryLog String String (Assignment, RevDepMap)

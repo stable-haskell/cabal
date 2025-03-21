@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 module Distribution.Solver.Types.PackagePath
     ( PackagePath(..)
     , Qualifier(..)
@@ -15,8 +16,10 @@ import Distribution.Pretty (pretty, flatStyle)
 import qualified Text.PrettyPrint as Disp
 
 data PackagePath = PackagePath Qualifier
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
+instance Binary PackagePath
+instance Structured PackagePath
 -- | Qualifier of a package within a namespace (see 'PackagePath')
 data Qualifier =
     -- | Top-level dependency in this namespace
@@ -42,7 +45,10 @@ data Qualifier =
     -- tracked only @pn2@, that would require us to pick only one
     -- version of an executable over the entire install plan.)
   | QualExe PackageName PackageName
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary Qualifier
+instance Structured Qualifier
 
 -- | Pretty-prints a qualifier. The result is either empty or
 -- ends in a period, so it can be prepended onto a package name.
@@ -54,7 +60,10 @@ dispQualifier (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
 
 -- | A qualified entity. Pairs a package path with the entity.
 data Qualified a = Q PackagePath a
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance (Binary a) => Binary (Qualified a)
+instance (Structured a) => Structured (Qualified a)
 
 -- | Qualified package name.
 type QPN = Qualified PackageName
