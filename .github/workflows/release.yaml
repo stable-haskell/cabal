@@ -207,11 +207,6 @@ jobs:
       matrix:
         include:
           - os: [self-hosted, Linux, ARM64, maerwald]
-            ARCH: ARM
-            ARTIFACT: "armv7-linux-deb10"
-            GHC_VERSION: 9.2.8
-            DISTRO: Debian
-          - os: [self-hosted, Linux, ARM64, maerwald]
             ARCH: ARM64
             ARTIFACT: "aarch64-linux-deb10"
             GHC_VERSION: 9.8.4
@@ -230,17 +225,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - if: matrix.ARCH == 'ARM'
-        uses: docker://hasufell/arm32v7-debian-haskell:10
-        name: Run build (armv7 linux)
-        with:
-          args: bash .github/scripts/build.sh
-        env:
-          ARTIFACT: ${{ matrix.ARTIFACT }}
-          GHC_VERSION: ${{ matrix.GHC_VERSION }}
-          DISTRO: ${{ matrix.DISTRO }}
-
-      - if: matrix.ARCH == 'ARM64' && matrix.DISTRO == 'Debian'
+      - if: matrix.DISTRO == 'Debian'
         uses: docker://hasufell/arm64v8-debian-haskell:10
         name: Run build (aarch64 linux)
         with:
@@ -250,7 +235,7 @@ jobs:
           GHC_VERSION: ${{ matrix.GHC_VERSION }}
           DISTRO: ${{ matrix.DISTRO }}
 
-      - if: matrix.ARCH == 'ARM64' && matrix.DISTRO == 'Alpine'
+      - if: matrix.DISTRO == 'Alpine'
         uses: docker://hasufell/arm64v8-alpine-haskell:3.20
         name: Run build (aarch64 linux alpine)
         with:
