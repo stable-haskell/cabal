@@ -323,6 +323,10 @@ deleteUnitId ipkgid original@(PackageIndex pids pnames) =
         . List.deleteBy (\_ pkg -> installedUnitId pkg == ipkgid) undefined
 
 -- | Removes all packages with this source 'PackageId' from the index.
+--
+-- The Index maps unitids to instances, however we may have multiple unitids
+-- for the same package. Especially if for multiple compilers, as such we need
+-- to ensure we don't delete by name/version, but by name/version/compiler only.
 deleteSourcePackageId
   :: PackageId
   -> InstalledPackageIndex
@@ -333,11 +337,13 @@ deleteSourcePackageId pkgid original@(PackageIndex pids pnames) =
     Nothing -> original
     Just pvers -> case Map.lookup (packageVersion pkgid) pvers of
       Nothing -> original
-      Just pkgs ->
-        mkPackageIndex
-          (foldl' (flip (Map.delete . installedUnitId)) pids pkgs)
---          (Map.update deletePkgInstance (installedUnitId pkgid) pids)
-          (deletePkgName pnames)
+      Just pkgs -> case [pkg | pkg <- pkgs, IPI.pkgCompiler pkg == pkgCompiler pkgid] of
+        [] -> original
+        pkgs' ->
+          mkPackageIndex
+            (foldl' (flip (Map.delete . installedUnitId)) pids pkgs')
+            (deletePkgName pnames)
+
   where
     deletePkgName =
       Map.update deletePkgVersion (packageName pkgid, LMainLibName)
@@ -354,7 +360,7 @@ deleteSourcePackageId pkgid original@(PackageIndex pids pnames) =
 
     deletePkgInstances :: [IPI.InstalledPackageInfo] -> Maybe [IPI.InstalledPackageInfo]
     deletePkgInstances xs = if null xs' then Nothing else Just xs'
-      where xs' = [x | x <- xs, pkgCompiler pkgid /= pkgCompiler (IPI.sourcePackageId x)]
+      where xs' = [x | x <- xs, pkgCompiler pkgid /= IPI.pkgCompiler x]
 
 -- | Removes all packages with this (case-sensitive) name from the index.
 --
