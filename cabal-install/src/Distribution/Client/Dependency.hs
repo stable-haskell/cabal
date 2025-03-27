@@ -454,13 +454,13 @@ dontInstallNonReinstallablePackages params =
         ConstraintSourceNonReinstallablePackage
       | pkgname <- nonReinstallablePackages
       ]
-dontInstallNonReinstallablePackagesSetupOnly :: DepResolverParams -> DepResolverParams
-dontInstallNonReinstallablePackagesSetupOnly params =
+dontInstallNonReinstallablePackagesForBuild :: DepResolverParams -> DepResolverParams
+dontInstallNonReinstallablePackagesForBuild params =
   addConstraints extraConstraints params
   where
     extraConstraints =
       [ LabeledPackageConstraint
-        (PackageConstraint (ScopeAnySetupQualifier pkgname) PackagePropertyInstalled)
+        (PackageConstraint (ScopeAnyBuildDepQualifier pkgname) PackagePropertyInstalled)
         ConstraintSourceNonReinstallablePackage
       | pkgname <- nonReinstallablePackages
       ]
@@ -862,7 +862,7 @@ resolveDependencies toolchains pkgConfigDB params =
                     verbosity
                   ) =
         if asBool (depResolverAllowBootLibInstalls params)
-          then dontInstallNonReinstallablePackagesSetupOnly params
+          then dontInstallNonReinstallablePackagesForBuild params
           else dontInstallNonReinstallablePackages params
 
     preferences :: PackageName -> PackagePreferences
