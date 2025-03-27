@@ -11,6 +11,7 @@
 module UnitTests.Distribution.Client.ProjectConfig (tests) where
 
 import Control.Monad
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Either (isRight)
 import Data.Foldable (for_)
 import Data.List (intercalate, isPrefixOf, (\\))
@@ -26,6 +27,8 @@ import System.IO.Unsafe (unsafePerformIO)
 import Distribution.Deprecated.ParseUtils
 import qualified Distribution.Deprecated.ReadP as Parse
 
+import Distribution.Client.HashValue (hashValue)
+import Distribution.Client.HookAccept (HookAccept (..))
 import Distribution.Compiler
 import Distribution.Package
 import Distribution.PackageDescription
@@ -610,6 +613,9 @@ instance Arbitrary ProjectConfigShared where
     projectConfigHcFlavor <- arbitrary
     projectConfigHcPath <- arbitraryFlag arbitraryShortToken
     projectConfigHcPkg <- arbitraryFlag arbitraryShortToken
+    projectConfigHostHcFlavor <- arbitrary
+    projectConfigHostHcPath <- arbitraryFlag arbitraryShortToken
+    projectConfigHostHcPkg <- arbitraryFlag arbitraryShortToken
     projectConfigHaddockIndex <- arbitrary
     projectConfigInstallDirs <- fixInstallDirs <$> arbitrary
     projectConfigPackageDBs <- shortListOf 2 arbitrary
@@ -638,6 +644,7 @@ instance Arbitrary ProjectConfigShared where
     projectConfigPreferOldest <- arbitrary
     projectConfigProgPathExtra <- toNubList <$> listOf arbitraryShortToken
     projectConfigMultiRepl <- arbitrary
+    projectConfigHookHashes <- arbitrary
     return ProjectConfigShared{..}
     where
       arbitraryConstraints :: Gen [(UserConstraint, ConstraintSource)]
@@ -656,6 +663,9 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigHcFlavor
         <*> shrinkerAla (fmap NonEmpty) projectConfigHcPath
         <*> shrinkerAla (fmap NonEmpty) projectConfigHcPkg
+        <*> shrinker projectConfigHostHcFlavor
+        <*> shrinkerAla (fmap NonEmpty) projectConfigHostHcPath
+        <*> shrinkerAla (fmap NonEmpty) projectConfigHostHcPkg
         <*> shrinker projectConfigHaddockIndex
         <*> shrinker projectConfigInstallDirs
         <*> shrinker projectConfigPackageDBs
@@ -684,12 +694,16 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigPreferOldest
         <*> shrinker projectConfigProgPathExtra
         <*> shrinker projectConfigMultiRepl
+        <*> shrinker projectConfigHookHashes
     where
       preShrink_Constraints = map fst
       postShrink_Constraints = map (\uc -> (uc, projectConfigConstraintSource))
 
 projectConfigConstraintSource :: ConstraintSource
 projectConfigConstraintSource = ConstraintSourceProjectConfig nullProjectConfigPath
+
+instance Arbitrary HookAccept where
+  arbitrary = elements [AcceptAlways, AcceptHash (hashValue $ LBS.pack "hash")]
 
 instance Arbitrary ProjectConfigProvenance where
   arbitrary = elements [Implicit, Explicit (ProjectConfigPath $ "cabal.project" :| [])]

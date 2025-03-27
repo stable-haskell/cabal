@@ -214,13 +214,13 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
         BuildInplaceOnly{} -> do
           -- TODO: [nice to have] use a proper file monitor rather
           -- than this dir exists test
-          exists <- doesDirectoryExist srcdir
+          exists <- doesDirectoryExist (traceShowId srcdir)
           if exists
             then dryRunLocalPkg pkg depsBuildStatus srcdir
             else return (BuildStatusUnpack tarball)
       where
         srcdir :: FilePath
-        srcdir = distUnpackedSrcDirectory (packageId pkg)
+        srcdir = distUnpackedSrcDirectory ((packageId pkg){pkgCompiler = Nothing})
 
     dryRunLocalPkg
       :: ElaboratedConfiguredPackage
@@ -343,8 +343,7 @@ rebuildTargets
   storeDirLayout
   installPlan
   sharedPackageConfig@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigCompilerProgs = progdb
+    { pkgConfigToolchains = Toolchains{hostToolchain = Toolchain{toolchainCompiler = compiler, toolchainProgramDb = progdb}}
     }
   pkgsBuildStatus
   buildSettings@BuildTimeSettings
@@ -714,7 +713,7 @@ withTarballLocalDirectory
         let tmpdir = distTempDirectory
             builddir = relativeSymbolicPath $ makeRelativePathEx "dist"
          in withTempDirectory verbosity tmpdir "src" $ \unpackdir -> do
-              let srcdir = makeSymbolicPath $ unpackdir </> prettyShow pkgid
+              let srcdir = makeSymbolicPath $ unpackdir </> prettyShow (pkgid{pkgCompiler = Nothing})
               unpackPackageTarball
                 verbosity
                 tarball
@@ -728,7 +727,7 @@ withTarballLocalDirectory
       -- inplace there
       BuildInplaceOnly{} -> do
         let srcrootdir = distUnpackedSrcRootDirectory
-            srcdir = distUnpackedSrcDirectory pkgid
+            srcdir = distUnpackedSrcDirectory (pkgid{pkgCompiler = Nothing})
             builddir =
               makeSymbolicPath $
                 makeRelative (normalise srcdir) $
@@ -792,7 +791,7 @@ unpackPackageTarball verbosity tarball parentdir pkgid pkgTextOverride =
         </> pkgsubdir
         </> prettyShow pkgname
         <.> "cabal"
-    pkgsubdir = prettyShow pkgid
+    pkgsubdir = prettyShow (pkgid{pkgCompiler = Nothing})
     pkgname = packageName pkgid
 
 -- | This is a bit of a hacky workaround. A number of packages ship

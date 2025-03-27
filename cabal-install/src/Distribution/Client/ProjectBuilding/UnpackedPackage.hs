@@ -30,6 +30,7 @@ module Distribution.Client.ProjectBuilding.UnpackedPackage
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+import Distribution.Client.HookAccept (assertHookHash)
 import Distribution.Client.PackageHash (renderPackageHashInputs)
 import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectConfig
@@ -79,7 +80,9 @@ import Distribution.Simple.Command (CommandUI)
 import Distribution.Simple.Compiler
   ( PackageDBStackCWD
   , coercePackageDBStack
+  , showCompilerId
   )
+import Distribution.Solver.Types.Stage
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import Distribution.Simple.LocalBuildInfo
   ( ComponentName (..)
@@ -105,7 +108,7 @@ import qualified Data.ByteString.Lazy.Char8 as LBS.Char8
 import qualified Data.List.NonEmpty as NE
 
 import Control.Exception (ErrorCall, Handler (..), SomeAsyncException, assert, catches, onException)
-import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, removeFile)
+import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, removeFile)
 import System.FilePath (dropDrive, normalise, takeDirectory, (<.>), (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
 import System.Semaphore (SemaphoreName (..))
@@ -177,9 +180,7 @@ buildAndRegisterUnpackedPackage
   registerLock
   cacheLock
   pkgshared@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigCompilerProgs = progdb
-    }
+    { pkgConfigToolchains = toolchains }
   plan
   rpkg@(ReadyPackage pkg)
   srcdir
@@ -253,6 +254,10 @@ buildAndRegisterUnpackedPackage
 
     return ()
     where
+      (compiler, progdb) = case elabStage pkg of
+        Host -> (toolchainCompiler (hostToolchain toolchains), toolchainProgramDb (hostToolchain toolchains))
+        Build -> (toolchainCompiler (buildToolchain toolchains), toolchainProgramDb (buildToolchain toolchains))
+
       uid = installedUnitId rpkg
 
       comp_par_strat = case maybe_semaphore of
@@ -450,7 +455,8 @@ buildInplaceUnpackedPackage
   buildSettings@BuildTimeSettings{buildSettingHaddockOpen}
   registerLock
   cacheLock
-  pkgshared@ElaboratedSharedConfig{pkgConfigPlatform = Platform _ os}
+  pkgshared@ElaboratedSharedConfig
+    { pkgConfigToolchains = toolchains }
   plan
   rpkg@(ReadyPackage pkg)
   buildStatus
@@ -595,6 +601,10 @@ buildInplaceUnpackedPackage
         , buildResultLogFile = Nothing
         }
     where
+      Platform _ os = case elabStage pkg of
+        Host -> toolchainPlatform (hostToolchain toolchains)
+        Build -> toolchainPlatform (buildToolchain toolchains)
+
       dparams = elabDistDirParams pkgshared pkg
 
       packageFileMonitor = newPackageFileMonitor pkgshared distDirLayout dparams
@@ -656,9 +666,7 @@ buildAndInstallUnpackedPackage
   registerLock
   cacheLock
   pkgshared@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigPlatform = platform
-    }
+    { pkgConfigToolchains = toolchains }
   plan
   rpkg@(ReadyPackage pkg)
   srcdir
@@ -697,7 +705,48 @@ buildAndInstallUnpackedPackage
           runConfigure
         PBBuildPhase{runBuild} -> do
           noticeProgress ProgressBuilding
+          hooksDir <- (</> "cabalHooks") <$> getCurrentDirectory
+          -- run preBuildHook. If it returns with 0, we assume the build was
+          -- successful. If not, run the build.
+          preBuildHookFile <- canonicalizePath (hooksDir </> "preBuildHook")
+          hookExists <- doesFileExist preBuildHookFile
+          preCode <-
+            if hookExists
+              then do
+                assertHookHash (pkgConfigHookHashes pkgshared) preBuildHookFile
+                rawSystemExitCode
+                  verbosity
+                  (Just srcdir)
+                  preBuildHookFile
+                  [ (unUnitId $ installedUnitId rpkg)
+                  , (getSymbolicPath srcdir)
+                  , (getSymbolicPath builddir)
+                  ]
+                  Nothing
+                  `catchIO` (\_ -> pure (ExitFailure 10))
+              else pure ExitSuccess
+          -- Regardless of whether the preBuildHook exists or not, or whether it returned an
+          -- error or not, we want to run the build command.
+          -- If the preBuildHook downloads a cached version of the build products, the following
+          -- should be a NOOP.
           runBuild
+          -- not sure, if we want to care about a failed postBuildHook?
+          postBuildHookFile <- canonicalizePath (hooksDir </> "postBuildHook")
+          hookExists' <- doesFileExist postBuildHookFile
+          when hookExists' $ do
+            assertHookHash (pkgConfigHookHashes pkgshared) postBuildHookFile
+            void $
+              rawSystemExitCode
+                verbosity
+                (Just srcdir)
+                postBuildHookFile
+                [ (unUnitId $ installedUnitId rpkg)
+                , (getSymbolicPath srcdir)
+                , (getSymbolicPath builddir)
+                , show preCode
+                ]
+                Nothing
+                `catchIO` (\_ -> pure (ExitFailure 10))
         PBHaddockPhase{runHaddock} -> do
           noticeProgress ProgressHaddock
           runHaddock
@@ -712,7 +761,10 @@ buildAndInstallUnpackedPackage
                 | otherwise = do
                     assert
                       ( elabRegisterPackageDBStack pkg
-                          == storePackageDBStack compiler (elabPackageDbs pkg)
+                          == storePackageDBStack compiler (case elabStage pkg of
+                            Host -> elabPackageDbs pkg
+                            Build -> elabBuildPackageDbs pkg
+                            )
                       )
                       (return ())
                     _ <-
@@ -764,6 +816,10 @@ buildAndInstallUnpackedPackage
         , buildResultLogFile = mlogFile
         }
     where
+      (compiler, platform) = case elabStage pkg of
+          Host -> (toolchainCompiler (hostToolchain toolchains), toolchainPlatform (hostToolchain toolchains))
+          Build -> (toolchainCompiler (buildToolchain toolchains), toolchainPlatform (buildToolchain toolchains))
+
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
 
@@ -774,13 +830,20 @@ buildAndInstallUnpackedPackage
           prettyShow pkgid
             ++ " (all, legacy fallback: "
             ++ unwords (map whyNotPerComponent $ NE.toList pkgWhyNotPerComponent)
+            ++ ", "
+            ++ dispcompiler (elabStage pkg)
             ++ ")"
         -- Packages built per component
         ElabComponent comp ->
           prettyShow pkgid
             ++ " ("
             ++ maybe "custom" prettyShow (compComponentName comp)
+            ++ ", "
+            ++ dispcompiler (elabStage pkg)
             ++ ")"
+      dispcompiler :: Stage -> String
+      dispcompiler Host = showCompilerId (toolchainCompiler (hostToolchain toolchains))
+      dispcompiler Build = showCompilerId (toolchainCompiler (buildToolchain toolchains))
 
       noticeProgress :: ProgressPhase -> IO ()
       noticeProgress phase =

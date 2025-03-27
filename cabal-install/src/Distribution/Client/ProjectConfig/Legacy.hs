@@ -408,6 +408,7 @@ parseProjectSkeleton cacheDir httpTransport verbosity projectDir source (Project
 -- can redefine the parsers directly for the new types.
 data LegacyProjectConfig = LegacyProjectConfig
   { legacyPackages :: [String]
+  , legacyBuildPackages :: [String]
   , legacyPackagesOptional :: [String]
   , legacyPackagesRepo :: [SourceRepoList]
   , legacyPackagesNamed :: [PackageVersionConstraint]
@@ -613,6 +614,7 @@ convertLegacyProjectConfig :: LegacyProjectConfig -> ProjectConfig
 convertLegacyProjectConfig
   LegacyProjectConfig
     { legacyPackages
+    , legacyBuildPackages
     , legacyPackagesOptional
     , legacyPackagesRepo
     , legacyPackagesNamed
@@ -637,6 +639,7 @@ convertLegacyProjectConfig
     } =
     ProjectConfig
       { projectPackages = legacyPackages
+      , projectBuildPackages = legacyBuildPackages
       , projectPackagesOptional = legacyPackagesOptional
       , projectPackagesRepo = legacyPackagesRepo
       , projectPackagesNamed = legacyPackagesNamed
@@ -704,6 +707,11 @@ convertLegacyAllPackageFlags
 convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags projectFlags projectConfigMultiRepl =
   ProjectConfigShared{..}
   where
+    projectConfigPackageDBs = (fmap . fmap) (interpretPackageDB Nothing) projectConfigPackageDBs_
+    projectConfigBuildPackageDBs = (fmap . fmap) (interpretPackageDB Nothing) projectConfigBuildPackageDBs_
+    projectConfigHookHashes = mempty -- :: Map FilePath HookAccept
+    projectConfigDistDir = fmap getSymbolicPath projectConfigAbsoluteDistDir
+
     GlobalFlags
       { globalConfigFile = projectConfigConfigFile
       , globalRemoteRepos = projectConfigRemoteRepos
@@ -712,8 +720,6 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       , globalProgPathExtra = projectConfigProgPathExtra
       , globalStoreDir = projectConfigStoreDir
       } = globalFlags
-
-    projectConfigPackageDBs = (fmap . fmap) (interpretPackageDB Nothing) projectConfigPackageDBs_
 
     ConfigFlags
       { configCommonFlags = commonFlags
@@ -730,8 +736,6 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       { setupDistPref = projectConfigAbsoluteDistDir
       } = commonFlags
 
-    projectConfigDistDir = fmap getSymbolicPath projectConfigAbsoluteDistDir
-
     ConfigExFlags
       { configCabalVersion = projectConfigCabalVersion
       , configExConstraints = projectConfigConstraints
@@ -741,6 +745,10 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       , configAllowNewer = projectConfigAllowNewer
       , configWriteGhcEnvironmentFilesPolicy =
         projectConfigWriteGhcEnvironmentFilesPolicy
+      , configBuildHcFlavor = projectConfigBuildHcFlavor
+      , configBuildHcPath = projectConfigBuildHcPath
+      , configBuildHcPkg = projectConfigBuildHcPkg
+      , configBuildPackageDBs = projectConfigBuildPackageDBs_
       } = configExFlags
 
     InstallFlags
@@ -931,6 +939,7 @@ convertToLegacyProjectConfig :: ProjectConfig -> LegacyProjectConfig
 convertToLegacyProjectConfig
   projectConfig@ProjectConfig
     { projectPackages
+    , projectBuildPackages
     , projectPackagesOptional
     , projectPackagesRepo
     , projectPackagesNamed
@@ -940,6 +949,7 @@ convertToLegacyProjectConfig
     } =
     LegacyProjectConfig
       { legacyPackages = projectPackages
+      , legacyBuildPackages = projectBuildPackages
       , legacyPackagesOptional = projectPackagesOptional
       , legacyPackagesRepo = projectPackagesRepo
       , legacyPackagesNamed = projectPackagesNamed
@@ -1010,7 +1020,7 @@ convertToLegacySharedConfig
           }
 
       configExFlags =
-        ConfigExFlags
+        mempty
           { configCabalVersion = projectConfigCabalVersion
           , configAppend = mempty
           , configBackup = mempty
@@ -1311,6 +1321,12 @@ legacyProjectConfigFieldDescrs constraintSrc =
       parsePackageLocationTokenQ
       legacyPackages
       (\v flags -> flags{legacyPackages = v})
+  , newLineListField
+      "build-packages"
+      (Disp.text . renderPackageLocationToken)
+      parsePackageLocationTokenQ
+      legacyBuildPackages
+      (\v flags -> flags{legacyBuildPackages = v})
   , newLineListField
       "optional-packages"
       (Disp.text . renderPackageLocationToken)

@@ -15,6 +15,7 @@ module Distribution.Solver.Modular.Preference
     , onlyConstrained
     , sortGoals
     , pruneAfterFirstSuccess
+    , pruneHostFromSetup
     ) where
 
 import Prelude ()
@@ -72,7 +73,7 @@ addWeight :: (PN -> [Ver] -> POption -> Weight) -> EndoTreeTrav d c
 addWeight f = addWeights [f]
 
 version :: POption -> Ver
-version (POption (I v _) _) = v
+version (POption (I _ v _) _) = v
 
 -- | Prefer to link packages whenever possible.
 preferLinked :: EndoTreeTrav d c
@@ -139,8 +140,8 @@ preferPackagePreferences pcs =
 
     -- Prefer installed packages over non-installed packages.
     installed :: POption -> Weight
-    installed (POption (I _ (Inst _)) _) = 0
-    installed _                          = 1
+    installed (POption (I _ _ (Inst _)) _) = 0
+    installed _                            = 1
 
 -- | Traversal that tries to establish package stanza enable\/disable
 -- preferences. Works by reordering the branches of stanza choices.
@@ -184,7 +185,7 @@ processPackageConstraintP qpn c i (LabeledPackageConstraint (PackageConstraint s
     else r
   where
     go :: I -> PackageProperty -> Tree d c
-    go (I v _) (PackagePropertyVersion vr)
+    go (I _stage v _) (PackagePropertyVersion vr)
         | checkVR vr v  = r
         | otherwise     = Fail c (GlobalConstraintVersion vr src)
     go _       PackagePropertyInstalled
@@ -338,14 +339,35 @@ avoidReinstalls p = go
       | otherwise = PChoiceF qpn rdm gr cs
       where
         disableReinstalls =
-          let installed = [ v | (_, POption (I v (Inst _)) _, _) <- W.toList cs ]
+          let installed = [ v | (_, POption (I _stage v (Inst _)) _, _) <- W.toList cs ]
           in  W.mapWithKey (notReinstall installed) cs
 
-        notReinstall vs (POption (I v InRepo) _) _ | v `elem` vs =
+        notReinstall vs (POption (I _stage v InRepo) _) _ | v `elem` vs =
           Fail (varToConflictSet (P qpn)) CannotReinstall
         notReinstall _ _ x =
           x
     go x          = x
+
+-- | Ensure that Setup (Build time) dependencies only have Build dependencies
+-- available and that Host dependencies only have Host dependencies available.
+-- We also do not want to use InRepo dependencies for setup/build-depends. This
+-- easily leads to cycles.
+pruneHostFromSetup :: EndoTreeTrav d c
+pruneHostFromSetup = go
+  where
+    -- for Setup(.hs) and build-depends, we want to force Build packages.
+    go (PChoiceF qpn rdm gr cs) | (Q (PackagePath _ (QualSetup _)) _) <- qpn =
+      PChoiceF qpn rdm gr (W.filterKey (not . isHost) cs)
+    -- QualExe are build-depends. Structure is QualExe (comp) (build-depend).
+    go (PChoiceF qpn rdm gr cs) | (Q (PackagePath _ (QualExe _ _)) _) <- qpn =
+      PChoiceF qpn rdm gr (W.filterKey (not . isHost) cs)
+    -- everything else use Host packages.
+    go (PChoiceF qpn rdm gr cs) | (Q (PackagePath _ _) _) <- qpn =
+      PChoiceF qpn rdm gr (W.filterKey isHost cs)
+    go x = x
+
+    isHost :: POption -> Bool
+    isHost (POption (I s _v _l) _) = s == Host
 
 -- | Require all packages to be mentioned in a constraint or as a goal.
 onlyConstrained :: (PN -> Bool) -> EndoTreeTrav d QGoalReason

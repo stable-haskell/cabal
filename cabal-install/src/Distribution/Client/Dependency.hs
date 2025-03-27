@@ -115,6 +115,7 @@ import Distribution.PackageDescription.Configuration
 import qualified Distribution.PackageDescription.Configuration as PD
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import qualified Distribution.Simple.PackageIndex as InstalledPackageIndex
+import Distribution.Simple.Compiler (compilerInfo)
 import Distribution.Simple.Setup
   ( asBool
   )
@@ -153,6 +154,7 @@ import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Toolchain
 import Distribution.Solver.Types.Variable
 
 import Control.Exception
@@ -163,6 +165,8 @@ import Data.List
   )
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+
+import GHC.Stack (HasCallStack)
 
 -- ------------------------------------------------------------
 
@@ -179,6 +183,7 @@ data DepResolverParams = DepResolverParams
   , depResolverPreferences :: [PackagePreference]
   , depResolverPreferenceDefault :: PackagesPreferenceDefault
   , depResolverInstalledPkgIndex :: InstalledPackageIndex
+  , depResolverBuildInstalledPkgIndex :: InstalledPackageIndex
   , depResolverSourcePkgIndex :: PackageIndex.PackageIndex UnresolvedSourcePackage
   , depResolverReorderGoals :: ReorderGoals
   , depResolverCountConflicts :: CountConflicts
@@ -275,15 +280,17 @@ showPackagePreference (PackageStanzasPreference pn st) =
 
 basicDepResolverParams
   :: InstalledPackageIndex
+  -> InstalledPackageIndex
   -> PackageIndex.PackageIndex UnresolvedSourcePackage
   -> DepResolverParams
-basicDepResolverParams installedPkgIndex sourcePkgIndex =
+basicDepResolverParams buildInstalledPkgIndex installedPkgIndex sourcePkgIndex=
   DepResolverParams
     { depResolverTargets = Set.empty
     , depResolverConstraints = []
     , depResolverPreferences = []
     , depResolverPreferenceDefault = PreferLatestForSelected
     , depResolverInstalledPkgIndex = installedPkgIndex
+    , depResolverBuildInstalledPkgIndex = buildInstalledPkgIndex
     , depResolverSourcePkgIndex = sourcePkgIndex
     , depResolverReorderGoals = ReorderGoals False
     , depResolverCountConflicts = CountConflicts True
@@ -447,7 +454,16 @@ dontInstallNonReinstallablePackages params =
         ConstraintSourceNonReinstallablePackage
       | pkgname <- nonReinstallablePackages
       ]
-
+dontInstallNonReinstallablePackagesForBuild :: DepResolverParams -> DepResolverParams
+dontInstallNonReinstallablePackagesForBuild params =
+  addConstraints extraConstraints params
+  where
+    extraConstraints =
+      [ LabeledPackageConstraint
+        (PackageConstraint (ScopeAnyBuildDepQualifier pkgname) PackagePropertyInstalled)
+        ConstraintSourceNonReinstallablePackage
+      | pkgname <- nonReinstallablePackages
+      ]
 -- | The set of non-reinstallable packages includes those which cannot be
 -- rebuilt using a GHC installation and Hackage-published source distribution.
 -- There are a few reasons why this might be true:
@@ -700,11 +716,13 @@ reinstallTargets params =
 
 -- | A basic solver policy on which all others are built.
 basicInstallPolicy
-  :: InstalledPackageIndex
+  :: InstalledPackageIndex -- ^ Build
+  -> InstalledPackageIndex -- ^ Host
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
 basicInstallPolicy
+  binstalledPkgIndex
   installedPkgIndex
   (SourcePackageDb sourcePkgIndex sourcePkgPrefs)
   pkgSpecifiers =
@@ -721,6 +739,7 @@ basicInstallPolicy
       . addSourcePackages
         [pkg | SpecificSourcePackage pkg <- pkgSpecifiers]
       $ basicDepResolverParams
+        binstalledPkgIndex
         installedPkgIndex
         sourcePkgIndex
 
@@ -729,13 +748,15 @@ basicInstallPolicy
 --
 -- It extends the 'basicInstallPolicy' with a policy on setup deps.
 standardInstallPolicy
-  :: InstalledPackageIndex
+  :: InstalledPackageIndex -- ^ Build
+  -> InstalledPackageIndex -- ^ Host
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
-standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers =
+standardInstallPolicy binstalledPkgIndex installedPkgIndex sourcePkgDb pkgSpecifiers =
   addDefaultSetupDependencies mkDefaultSetupDeps $
     basicInstallPolicy
+      binstalledPkgIndex
       installedPkgIndex
       sourcePkgDb
       pkgSpecifiers
@@ -782,14 +803,13 @@ runSolver = modularResolver
 -- a 'Progress' structure that can be unfolded to provide progress information,
 -- logging messages and the final result or an error.
 resolveDependencies
-  :: Platform
-  -> CompilerInfo
+  :: Toolchains
   -> Maybe PkgConfigDb
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
-resolveDependencies platform comp pkgConfigDB params =
+resolveDependencies toolchains pkgConfigDB params =
   Step (showDepResolverParams finalparams) $
-    fmap (validateSolverResult platform comp indGoals) $
+    fmap (validateSolverResult toolchains indGoals) $
       runSolver
         ( SolverConfig
             reordGoals
@@ -808,8 +828,8 @@ resolveDependencies platform comp pkgConfigDB params =
             verbosity
             (PruneAfterFirstSuccess False)
         )
-        platform
-        comp
+        toolchains
+        binstalledPkgIndex
         installedPkgIndex
         sourcePkgIndex
         pkgConfigDB
@@ -818,12 +838,13 @@ resolveDependencies platform comp pkgConfigDB params =
         targets
   where
     finalparams@( DepResolverParams
-                    targets
+                    targets            -- depResolverTargets
                     constraints
                     prefs
                     defpref
                     installedPkgIndex
-                    sourcePkgIndex
+                    binstalledPkgIndex
+                    sourcePkgIndex     -- depResolverSourcePkgIndex
                     reordGoals
                     cntConflicts
                     fineGrained
@@ -841,7 +862,9 @@ resolveDependencies platform comp pkgConfigDB params =
                     verbosity
                   ) =
         if asBool (depResolverAllowBootLibInstalls params)
-          then params
+          then if buildIsHost toolchains
+            then params
+            else dontInstallNonReinstallablePackagesForBuild params
           else dontInstallNonReinstallablePackages params
 
     preferences :: PackageName -> PackagePreferences
@@ -909,18 +932,18 @@ interpretPackagesPreference selected defaultPref prefs =
 -- | Make an install plan from the output of the dep resolver.
 -- It checks that the plan is valid, or it's an error in the dep resolver.
 validateSolverResult
-  :: Platform
-  -> CompilerInfo
+  :: HasCallStack => Toolchains
   -> IndependentGoals
   -> [ResolverPackage UnresolvedPkgLoc]
   -> SolverInstallPlan
-validateSolverResult platform comp indepGoals pkgs =
-  case planPackagesProblems platform comp pkgs of
+validateSolverResult toolchains indepGoals pkgs =
+  case planPackagesProblems toolchains pkgs of
     [] -> case SolverInstallPlan.new indepGoals graph of
       Right plan -> plan
       Left problems -> error (formatPlanProblems problems)
     problems -> error (formatPkgProblems problems)
   where
+
     graph :: Graph.Graph (ResolverPackage UnresolvedPkgLoc)
     graph = Graph.fromDistinctList pkgs
 
@@ -960,14 +983,13 @@ showPlanPackageProblem (DuplicatePackageSolverId pid dups) =
     ++ " duplicate instances."
 
 planPackagesProblems
-  :: Platform
-  -> CompilerInfo
+  :: Toolchains
   -> [ResolverPackage UnresolvedPkgLoc]
   -> [PlanPackageProblem]
-planPackagesProblems platform cinfo pkgs =
+planPackagesProblems toolchains pkgs =
   [ InvalidConfiguredPackage pkg packageProblems
   | Configured pkg <- pkgs
-  , let packageProblems = configuredPackageProblems platform cinfo pkg
+  , let packageProblems = configuredPackageProblems toolchains pkg
   , not (null packageProblems)
   ]
     ++ [ DuplicatePackageSolverId (Graph.nodeKey aDup) dups
@@ -1016,14 +1038,12 @@ showPackageProblem (InvalidDep dep pkgid) =
 -- in the configuration given by the flag assignment, all the package
 -- dependencies are satisfied by the specified packages.
 configuredPackageProblems
-  :: Platform
-  -> CompilerInfo
+  :: Toolchains
   -> SolverPackage UnresolvedPkgLoc
   -> [PackageProblem]
 configuredPackageProblems
-  platform
-  cinfo
-  (SolverPackage pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps') =
+  toolchains
+  (SolverPackage _qpn _stage pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps') =
     [ DuplicateFlag flag
     | flag <- PD.findDuplicateFlagAssignments specifiedFlags
     ]
@@ -1061,7 +1081,7 @@ configuredPackageProblems
           (sort $ map fst (PD.unFlagAssignment specifiedFlags)) -- TODO
       packageSatisfiesDependency :: PackageIdentifier -> Dependency -> Bool
       packageSatisfiesDependency
-        (PackageIdentifier name version)
+        (PackageIdentifier name version _compid)
         (Dependency name' versionRange _) =
           assert (name == name') $
             version `withinRange` versionRange
@@ -1096,8 +1116,9 @@ configuredPackageProblems
           specifiedFlags
           compSpec
           (const Satisfied)
-          platform
-          cinfo
+          -- FIXME: HARDCODED HOST TOOLCHAIN here.
+          (toolchainPlatform (hostToolchain toolchains))
+          (compilerInfo (toolchainCompiler (hostToolchain toolchains)))
           []
           (srcpkgDescription pkg) of
           Right (resolvedPkg, _) ->
@@ -1144,6 +1165,7 @@ resolveWithoutDependencies
       prefs
       defpref
       installedPkgIndex
+      binstalledPkgIndex
       sourcePkgIndex
       _reorderGoals
       _countConflicts

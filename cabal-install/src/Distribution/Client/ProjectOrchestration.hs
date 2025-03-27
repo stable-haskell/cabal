@@ -176,6 +176,8 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Distribution.Client.Errors
+import Distribution.Client.HookAccept (loadHookHasheshMap)
+
 import Distribution.Package
 import Distribution.Simple.Command (commandShowOptions)
 import Distribution.Simple.Compiler
@@ -363,6 +365,8 @@ withInstallPlan
     , installedPackages
     }
   action = do
+    hookHashes <- loadHookHasheshMap (projectConfigConfigFile $ projectConfigShared projectConfig)
+
     -- Take the project configuration and make a plan for how to build
     -- everything in the project. This is independent of any specific targets
     -- the user has asked for.
@@ -370,6 +374,7 @@ withInstallPlan
     (elaboratedPlan, _, elaboratedShared, _, _) <-
       rebuildInstallPlan
         verbosity
+        hookHashes
         distDirLayout
         cabalDirLayout
         projectConfig
@@ -392,6 +397,8 @@ runProjectPreBuildPhase
     , installedPackages
     }
   selectPlanSubset = do
+    hookHashes <- loadHookHasheshMap (projectConfigConfigFile $ projectConfigShared projectConfig)
+
     -- Take the project configuration and make a plan for how to build
     -- everything in the project. This is independent of any specific targets
     -- the user has asked for.
@@ -399,6 +406,7 @@ runProjectPreBuildPhase
     (elaboratedPlan, _, elaboratedShared, _, _) <-
       rebuildInstallPlan
         verbosity
+        hookHashes
         distDirLayout
         cabalDirLayout
         projectConfig
@@ -517,7 +525,7 @@ runProjectPostBuildPhase
             AlwaysWriteGhcEnvironmentFiles -> True
             NeverWriteGhcEnvironmentFiles -> False
             WriteGhcEnvironmentFilesOnlyForGhc844AndNewer ->
-              let compiler = pkgConfigCompiler elaboratedShared
+              let compiler = toolchainCompiler $ buildToolchain $ pkgConfigToolchains elaboratedShared
                   ghcCompatVersion = compilerCompatVersion GHC compiler
                in maybe False (>= mkVersion [8, 4, 4]) ghcCompatVersion
 
@@ -651,7 +659,7 @@ resolveTargets
       checkTarget bt@(TargetPackage _ (ordNub -> [pkgid]) mkfilter)
         | Just ats <-
             fmap (maybe id filterTargetsKind mkfilter) $
-              Map.lookup pkgid availableTargetsByPackageId =
+                (Map.lookup pkgid availableTargetsByPackageId) =
             fmap (componentTargets WholeComponent) $
               selectPackageTargets bt ats
         | otherwise =
@@ -677,9 +685,17 @@ resolveTargets
           $ concat (Map.elems availableTargetsByPackageId)
       checkTarget (TargetComponent pkgid cname subtarget)
         | Just ats <-
-            Map.lookup
-              (pkgid, cname)
-              availableTargetsByPackageIdAndComponentName =
+            -- FIXME: this is stupid. We do not know what the target selectors HOST compiler is...
+            --        so we'll assume tere is only a _SINGLE_ match in the map if we ignore the pkgCompiler.
+            -- This lookup is now O(n) instead of O(log n).
+              (case [v | ((k,k'),v) <- Map.toList availableTargetsByPackageIdAndComponentName
+                      , k{pkgCompiler = Nothing} == pkgid
+                      , k' == cname] of
+                [match] -> Just match)
+              -- (Map.lookup
+              --   (pkgid, cname)
+              --   availableTargetsByPackageIdAndComponentName))
+                =
             fmap (componentTargets subtarget) $
               selectComponentTargets subtarget ats
         | Map.member pkgid availableTargetsByPackageId =
@@ -993,6 +1009,8 @@ printPlan
       showPkgAndReason (ReadyPackage elab) =
         unwords $
           filter (not . null) $
+            -- FIXME: ideally we'd like to display the compiler in there as well.
+            -- we do have access to elabStage, but the toolchain isn't around.
             [ " -"
             , if verbosity >= deafening
                 then prettyShow (installedUnitId elab)
@@ -1081,7 +1099,7 @@ printPlan
          in -- Not necessary to "escape" it, it's just for user output
             unwords . ("" :) $
               commandShowOptions
-                (Setup.configureCommand (pkgConfigCompilerProgs elaboratedShared))
+                (Setup.configureCommand (toolchainProgramDb $ buildToolchain $ pkgConfigToolchains elaboratedShared))
                 partialConfigureFlags
 
       showBuildStatus :: BuildStatus -> String
@@ -1113,7 +1131,9 @@ printPlan
       showBuildProfile =
         "Build profile: "
           ++ unwords
-            [ "-w " ++ (showCompilerId . pkgConfigCompiler) elaboratedShared
+            [ "-w " ++ (showCompilerId . toolchainCompiler . hostToolchain . pkgConfigToolchains) elaboratedShared
+            -- FIXME: this should only be shown if hostToolchain /= buildToolchain
+            , "-W " ++ (showCompilerId . toolchainCompiler . buildToolchain . pkgConfigToolchains) elaboratedShared
             , "-O"
                 ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
                       Setup.Flag NoOptimisation -> "0"
@@ -1126,8 +1146,8 @@ printPlan
 
 writeBuildReports :: BuildTimeSettings -> ProjectBuildContext -> ElaboratedInstallPlan -> BuildOutcomes -> IO ()
 writeBuildReports settings buildContext plan buildOutcomes = do
-  let plat@(Platform arch os) = pkgConfigPlatform . elaboratedShared $ buildContext
-      comp = pkgConfigCompiler . elaboratedShared $ buildContext
+  let plat@(Platform arch os) = toolchainPlatform . buildToolchain . pkgConfigToolchains . elaboratedShared $ buildContext
+      comp = toolchainCompiler . buildToolchain . pkgConfigToolchains . elaboratedShared $ buildContext
       getRepo (RepoTarballPackage r _ _) = Just r
       getRepo _ = Nothing
       fromPlanPackage (InstallPlan.Configured pkg) (Just result) =

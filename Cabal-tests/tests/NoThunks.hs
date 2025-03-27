@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleInstances #-}
 #if !(__GLASGOW_HASKELL__ >= 806 && defined(MIN_VERSION_nothunks))
 module Main (main) where
 main :: IO ()
@@ -24,7 +25,7 @@ import Distribution.ModuleName                (ModuleName)
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.SPDX                      (License, LicenseExceptionId, LicenseExpression, LicenseId, LicenseRef, SimpleLicenseExpression)
 import Distribution.System                    (Arch, OS)
-import Distribution.Utils.Path                (SymbolicPathX)
+import Distribution.Utils.Path                (SymbolicPathX, Pkg, Build)
 import Distribution.Utils.ShortText           (ShortText)
 import Distribution.Version                   (Version, VersionRange)
 import Language.Haskell.Extension             (Extension, KnownExtension, Language)
@@ -72,6 +73,8 @@ instance NoThunks ConfVar
 instance NoThunks Dependency
 instance NoThunks Executable
 instance NoThunks ExecutableScope
+instance NoThunks (ExtraSource Build)
+instance NoThunks (ExtraSource Pkg)
 instance NoThunks FlagName
 instance NoThunks ForeignLib
 instance NoThunks ForeignLibOption

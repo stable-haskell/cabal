@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -70,7 +71,7 @@ import qualified Distribution.Simple.Flag as Flag
 import Distribution.Simple.Setup (CommonSetupFlags (..), HaddockFlags (..), HaddockProjectFlags (..), defaultCommonSetupFlags, defaultHaddockFlags, defaultHaddockProjectFlags, toFlag)
 import Distribution.System
 import Distribution.Text
-import Distribution.Utils.Path (unsafeMakeSymbolicPath)
+import Distribution.Utils.Path (FileOrDir (File), Pkg, SymbolicPath, unsafeMakeSymbolicPath)
 import Distribution.Version
 import IntegrationTests2.CPP
 
@@ -658,7 +659,10 @@ testTargetSelectorAmbiguous reportSubCase = do
 
     withCFiles :: Executable -> [FilePath] -> Executable
     withCFiles exe files =
-      exe{buildInfo = (buildInfo exe){cSources = map unsafeMakeSymbolicPath files}}
+      exe{buildInfo = (buildInfo exe){cSources = map (mkExtraSource . unsafeMakeSymbolicPath) files}}
+
+    mkExtraSource :: SymbolicPath Pkg File -> ExtraSource Pkg
+    mkExtraSource x = ExtraSourcePkg x []
 
     withHsSrcDirs :: Executable -> [FilePath] -> Executable
     withHsSrcDirs exe srcDirs =
@@ -1887,10 +1891,10 @@ testSetupScriptStyles config reportSubCase = do
 
   let isOSX (Platform _ OSX) = True
       isOSX _ = False
-      compilerVer = compilerVersion (pkgConfigCompiler sharedConfig)
+      compilerVer = compilerVersion (toolchainCompiler $ buildToolchain $ pkgConfigToolchains sharedConfig)
   -- Skip the Custom tests when the shipped Cabal library is buggy
   unless
-    ( (isOSX (pkgConfigPlatform sharedConfig) && (compilerVer < mkVersion [7, 10]))
+    ( (isOSX (toolchainPlatform $ buildToolchain $ pkgConfigToolchains sharedConfig) && (compilerVer < mkVersion [7, 10]))
         -- 9.10 ships Cabal 3.12.0.0 affected by #9940
         || (mkVersion [9, 10] <= compilerVer && compilerVer < mkVersion [9, 11])
     )
@@ -1904,7 +1908,7 @@ testSetupScriptStyles config reportSubCase = do
       removeFile (basedir </> testdir1 </> "marker")
 
       -- implicit deps implies 'Cabal < 2' which conflicts w/ GHC 8.2 or later
-      when (compilerVersion (pkgConfigCompiler sharedConfig) < mkVersion [8, 2]) $ do
+      when (compilerVersion (toolchainCompiler $ buildToolchain $ pkgConfigToolchains sharedConfig) < mkVersion [8, 2]) $ do
         reportSubCase (show SetupCustomImplicitDeps)
         (plan2, res2) <- executePlan =<< planProject testdir2 config
         pkg2 <- expectPackageInstalled plan2 res2 pkgidA
@@ -2193,6 +2197,7 @@ planProject testdir cliConfig = do
   (elaboratedPlan, _, elaboratedShared, _, _) <-
     rebuildInstallPlan
       verbosity
+      mempty
       distDirLayout
       cabalDirLayout
       projectConfig
@@ -2779,7 +2784,7 @@ testHaddockProjectDependencies config = do
   (_, _, sharedConfig) <- planProject testdir config
   -- `haddock-project` is only supported by `haddock-2.26.1` and above which is
   -- shipped with `ghc-9.4`
-  when (compilerVersion (pkgConfigCompiler sharedConfig) > mkVersion [9, 4]) $ do
+  when (compilerVersion (toolchainCompiler $ buildToolchain $ pkgConfigToolchains sharedConfig) > mkVersion [9, 4]) $ do
     let dir = basedir </> testdir
     cleanHaddockProject testdir
     withCurrentDirectory dir $ do

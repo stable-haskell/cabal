@@ -24,6 +24,7 @@ import Distribution.Solver.Types.PackagePreferences
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb)
 import Distribution.Solver.Types.LabeledPackageConstraint
 import Distribution.Solver.Types.Settings
+import Distribution.Solver.Types.Toolchain ( Toolchains(..), Toolchain(..), buildIsHost )
 import Distribution.Solver.Types.Variable
 
 import Distribution.Solver.Modular.Assignment
@@ -44,6 +45,9 @@ import Distribution.Solver.Modular.Tree
 import qualified Distribution.Solver.Modular.PSQ as PSQ
 
 import Distribution.Simple.Setup (BooleanFlag(..))
+import Distribution.Simple.Compiler (compilerInfo)
+
+import qualified Distribution.Solver.Modular.WeightedPSQ as W
 
 #ifdef DEBUG_TRACETREE
 import qualified Distribution.Solver.Modular.ConflictSet as CS
@@ -89,18 +93,19 @@ newtype PruneAfterFirstSuccess = PruneAfterFirstSuccess Bool
 -- before exploration.
 --
 solve :: SolverConfig                         -- ^ solver parameters
-      -> CompilerInfo
+      -> Toolchains
       -> Index                                -- ^ all available packages as an index
       -> Maybe PkgConfigDb                    -- ^ available pkg-config pkgs
       -> (PN -> PackagePreferences)           -- ^ preferences
       -> M.Map PN [LabeledPackageConstraint]  -- ^ global constraints
       -> S.Set PN                             -- ^ global goals
       -> RetryLog Message SolverFailure (Assignment, RevDepMap)
-solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
+solve sc toolchains idx pkgConfigDB userPrefs userConstraints userGoals =
   explorePhase      .
   traceTree "cycles.json" id .
   detectCycles      .
   traceTree "heuristics.json" id .
+  -- stageBuildDeps "post-pref: " .
   trav (
    heuristicsPhase  .
    preferencesPhase .
@@ -110,6 +115,9 @@ solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
   validationCata    .
   traceTree "pruned.json" id .
   trav prunePhase   .
+  -- stageBuildDeps "post-prune: " .
+  (if buildIsHost toolchains then id else trav P.pruneHostFromSetup) .
+  -- stageBuildDeps "build: " .
   traceTree "build.json" id $
   buildPhase
   where
@@ -137,7 +145,7 @@ solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
                        P.enforceManualFlags userConstraints
     validationCata   = P.enforceSingleInstanceRestriction .
                        validateLinking idx .
-                       validateTree cinfo idx pkgConfigDB
+                       validateTree (compilerInfo (toolchainCompiler (hostToolchain toolchains))) idx pkgConfigDB
     prunePhase       = (if asBool (avoidReinstalls sc) then P.avoidReinstalls (const True) else id) .
                        (case onlyConstrained sc of
                           OnlyConstrainedAll ->
@@ -145,6 +153,32 @@ solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
                           OnlyConstrainedNone ->
                             id)
     buildPhase       = buildTree idx (independentGoals sc) (S.toList userGoals)
+
+    stageBuildDeps prefix = go
+      where go :: Tree d c -> Tree d c
+            -- For Setup we must use the build compiler, as the host compiler
+            -- may not be able to produce code that runs on the build machine.
+            go (PChoice qpn rdm gr cs) | (Q (PackagePath _ (QualSetup _)) _) <- qpn =
+              (PChoice qpn rdm gr (trace (prefix ++ show qpn ++ '\n':unlines (map (" - " ++) candidates)) (go <$> cs)))
+              where candidates = map show
+                              --  . filter (\(I _s _v l) -> l /= InRepo)
+                               . map (\(_w, (POption i _), _v) -> i) $ W.toList cs
+            -- Same for build-depends. These show up as QualExe (component) (build-depends).
+            go (PChoice qpn rdm gr cs) | (Q (PackagePath _ (QualExe _ _)) _) <- qpn =
+              (PChoice qpn rdm gr (trace (prefix ++ show qpn ++ '\n':unlines (map (" - " ++) candidates)) (go <$> cs)))
+              where candidates = map show
+                              --  . filter (\(I _s _v l) -> l /= InRepo)
+                               . map (\(_w, (POption i _), _v) -> i) $ W.toList cs
+            go (PChoice qpn rdm gr cs) =
+              (PChoice qpn rdm gr (go <$> cs))
+            go (FChoice qfn rdm gr t b d cs) =
+              FChoice qfn rdm gr t b d (go <$> cs)
+            go (SChoice qsn rdm gr t cs) =
+              SChoice qsn rdm gr t (go <$> cs)
+            go (GoalChoice rdm cs) =
+              GoalChoice rdm (go <$> cs)
+            go x@(Fail _ _) = x
+            go x@(Done _ _) = x
 
     allExplicit = M.keysSet userConstraints `S.union` userGoals
 

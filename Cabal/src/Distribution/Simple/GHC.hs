@@ -421,7 +421,11 @@ getInstalledPackages verbosity comp mbWorkDir packagedbs progdb = do
   checkPackageDbEnvVar verbosity
   checkPackageDbStack verbosity comp packagedbs
   pkgss <- getInstalledPackages' verbosity mbWorkDir packagedbs progdb
-  index <- toPackageIndex verbosity pkgss progdb
+  let pkgss' = [ (packagedb, (\pkg -> pkg{ InstalledPackageInfo.pkgCompiler = Just (compilerId comp) })
+                              <$> pkgs)
+               | (packagedb, pkgs) <- pkgss
+               ]
+  index <- toPackageIndex verbosity pkgss' progdb
   return $! hackRtsPackage index
   where
     hackRtsPackage index =

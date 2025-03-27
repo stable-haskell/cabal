@@ -33,6 +33,7 @@ import Distribution.Client.BuildReports.Types
 import Distribution.Client.Dependency.Types
   ( PreSolver
   )
+import Distribution.Client.HookAccept (HookAccept (..))
 import Distribution.Client.Targets
   ( UserConstraint
   )
@@ -128,6 +129,11 @@ data ProjectConfig = ProjectConfig
   -- ^ Packages in this project, including local dirs, local .cabal files
   -- local and remote tarballs. When these are file globs, they must
   -- match at least one package.
+  , projectBuildPackages :: [String]
+  -- ^ Packages in this project, including local dirs, local .cabal files
+  -- local and remote tarballs considered only for build-time dependencies
+  -- (build-type: Custom orHooks; build-depends, ...). When these are file
+  -- globs, they must match at least one package.
   , projectPackagesOptional :: [String]
   -- ^ Like 'projectConfigPackageGlobs' but /optional/ in the sense that
   -- file globs are allowed to match nothing. The primary use case for
@@ -191,6 +197,9 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigHcFlavor :: Flag CompilerFlavor
   , projectConfigHcPath :: Flag FilePath
   , projectConfigHcPkg :: Flag FilePath
+  , projectConfigBuildHcFlavor :: Flag CompilerFlavor
+  , projectConfigBuildHcPath :: Flag FilePath
+  , projectConfigBuildHcPkg :: Flag FilePath
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!
@@ -198,6 +207,7 @@ data ProjectConfigShared = ProjectConfigShared
 
     projectConfigInstallDirs :: InstallDirs (Flag PathTemplate)
   , projectConfigPackageDBs :: [Maybe PackageDBCWD]
+  , projectConfigBuildPackageDBs :: [Maybe PackageDBCWD]
   , -- configuration used both by the solver and other phases
     projectConfigRemoteRepos :: NubList RemoteRepo
   -- ^ Available Hackage servers.
@@ -227,6 +237,7 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigPreferOldest :: Flag PreferOldest
   , projectConfigProgPathExtra :: NubList FilePath
   , projectConfigMultiRepl :: Flag Bool
+  , projectConfigHookHashes :: Map FilePath HookAccept
   -- More things that only make sense for manual mode, not --local mode
   -- too much control!
   -- projectConfigShadowPkgs        :: Flag Bool,

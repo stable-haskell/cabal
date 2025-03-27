@@ -6,8 +6,6 @@ import Data.Maybe
 import Prelude hiding (pi)
 import Data.Either (partitionEithers)
 
-import Distribution.Package (UnitId, packageId)
-
 import qualified Distribution.Simple.PackageIndex as SI
 
 import Distribution.Solver.Modular.Configured
@@ -21,44 +19,51 @@ import           Distribution.Solver.Types.SolverId
 import           Distribution.Solver.Types.SolverPackage
 import           Distribution.Solver.Types.InstSolverPackage
 import           Distribution.Solver.Types.SourcePackage
+import           Distribution.Solver.Types.Toolchain
+import Control.Applicative ((<|>))
 
 -- | Converts from the solver specific result @CP QPN@ into
 -- a 'ResolverPackage', which can then be converted into
 -- the install plan.
-convCP :: SI.InstalledPackageIndex ->
-          CI.PackageIndex (SourcePackage loc) ->
-          CP QPN -> ResolverPackage loc
-convCP iidx sidx (CP qpi fa es ds) =
-  case convPI qpi of
-    Left  pi -> PreExisting $
+convCP :: Toolchains
+       -> SI.InstalledPackageIndex -- ^ build
+       -> SI.InstalledPackageIndex -- ^ host
+       -> CI.PackageIndex (SourcePackage loc)
+       -> CP QPN -> ResolverPackage loc
+convCP toolchains biidx iidx sidx (CP qpi fa es ds) =
+  case qpi of
+    -- Installed
+    (PI qpn (I _stage _ (Inst pi)))  ->
+      PreExisting $
                   InstSolverPackage {
-                    instSolverPkgIPI = fromJust $ SI.lookupUnitId iidx pi,
+                    instSolverQPN = qpn,
+                    instSolverPkgIPI = fromMaybe (error "convCP: lookupUnitId failed") $ (SI.lookupUnitId iidx pi) <|> (SI.lookupUnitId biidx pi),
                     instSolverPkgLibDeps = fmap fst ds',
                     instSolverPkgExeDeps = fmap snd ds'
                   }
-    Right pi -> Configured $
+    -- "In repo" i.e. a source package
+    (PI qpn@(Q _path pn) (I stage v InRepo)) ->
+      let pi = PackageIdentifier pn v (Just $ compilerIdFor stage toolchains) in
+      Configured $
                   SolverPackage {
-                      solverPkgSource = srcpkg,
+                      solverPkgQPN = qpn,
+                      solverPkgStage = stage,
+                      solverPkgSource = fromMaybe (error "convCP: lookupPackageId failed") $ CI.lookupPackageId sidx pi,
                       solverPkgFlags = fa,
                       solverPkgStanzas = es,
                       solverPkgLibDeps = fmap fst ds',
                       solverPkgExeDeps = fmap snd ds'
                     }
-      where
-        srcpkg = fromMaybe (error "convCP: lookupPackageId failed") $ CI.lookupPackageId sidx pi
   where
     ds' :: ComponentDeps ([SolverId] {- lib -}, [SolverId] {- exe -})
-    ds' = fmap (partitionEithers . map convConfId) ds
+    ds' = fmap (partitionEithers . map (convConfId toolchains)) ds
 
-convPI :: PI QPN -> Either UnitId PackageId
-convPI (PI _ (I _ (Inst pi))) = Left pi
-convPI pi                     = Right (packageId (either id id (convConfId pi)))
-
-convConfId :: PI QPN -> Either SolverId {- is lib -} SolverId {- is exe -}
-convConfId (PI (Q (PackagePath _ q) pn) (I v loc)) =
+convConfId :: Toolchains -> PI QPN -> Either SolverId {- is lib -} SolverId {- is exe -}
+convConfId toolchains (PI (Q (PackagePath _ q) pn) (I stage v loc)) =
     case loc of
-        Inst pi -> Left (PreExistingId sourceId pi)
-        _otherwise
+        Inst pi ->
+          Left (PreExistingId sourceId pi)
+        InRepo
           | QualExe _ pn' <- q
           -- NB: the dependencies of the executable are also
           -- qualified.  So the way to tell if this is an executable
@@ -67,6 +72,6 @@ convConfId (PI (Q (PackagePath _ q) pn) (I v loc)) =
           -- silly and didn't allow arbitrarily nested build-tools
           -- dependencies, so a shallow check works.
           , pn == pn' -> Right (PlannedId sourceId)
-          | otherwise    -> Left  (PlannedId sourceId)
+          | otherwise -> Left  (PlannedId sourceId)
   where
-    sourceId    = PackageIdentifier pn v
+    sourceId    = PackageIdentifier pn v (Just $ compilerIdFor stage toolchains)

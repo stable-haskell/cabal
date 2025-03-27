@@ -141,6 +141,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage as SourcePackage
+import Distribution.Solver.Types.Toolchain (mkToolchainsWithHost)
 
 import Distribution.Client.ProjectConfig
 import Distribution.Client.Utils
@@ -585,8 +586,7 @@ planPackages
   pkgConfigDb
   pkgSpecifiers =
     resolveDependencies
-      platform
-      (compilerInfo comp)
+      (mkToolchainsWithHost platform comp)
       pkgConfigDb
       resolverParams
       >>= if onlyDeps then pruneInstallPlan pkgSpecifiers else return
@@ -650,6 +650,7 @@ planPackages
           -- doesn't understand how to install them
           . setSolveExecutables (SolveExecutables False)
           $ standardInstallPolicy
+            mempty {- build pkgs -}
             installedPkgIndex
             sourcePkgDb
             pkgSpecifiers
@@ -1101,7 +1102,7 @@ theSpecifiedPackage :: Package pkg => PackageSpecifier pkg -> Maybe PackageId
 theSpecifiedPackage pkgSpec =
   case pkgSpec of
     NamedPackage name [PackagePropertyVersion version] ->
-      PackageIdentifier name <$> trivialRange version
+      PackageIdentifier name <$> trivialRange version <*> Nothing
     NamedPackage _ _ -> Nothing
     SpecificSourcePackage pkg -> Just $ packageId pkg
   where

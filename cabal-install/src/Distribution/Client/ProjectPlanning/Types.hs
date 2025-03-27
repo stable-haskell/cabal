@@ -58,6 +58,10 @@ module Distribution.Client.ProjectPlanning.Types
   , isBenchComponentTarget
   , componentOptionalStanza
 
+    -- * Toolchain
+  , Toolchain (..)
+  , Toolchains (..)
+
     -- * Setup script
   , SetupScriptStyle (..)
   ) where
@@ -84,6 +88,7 @@ import Distribution.Client.Types
 import Distribution.Backpack
 import Distribution.Backpack.ModuleShape
 
+import Distribution.Client.HookAccept (HookAccept (..))
 import Distribution.Compat.Graph (IsNode (..))
 import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import Distribution.ModuleName (ModuleName)
@@ -107,9 +112,10 @@ import Distribution.Simple.Setup
   )
 import Distribution.Simple.Utils (ordNub)
 import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
+import Distribution.Solver.Types.Stage
+import Distribution.Solver.Types.Toolchain
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.OptionalStanza
-import Distribution.System
 import Distribution.Types.ComponentRequestedSpec
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageDescription (PackageDescription (..))
@@ -183,13 +189,12 @@ showElaboratedInstallPlan = InstallPlan.showInstallPlan_gen showNode
 --      even platform and compiler could be different if we're building things
 --      like a server + client with ghc + ghcjs
 data ElaboratedSharedConfig = ElaboratedSharedConfig
-  { pkgConfigPlatform :: Platform
-  , pkgConfigCompiler :: Compiler -- TODO: [code cleanup] replace with CompilerInfo
-  , pkgConfigCompilerProgs :: ProgramDb
+  { pkgConfigToolchains :: Toolchains
   -- ^ The programs that the compiler configured (e.g. for GHC, the progs
   -- ghc & ghc-pkg). Once constructed, only the 'configuredPrograms' are
   -- used.
   , pkgConfigReplOptions :: ReplOptions
+  , pkgConfigHookHashes :: Map FilePath HookAccept
   }
   deriving (Show, Generic)
 
@@ -246,7 +251,9 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   -- to disable. This tells us which ones we build by default, and
   -- helps with error messages when the user asks to build something
   -- they explicitly disabled.
-  --
+
+  , elabStage :: Stage
+
   -- TODO: The 'Bool' here should be refined into an ADT with three
   -- cases: NotRequested, ExplicitlyRequested and
   -- ImplicitlyRequested.  A stanza is explicitly requested if
@@ -261,6 +268,7 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   -- just happen not to have any tests.  (But perhaps we should
   -- warn if ALL local packages don't have any tests.)
   , elabPackageDbs :: [Maybe PackageDBCWD]
+  , elabBuildPackageDbs :: [Maybe PackageDBCWD]
   , elabSetupPackageDBStack :: PackageDBStackCWD
   , elabBuildPackageDBStack :: PackageDBStackCWD
   , elabRegisterPackageDBStack :: PackageDBStackCWD
@@ -342,10 +350,10 @@ normaliseConfiguredPackage
   :: ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> ElaboratedConfiguredPackage
-normaliseConfiguredPackage ElaboratedSharedConfig{pkgConfigCompilerProgs} pkg =
+normaliseConfiguredPackage ElaboratedSharedConfig{pkgConfigToolchains = Toolchains{buildToolchain}} pkg =
   pkg{elabProgramArgs = Map.mapMaybeWithKey lookupFilter (elabProgramArgs pkg)}
   where
-    knownProgramDb = addKnownPrograms builtinPrograms pkgConfigCompilerProgs
+    knownProgramDb = addKnownPrograms builtinPrograms (toolchainProgramDb buildToolchain)
 
     pkgDesc :: PackageDescription
     pkgDesc = elabPkgDescription pkg
@@ -538,8 +546,8 @@ elabDistDirParams shared elab =
     , distParamComponentName = case elabPkgOrComp elab of
         ElabComponent comp -> compComponentName comp
         ElabPackage _ -> Nothing
-    , distParamCompilerId = compilerId (pkgConfigCompiler shared)
-    , distParamPlatform = pkgConfigPlatform shared
+    , distParamCompilerId = compilerId $ toolchainCompiler $ hostToolchain $ pkgConfigToolchains shared
+    , distParamPlatform = toolchainPlatform $ hostToolchain $ pkgConfigToolchains shared
     , distParamOptimization = LBC.withOptimization $ elabBuildOptions elab
     }
 

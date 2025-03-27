@@ -1068,11 +1068,14 @@ getExternalSetupMethod verbosity options pkg bt = do
           debug verbosity "Setup executable needs to be updated, compiling..."
           (compiler, progdb, options'') <- configureCompiler options'
           pkgDbs <- traverse (traverse (makeRelativeToDirS mbWorkDir)) (coercePackageDBStack (usePackageDB options''))
-          let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion
+          let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion Nothing
               (program, extraOpts) =
                 case compilerFlavor compiler of
                   GHCJS -> (ghcjsProgram, ["-build-runner"])
-                  _ -> (ghcProgram, ["-threaded"])
+                  _ -> (ghcProgram, [])
+                    -- FIXME: don't enable -threaded unconditionnally: we may
+                    -- only have vanilla libraries (but maybe we don't have them
+                    -- either?)
               cabalDep =
                 maybe
                   []
@@ -1152,5 +1155,5 @@ getExternalSetupMethod verbosity options pkg bt = do
         return $ i setupProgFile
 
 isCabalPkgId, isBasePkgId :: PackageIdentifier -> Bool
-isCabalPkgId (PackageIdentifier pname _) = pname == mkPackageName "Cabal"
-isBasePkgId (PackageIdentifier pname _) = pname == mkPackageName "base"
+isCabalPkgId (PackageIdentifier pname _ _compid) = pname == mkPackageName "Cabal"
+isBasePkgId (PackageIdentifier pname _ _compid) = pname == mkPackageName "base"

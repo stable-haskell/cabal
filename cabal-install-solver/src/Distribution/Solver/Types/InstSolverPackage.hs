@@ -8,6 +8,7 @@ import Prelude ()
 
 import Distribution.Package ( Package(..), HasMungedPackageId(..), HasUnitId(..) )
 import Distribution.Solver.Types.ComponentDeps ( ComponentDeps )
+import Distribution.Solver.Types.PackagePath (QPN)
 import Distribution.Solver.Types.SolverId
 import Distribution.Types.MungedPackageId
 import Distribution.Types.PackageId
@@ -17,6 +18,7 @@ import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 -- | An 'InstSolverPackage' is a pre-existing installed package
 -- specified by the dependency solver.
 data InstSolverPackage = InstSolverPackage {
+      instSolverQPN :: QPN,
       instSolverPkgIPI :: InstalledPackageInfo,
       instSolverPkgLibDeps :: ComponentDeps [SolverId],
       instSolverPkgExeDeps :: ComponentDeps [SolverId]
@@ -29,8 +31,8 @@ instance Structured InstSolverPackage
 instance Package InstSolverPackage where
     packageId i =
         -- HACK! See Note [Index conversion with internal libraries]
-        let MungedPackageId mpn v = mungedId i
-        in PackageIdentifier (encodeCompatPackageName mpn) v
+        let MungedPackageId mpn v compid = mungedId i
+        in PackageIdentifier (encodeCompatPackageName mpn) v compid
 
 instance HasMungedPackageId InstSolverPackage where
     mungedId = mungedId . instSolverPkgIPI

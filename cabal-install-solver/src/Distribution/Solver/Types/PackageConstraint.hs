@@ -49,6 +49,9 @@ data ConstraintScope
      -- | The package with the specified name when it has a
      -- setup qualifier.
    | ScopeAnySetupQualifier PackageName
+     -- | The package with the specified name when it is a build-time
+     -- dependency. E.g. a Setup script or a build-depends.
+   | ScopeAnyBuildDepQualifier PackageName
      -- | The package with the specified name regardless of
      -- qualifier.
    | ScopeAnyQualifier PackageName
@@ -65,6 +68,7 @@ scopeToPackageName :: ConstraintScope -> PackageName
 scopeToPackageName (ScopeTarget pn) = pn
 scopeToPackageName (ScopeQualified _ pn) = pn
 scopeToPackageName (ScopeAnySetupQualifier pn) = pn
+scopeToPackageName (ScopeAnyBuildDepQualifier pn) = pn
 scopeToPackageName (ScopeAnyQualifier pn) = pn
 
 constraintScopeMatches :: ConstraintScope -> QPN -> Bool
@@ -74,6 +78,12 @@ constraintScopeMatches (ScopeTarget pn) (Q (PackagePath ns q) pn') =
   in namespaceMatches ns && q == QualToplevel && pn == pn'
 constraintScopeMatches (ScopeQualified q pn) (Q (PackagePath _ q') pn') =
     q == q' && pn == pn'
+constraintScopeMatches (ScopeAnyBuildDepQualifier pn) (Q pp pn') =
+  let setup (PackagePath _ (QualSetup _)) = True
+      setup _                             = False
+      build (PackagePath _ (QualExe _ _)) = True
+      build _                             = False
+  in (setup pp || build pp) && pn == pn'
 constraintScopeMatches (ScopeAnySetupQualifier pn) (Q pp pn') =
   let setup (PackagePath _ (QualSetup _)) = True
       setup _                             = False
@@ -83,6 +93,7 @@ constraintScopeMatches (ScopeAnyQualifier pn) (Q _ pn') = pn == pn'
 instance Pretty ConstraintScope where
   pretty (ScopeTarget pn) = pretty pn <<>> Disp.text "." <<>> pretty pn
   pretty (ScopeQualified q pn) = dispQualifier q <<>> pretty pn
+  pretty (ScopeAnyBuildDepQualifier pn) = Disp.text "build." <<>> pretty pn
   pretty (ScopeAnySetupQualifier pn) = Disp.text "setup." <<>> pretty pn
   pretty (ScopeAnyQualifier pn) = Disp.text "any." <<>> pretty pn
 

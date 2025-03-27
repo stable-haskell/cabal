@@ -162,7 +162,7 @@ import Distribution.ReadE
   )
 import Distribution.Simple.Command hiding (boolOpt, boolOpt')
 import qualified Distribution.Simple.Command as Command
-import Distribution.Simple.Compiler (Compiler, PackageDB, PackageDBStack)
+import Distribution.Simple.Compiler (Compiler, CompilerFlavor (..), PackageDB, PackageDBStack)
 import Distribution.Simple.Configure
   ( computeEffectiveProfiling
   , configCompilerAuxEx
@@ -920,6 +920,10 @@ data ConfigExFlags = ConfigExFlags
   , configAllowOlder :: Maybe AllowOlder
   , configWriteGhcEnvironmentFilesPolicy
       :: Flag WriteGhcEnvironmentFilesPolicy
+  , configBuildHcFlavor :: Flag CompilerFlavor
+  , configBuildHcPath :: Flag FilePath
+  , configBuildHcPkg :: Flag FilePath
+  , configBuildPackageDBs :: [Maybe PackageDB]
   }
   deriving (Eq, Show, Generic)
 
@@ -1047,6 +1051,44 @@ configureExOptions _showOrParseArgs src =
           writeGhcEnvironmentFilesPolicyParser
           writeGhcEnvironmentFilesPolicyPrinter
       )
+  , option
+      []
+      ["build-compiler"]
+      "build compiler"
+      configBuildHcFlavor
+      (\v flags -> flags{configBuildHcFlavor = v})
+      ( choiceOpt
+          [ (Flag GHC, ("g", ["ghc"]), "compile with GHC")
+          , (Flag GHCJS, ([], ["ghcjs"]), "compile with GHCJS")
+          ]
+      )
+  , option
+      "W"
+      ["with-build-compiler", "with-build-hc"]
+      "give the path to the compiler for the build toolchain"
+      configBuildHcPath
+      (\v flags -> flags{configBuildHcPath = v})
+      (reqArgFlag "PATH")
+  , option
+      ""
+      ["with-build-hc-pkg"]
+      "give the path to the package tool for the build toolchain"
+      configBuildHcPkg
+      (\v flags -> flags{configBuildHcPkg = v})
+      (reqArgFlag "PATH")
+  , option
+      ""
+      ["build-package-db"]
+      ( "Append the given package database to the list of package"
+          ++ " databases used (to satisfy dependencies and register into)."
+          ++ " May be a specific file, 'global' or 'user'. The initial list"
+          ++ " is ['global'], ['global', 'user'], or ['global', $sandbox],"
+          ++ " depending on context. Use 'clear' to reset the list to empty."
+          ++ " See the user guide for details."
+      )
+      configBuildPackageDBs
+      (\v flags -> flags{configBuildPackageDBs = v})
+      (reqArg' "DB" readPackageDbList showPackageDbList)
   ]
 
 writeGhcEnvironmentFilesPolicyParser :: ReadE (Flag WriteGhcEnvironmentFilesPolicy)

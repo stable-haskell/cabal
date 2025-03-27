@@ -21,6 +21,7 @@ import Prelude ()
 
 import Distribution.Types.Dependency
 import Distribution.Types.ExeDependency
+import Distribution.Types.ExtraSource
 import Distribution.Types.LegacyExeDependency
 import Distribution.Types.Mixin
 import Distribution.Types.PkgconfigDependency
@@ -70,14 +71,19 @@ data BuildInfo = BuildInfo
   , frameworks :: [RelativePath Framework File]
   -- ^ support frameworks for Mac OS X
   , extraFrameworkDirs :: [SymbolicPath Pkg (Dir Framework)]
-  -- ^ extra locations to find frameworks.
-  , asmSources :: [SymbolicPath Pkg File]
-  -- ^ Assembly files.
-  , cmmSources :: [SymbolicPath Pkg File]
-  -- ^ C-- files.
-  , cSources :: [SymbolicPath Pkg File]
-  , cxxSources :: [SymbolicPath Pkg File]
-  , jsSources :: [SymbolicPath Pkg File]
+  -- ^ extra locations to find frameworks
+  , asmSources :: [ExtraSource Pkg]
+  -- ^ Assembly source files
+  , cmmSources :: [ExtraSource Pkg]
+  -- ^ C-- source files
+  , autogenCmmSources :: [ExtraSource Build]
+  -- ^ C-- generated source files
+  , cSources :: [ExtraSource Pkg]
+  -- ^ C source files
+  , cxxSources :: [ExtraSource Pkg]
+  -- ^ C++ source files
+  , jsSources :: [ExtraSource Pkg]
+  -- ^ JavaScript source file
   , hsSourceDirs :: [SymbolicPath Pkg (Dir Source)]
   -- ^ where to look for the Haskell module hierarchy
   , -- NB: these are symbolic paths are not relative paths,
@@ -168,6 +174,7 @@ instance Monoid BuildInfo where
       , extraFrameworkDirs = []
       , asmSources = []
       , cmmSources = []
+      , autogenCmmSources = []
       , cSources = []
       , cxxSources = []
       , jsSources = []
@@ -221,6 +228,7 @@ instance Semigroup BuildInfo where
       , extraFrameworkDirs = combineNub extraFrameworkDirs
       , asmSources = combineNub asmSources
       , cmmSources = combineNub cmmSources
+      , autogenCmmSources = combineNub autogenCmmSources
       , cSources = combineNub cSources
       , cxxSources = combineNub cxxSources
       , jsSources = combineNub jsSources

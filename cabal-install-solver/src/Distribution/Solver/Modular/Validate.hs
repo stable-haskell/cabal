@@ -108,9 +108,7 @@ data ValidateState = VS {
 
   -- Map from package name to the components that are required from that
   -- package.
-  requiredComponents  :: Map QPN ComponentDependencyReasons,
-
-  qualifyOptions      :: QualifyOptions
+  requiredComponents  :: Map QPN ComponentDependencyReasons
 }
 
 newtype Validate a = Validate (Reader ValidateState a)
@@ -200,11 +198,10 @@ validate = go
       svd            <- asks saved -- obtain saved dependencies
       aComps         <- asks availableComponents
       rComps         <- asks requiredComponents
-      qo             <- asks qualifyOptions
       -- obtain dependencies and index-dictated exclusions introduced by the choice
       let (PInfo deps comps _ mfr) = idx ! pn ! i
       -- qualify the deps in the current scope
-      let qdeps = qualifyDeps qo qpn deps
+      let qdeps = qualifyDeps qpn deps
       -- the new active constraints are given by the instance we have chosen,
       -- plus the dependency information we have for that instance
       let newactives = extractAllDeps pfa psa qdeps
@@ -452,14 +449,14 @@ merge (MergedDepFixed comp1 vs1 i1) (PkgDep vs2 (PkgComponent p comp2) ci@(Fixed
            , ( ConflictingDep vs1 (PkgComponent p comp1) (Fixed i1)
              , ConflictingDep vs2 (PkgComponent p comp2) ci ) )
 
-merge (MergedDepFixed comp1 vs1 i@(I v _)) (PkgDep vs2 (PkgComponent p comp2) ci@(Constrained vr))
+merge (MergedDepFixed comp1 vs1 i@(I _stage v _)) (PkgDep vs2 (PkgComponent p comp2) ci@(Constrained vr))
   | checkVR vr v = Right $ MergedDepFixed comp1 vs1 i
   | otherwise    =
       Left ( createConflictSetForVersionConflict p v vs1 vr vs2
            , ( ConflictingDep vs1 (PkgComponent p comp1) (Fixed i)
              , ConflictingDep vs2 (PkgComponent p comp2) ci ) )
 
-merge (MergedDepConstrained vrOrigins) (PkgDep vs2 (PkgComponent p comp2) ci@(Fixed i@(I v _))) =
+merge (MergedDepConstrained vrOrigins) (PkgDep vs2 (PkgComponent p comp2) ci@(Fixed i@(I _stage v _))) =
     go vrOrigins -- I tried "reverse vrOrigins" here, but it seems to slow things down ...
   where
     go :: [VROrigin] -> Either (ConflictSet, (ConflictingDep, ConflictingDep)) MergedPkgDep
@@ -577,5 +574,4 @@ validateTree cinfo idx pkgConfigDb t = runValidate (validate t) VS {
   , pa                  = PA M.empty M.empty M.empty
   , availableComponents = M.empty
   , requiredComponents  = M.empty
-  , qualifyOptions      = defaultQualifyOptions idx
   }

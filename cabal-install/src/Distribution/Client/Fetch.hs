@@ -38,6 +38,7 @@ import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb, readPkgConfigDb)
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Toolchain (mkToolchainsWithHost)
 
 import Distribution.Client.Errors
 import Distribution.Package
@@ -174,8 +175,7 @@ planPackages
         installPlan <-
           foldProgress logMsg (dieWithException verbosity . PlanPackages . show) return $
             resolveDependencies
-              platform
-              (compilerInfo comp)
+              (mkToolchainsWithHost platform comp)
               pkgConfigDb
               resolverParams
 
@@ -220,7 +220,7 @@ planPackages
           -- already installed. Since we want to get the source packages of
           -- things we might have installed (but not have the sources for).
           . reinstallTargets
-          $ standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers
+          $ standardInstallPolicy mempty {-build-} installedPkgIndex sourcePkgDb pkgSpecifiers
 
       includeDependencies = fromFlag (fetchDeps fetchFlags)
       logMsg message rest = debug verbosity message >> rest
