@@ -29,6 +29,7 @@ data PackageIdentifier = PackageIdentifier
   , pkgVersion :: Version
   -- ^ the version of this package, eg 1.2
   , pkgCompiler :: Maybe CompilerId
+  -- ^ the associated compiler id of the package, eg ghc-9.8.4
   }
   deriving (Generic, Read, Show, Eq, Ord, Data)
 
@@ -37,8 +38,9 @@ instance Structured PackageIdentifier
 
 instance Pretty PackageIdentifier where
   pretty (PackageIdentifier n v c)
-    | v == nullVersion = pretty c <<>> Disp.char '-' <<>> pretty n -- if no version, don't show version.
-    | Just c' <- c = pretty c' <<>> Disp.char '-' <<>> pretty n <<>> Disp.char '-' <<>> pretty v
+    | Just c' <- c, v == nullVersion = pretty c <<>> Disp.char ':' <<>> pretty n -- if no version, don't show version.
+    | Just c' <- c = pretty c' <<>> Disp.char ':' <<>> pretty n <<>> Disp.char '-' <<>> pretty v
+    | v == nullVersion = pretty n
     | otherwise = pretty n <<>> Disp.char '-' <<>> pretty v
 
 -- |
@@ -64,13 +66,13 @@ instance Pretty PackageIdentifier where
 -- Nothing
 instance Parsec PackageIdentifier where
   parsec = do
-    comp <- parsec <* P.char '-'
+    -- comp <- Just <$> (parsec <* P.char ':') <|> return Nothing
     xs' <- P.sepByNonEmpty component (P.char '-')
     (v, xs) <- case simpleParsec (NE.last xs') of
       Nothing -> return (nullVersion, toList xs') -- all components are version
       Just v -> return (v, NE.init xs')
     if not (null xs) && all (\c -> all (/= '.') c && not (all isDigit c)) xs
-      then return $ PackageIdentifier (mkPackageName (intercalate "-" xs)) v comp
+      then return $ PackageIdentifier (mkPackageName (intercalate "-" xs)) v Nothing --comp
       else fail "all digits or a dot in a portion of package name"
     where
       component = P.munch1 (\c -> isAlphaNum c || c == '.')
