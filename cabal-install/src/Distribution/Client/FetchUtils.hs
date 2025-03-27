@@ -60,6 +60,7 @@ import Distribution.Package
   ( PackageId
   , packageName
   , packageVersion
+  , pkgCompiler
   )
 import Distribution.Simple.Utils
   ( debug
@@ -395,7 +396,7 @@ waitAsyncFetchPackage verbosity downloadMap srcloc =
 packageFile :: Repo -> PackageId -> FilePath
 packageFile repo pkgid =
   packageDir repo pkgid
-    </> prettyShow pkgid
+    </> prettyShow pkgid{pkgCompiler = Nothing}
     <.> "tar.gz"
 
 -- | Generate the full path to the directory where the local cached copy of

@@ -244,6 +244,7 @@ import System.FilePath
 import qualified Text.PrettyPrint as Disp
 
 import GHC.Stack (HasCallStack)
+-- import qualified Distribution.Solver.Types.PackageIndex as XXX
 
 -- | Check that an 'ElaboratedConfiguredPackage' actually makes
 -- sense under some 'ElaboratedSharedConfig'.
@@ -833,12 +834,16 @@ rebuildInstallPlan
 
               -- NOTE: sourcePkgDbs is the stuff that we pull from Hackage
               --       and similar Indices!
-              (sourcePkgDb, tis, ar) <-
+              (sourcePkgDb_, tis, ar) <-
                 getSourcePackages
                   verbosity
                   withRepoCtx
                   (solverSettingIndexState solverSettings)
                   (solverSettingActiveRepos solverSettings)
+
+              -- FIXME: we are duplicating the index here, bad for memory use :-/
+              let sourcePkgDb = sourcePkgDb_{packageIndex =  (addCompilerIdToSrcPkg (compilerIdFor Build toolchains) <$> packageIndex sourcePkgDb_)
+                                                          <> (addCompilerIdToSrcPkg (compilerIdFor Host  toolchains) <$> packageIndex sourcePkgDb_) }
 
               pkgConfigDB <- getPkgConfigDb verbosity (toolchainProgramDb $ buildToolchain toolchains)
 
@@ -857,6 +862,7 @@ rebuildInstallPlan
                 -- putStrLn $ unlines $ map (prettyShow . IPI.sourcePackageId) $ PI.allPackages hinstalledPkgIndex
                 -- putStrLn "== localPackages"
                 -- putStrLn $ unlines . map (prettyShow . srcpkgPackageId) $ [pkg | SpecificSourcePackage pkg <- localPackages]
+                -- putStrLn $ unlines . take 20 $ map (prettyShow . srcpkgPackageId) (XXX.allPackages (packageIndex sourcePkgDb))
                 planOrError <-
                   foldProgress logMsg (pure . Left) (pure . Right) $
                     planPackages
@@ -880,9 +886,9 @@ rebuildInstallPlan
             addCompilerToSourcePkg compilerId = map (addCompilerId compilerId)
             addCompilerId :: CompilerId -> PackageSpecifier UnresolvedSourcePackage -> PackageSpecifier UnresolvedSourcePackage
             addCompilerId compilerId (NamedPackage name props) = NamedPackage name props
-            addCompilerId compilerId (SpecificSourcePackage pkg) = SpecificSourcePackage (f pkg)
-              where f :: SourcePackage UnresolvedPkgLoc -> SourcePackage UnresolvedPkgLoc
-                    f pkg = pkg{srcpkgPackageId = (srcpkgPackageId pkg){pkgCompiler = Just compilerId}}
+            addCompilerId compilerId (SpecificSourcePackage pkg) = SpecificSourcePackage (addCompilerIdToSrcPkg compilerId pkg)
+            addCompilerIdToSrcPkg :: CompilerId -> SourcePackage UnresolvedPkgLoc -> SourcePackage UnresolvedPkgLoc
+            addCompilerIdToSrcPkg compilerId pkg = pkg{srcpkgPackageId = (srcpkgPackageId pkg){pkgCompiler = Just compilerId}}
             localPackages = (addCompilerToSourcePkg (compilerIdFor Build toolchains) localPackages_)
                          <> (addCompilerToSourcePkg (compilerIdFor Host  toolchains) localPackages_)
             corePackageDbs :: Stage -> PackageDBStackCWD
