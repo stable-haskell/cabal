@@ -862,7 +862,9 @@ resolveDependencies toolchains pkgConfigDB params =
                     verbosity
                   ) =
         if asBool (depResolverAllowBootLibInstalls params)
-          then dontInstallNonReinstallablePackagesForBuild params
+          then if buildIsHost toolchains
+            then params
+            else dontInstallNonReinstallablePackagesForBuild params
           else dontInstallNonReinstallablePackages params
 
     preferences :: PackageName -> PackagePreferences
