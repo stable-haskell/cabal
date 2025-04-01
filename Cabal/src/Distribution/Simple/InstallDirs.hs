@@ -209,7 +209,7 @@ defaultInstallDirs' False comp userInstall _hasLibs = do
     case buildOS of
       Windows -> return "$prefix"
       _ -> return ("$prefix" </> "lib")
-  return $ traceShowId $
+  return $
     fmap toPathTemplate $
       InstallDirs
         { prefix = installPrefix
@@ -267,7 +267,7 @@ substituteInstallDirTemplates
   :: PathTemplateEnv
   -> InstallDirTemplates
   -> InstallDirTemplates
-substituteInstallDirTemplates env dirs = traceShow "BOOM" $ dirs'
+substituteInstallDirTemplates env dirs = dirs'
   where
     dirs' =
       InstallDirs
