@@ -618,6 +618,8 @@ data UserConstraintScope
     UserQualified UserQualifier PackageName
   | -- | Scope that applies to the package when it has a setup qualifier.
     UserAnySetupQualifier PackageName
+  | -- | Scope that applies to all build packages only.
+    UserAnyBuildDepQualifier PackageName
   | -- | Scope that applies to the package when it has any qualifier.
     UserAnyQualifier PackageName
   deriving (Eq, Show, Generic)
@@ -634,6 +636,7 @@ fromUserConstraintScope :: UserConstraintScope -> ConstraintScope
 fromUserConstraintScope (UserQualified q pn) =
   ScopeQualified (fromUserQualifier q) pn
 fromUserConstraintScope (UserAnySetupQualifier pn) = ScopeAnySetupQualifier pn
+fromUserConstraintScope (UserAnyBuildDepQualifier pn) = ScopeAnyBuildDepQualifier pn
 fromUserConstraintScope (UserAnyQualifier pn) = ScopeAnyQualifier pn
 
 -- | Version of 'PackageConstraint' that the user can specify on
@@ -650,6 +653,7 @@ userConstraintPackageName (UserConstraint scope _) = scopePN scope
   where
     scopePN (UserQualified _ pn) = pn
     scopePN (UserAnyQualifier pn) = pn
+    scopePN (UserAnyBuildDepQualifier pn) = pn
     scopePN (UserAnySetupQualifier pn) = pn
 
 userToPackageConstraint :: UserConstraint -> PackageConstraint
@@ -698,6 +702,7 @@ instance Parsec UserConstraint where
           withDot :: PackageName -> m UserConstraintScope
           withDot pn
             | pn == mkPackageName "any" = UserAnyQualifier <$> parsec
+            | pn == mkPackageName "build" = UserAnyBuildDepQualifier <$> parsec
             | pn == mkPackageName "setup" = UserAnySetupQualifier <$> parsec
             | otherwise = P.unexpected $ "constraint scope: " ++ unPackageName pn
 
