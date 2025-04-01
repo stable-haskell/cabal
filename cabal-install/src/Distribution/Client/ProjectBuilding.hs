@@ -718,7 +718,7 @@ withTarballLocalDirectory
                 verbosity
                 tarball
                 unpackdir
-                pkgid
+                pkgid{pkgCompiler = Nothing}
                 pkgTextOverride
               buildPkg srcdir builddir
 

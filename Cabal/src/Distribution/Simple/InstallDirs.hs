@@ -209,7 +209,7 @@ defaultInstallDirs' False comp userInstall _hasLibs = do
     case buildOS of
       Windows -> return "$prefix"
       _ -> return ("$prefix" </> "lib")
-  return $
+  return $ traceShowId $
     fmap toPathTemplate $
       InstallDirs
         { prefix = installPrefix
@@ -267,7 +267,7 @@ substituteInstallDirTemplates
   :: PathTemplateEnv
   -> InstallDirTemplates
   -> InstallDirTemplates
-substituteInstallDirTemplates env dirs = dirs'
+substituteInstallDirTemplates env dirs = traceShow "BOOM" $ dirs'
   where
     dirs' =
       InstallDirs
@@ -441,7 +441,7 @@ packageTemplateEnv pkgId uid =
   , -- Invariant: uid is actually a HashedUnitId.  Hard to enforce because
     -- it's an API change.
     (LibNameVar, PathTemplate [Ordinary $ prettyShow uid])
-  , (PkgIdVar, PathTemplate [Ordinary $ prettyShow pkgId])
+  , (PkgIdVar, PathTemplate [Ordinary $ prettyShow (pkgId{pkgCompiler = Nothing})])
   ]
 
 compilerTemplateEnv :: CompilerInfo -> PathTemplateEnv
