@@ -192,16 +192,17 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigHcFlavor :: Flag CompilerFlavor
   , projectConfigHcPath :: Flag FilePath
   , projectConfigHcPkg :: Flag FilePath
+  , projectConfigPackageDBs :: [Maybe PackageDBCWD]
   , projectConfigBuildHcFlavor :: Flag CompilerFlavor
   , projectConfigBuildHcPath :: Flag FilePath
   , projectConfigBuildHcPkg :: Flag FilePath
+  , projectConfigBuildPackageDBs :: [Maybe PackageDBCWD]
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!
     -- projectConfigUserInstall       :: Flag Bool,
 
     projectConfigInstallDirs :: InstallDirs (Flag PathTemplate)
-  , projectConfigPackageDBs :: [Maybe PackageDBCWD]
   , -- configuration used both by the solver and other phases
     projectConfigRemoteRepos :: NubList RemoteRepo
   -- ^ Available Hackage servers.
