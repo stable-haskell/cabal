@@ -39,7 +39,6 @@ import Distribution.Package
   , PackageId
   , PackageIdentifier
   , UnitId
-  , pkgCompiler
   )
 import Distribution.Simple.Compiler
   ( Compiler (..)
@@ -201,7 +200,7 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
       distBuildRootDirectory
         </> prettyShow (distParamPlatform params)
         </> prettyShow (distParamCompilerId params)
-        </> prettyShow ((distParamPackageId params){pkgCompiler = Nothing})
+        </> prettyShow (distParamPackageId params)
         </> ( case distParamComponentName params of
                 Nothing -> ""
                 Just (CLibName LMainLibName) -> ""

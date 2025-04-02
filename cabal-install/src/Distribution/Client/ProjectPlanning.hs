@@ -1211,7 +1211,7 @@ getPackageSourceHashes verbosity withRepoCtx solverPlan = do
   --
   let allPkgLocations :: [(PackageId, PackageLocation (Maybe FilePath))]
       allPkgLocations =
-        [ ((packageId pkg){pkgCompiler = Nothing}, srcpkgSource pkg)
+        [ (packageId pkg, srcpkgSource pkg)
         | SolverInstallPlan.Configured (SolverPackage{solverPkgSource = pkg}) <-
             SolverInstallPlan.toList solverPlan
         ]
@@ -1982,7 +1982,7 @@ elaborateInstallPlan
                     cid = case elabBuildStyle elab0 of
                       BuildInplaceOnly{} ->
                         mkComponentId $
-                          prettyShow (pkgid{pkgCompiler = Nothing})
+                          prettyShow pkgid
                             ++ "-inplace"
                             ++ ( case Cabal.componentNameString cname of
                                   Nothing -> ""
@@ -2215,7 +2215,7 @@ elaborateInstallPlan
 
             pkgInstalledId
               | shouldBuildInplaceOnly pkg =
-                  mkComponentId (prettyShow (pkgid{pkgCompiler = Nothing}) ++ "-inplace")
+                  mkComponentId (prettyShow pkgid ++ "-inplace")
               | otherwise =
                   assert (isJust elabPkgSourceHash) $
                     hashedInstalledPackageId
@@ -2226,7 +2226,7 @@ elaborateInstallPlan
 
             -- Need to filter out internal dependencies, because they don't
             -- correspond to anything real anymore.
-            isExt confid = (confSrcId confid){pkgCompiler = Nothing} /= pkgid{pkgCompiler = Nothing}
+            isExt confid = confSrcId confid /= pkgid
             filterExt = filter isExt
 
             filterExt' :: [(ConfiguredId, a)] -> [(ConfiguredId, a)]
@@ -2367,7 +2367,7 @@ elaborateInstallPlan
                 else cp
 
             elabPkgSourceLocation = srcloc
-            elabPkgSourceHash = case Map.lookup (pkgid{pkgCompiler = Nothing}) sourcePackageHashes of
+            elabPkgSourceHash = case Map.lookup pkgid sourcePackageHashes of
               Just h -> Just h
               Nothing -> Nothing
             elabLocalToProject = isLocalToProject pkg

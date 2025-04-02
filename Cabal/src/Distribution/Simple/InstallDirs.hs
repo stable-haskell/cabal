@@ -441,7 +441,7 @@ packageTemplateEnv pkgId uid =
   , -- Invariant: uid is actually a HashedUnitId.  Hard to enforce because
     -- it's an API change.
     (LibNameVar, PathTemplate [Ordinary $ prettyShow uid])
-  , (PkgIdVar, PathTemplate [Ordinary $ prettyShow (pkgId{pkgCompiler = Nothing})])
+  , (PkgIdVar, PathTemplate [Ordinary $ prettyShow pkgId])
   ]
 
 compilerTemplateEnv :: CompilerInfo -> PathTemplateEnv

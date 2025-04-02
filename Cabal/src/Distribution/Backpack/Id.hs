@@ -39,14 +39,12 @@ computeComponentId
   -- This is used by cabal-install's legacy codepath
   -> Maybe ([ComponentId], FlagAssignment)
   -> ComponentId
-computeComponentId deterministic mb_ipid mb_cid pid0 cname mb_details =
+computeComponentId deterministic mb_ipid mb_cid pid cname mb_details =
   -- show is found to be faster than intercalate and then replacement of
   -- special character used in intercalating. We cannot simply hash by
   -- doubly concatenating list, as it just flatten out the nested list, so
   -- different sources can produce same hash
-  let -- we do not want the compiler to show up in the Id.
-      pid = pid0{pkgCompiler = Nothing}
-      hash_suffix
+  let hash_suffix
         | Just (dep_ipids, flags) <- mb_details =
             "-"
               ++ hashToBase62

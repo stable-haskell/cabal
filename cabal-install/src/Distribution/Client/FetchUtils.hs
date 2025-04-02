@@ -201,7 +201,7 @@ verifyFetchedTarball verbosity file mCallbacks pkgid =
             let warnAndFail s = warn verbosity ("Fetched tarball " ++ file ++ " does not match server, will redownload: " ++ s) >> return False
              in -- the do block in parens is due to dealing with the checked exceptions mechanism.
                 ( do
-                    fileInfo <- Sec.indexLookupFileInfo callbacks (pkgid{pkgCompiler = Nothing})
+                    fileInfo <- Sec.indexLookupFileInfo callbacks pkgid
                     sz <- Sec.FileLength . fromInteger <$> getFileSize file
                     if sz /= Sec.fileInfoLength (Sec.trusted fileInfo)
                       then warnAndFail "file length mismatch"
