@@ -923,6 +923,8 @@ data ConfigExFlags = ConfigExFlags
   , configBuildHcFlavor :: Flag CompilerFlavor
   , configBuildHcPath :: Flag FilePath
   , configBuildHcPkg :: Flag FilePath
+  , configBuildPackageDBs :: [Maybe PackageDB]
+  -- ^ Which package DBs to use in the build stage
   }
   deriving (Eq, Show, Generic)
 
@@ -1064,6 +1066,16 @@ configureExOptions _showOrParseArgs src =
       configBuildHcPkg
       (\v flags -> flags{configBuildHcPkg = v})
       (reqArgFlag "PATH")
+   , option
+      ""
+      ["build-package-db"]
+      ( "Append the given package database to the list of package"
+          ++ " databases used during the build stage."
+          ++ " See the user guide for details."
+      )
+      configBuildPackageDBs
+      (\v flags -> flags{configBuildPackageDBs = v})
+      (reqArg' "DB" readPackageDbList showPackageDbList)
   ]
 
 writeGhcEnvironmentFilesPolicyParser :: ReadE (Flag WriteGhcEnvironmentFilesPolicy)
