@@ -130,7 +130,7 @@ import Distribution.Types.DependencySatisfaction
   ( DependencySatisfaction (..)
   )
 import Distribution.Verbosity
-  ( normal
+  ( normal, deafening
   )
 import Distribution.Version
 
@@ -213,9 +213,9 @@ showDepResolverParams p =
       (("\n  " ++) . showLabeledConstraint)
       (depResolverConstraints p)
     ++ "\npreferences: "
-    ++ concatMap
-      (("\n  " ++) . showPackagePreference)
-      (depResolverPreferences p)
+    ++ if depResolverVerbosity p >= deafening
+      then concatMap (("\n  " ++) . showPackagePreference) ((depResolverPreferences p))
+      else "\n   ... increase verbosity to see"
     ++ "\nstrategy: "
     ++ show (depResolverPreferenceDefault p)
     ++ "\nreorder goals: "
