@@ -829,7 +829,7 @@ rebuildInstallPlan
                 projectConfigBuildOnly
 
             solverSettings = resolveSolverSettings projectConfig
-            logMsg message rest = debugNoWrap verbosity message >> rest
+            logMsg message rest = infoNoWrap verbosity message >> rest
 
             localPackagesEnabledStanzas =
               Map.fromList
