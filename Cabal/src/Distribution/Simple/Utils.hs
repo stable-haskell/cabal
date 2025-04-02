@@ -883,7 +883,7 @@ maybeExit cmd = do
 -- at debug level if specified.
 logCommand :: Verbosity -> Process.CreateProcess -> IO ()
 logCommand verbosity cp = do
-  infoNoWrap verbosity $
+  debugNoWrap verbosity $
     "Running: " <> case Process.cmdspec cp of
       Process.ShellCommand sh -> sh
       Process.RawCommand path args -> Process.showCommandForUser path args
