@@ -430,7 +430,7 @@ dontInstallNonReinstallablePackages params =
   where
     extraConstraints =
       [ LabeledPackageConstraint
-        (PackageConstraint (ScopeAnyQualifier pkgname) PackagePropertyInstalled)
+        (PackageConstraint (ConstraintScope Nothing (ScopeAnyQualifier pkgname)) PackagePropertyInstalled)
         ConstraintSourceNonReinstallablePackage
       | pkgname <- nonReinstallablePackages
       ]
@@ -483,7 +483,7 @@ hideInstalledPackagesSpecificBySourcePackageId
 hideInstalledPackagesSpecificBySourcePackageId pkgids =
   addConstraints
     [ LabeledPackageConstraint
-      (PackageConstraint (ScopeAnyQualifier name) PackagePropertySource)
+      (PackageConstraint (ConstraintScope Nothing (ScopeAnyQualifier name)) PackagePropertySource)
       -- FIXME
       ConstraintSourceUnknown
     | pkgId <- pkgids
@@ -623,7 +623,7 @@ addSetupCabalMinVersionConstraint minVersion =
   addConstraints
     [ LabeledPackageConstraint
         ( PackageConstraint
-            (ScopeAnySetupQualifier cabalPkgname)
+            (ConstraintScope Nothing (ScopeAnySetupQualifier cabalPkgname))
             (PackagePropertyVersion $ orLaterVersion minVersion)
         )
         ConstraintSetupCabalMinVersion
@@ -641,7 +641,7 @@ addSetupCabalMaxVersionConstraint maxVersion =
   addConstraints
     [ LabeledPackageConstraint
         ( PackageConstraint
-            (ScopeAnySetupQualifier cabalPkgname)
+            (ConstraintScope Nothing (ScopeAnySetupQualifier cabalPkgname))
             (PackagePropertyVersion $ earlierVersion maxVersion)
         )
         ConstraintSetupCabalMaxVersion
@@ -657,7 +657,7 @@ addSetupCabalProfiledDynamic =
   addConstraints
     [ LabeledPackageConstraint
         ( PackageConstraint
-            (ScopeAnySetupQualifier cabalPkgname)
+            (ConstraintScope Nothing (ScopeAnySetupQualifier cabalPkgname))
             (PackagePropertyVersion $ orLaterVersion (mkVersion [3, 13, 0]))
         )
         ConstraintSourceProfiledDynamic
@@ -673,7 +673,7 @@ reinstallTargets params =
   addConstraints
     [ LabeledPackageConstraint
       ( PackageConstraint
-          (ScopeAnyQualifier pkgName)
+          (ConstraintScope Nothing (ScopeAnyQualifier pkgName))
           PackagePropertySource
       )
       ConstraintSourceProfiledDynamic

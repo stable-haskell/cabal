@@ -52,7 +52,7 @@ pkgSpecifierConstraints (SpecificSourcePackage pkg) =
   where
     sourceConstraint =
       PackageConstraint
-        (ScopeTarget $ packageName pkg)
+        (ConstraintScope Nothing (ScopeTarget $ packageName pkg))
         PackagePropertySource
 
 mkNamedPackage :: PackageIdentifier -> PackageSpecifier pkg

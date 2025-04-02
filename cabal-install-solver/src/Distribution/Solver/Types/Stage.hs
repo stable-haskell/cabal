@@ -16,10 +16,12 @@ module Distribution.Solver.Types.Stage
 
 import Prelude (Enum (..))
 import Distribution.Compat.Prelude
+import qualified Distribution.Compat.CharParsing as P
 
 import Data.Maybe (fromJust)
 import GHC.Stack
 
+import Distribution.Parsec (Parsec (..))
 import Distribution.Pretty (Pretty (..))
 import Distribution.Utils.Structured (Structured (..))
 import qualified Text.PrettyPrint as Disp
@@ -41,6 +43,12 @@ instance Pretty Stage where
 showStage :: Stage -> String
 showStage Build = "build"
 showStage Host = "host"
+
+instance Parsec Stage where
+  parsec = P.choice [
+      Build <$ P.string "build",
+      Host <$ P.string "host"
+    ]
 
 -- TOOD: I think there is similar code for stanzas, compare.
 
