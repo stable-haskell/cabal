@@ -77,8 +77,7 @@ import Distribution.Client.TargetProblem
   ( TargetProblem (..)
   )
 import Distribution.Client.Targets
-  ( UserConstraint (..)
-  , UserConstraintScope (..)
+  ( UserConstraint (..), UserConstraintQualifier (..)
   )
 import Distribution.Client.Types
   ( PackageSpecifier (..)
