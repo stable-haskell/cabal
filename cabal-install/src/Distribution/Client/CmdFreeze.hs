@@ -29,8 +29,8 @@ import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
 import Distribution.Client.Targets
   ( UserConstraint (..)
-  , UserConstraintScope (..)
   , UserQualifier (..)
+  , UserConstraintQualifier (..)
   )
 import Distribution.Solver.Types.ConstraintSource
   ( ConstraintSource (..)
@@ -209,9 +209,11 @@ projectFreezeConstraints plan =
   -- constraint would apply to both instances). We do however keep flag
   -- constraints of local packages.
   --
+  -- TODO: this is even worse with stages
   deleteLocalPackagesVersionConstraints
     (Map.unionWith (++) versionConstraints flagConstraints)
   where
+    
     versionConstraints :: Map PackageName [(UserConstraint, ConstraintSource)]
     versionConstraints =
       Map.mapWithKey
