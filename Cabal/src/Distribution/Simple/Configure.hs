@@ -183,6 +183,10 @@ import qualified Data.Maybe as M
 import qualified Data.Set as Set
 import qualified Distribution.Compat.NonEmptySet as NES
 
+import GHC.Stack (HasCallStack)
+
+import Unsafe.Coerce (unsafeCoerce)
+
 type UseExternalInternalDeps = Bool
 
 -- | The errors that can be thrown when reading the @setup-config@ file.
@@ -937,7 +941,8 @@ configurePackage cfg lbc0 pkg_descr00 flags enabled comp platform programDb0 pac
   return (lbc, pbd)
 
 finalizeAndConfigurePackage
-  :: ConfigFlags
+  :: HasCallStack
+  => ConfigFlags
   -> LBC.LocalBuildConfig
   -> GenericPackageDescription
   -> Compiler
@@ -992,9 +997,17 @@ finalizeAndConfigurePackage cfg lbc0 g_pkg_descr comp platform enabled = do
     , requiredDepsMap :: Map (PackageName, ComponentName) InstalledPackageInfo
     ) <-
     either (dieWithException verbosity) return $
-      combinedConstraints
+      -- why do we need this? We internally now treat everything as properly
+      -- qualified Component/UnitIds. Thus we need to turn Partial ones into
+      -- fully qualified ones. Otherwise any lookup internally will fail.
+      -- installedPackageSet will already contain properly qualified ones.
+      let updCompId :: GivenComponent -> GivenComponent
+          updCompId (GivenComponent pn ln cid) | isPartialUnitId (unsafeCoerce cid) =
+            GivenComponent pn ln (unsafeCoerce (addPrefixToUnitId (prettyShow (compilerId comp)) (unsafeCoerce cid)))
+          updCompId (GivenComponent pn ln cid) = GivenComponent pn ln cid
+      in combinedConstraints
         (configConstraints cfg)
-        (configDependencies cfg)
+        (map updCompId (configDependencies cfg))
         installedPackageSet
 
   let
@@ -2185,7 +2198,8 @@ interpretPackageDbFlags userInstall specificDBs =
 -- deps in the end. So we still need to remember which installed packages to
 -- pick.
 combinedConstraints
-  :: [PackageVersionConstraint]
+  :: HasCallStack
+  => [PackageVersionConstraint]
   -> [GivenComponent]
   -- ^ installed dependencies
   -> InstalledPackageIndex
@@ -2220,7 +2234,7 @@ combinedConstraints constraints dependencies installedPackages = do
         ]
 
     -- The dependencies along with the installed package info, if it exists
-    dependenciesPkgInfo :: [(PackageName, ComponentName, ComponentId, Maybe InstalledPackageInfo)]
+    dependenciesPkgInfo :: HasCallStack => [(PackageName, ComponentName, ComponentId, Maybe InstalledPackageInfo)]
     dependenciesPkgInfo =
       [ (pkgname, CLibName lname, cid, mpkg)
       | GivenComponent pkgname lname cid <- dependencies

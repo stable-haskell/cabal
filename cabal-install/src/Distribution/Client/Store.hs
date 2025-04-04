@@ -26,8 +26,10 @@ import Prelude ()
 import Distribution.Client.DistDirLayout
 import Distribution.Client.RebuildMonad
 
-import Distribution.Package (UnitId, mkUnitId)
+import Distribution.Package (UnitId, mkUnitId, addPrefixToUnitId, isPartialUnitId)
 import Distribution.Simple.Compiler (Compiler (..))
+
+import GHC.Stack (HasCallStack)
 
 import Distribution.Simple.Utils
   ( debug
@@ -132,18 +134,20 @@ doesStoreEntryExist StoreDirLayout{storePackageDirectory} compiler unitid =
 
 -- | Return the 'UnitId's of all packages\/components already installed in the
 -- store.
-getStoreEntries :: StoreDirLayout -> Compiler -> Rebuild (Set UnitId)
+getStoreEntries :: HasCallStack => StoreDirLayout -> Compiler -> Rebuild (Set UnitId)
 getStoreEntries StoreDirLayout{storeDirectory} compiler = do
   paths <- getDirectoryContentsMonitored (storeDirectory compiler)
   return $! mkEntries paths
   where
     mkEntries =
-      Set.delete (mkUnitId "package.db")
-        . Set.delete (mkUnitId "incoming")
-        . Set.fromList
-        . map mkUnitId
+      Set.fromList
+        . map (\pkg -> case mkUnitId pkg of
+            uid | isPartialUnitId uid -> addPrefixToUnitId (prettyShow (compilerId compiler)) uid
+                | otherwise -> uid)
         . filter valid
     valid ('.' : _) = False
+    valid "incoming" = False
+    valid "package.db" = False
     valid _ = True
 
 -- | The outcome of 'newStoreEntry': either the store entry was newly created

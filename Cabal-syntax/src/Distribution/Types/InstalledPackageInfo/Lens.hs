@@ -28,7 +28,7 @@ installedUnitId :: Lens' InstalledPackageInfo UnitId
 installedUnitId f s = fmap (\x -> s{T.installedUnitId = x}) (f (T.installedUnitId s))
 {-# INLINE installedUnitId #-}
 
-installedComponentId_ :: Lens' InstalledPackageInfo ComponentId
+installedComponentId_ :: Lens' InstalledPackageInfo (Maybe ComponentId)
 installedComponentId_ f s = fmap (\x -> s{T.installedComponentId_ = x}) (f (T.installedComponentId_ s))
 {-# INLINE installedComponentId_ #-}
 

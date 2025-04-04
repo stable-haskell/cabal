@@ -66,6 +66,8 @@ import qualified Data.ByteString.Lazy.Char8 as LBS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import GHC.Stack (HasCallStack)
+
 -------------------------------
 -- Calculating package hashes
 --
@@ -76,7 +78,7 @@ import qualified Data.Set as Set
 -- Note that due to path length limitations on Windows, this function uses
 -- a different method on Windows that produces shorted package ids.
 -- See 'hashedInstalledPackageIdLong' vs 'hashedInstalledPackageIdShort'.
-hashedInstalledPackageId :: PackageHashInputs -> InstalledPackageId
+hashedInstalledPackageId :: HasCallStack => PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageId
   | buildOS == Windows = hashedInstalledPackageIdShort
   | buildOS == OSX = hashedInstalledPackageIdVeryShort
@@ -122,7 +124,7 @@ hashedInstalledPackageIdLong
 -- Truncating the hash size is disappointing but also technically ok. We
 -- rely on the hash primarily for collision avoidance not for any security
 -- properties (at least for now).
-hashedInstalledPackageIdShort :: PackageHashInputs -> InstalledPackageId
+hashedInstalledPackageIdShort :: HasCallStack => PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
   mkComponentId $
     intercalate
@@ -162,10 +164,12 @@ hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
 -- libraries on macOS, such that the proxy libraries and the linked libraries
 -- stay under the load command limit, and the recursive linker is still able
 -- to link all of them.
-hashedInstalledPackageIdVeryShort :: PackageHashInputs -> InstalledPackageId
+hashedInstalledPackageIdVeryShort :: HasCallStack => PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageIdVeryShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
   mkComponentId $
-    intercalate
+    prettyShow (pkgHashCompilerId . pkgHashOtherConfig $ pkghashinputs)
+    ++
+    '_':intercalate
       "-"
       [ prettyShow name
       , prettyShow version

@@ -385,7 +385,7 @@ exceptionMessageCabalInstall e = case e of
   FindOpenProgramLocationErr err -> err
   PkgConfParseFailed perror ->
     "Couldn't parse the output of 'setup register --gen-pkg-config':"
-      ++ show perror
+      ++ perror
   ErrorPackingSdist err -> "Error packing sdist: " ++ err
   SdistException pkgIdentifier -> "sdist of " ++ prettyShow pkgIdentifier
   SpecifyAnExecutable -> "Please specify an executable to run"

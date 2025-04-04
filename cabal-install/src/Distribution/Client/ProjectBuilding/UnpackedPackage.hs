@@ -120,6 +120,8 @@ import Distribution.Compat.Directory (listDirectory)
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 
+import GHC.Stack (HasCallStack)
+
 -- | Each unpacked package is processed in the following phases:
 --
 -- * Configure phase
@@ -995,7 +997,7 @@ hasValidHaddockTargets ElaboratedConfiguredPackage{..}
         hasHaddocks = not (null (elabPkgDescription ^. componentModules name))
 
 withTempInstalledPackageInfoFile
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> FilePath
   -> (FilePath -> IO ())
   -> IO InstalledPackageInfo
@@ -1009,15 +1011,15 @@ withTempInstalledPackageInfoFile verbosity tempdir action =
 
     readPkgConf "." pkgConfDest
   where
-    pkgConfParseFailed :: String -> IO a
+    pkgConfParseFailed :: HasCallStack => String -> IO a
     pkgConfParseFailed perror =
       dieWithException verbosity $ PkgConfParseFailed perror
 
-    readPkgConf :: FilePath -> FilePath -> IO InstalledPackageInfo
+    readPkgConf :: HasCallStack => FilePath -> FilePath -> IO InstalledPackageInfo
     readPkgConf pkgConfDir pkgConfFile = do
       pkgConfStr <- BS.readFile (pkgConfDir </> pkgConfFile)
       (warns, ipkg) <- case Installed.parseInstalledPackageInfo pkgConfStr of
-        Left perrors -> pkgConfParseFailed $ unlines $ NE.toList perrors
+        Left perrors -> pkgConfParseFailed $ unlines $ "While parsing:":LBS.Char8.unpack (LBS.Char8.fromStrict pkgConfStr):"encountered:":NE.toList perrors
         Right (warns, ipkg) -> return (warns, ipkg)
 
       unless (null warns) $

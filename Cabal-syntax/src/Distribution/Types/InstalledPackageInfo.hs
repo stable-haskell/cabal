@@ -42,7 +42,7 @@ data InstalledPackageInfo = InstalledPackageInfo
     -- exactly the same as PackageDescription
     sourcePackageId :: PackageId
   , sourceLibName :: LibraryName
-  , installedComponentId_ :: ComponentId
+  , installedComponentId_ :: Maybe ComponentId
   , libVisibility :: LibraryVisibility
   , installedUnitId :: UnitId
   , -- INVARIANT: if this package is definite, OpenModule's
@@ -134,7 +134,7 @@ emptyInstalledPackageInfo =
   InstalledPackageInfo
     { sourcePackageId = PackageIdentifier (mkPackageName "") nullVersion Nothing
     , sourceLibName = LMainLibName
-    , installedComponentId_ = mkComponentId ""
+    , installedComponentId_ = Nothing
     , installedUnitId = mkUnitId ""
     , instantiatedWith = []
     , compatPackageKey = ""

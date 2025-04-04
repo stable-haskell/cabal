@@ -38,8 +38,9 @@ instance Structured PackageIdentifier
 
 instance Pretty PackageIdentifier where
   pretty (PackageIdentifier n v c)
-    | Just c' <- c, v == nullVersion = pretty c <<>> Disp.char ':' <<>> pretty n -- if no version, don't show version.
-    | Just c' <- c = pretty c' <<>> Disp.char ':' <<>> pretty n <<>> Disp.char '-' <<>> pretty v
+    -- we must never print the compiler, as other tools like hackage-security rely on the Pretty instance
+    -- | Just c' <- c, v == nullVersion = pretty c <<>> Disp.char ':' <<>> pretty n -- if no version, don't show version.
+    -- | Just c' <- c = pretty c' <<>> Disp.char ':' <<>> pretty n <<>> Disp.char '-' <<>> pretty v
     | v == nullVersion = pretty n
     | otherwise = pretty n <<>> Disp.char '-' <<>> pretty v
 

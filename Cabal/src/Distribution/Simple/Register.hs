@@ -90,6 +90,7 @@ import System.FilePath (isAbsolute)
 
 import qualified Data.ByteString.Lazy.Char8 as BS.Char8
 
+import GHC.Stack (HasCallStack)
 -- -----------------------------------------------------------------------------
 -- Registration
 
@@ -163,7 +164,7 @@ generateOne pkg lib lbi clbi regFlags =
     mbWorkDir = flagToMaybe $ setupWorkingDir common
 
 registerAll
-  :: PackageDescription
+  :: HasCallStack => PackageDescription
   -> LocalBuildInfo
   -> RegisterFlags
   -> [InstalledPackageInfo]
@@ -496,7 +497,7 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
   IPI.InstalledPackageInfo
     { IPI.sourcePackageId = packageId pkg
     , IPI.installedUnitId = componentUnitId clbi
-    , IPI.installedComponentId_ = componentComponentId clbi
+    , IPI.installedComponentId_ = Just (componentComponentId clbi)
     , IPI.instantiatedWith = expectLibraryComponent (maybeComponentInstantiatedWith clbi)
     , IPI.sourceLibName = libName lib
     , IPI.compatPackageKey = expectLibraryComponent (maybeComponentCompatPackageKey clbi)

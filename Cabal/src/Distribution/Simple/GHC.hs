@@ -421,13 +421,22 @@ getInstalledPackages verbosity comp mbWorkDir packagedbs progdb = do
   checkPackageDbEnvVar verbosity
   checkPackageDbStack verbosity comp packagedbs
   pkgss <- getInstalledPackages' verbosity mbWorkDir packagedbs progdb
-  let pkgss' = [ (packagedb, (\pkg -> pkg{ InstalledPackageInfo.pkgCompiler = Just (compilerId comp) })
-                              <$> pkgs)
+  let pkgss' = [ (packagedb, updDependsUnitIds . updUnitId . setPkgCompiler <$> pkgs)
                | (packagedb, pkgs) <- pkgss
                ]
   index <- toPackageIndex verbosity pkgss' progdb
   return $! hackRtsPackage index
   where
+    setPkgCompiler pkg = pkg{ InstalledPackageInfo.pkgCompiler = Just (compilerId comp) }
+    updUnitId pkg | isPartialUnitId (installedUnitId pkg) =
+      pkg { InstalledPackageInfo.installedUnitId =
+        addPrefixToUnitId (prettyShow (compilerId comp)) (InstalledPackageInfo.installedUnitId pkg)
+        }
+    updUnitId pkg = pkg
+    updDependsUnitIds pkg =
+      pkg { InstalledPackageInfo.depends =
+        map (\x -> if isPartialUnitId x then addPrefixToUnitId (prettyShow (compilerId comp)) x else x) (InstalledPackageInfo.depends pkg)
+        }
     hackRtsPackage index =
       case PackageIndex.lookupPackageName index (mkPackageName "rts") of
         [(_, [rts])] ->

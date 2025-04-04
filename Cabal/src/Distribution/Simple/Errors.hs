@@ -60,7 +60,7 @@ data CabalException
   | OnlySupportSpecificPackageDb
   | FailedToParseOutputDescribe String PackageId
   | DumpFailed String String
-  | FailedToParseOutputDump String
+  | FailedToParseOutputDump String String
   | ListFailed String
   | FailedToParseOutputList String
   | ProgramNotFound String
@@ -336,7 +336,7 @@ exceptionMessage e = case e of
   OnlySupportSpecificPackageDb -> "HcPkg.writeRegistrationFileDirectly: only supports SpecificPackageDB for now"
   FailedToParseOutputDescribe programId pkgId -> "failed to parse output of '" ++ programId ++ " describe " ++ prettyShow pkgId ++ "'"
   DumpFailed programId exception -> programId ++ " dump failed: " ++ exception
-  FailedToParseOutputDump programId -> "failed to parse output of '" ++ programId ++ " dump'"
+  FailedToParseOutputDump programId err -> "failed to parse output of '" ++ programId ++ " dump': " ++ err
   ListFailed programId -> programId ++ " list failed"
   FailedToParseOutputList programId -> "failed to parse output of '" ++ programId ++ " list'"
   ProgramNotFound progName -> "The program '" ++ progName ++ "' is required but it could not be found"

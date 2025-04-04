@@ -53,6 +53,10 @@ import Distribution.Utils.Base62
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import GHC.Stack (HasCallStack)
+
+import Unsafe.Coerce (unsafeCoerce)
+
 -----------------------------------------------------------------------
 -- OpenUnitId
 
@@ -147,9 +151,7 @@ mkOpenUnitId uid cid insts =
 mkDefUnitId :: ComponentId -> Map ModuleName Module -> DefUnitId
 mkDefUnitId cid insts =
   unsafeMkDefUnitId
-    ( mkUnitId
-        (unComponentId cid ++ maybe "" ("+" ++) (hashModuleSubst insts))
-    )
+    (addSuffixToUnitId (maybe "" ("+" ++) (hashModuleSubst insts)) (unsafeCoerce cid))
 
 -- impose invariant!
 
@@ -254,7 +256,7 @@ openModuleSubstFreeHoles insts = Set.unions (map openModuleFreeHoles (Map.elems 
 -- | When typechecking, we don't demand that a freshly instantiated
 -- 'IndefFullUnitId' be compiled; instead, we just depend on the
 -- installed indefinite unit installed at the 'ComponentId'.
-abstractUnitId :: OpenUnitId -> UnitId
+abstractUnitId :: HasCallStack => OpenUnitId -> UnitId
 abstractUnitId (DefiniteUnitId def_uid) = unDefUnitId def_uid
 abstractUnitId (IndefFullUnitId cid _) = newSimpleUnitId cid
 

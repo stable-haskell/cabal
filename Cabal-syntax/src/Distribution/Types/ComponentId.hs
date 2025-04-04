@@ -17,6 +17,7 @@ import Distribution.Pretty
 import qualified Distribution.Compat.CharParsing as P
 import Text.PrettyPrint (text)
 
+import GHC.Stack (HasCallStack)
 -- | A 'ComponentId' uniquely identifies the transitive source
 -- code closure of a component (i.e. libraries, executables).
 --
@@ -30,8 +31,21 @@ import Text.PrettyPrint (text)
 -- This type is opaque since @Cabal-2.0@
 --
 -- @since 2.0.0.2
-newtype ComponentId = ComponentId ShortText
-  deriving (Generic, Read, Show, Eq, Ord, Data)
+data ComponentId = ComponentId ShortText ShortText Bool
+                 | PartialComponentId ShortText
+  deriving (Generic, Read, Show, Data)
+
+instance Eq ComponentId where
+  (ComponentId c1 s1 _) == (ComponentId c2 s2 _) = c1 == c2 && s1 == s2
+  (PartialComponentId s1) == (PartialComponentId s2) = s1 == s2
+  _ == _ = False
+
+instance Ord ComponentId where
+  compare (ComponentId c1 s1 _) (ComponentId c2 s2 _) = compare (c1, s1) (c2, s2)
+  compare (PartialComponentId s1) (PartialComponentId s2) = compare s1 s2
+  compare (PartialComponentId _) _ = LT
+  compare _ (PartialComponentId _) = GT
+
 
 -- | Construct a 'ComponentId' from a 'String'
 --
@@ -41,14 +55,25 @@ newtype ComponentId = ComponentId ShortText
 -- 'ComponentId' is valid
 --
 -- @since 2.0.0.2
-mkComponentId :: String -> ComponentId
-mkComponentId = ComponentId . toShortText
+mkComponentId :: HasCallStack => String -> ComponentId
+mkComponentId s = case (simpleParsec s) of
+    Just cid@ComponentId{} -> cid
+    Just cid@PartialComponentId{} -> error $ "mkPartialComponentId: `" ++ s ++ "' is a partial component id, not a full one."
+    _ -> error $ "Unable to parse PartialComponentId: `" ++ s ++ "'."
+
+mkComponentId' :: HasCallStack => String -> String -> Bool -> ComponentId
+mkComponentId' c i b = ComponentId (toShortText c) (toShortText i) b
+
+mkPartialComponentId :: HasCallStack => String -> ComponentId
+mkPartialComponentId s = PartialComponentId (toShortText s)
 
 -- | Convert 'ComponentId' to 'String'
 --
 -- @since 2.0.0.2
-unComponentId :: ComponentId -> String
-unComponentId (ComponentId s) = fromShortText s
+unComponentId :: HasCallStack => ComponentId -> String
+unComponentId (ComponentId c s False) = fromShortText c ++ '_':fromShortText s
+unComponentId (ComponentId c s True) = fromShortText s
+unComponentId (PartialComponentId s) = fromShortText s
 
 -- | 'mkComponentId'
 --
@@ -63,8 +88,12 @@ instance Pretty ComponentId where
   pretty = text . unComponentId
 
 instance Parsec ComponentId where
-  parsec = mkComponentId `fmap` P.munch1 abi_char
+  parsec = P.try (mkComponentId' <$> compid <* P.char '_' <*> P.munch1 abi_char <*> return False)
+        <|> mkPartialComponentId <$> P.munch1 abi_char
     where
+      compid = (\f v -> f ++ "-" ++ v) <$> P.munch1 isAlpha <* P.char '-' <*> P.munch1 isVerChar
+      isVerChar :: Char -> Bool
+      isVerChar c = c `elem` '.':['0'..'9']
       abi_char c = isAlphaNum c || c `elem` "-_."
 
 instance NFData ComponentId where

@@ -40,6 +40,8 @@ import Distribution.Types.InstalledPackageInfo
 import qualified Distribution.Types.InstalledPackageInfo.Lens as L
 import qualified Distribution.Types.PackageId.Lens as L hiding (pkgCompiler)
 
+import GHC.Stack (HasCallStack)
+
 -- Note: GHC goes nuts and inlines everything,
 -- One can see e.g. in -ddump-simpl-stats:
 --
@@ -75,7 +77,7 @@ ipiFieldGrammar
      , c InstWith
      , c SpecLicenseLenient
      , c (Identity (Maybe CompilerId))
-     )
+     , HasCallStack )
   => g InstalledPackageInfo InstalledPackageInfo
 ipiFieldGrammar =
   mkInstalledPackageInfo
@@ -86,7 +88,10 @@ ipiFieldGrammar =
     -- Very basic fields: name, version, package-name, lib-name and visibility
     <@> blurFieldGrammar basic basicFieldGrammar
     -- Basic fields
-    <@> optionalFieldDef "id" L.installedUnitId (mkUnitId "")
+    -- [note: forced default values]
+    -- Observe optionalFieldDef fn l x = optionalFieldDefAla fn Identity l x
+    -- and optionalFieldDefAla will force x.
+    <@> optionalFieldDef "id" L.installedUnitId (mkUnitId "invalid-invalid")
     <@> optionalFieldDefAla "instantiated-with" InstWith L.instantiatedWith []
     <@> optionalFieldDefAla "key" CompatPackageKey L.compatPackageKey ""
     <@> optionalFieldDefAla "license" SpecLicenseLenient L.license (Left SPDX.NONE)
@@ -135,7 +140,7 @@ ipiFieldGrammar =
         -- setMaybePackageId says it can be no-op.
         (PackageIdentifier pn _basicVersion _basicCompilerId)
         (combineLibraryName ln _basicLibName)
-        (mkComponentId "") -- installedComponentId_, not in use
+        Nothing
         _basicLibVisibility
       where
         MungedPackageName pn ln = _basicName

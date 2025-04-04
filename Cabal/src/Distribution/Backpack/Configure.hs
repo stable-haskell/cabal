@@ -56,6 +56,8 @@ import qualified Data.Set as Set
 import Distribution.Pretty
 import Text.PrettyPrint
 
+import Unsafe.Coerce (unsafeCoerce)
+
 ------------------------------------------------------------------------------
 -- Pipeline
 ------------------------------------------------------------------------------
@@ -144,7 +146,7 @@ configureComponentLocalBuildInfos
                 ,
                   ( DefiniteUnitId
                       ( unsafeMkDefUnitId
-                          (mkUnitId (unComponentId (ann_id aid)))
+                          (unsafeCoerce (ann_id aid))
                       )
                   , emptyModuleShape
                   )
@@ -303,35 +305,35 @@ toComponentLocalBuildInfos
     -- TODO: Move this into a helper function
     --
     -- TODO: This is probably wrong for Backpack
-    let pseudoTopPkg :: InstalledPackageInfo
-        pseudoTopPkg =
-          emptyInstalledPackageInfo
-            { Installed.installedUnitId = mkLegacyUnitId (packageId pkg_descr)
-            , Installed.sourcePackageId = packageId pkg_descr
-            , Installed.depends = map pc_uid externalPkgDeps
-            }
-    case PackageIndex.dependencyInconsistencies
-      . PackageIndex.insert pseudoTopPkg
-      $ packageDependsIndex of
-      [] -> return ()
-      inconsistencies ->
-        warnProgress $
-          hang
-            ( text "This package indirectly depends on multiple versions of the same"
-                <+> text "package. This is very likely to cause a compile failure."
-            )
-            2
-            ( vcat
-                [ text "package"
-                  <+> pretty (packageName user)
-                  <+> parens (pretty (installedUnitId user))
-                  <+> text "requires"
-                  <+> pretty inst
-                | (_dep_key, insts) <- inconsistencies
-                , (inst, users) <- insts
-                , user <- users
-                ]
-            )
+    -- let pseudoTopPkg :: InstalledPackageInfo
+    --     pseudoTopPkg =
+    --       emptyInstalledPackageInfo
+    --         { Installed.installedUnitId = mkLegacyUnitId (packageId pkg_descr)
+    --         , Installed.sourcePackageId = packageId pkg_descr
+    --         , Installed.depends = map pc_uid externalPkgDeps
+    --         }
+    -- case PackageIndex.dependencyInconsistencies
+    --   . PackageIndex.insert pseudoTopPkg
+    --   $ packageDependsIndex of
+    --   [] -> return ()
+    --   inconsistencies ->
+    --     warnProgress $
+    --       hang
+    --         ( text "This package indirectly depends on multiple versions of the same"
+    --             <+> text "package. This is very likely to cause a compile failure."
+    --         )
+    --         2
+    --         ( vcat
+    --             [ text "package"
+    --               <+> pretty (packageName user)
+    --               <+> parens (pretty (installedUnitId user))
+    --               <+> text "requires"
+    --               <+> pretty inst
+    --             | (_dep_key, insts) <- inconsistencies
+    --             , (inst, users) <- insts
+    --             , user <- users
+    --             ]
+    --         )
     let clbis = mkLinkedComponentsLocalBuildInfo comp graph
     -- forM clbis $ \(clbi,deps) -> info verbosity $ "UNIT" ++ hashUnitId (componentUnitId clbi) ++ "\n" ++ intercalate "\n" (map hashUnitId deps)
     return (clbis, packageDependsIndex)

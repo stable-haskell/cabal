@@ -62,11 +62,15 @@ import qualified Text.PrettyPrint as Disp
 import Distribution.Types.InstalledPackageInfo
 import Distribution.Types.InstalledPackageInfo.FieldGrammar
 
-installedComponentId :: InstalledPackageInfo -> ComponentId
+import GHC.Stack (HasCallStack)
+
+import Unsafe.Coerce (unsafeCoerce)
+
+installedComponentId :: HasCallStack => InstalledPackageInfo -> ComponentId
 installedComponentId ipi =
-  case unComponentId (installedComponentId_ ipi) of
-    "" -> mkComponentId (unUnitId (installedUnitId ipi))
-    _ -> installedComponentId_ ipi
+  fromMaybe
+    (unsafeCoerce (installedUnitId ipi))
+    (installedComponentId_ ipi)
 
 -- | Get the indefinite unit identity representing this package.
 -- This IS NOT guaranteed to give you a substitution; for
@@ -117,12 +121,12 @@ parseInstalledPackageInfo s = case P.readFields s of
 -- | Pretty print 'InstalledPackageInfo'.
 --
 -- @pkgRoot@ isn't printed, as ghc-pkg prints it manually (as GHC-8.4).
-showInstalledPackageInfo :: InstalledPackageInfo -> String
+showInstalledPackageInfo :: HasCallStack => InstalledPackageInfo -> String
 showInstalledPackageInfo ipi =
   showFullInstalledPackageInfo ipi{pkgRoot = Nothing}
 
 -- | The variant of 'showInstalledPackageInfo' which outputs @pkgroot@ field too.
-showFullInstalledPackageInfo :: InstalledPackageInfo -> String
+showFullInstalledPackageInfo :: HasCallStack => InstalledPackageInfo -> String
 showFullInstalledPackageInfo = P.showFields (const NoComment) . prettyFieldGrammar cabalSpecLatest ipiFieldGrammar
 
 -- |
@@ -130,7 +134,7 @@ showFullInstalledPackageInfo = P.showFields (const NoComment) . prettyFieldGramm
 -- >>> let ipi = emptyInstalledPackageInfo { maintainer = fromString "Tester" }
 -- >>> fmap ($ ipi) $ showInstalledPackageInfoField "maintainer"
 -- Just "maintainer: Tester"
-showInstalledPackageInfoField :: String -> Maybe (InstalledPackageInfo -> String)
+showInstalledPackageInfoField :: HasCallStack => String -> Maybe (InstalledPackageInfo -> String)
 showInstalledPackageInfoField fn =
   fmap (\g -> Disp.render . ppField fn . g) $ fieldDescrPretty ipiFieldGrammar (toUTF8BS fn)
 

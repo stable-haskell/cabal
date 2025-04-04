@@ -7,6 +7,9 @@ module Distribution.Types.UnitId
   ( UnitId
   , unUnitId
   , mkUnitId
+  , isPartialUnitId
+  , addPrefixToUnitId
+  , addSuffixToUnitId
   , DefUnitId
   , unsafeMkDefUnitId
   , unDefUnitId
@@ -26,6 +29,11 @@ import Distribution.Types.ComponentId
 import Distribution.Types.PackageId
 
 import Text.PrettyPrint (text)
+
+import GHC.Stack (HasCallStack)
+import Data.List (isInfixOf)
+
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | A unit identifier identifies a (possibly instantiated)
 -- package/component that can be installed the installed package
@@ -63,11 +71,24 @@ import Text.PrettyPrint (text)
 -- representation of a UnitId to pass, e.g., as a @-package-id@
 -- flag, use the 'display' function, which will work on all
 -- versions of Cabal.
-newtype UnitId = UnitId ShortText
-  deriving (Generic, Read, Show, Eq, Ord, Data, NFData)
+data UnitId = UnitId ShortText ShortText Bool
+            | PartialUnitId ShortText
+  deriving (Generic, Read, Show, Data)
+
+instance Eq UnitId where
+  (UnitId c1 s1 _) == (UnitId c2 s2 _) = c1 == c2 && s1 == s2
+  (PartialUnitId s1) == (PartialUnitId s2) = s1 == s2
+  _ == _ = False
+
+instance Ord UnitId where
+  compare (UnitId c1 s1 _) (UnitId c2 s2 _) = compare (c1, s1) (c2, s2)
+  compare (PartialUnitId s1) (PartialUnitId s2) = compare s1 s2
+  compare (PartialUnitId _) _ = LT
+  compare _ (PartialUnitId _) = GT
 
 instance Binary UnitId
 instance Structured UnitId
+instance NFData UnitId
 
 -- | The textual format for 'UnitId' coincides with the format
 -- GHC accepts for @-package-id@.
@@ -77,8 +98,12 @@ instance Pretty UnitId where
 -- | The textual format for 'UnitId' coincides with the format
 -- GHC accepts for @-package-id@.
 instance Parsec UnitId where
-  parsec = mkUnitId <$> P.munch1 isUnitChar
+  parsec = P.try (mkUnitId' <$> compid <* P.char '_' <*> P.munch1 isUnitChar <*> return False)
+        <|> (mkPartialUnitId <$> P.munch1 isUnitChar)
     where
+      compid = (\f v -> f ++ "-" ++ v) <$> P.munch1 isAlpha <* P.char '-' <*> P.munch1 isVerChar
+      isVerChar :: Char -> Bool
+      isVerChar c = c `elem` '.':['0'..'9']
       -- https://gitlab.haskell.org/ghc/ghc/issues/17752
       isUnitChar '-' = True
       isUnitChar '_' = True
@@ -86,13 +111,41 @@ instance Parsec UnitId where
       isUnitChar '+' = True
       isUnitChar c = isAlphaNum c
 
+isPartialUnitId :: HasCallStack => UnitId -> Bool
+isPartialUnitId (PartialUnitId _) = True
+isPartialUnitId _ = False
+
+addPrefixToUnitId :: HasCallStack => String -> UnitId -> UnitId
+addPrefixToUnitId prefix (PartialUnitId s) = UnitId (toShortText prefix) s True
+addPrefixToUnitId prefix uid@(UnitId _ _ _) = error $ "addPrefixToUnitId: UnitId " ++ show uid ++ " already has a prefix; can't add: " ++ prefix
+
+addSuffixToUnitId :: HasCallStack => String -> UnitId -> UnitId
+addSuffixToUnitId suffix (UnitId c s fromPartial) = UnitId c (s <> toShortText suffix) fromPartial
+addSuffixToUnitId suffix (PartialUnitId s) = PartialUnitId (s <> toShortText suffix)
+
+
+dropPrefixFromUnitId :: HasCallStack => UnitId -> UnitId
+dropPrefixFromUnitId (PartialUnitId s) = PartialUnitId s
+dropPrefixFromUnitId (UnitId _c s _fromPartial) = PartialUnitId s
+
 -- | If you need backwards compatibility, consider using 'display'
 -- instead, which is supported by all versions of Cabal.
-unUnitId :: UnitId -> String
-unUnitId (UnitId s) = fromShortText s
+unUnitId :: HasCallStack => UnitId -> String
+unUnitId (UnitId c s False) = fromShortText c ++ '_':fromShortText s
+unUnitId (UnitId c s True) = fromShortText s
+unUnitId (PartialUnitId s) = fromShortText s
 
-mkUnitId :: String -> UnitId
-mkUnitId = UnitId . toShortText
+mkUnitId :: HasCallStack => String -> UnitId
+mkUnitId s = case (simpleParsec s) of
+    Just uid@UnitId{} -> uid
+    Just uid@PartialUnitId{} -> uid -- error $ "mkUnitId: `" ++ s ++ "' is a partial unit id, not a full one."
+    _ -> error $ "Unable to parse UnitId: `" ++ s ++ "'."
+
+mkUnitId' :: HasCallStack => String -> String -> Bool -> UnitId
+mkUnitId' c i b = UnitId (toShortText c) (toShortText i) b
+
+mkPartialUnitId :: HasCallStack => String -> UnitId
+mkPartialUnitId s = PartialUnitId (toShortText s)
 
 -- | 'mkUnitId'
 --
@@ -102,17 +155,17 @@ instance IsString UnitId where
 
 -- | Create a unit identity with no associated hash directly
 -- from a 'ComponentId'.
-newSimpleUnitId :: ComponentId -> UnitId
-newSimpleUnitId = mkUnitId . unComponentId
+newSimpleUnitId :: HasCallStack => ComponentId -> UnitId
+newSimpleUnitId = unsafeCoerce
 
 -- | Make an old-style UnitId from a package identifier.
 -- Assumed to be for the public library
-mkLegacyUnitId :: PackageId -> UnitId
+mkLegacyUnitId :: HasCallStack => PackageId -> UnitId
 mkLegacyUnitId = newSimpleUnitId . mkComponentId . prettyShow
 
 -- | Returns library name prefixed with HS, suitable for filenames
 getHSLibraryName :: UnitId -> String
-getHSLibraryName uid = "HS" ++ prettyShow uid
+getHSLibraryName uid = "HS" ++ prettyShow (dropPrefixFromUnitId uid)
 
 -- | A 'UnitId' for a definite package.  The 'DefUnitId' invariant says
 -- that a 'UnitId' identified this way is definite; i.e., it has no

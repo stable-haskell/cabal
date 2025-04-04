@@ -74,6 +74,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List.NonEmpty as NE
 import qualified System.FilePath.Posix as FilePath.Posix
+import GHC.Stack (HasCallStack)
 
 -- | Information about the features and capabilities of an @hc-pkg@
 --   program.
@@ -292,9 +293,9 @@ dump hpi verbosity mbWorkDir packagedb = do
 
   case parsePackages output of
     Left ok -> return ok
-    _ -> dieWithException verbosity $ FailedToParseOutputDump (programId (hcPkgProgram hpi))
+    Right e -> dieWithException verbosity $ FailedToParseOutputDump (programId (hcPkgProgram hpi)) (unwords e)
 
-parsePackages :: LBS.ByteString -> Either [InstalledPackageInfo] [String]
+parsePackages :: HasCallStack => LBS.ByteString -> Either [InstalledPackageInfo] [String]
 parsePackages lbs0 =
   case traverse parseInstalledPackageInfo $ splitPkgs lbs0 of
     Right ok -> Left [setUnitId . maybe id mungePackagePaths (pkgRoot pkg) $ pkg | (_, pkg) <- ok]
@@ -380,7 +381,7 @@ mungePackagePaths pkgroot pkginfo =
 -- Older installed package info files did not have the installedUnitId
 -- field, so if it is missing then we fill it as the source package ID.
 -- NB: Internal libraries not supported.
-setUnitId :: InstalledPackageInfo -> InstalledPackageInfo
+setUnitId :: HasCallStack => InstalledPackageInfo -> InstalledPackageInfo
 setUnitId
   pkginfo@InstalledPackageInfo
     { installedUnitId = uid
@@ -389,7 +390,7 @@ setUnitId
     | unUnitId uid == "" =
         pkginfo
           { installedUnitId = mkLegacyUnitId pid
-          , installedComponentId_ = mkComponentId (prettyShow pid)
+          , installedComponentId_ = Just (mkComponentId (prettyShow pid))
           }
 setUnitId pkginfo = pkginfo
 

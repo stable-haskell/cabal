@@ -855,11 +855,11 @@ rebuildInstallPlan
               liftIO $ do
                 notice verbosity "Resolving dependencies..."
                 -- putStrLn "== installedPackages"
-                -- putStrLn $ unlines $ map (prettyShow . IPI.sourcePackageId) $ PI.allPackages installedPackages
+                -- putStrLn $ unlines $ map (prettyShow . IPI.installedUnitId) $ PI.allPackages installedPackages
                 -- putStrLn "== binstalledPackages"
-                -- putStrLn $ unlines $ map (prettyShow . IPI.sourcePackageId) $ PI.allPackages binstalledPkgIndex
+                -- putStrLn $ unlines $ map (prettyShow . IPI.installedUnitId) $ PI.allPackages binstalledPkgIndex
                 -- putStrLn "== hinstalledPackages"
-                -- putStrLn $ unlines $ map (prettyShow . IPI.sourcePackageId) $ PI.allPackages hinstalledPkgIndex
+                -- putStrLn $ unlines $ map (prettyShow . IPI.installedUnitId) $ PI.allPackages hinstalledPkgIndex
                 -- putStrLn "== localPackages"
                 -- putStrLn $ unlines . map (prettyShow . srcpkgPackageId) $ [pkg | SpecificSourcePackage pkg <- localPackages]
                 -- putStrLn $ unlines . take 20 $ map (prettyShow . srcpkgPackageId) (XXX.allPackages (packageIndex sourcePkgDb))
@@ -1701,7 +1701,7 @@ planPackages
 -- In theory should be able to make an elaborated install plan with a policy
 -- matching that of the classic @cabal install --user@ or @--global@
 elaborateInstallPlan
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> Map FilePath HookAccept
   -> Toolchains
   -> Maybe PkgConfigDb
@@ -1758,7 +1758,7 @@ elaborateInstallPlan
           f _ = Nothing
 
       elaboratedInstallPlan
-        :: LogProgress (InstallPlan.GenericInstallPlan IPI.InstalledPackageInfo ElaboratedConfiguredPackage)
+        :: HasCallStack => LogProgress (InstallPlan.GenericInstallPlan IPI.InstalledPackageInfo ElaboratedConfiguredPackage)
       elaboratedInstallPlan =
         flip InstallPlan.fromSolverInstallPlanWithProgress solverPlan $ \mapDep planpkg ->
           case planpkg of
@@ -1779,7 +1779,7 @@ elaborateInstallPlan
       -- NB: We don't INSTANTIATE packages at this point.  That's
       -- a post-pass.  This makes it simpler to compute dependencies.
       elaborateSolverToComponents
-        :: (SolverId -> [ElaboratedPlanPackage])
+        :: HasCallStack => (SolverId -> [ElaboratedPlanPackage])
         -> SolverPackage UnresolvedPkgLoc
         -> LogProgress [ElaboratedConfiguredPackage]
       elaborateSolverToComponents mapDep spkg@(SolverPackage _qpn _stage _ _ _ deps0 exe_deps0) =
@@ -1922,7 +1922,7 @@ elaborateInstallPlan
                     ++ " not implemented yet"
 
           buildComponent
-            :: ( ConfiguredComponentMap
+            :: HasCallStack => ( ConfiguredComponentMap
                , LinkedComponentMap
                , Map ComponentId FilePath
                )
@@ -1979,10 +1979,14 @@ elaborateInstallPlan
                       elab0
                         { elabPkgOrComp = ElabComponent $ elab_comp
                         }
+                    elabCompiler = toolchainCompiler (toolchainFor (elabStage elab0) toolchains)
+
                     cid = case elabBuildStyle elab0 of
                       BuildInplaceOnly{} ->
                         mkComponentId $
-                          prettyShow pkgid
+                          prettyShow (compilerId elabCompiler)
+                          ++
+                          '_':prettyShow pkgid
                             ++ "-inplace"
                             ++ ( case Cabal.componentNameString cname of
                                   Nothing -> ""
@@ -2213,9 +2217,13 @@ elaborateInstallPlan
               Nothing -> emptyModuleShape
               Just e -> Ty.elabModuleShape e
 
+            elabCompiler = toolchainCompiler (toolchainFor elabStage toolchains)
+
             pkgInstalledId
-              | shouldBuildInplaceOnly pkg =
-                  mkComponentId (prettyShow pkgid ++ "-inplace")
+              | shouldBuildInplaceOnly pkg = mkComponentId $
+                  prettyShow (compilerId elabCompiler)
+                  ++
+                  '_':prettyShow pkgid ++ "-inplace"
               | otherwise =
                   assert (isJust elabPkgSourceHash) $
                     hashedInstalledPackageId
@@ -2226,7 +2234,7 @@ elaborateInstallPlan
 
             -- Need to filter out internal dependencies, because they don't
             -- correspond to anything real anymore.
-            isExt confid = confSrcId confid /= pkgid
+            isExt confid = (confSrcId confid){pkgCompiler = Nothing} /= pkgid{pkgCompiler = Nothing}
             filterExt = filter isExt
 
             filterExt' :: [(ConfiguredId, a)] -> [(ConfiguredId, a)]
@@ -2765,7 +2773,7 @@ matchElabPkg p elab =
 -- and 'ComponentName' to the 'ComponentId' that should be used
 -- in this case.
 mkCCMapping
-  :: ElaboratedPlanPackage
+  :: HasCallStack => ElaboratedPlanPackage
   -> (PackageName, Map ComponentName (AnnotatedId ComponentId))
 mkCCMapping =
   InstallPlan.foldPlanPackage
