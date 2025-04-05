@@ -2065,7 +2065,7 @@ reportFailedDependencies verbosity failed =
 -- with a warning and treated as empty ones, since technically they do not
 -- contain any package.
 getInstalledPackages
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> Compiler
   -> Maybe (SymbolicPath CWD (Dir from))
   -> PackageDBStackX (SymbolicPath from (Dir PkgDB))
@@ -2108,7 +2108,7 @@ getInstalledPackages verbosity comp mbWorkDir packageDBs progdb = do
 -- on the package database stack in question.  However, when sandboxes
 -- are involved these sanity checks are not desirable.
 getPackageDBContents
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> Compiler
   -> Maybe (SymbolicPath CWD (Dir Pkg))
   -> PackageDB

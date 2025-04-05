@@ -97,7 +97,7 @@ sourceComponentName = CLibName . sourceLibName
 
 -- | Return either errors, or IPI with list of warnings
 parseInstalledPackageInfo
-  :: ByteString
+  :: HasCallStack => ByteString
   -> Either (NonEmpty String) ([String], InstalledPackageInfo)
 parseInstalledPackageInfo s = case P.readFields s of
   Left err -> Left (show err :| [])

@@ -23,6 +23,8 @@ import Distribution.FieldGrammar.Newtypes
 import Distribution.Fields.Field
 import Distribution.Utils.ShortText
 
+import GHC.Stack (HasCallStack)
+
 -- | 'FieldGrammar' is parametrised by
 --
 -- * @s@ which is a structure we are parsing. We need this to provide prettyprinter
@@ -43,11 +45,11 @@ class
     | g -> c
   where
   -- | Unfocus, zoom out, /blur/ 'FieldGrammar'.
-  blurFieldGrammar :: ALens' a b -> g b d -> g a d
+  blurFieldGrammar :: HasCallStack => ALens' a b -> g b d -> g a d
 
   -- | Field which should be defined, exactly once.
   uniqueFieldAla
-    :: (c b, Newtype a b)
+    :: (c b, Newtype a b, HasCallStack)
     => FieldName
     -- ^ field name
     -> (a -> b)
@@ -58,7 +60,7 @@ class
 
   -- | Boolean field with a default value.
   booleanFieldDef
-    :: FieldName
+    :: HasCallStack => FieldName
     -- ^ field name
     -> ALens' s Bool
     -- ^ lens into the field
@@ -68,7 +70,7 @@ class
 
   -- | Optional field.
   optionalFieldAla
-    :: (c b, Newtype a b)
+    :: (c b, Newtype a b, HasCallStack)
     => FieldName
     -- ^ field name
     -> (a -> b)
@@ -79,7 +81,7 @@ class
 
   -- | Optional field with default value.
   optionalFieldDefAla
-    :: (c b, Newtype a b, Eq a)
+    :: (c b, Newtype a b, Eq a, HasCallStack)
     => FieldName
     -- ^ field name
     -> (a -> b)
@@ -95,7 +97,7 @@ class
   --
   -- @since 3.0.0.0
   freeTextField
-    :: FieldName
+    :: HasCallStack => FieldName
     -> ALens' s (Maybe String)
     -- ^ lens into the field
     -> g s (Maybe String)
@@ -105,14 +107,14 @@ class
   --
   -- @since 3.0.0.0
   freeTextFieldDef
-    :: FieldName
+    :: HasCallStack => FieldName
     -> ALens' s String
     -- ^ lens into the field
     -> g s String
 
   -- | @since 3.2.0.0
   freeTextFieldDefST
-    :: FieldName
+    :: HasCallStack => FieldName
     -> ALens' s ShortText
     -- ^ lens into the field
     -> g s ShortText
@@ -123,7 +125,7 @@ class
   --
   -- /Note:/ 'optionalFieldAla' is a @monoidalField@ with 'Last' monoid.
   monoidalFieldAla
-    :: (c b, Monoid a, Newtype a b)
+    :: (c b, Monoid a, Newtype a b, HasCallStack)
     => FieldName
     -- ^ field name
     -> (a -> b)
@@ -134,21 +136,21 @@ class
 
   -- | Parser matching all fields with a name starting with a prefix.
   prefixedFields
-    :: FieldName
+    :: HasCallStack => FieldName
     -- ^ field name prefix
     -> ALens' s [(String, String)]
     -- ^ lens into the field
     -> g s [(String, String)]
 
   -- | Known field, which we don't parse, nor pretty print.
-  knownField :: FieldName -> g s ()
+  knownField :: HasCallStack => FieldName -> g s ()
 
   -- | Field which is parsed but not pretty printed.
-  hiddenField :: g s a -> g s a
+  hiddenField :: HasCallStack => g s a -> g s a
 
   -- | Deprecated since
   deprecatedSince
-    :: CabalSpecVersion
+    :: HasCallStack => CabalSpecVersion
     -- ^ version
     -> String
     -- ^ deprecation message
@@ -157,7 +159,7 @@ class
 
   -- | Removed in. If we encounter removed field, parsing fails.
   removedIn
-    :: CabalSpecVersion
+    :: HasCallStack => CabalSpecVersion
     -- ^ version
     -> String
     -- ^ removal message
@@ -166,7 +168,7 @@ class
 
   -- | Annotate field with since spec-version.
   availableSince
-    :: CabalSpecVersion
+    :: HasCallStack => CabalSpecVersion
     -- ^ spec version
     -> a
     -- ^ default value
@@ -181,7 +183,7 @@ class
   --
   -- @since 3.4.0.0
   availableSinceWarn
-    :: CabalSpecVersion
+    :: HasCallStack => CabalSpecVersion
     -- ^ spec version
     -> g s a
     -> g s a
@@ -189,7 +191,7 @@ class
 
 -- | Field which can be defined at most once.
 uniqueField
-  :: (FieldGrammar c g, c (Identity a))
+  :: (FieldGrammar c g, c (Identity a), HasCallStack)
   => FieldName
   -- ^ field name
   -> ALens' s a
@@ -199,7 +201,7 @@ uniqueField fn l = uniqueFieldAla fn Identity l
 
 -- | Field which can be defined at most once.
 optionalField
-  :: (FieldGrammar c g, c (Identity a))
+  :: (FieldGrammar c g, c (Identity a), HasCallStack)
   => FieldName
   -- ^ field name
   -> ALens' s (Maybe a)
@@ -209,7 +211,7 @@ optionalField fn l = optionalFieldAla fn Identity l
 
 -- | Optional field with default value.
 optionalFieldDef
-  :: (FieldGrammar c g, Functor (g s), c (Identity a), Eq a)
+  :: (FieldGrammar c g, Functor (g s), c (Identity a), Eq a, HasCallStack)
   => FieldName
   -- ^ field name
   -> ALens' s a
@@ -221,7 +223,7 @@ optionalFieldDef fn l x = optionalFieldDefAla fn Identity l x
 
 -- | Field which can be define multiple times, and the results are @mappend@ed.
 monoidalField
-  :: (FieldGrammar c g, c (Identity a), Monoid a)
+  :: (FieldGrammar c g, c (Identity a), Monoid a, HasCallStack)
   => FieldName
   -- ^ field name
   -> ALens' s a
@@ -231,7 +233,7 @@ monoidalField fn l = monoidalFieldAla fn Identity l
 
 -- | Default implementation for 'freeTextFieldDefST'.
 defaultFreeTextFieldDefST
-  :: (Functor (g s), FieldGrammar c g)
+  :: (Functor (g s), FieldGrammar c g, HasCallStack)
   => FieldName
   -> ALens' s ShortText
   -- ^ lens into the field

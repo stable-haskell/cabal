@@ -156,9 +156,11 @@ import Distribution.Client.Errors
 import qualified Hackage.Security.Client as Sec
 import qualified Hackage.Security.Util.Some as Sec
 
+import GHC.Stack (HasCallStack)
+
 -- | Reduced-verbosity version of 'Configure.getInstalledPackages'
 getInstalledPackages
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> Compiler
   -> PackageDBStackCWD
   -> ProgramDb

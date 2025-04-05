@@ -70,6 +70,8 @@ import qualified Distribution.Compat.DList as DList
 import qualified Distribution.Compat.MonadFail as Fail
 import qualified Text.Parsec as Parsec
 
+import GHC.Stack (HasCallStack)
+
 -------------------------------------------------------------------------------
 -- Class
 -------------------------------------------------------------------------------
@@ -78,7 +80,7 @@ import qualified Text.Parsec as Parsec
 --
 -- For parsing @.cabal@ like file structure, see "Distribution.Fields".
 class Parsec a where
-  parsec :: CabalParsing m => m a
+  parsec :: (HasCallStack, CabalParsing m) => m a
 
 -- | Parsing class which
 --

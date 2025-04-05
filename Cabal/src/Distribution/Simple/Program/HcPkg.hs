@@ -278,7 +278,7 @@ hide hpi verbosity mbWorkDir packagedb pkgid =
 -- | Call @hc-pkg@ to get all the details of all the packages in the given
 -- package database.
 dump
-  :: HcPkgInfo
+  :: HasCallStack => HcPkgInfo
   -> Verbosity
   -> Maybe (SymbolicPath CWD (Dir from))
   -> PackageDBX (SymbolicPath from (Dir PkgDB))

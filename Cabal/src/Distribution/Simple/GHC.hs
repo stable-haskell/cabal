@@ -150,6 +150,8 @@ import System.Directory
 import Distribution.Simple.Setup (BuildingWhat (..))
 import Distribution.Simple.Setup.Build
 
+import GHC.Stack (HasCallStack)
+
 -- -----------------------------------------------------------------------------
 -- Configuring
 
@@ -400,7 +402,7 @@ getGhcInfo verbosity ghcProg = Internal.getGhcInfo verbosity implInfo ghcProg
 
 -- | Given a single package DB, return all installed packages.
 getPackageDBContents
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> Maybe (SymbolicPath CWD (Dir from))
   -> PackageDBX (SymbolicPath from (Dir PkgDB))
   -> ProgramDb
@@ -411,7 +413,7 @@ getPackageDBContents verbosity mbWorkDir packagedb progdb = do
 
 -- | Given a package DB stack, return all installed packages.
 getInstalledPackages
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> Compiler
   -> Maybe (SymbolicPath CWD (Dir from))
   -> PackageDBStackX (SymbolicPath from (Dir PkgDB))
@@ -548,7 +550,7 @@ removeMingwIncludeDir pkg =
 
 -- | Get the packages from specific PackageDBs, not cumulative.
 getInstalledPackages'
-  :: Verbosity
+  :: HasCallStack => Verbosity
   -> Maybe (SymbolicPath CWD (Dir from))
   -> [PackageDBX (SymbolicPath from (Dir PkgDB))]
   -> ProgramDb
