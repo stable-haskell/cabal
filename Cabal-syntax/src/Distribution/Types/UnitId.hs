@@ -19,6 +19,7 @@ module Distribution.Types.UnitId
   , getAbiTag
   ) where
 
+import Distribution.Compiler (AbiTag (..))
 import Distribution.Compat.Prelude
 import Distribution.Utils.ShortText
 import Prelude ()
@@ -31,7 +32,7 @@ import Distribution.Types.PackageId
 
 import Text.PrettyPrint (text)
 
-import GHC.Stack (HasCallStack)
+import GHC.Stack (HasCallStack, prettyCallStack, callStack)
 import Data.List (isInfixOf)
 
 import Unsafe.Coerce (unsafeCoerce)
@@ -117,6 +118,7 @@ isPartialUnitId (PartialUnitId _) = True
 isPartialUnitId _ = False
 
 addPrefixToUnitId :: HasCallStack => String -> UnitId -> UnitId
+-- addPrefixToUnitId prefix (PartialUnitId s) | s == toShortText "process-1.6.25.0-inplace" = trace ("### addPrefixToUnitId': `" ++ prefix ++ "' `" ++ (fromShortText s) ++ "'.\n" ++ prettyCallStack callStack) $ UnitId (toShortText prefix) s True
 addPrefixToUnitId prefix (PartialUnitId s) = UnitId (toShortText prefix) s True
 addPrefixToUnitId prefix uid@(UnitId _ _ _) = error $ "addPrefixToUnitId: UnitId " ++ show uid ++ " already has a prefix; can't add: " ++ prefix
 
@@ -143,9 +145,11 @@ mkUnitId s = case (simpleParsec s) of
     _ -> error $ "Unable to parse UnitId: `" ++ s ++ "'."
 
 mkUnitId' :: HasCallStack => String -> String -> Bool -> UnitId
+-- mkUnitId' c i b | c == "ghc-9.8.4", i == "process-1.6.25.0-inplace" = trace ("### mkUnitId': `" ++ c ++ "' `" ++ i ++ "' is a full one.\n" ++ prettyCallStack callStack) (UnitId (toShortText c) (toShortText i) b)
 mkUnitId' c i b = UnitId (toShortText c) (toShortText i) b
 
 mkPartialUnitId :: HasCallStack => String -> UnitId
+-- mkPartialUnitId s | s == "process-1.6.25.0-inplace" = trace ("### mkPartialUnitId: `" ++ s ++ "' is a partial unit id, not a full one.\n" ++ prettyCallStack callStack) (PartialUnitId (toShortText s))
 mkPartialUnitId s = PartialUnitId (toShortText s)
 
 -- | 'mkUnitId'
