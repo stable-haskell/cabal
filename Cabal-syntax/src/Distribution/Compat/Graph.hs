@@ -380,15 +380,17 @@ fromMap m =
 
 -- | /O(V log V)/. Convert a list of nodes (with distinct keys) into a graph.
 fromDistinctList :: (HasCallStack, IsNode a, Show (Key a)) => [a] -> Graph a
-fromDistinctList =
+fromDistinctList xs =
   fromMap
     . Map.fromListWith (\_ -> duplicateError)
-    . map (\n -> n `seq` (nodeKey n, n))
+    . map (\n -> n `seq` (nodeKey n, n)) $ xs
   where
     duplicateError n =
       error $
         "Graph.fromDistinctList: duplicate key: "
           ++ show (nodeKey n)
+          ++ " in "
+          ++ unlines (map (show . nodeKey) xs)
 
 -- Map-like operations
 
