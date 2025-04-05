@@ -16,6 +16,7 @@ module Distribution.Types.UnitId
   , newSimpleUnitId
   , mkLegacyUnitId
   , getHSLibraryName
+  , getAbiTag
   ) where
 
 import Distribution.Compat.Prelude
@@ -184,3 +185,17 @@ instance Parsec DefUnitId where
 -- is to ensure that the 'DefUnitId' invariant holds.
 unsafeMkDefUnitId :: UnitId -> DefUnitId
 unsafeMkDefUnitId = DefUnitId
+
+-- | The ABI tag is the part of the unit id that comes after the
+-- last hyphen.  It is used to distinguish between different
+-- versions of the same package that are ABI compatible.
+--
+-- FIXME: ideally this would be part of the proper structure of the
+-- datatype, instead of some heuristic of the string.
+getAbiTag :: HasCallStack => UnitId -> AbiTag
+getAbiTag (UnitId _c s _) = case takeWhile (/= '-') . reverse . fromShortText $ s of
+  [] -> NoAbiTag
+  xs -> AbiTag . reverse $ xs
+getAbiTag (PartialUnitId s) = case takeWhile (/= '-') . reverse . fromShortText $ s of
+  [] -> NoAbiTag
+  xs -> AbiTag . reverse $ xs

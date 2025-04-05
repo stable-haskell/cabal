@@ -249,7 +249,7 @@ configure verbosity hcPath hcPkgPath conf0 = do
       compilerId = CompilerId GHC ghcVersion
 
       compilerAbiTag :: AbiTag
-      compilerAbiTag = maybe NoAbiTag AbiTag (Map.lookup "Project Unit Id" ghcInfoMap >>= stripPrefix (prettyShow compilerId <> "-"))
+      compilerAbiTag = fromMaybe NoAbiTag (getAbiTag . fromString <$> Map.lookup "Project Unit Id" ghcInfoMap)
 
   let comp =
         Compiler

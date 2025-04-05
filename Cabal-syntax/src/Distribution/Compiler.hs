@@ -229,6 +229,7 @@ instance Binary CompilerInfo
 instance Structured CompilerInfo
 instance NFData CompilerInfo where rnf = genericRnf
 
+-- | AbiTag logic
 data AbiTag
   = NoAbiTag
   | AbiTag String
