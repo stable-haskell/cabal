@@ -23,6 +23,7 @@ import Distribution.ModuleName
 import Distribution.Package hiding (pkgCompiler)
 import Distribution.Parsec
 import Distribution.Pretty
+import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.LibraryName
 import Distribution.Types.LibraryVisibility
 import Distribution.Types.MungedPackageName
@@ -61,6 +62,7 @@ ipiFieldGrammar
      , Applicative (g InstalledPackageInfo)
      , Applicative (g Basic)
      , c (Identity AbiHash)
+     , c (Identity FlagAssignment)
      , c (Identity LibraryVisibility)
      , c (Identity PackageName)
      , c (Identity UnitId)
@@ -105,6 +107,7 @@ ipiFieldGrammar =
     <@> freeTextFieldDefST "description" L.description
     <@> freeTextFieldDefST "category" L.category
     -- Installed fields
+    <@> optionalFieldDef "flags" L.unitFlags mempty
     <@> optionalFieldDef "abi" L.abiHash (mkAbiHash "")
     <@> booleanFieldDef "indefinite" L.indefinite False
     <@> booleanFieldDef "exposed" L.exposed False

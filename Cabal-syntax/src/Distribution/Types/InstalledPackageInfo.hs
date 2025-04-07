@@ -22,6 +22,7 @@ import Distribution.ModuleName
 import Distribution.Package hiding (installedUnitId, pkgCompiler)
 import Distribution.Types.AbiDependency
 import Distribution.Types.ExposedModule
+import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.LibraryName
 import Distribution.Types.LibraryVisibility
 import Distribution.Types.MungedPackageId
@@ -62,7 +63,8 @@ data InstalledPackageInfo = InstalledPackageInfo
   , description :: !ShortText
   , category :: !ShortText
   , -- these parts are required by an installed package only:
-    abiHash :: AbiHash
+    unitFlags :: FlagAssignment
+  , abiHash :: AbiHash
   , indefinite :: Bool
   , exposed :: Bool
   , -- INVARIANT: if the package is definite, OpenModule's
@@ -148,6 +150,7 @@ emptyInstalledPackageInfo =
     , synopsis = ""
     , description = ""
     , category = ""
+    , unitFlags = mempty
     , abiHash = mkAbiHash ""
     , indefinite = False
     , exposed = False

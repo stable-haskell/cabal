@@ -500,6 +500,7 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
     , IPI.installedComponentId_ = Just (componentComponentId clbi)
     , IPI.instantiatedWith = expectLibraryComponent (maybeComponentInstantiatedWith clbi)
     , IPI.sourceLibName = libName lib
+    , IPI.unitFlags = flagAssignment lbi
     , IPI.compatPackageKey = expectLibraryComponent (maybeComponentCompatPackageKey clbi)
     , -- If GHC >= 8.4 we register with SDPX, otherwise with legacy license
       IPI.license =

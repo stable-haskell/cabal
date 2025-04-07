@@ -12,6 +12,7 @@ import Distribution.Backpack (OpenModule)
 import Distribution.License (License)
 import Distribution.ModuleName (ModuleName)
 import Distribution.Package (AbiHash, ComponentId, PackageIdentifier, UnitId)
+import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.InstalledPackageInfo (AbiDependency, ExposedModule, InstalledPackageInfo)
 import Distribution.Types.LibraryName (LibraryName)
 import Distribution.Types.LibraryVisibility (LibraryVisibility)
@@ -27,6 +28,10 @@ sourcePackageId f s = fmap (\x -> s{T.sourcePackageId = x}) (f (T.sourcePackageI
 installedUnitId :: Lens' InstalledPackageInfo UnitId
 installedUnitId f s = fmap (\x -> s{T.installedUnitId = x}) (f (T.installedUnitId s))
 {-# INLINE installedUnitId #-}
+
+unitFlags :: Lens' InstalledPackageInfo FlagAssignment
+unitFlags f s = fmap (\x -> s{T.unitFlags = x}) (f (T.unitFlags s))
+{-# INLINE unitFlags #-}
 
 installedComponentId_ :: Lens' InstalledPackageInfo (Maybe ComponentId)
 installedComponentId_ f s = fmap (\x -> s{T.installedComponentId_ = x}) (f (T.installedComponentId_ s))
