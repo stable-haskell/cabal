@@ -834,6 +834,8 @@ buildAndInstallUnpackedPackage
             ++ unwords (map whyNotPerComponent $ NE.toList pkgWhyNotPerComponent)
             ++ ", "
             ++ dispcompiler (elabStage pkg)
+            -- ++ ", "
+            -- ++ show uid
             ++ ")"
         -- Packages built per component
         ElabComponent comp ->
@@ -842,6 +844,8 @@ buildAndInstallUnpackedPackage
             ++ maybe "custom" prettyShow (compComponentName comp)
             ++ ", "
             ++ dispcompiler (elabStage pkg)
+            -- ++ ", "
+            -- ++ show uid
             ++ ")"
       dispcompiler :: Stage -> String
       dispcompiler Host = showCompilerId (toolchainCompiler (hostToolchain toolchains))

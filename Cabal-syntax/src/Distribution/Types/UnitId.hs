@@ -73,7 +73,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- representation of a UnitId to pass, e.g., as a @-package-id@
 -- flag, use the 'display' function, which will work on all
 -- versions of Cabal.
-data UnitId = UnitId ShortText ShortText Bool
+data UnitId = UnitId {unitComp :: ShortText, unitId :: ShortText, wasPartial :: Bool }
             | PartialUnitId ShortText
   deriving (Generic, Read, Show, Data)
 
@@ -140,12 +140,13 @@ unUnitId (PartialUnitId s) = fromShortText s
 
 mkUnitId :: HasCallStack => String -> UnitId
 mkUnitId s = case (simpleParsec s) of
+    -- Just uid@UnitId{ unitComp = c, unitId = i } | (fromShortText c) == "ghc-9.8.4", (fromShortText i) == "rts-1.0.3-cec100dd" -> trace ("### mkUnitId: `" ++ (fromShortText c) ++ "' `" ++ (fromShortText i) ++ "' is a full one.\n" ++ prettyCallStack callStack) uid
     Just uid@UnitId{} -> uid
     Just uid@PartialUnitId{} -> uid -- error $ "mkUnitId: `" ++ s ++ "' is a partial unit id, not a full one."
     _ -> error $ "Unable to parse UnitId: `" ++ s ++ "'."
 
 mkUnitId' :: HasCallStack => String -> String -> Bool -> UnitId
--- mkUnitId' c i b | c == "ghc-9.8.4", i == "process-1.6.25.0-inplace" = trace ("### mkUnitId': `" ++ c ++ "' `" ++ i ++ "' is a full one.\n" ++ prettyCallStack callStack) (UnitId (toShortText c) (toShortText i) b)
+-- mkUnitId' c i b | c == "ghc-9.8.4", i == "rts-1.0.3-cec100dd" = trace ("### mkUnitId': `" ++ c ++ "' `" ++ i ++ "' is a full one.\n" ++ prettyCallStack callStack) (UnitId (toShortText c) (toShortText i) b)
 mkUnitId' c i b = UnitId (toShortText c) (toShortText i) b
 
 mkPartialUnitId :: HasCallStack => String -> UnitId

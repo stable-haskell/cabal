@@ -96,7 +96,7 @@ class (P.CharParsing m, MonadPlus m, Fail.MonadFail m) => CabalParsing m where
   askCabalSpecVersion :: m CabalSpecVersion
 
 -- | 'parsec' /could/ consume trailing spaces, this function /will/ consume.
-lexemeParsec :: (CabalParsing m, Parsec a) => m a
+lexemeParsec :: (HasCallStack, CabalParsing m, Parsec a) => m a
 lexemeParsec = parsec <* P.spaces
 
 newtype ParsecParser a = PP
@@ -177,14 +177,14 @@ instance CabalParsing ParsecParser where
   askCabalSpecVersion = PP pure
 
 -- | Parse a 'String' with 'lexemeParsec'.
-simpleParsec :: Parsec a => String -> Maybe a
+simpleParsec :: (HasCallStack, Parsec a) => String -> Maybe a
 simpleParsec =
   either (const Nothing) Just
     . runParsecParser lexemeParsec "<simpleParsec>"
     . fieldLineStreamFromString
 
 -- | Like 'simpleParsec' but for 'ByteString'
-simpleParsecBS :: Parsec a => ByteString -> Maybe a
+simpleParsecBS :: (HasCallStack, Parsec a) => ByteString -> Maybe a
 simpleParsecBS =
   either (const Nothing) Just
     . runParsecParser lexemeParsec "<simpleParsec>"
@@ -193,7 +193,7 @@ simpleParsecBS =
 -- | Parse a 'String' with 'lexemeParsec' using specific 'CabalSpecVersion'.
 --
 -- @since 3.4.0.0
-simpleParsec' :: Parsec a => CabalSpecVersion -> String -> Maybe a
+simpleParsec' :: (HasCallStack, Parsec a) => CabalSpecVersion -> String -> Maybe a
 simpleParsec' spec =
   either (const Nothing) Just
     . runParsecParser' spec lexemeParsec "<simpleParsec>"
@@ -203,7 +203,7 @@ simpleParsec' spec =
 -- Fail if there are any warnings.
 --
 -- @since 3.4.0.0
-simpleParsecW' :: Parsec a => CabalSpecVersion -> String -> Maybe a
+simpleParsecW' :: (HasCallStack, Parsec a) => CabalSpecVersion -> String -> Maybe a
 simpleParsecW' spec =
   either (const Nothing) (\(x, ws) -> if null ws then Just x else Nothing)
     . runParsecParser' spec ((,) <$> lexemeParsec <*> liftParsec Parsec.getState) "<simpleParsec>"

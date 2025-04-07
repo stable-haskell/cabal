@@ -93,11 +93,14 @@ hashedInstalledPackageIdLong :: PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageIdLong
   pkghashinputs@PackageHashInputs{pkgHashPkgId, pkgHashComponent} =
     mkComponentId $
-      prettyShow pkgHashPkgId -- to be a bit user friendly
+        prettyShow compid
+        ++ "_"
+        ++ prettyShow pkgHashPkgId -- to be a bit user friendly
         ++ maybe "" displayComponent pkgHashComponent
         ++ "-"
         ++ showHashValue (hashPackageHashInputs pkghashinputs)
     where
+      PackageIdentifier name version (Just compid) = pkgHashPkgId
       displayComponent :: CD.Component -> String
       displayComponent CD.ComponentLib = ""
       displayComponent (CD.ComponentSubLib s) = "-l-" ++ prettyShow s
@@ -127,7 +130,9 @@ hashedInstalledPackageIdLong
 hashedInstalledPackageIdShort :: HasCallStack => PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
   mkComponentId $
-    intercalate
+    prettyShow compid
+    ++
+    '_':intercalate
       "-"
       -- max length now 64
       [ truncateStr 14 (prettyShow name)
@@ -135,7 +140,7 @@ hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
       , showHashValue (truncateHash 20 (hashPackageHashInputs pkghashinputs))
       ]
   where
-    PackageIdentifier name version _compid = pkgHashPkgId
+    PackageIdentifier name version (Just compid) = pkgHashPkgId
 
     -- Truncate a string, with a visual indication that it is truncated.
     truncateStr n s
@@ -167,7 +172,7 @@ hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
 hashedInstalledPackageIdVeryShort :: HasCallStack => PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageIdVeryShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
   mkComponentId $
-    prettyShow (pkgHashCompilerId . pkgHashOtherConfig $ pkghashinputs)
+    prettyShow compid
     ++
     '_':intercalate
       "-"
@@ -176,7 +181,7 @@ hashedInstalledPackageIdVeryShort pkghashinputs@PackageHashInputs{pkgHashPkgId} 
       , showHashValue (truncateHash 4 (hashPackageHashInputs pkghashinputs))
       ]
   where
-    PackageIdentifier name version _compid = pkgHashPkgId
+    PackageIdentifier name version (Just compid) = pkgHashPkgId
 
 -- | All the information that contributes to a package's hash, and thus its
 -- 'InstalledPackageId'.

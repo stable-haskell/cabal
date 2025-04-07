@@ -17,7 +17,7 @@ import Distribution.Pretty
 import qualified Distribution.Compat.CharParsing as P
 import Text.PrettyPrint (text)
 
-import GHC.Stack (HasCallStack)
+import GHC.Stack (HasCallStack, prettyCallStack, callStack)
 -- | A 'ComponentId' uniquely identifies the transitive source
 -- code closure of a component (i.e. libraries, executables).
 --
@@ -31,7 +31,7 @@ import GHC.Stack (HasCallStack)
 -- This type is opaque since @Cabal-2.0@
 --
 -- @since 2.0.0.2
-data ComponentId = ComponentId ShortText ShortText Bool
+data ComponentId = ComponentId {unitComp :: ShortText, unitId :: ShortText, wasPartial :: Bool }
                  | PartialComponentId ShortText
   deriving (Generic, Read, Show, Data)
 
@@ -57,11 +57,13 @@ instance Ord ComponentId where
 -- @since 2.0.0.2
 mkComponentId :: HasCallStack => String -> ComponentId
 mkComponentId s = case (simpleParsec s) of
+    -- Just cid@ComponentId{ unitComp = c, unitId = i } | (fromShortText c) == "ghc-9.8.4", (fromShortText i) == "rts-1.0.3-cec100dd" -> trace ("### ComponentId: `" ++ (fromShortText c) ++ "' `" ++ (fromShortText i) ++ "' is a full one.\n" ++ prettyCallStack callStack) cid
     Just cid@ComponentId{} -> cid
     Just cid@PartialComponentId{} -> error $ "mkPartialComponentId: `" ++ s ++ "' is a partial component id, not a full one."
     _ -> error $ "Unable to parse PartialComponentId: `" ++ s ++ "'."
 
 mkComponentId' :: HasCallStack => String -> String -> Bool -> ComponentId
+-- mkComponentId' c i b | c == "ghc-9.8.4", i == "rts-1.0.3-cec100dd" = trace ("### mkComponentId': `" ++ c ++ "' `" ++ i ++ "' is a full one.\n" ++ prettyCallStack callStack) (ComponentId (toShortText c) (toShortText i) b)
 mkComponentId' c i b = ComponentId (toShortText c) (toShortText i) b
 
 mkPartialComponentId :: HasCallStack => String -> ComponentId
