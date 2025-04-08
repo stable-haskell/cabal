@@ -59,7 +59,7 @@ instance ToExpr OptionalStanza
 instance ToExpr Outcome
 instance ToExpr OverwritePolicy
 instance ToExpr PackageConfig
-instance ToExpr (PackageDBX FilePath)
+instance ToExpr a => ToExpr (PackageDBX a)
 instance ToExpr PackageProperty
 instance ToExpr PreferOldest
 instance ToExpr PreSolver
@@ -67,6 +67,7 @@ instance ToExpr ProjectConfig
 instance ToExpr ProjectConfigBuildOnly
 instance ToExpr ProjectConfigProvenance
 instance ToExpr ProjectConfigShared
+instance ToExpr ProjectConfigToolchain
 instance ToExpr RelaxDepMod
 instance ToExpr RelaxDeps
 instance ToExpr RelaxDepScope
