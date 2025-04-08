@@ -2283,7 +2283,8 @@ mkProjectConfig (GhcPath ghcPath) =
   mempty
     { projectConfigShared =
         mempty
-          { projectConfigHcPath = maybeToFlag ghcPath
+          { projectConfigToolchain =
+              mempty { projectConfigHcPath = maybeToFlag ghcPath }
           }
     , projectConfigBuildOnly =
         mempty

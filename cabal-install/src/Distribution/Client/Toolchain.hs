@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Distribution.Client.Toolchain
   ( Stage (..),
@@ -13,7 +14,7 @@ module Distribution.Client.Toolchain
 where
 
 import Distribution.Client.Setup (ConfigExFlags (..))
-import Distribution.Simple (Compiler, CompilerFlavor)
+import Distribution.Simple (Compiler, CompilerFlavor, PackageDBStackCWD)
 import Distribution.Simple.Configure
 import Distribution.Simple.Program (ProgArg)
 import Distribution.Simple.Program.Db
@@ -27,6 +28,7 @@ import Distribution.Solver.Types.Toolchain
 import Distribution.System (Platform)
 import Distribution.Utils.NubList
 import Distribution.Verbosity (Verbosity)
+import Distribution.Utils.Path (interpretSymbolicPath)
 
 mkProgramDb ::
   Verbosity ->
@@ -62,6 +64,7 @@ configToolchain configFlags@ConfigFlags {..} = do
   -- TODO: Redesign ProgramDB API to prevent such problems as #2241 in the
   -- future.
   toolchainProgramDb <- configureAllKnownPrograms verbosity progdb
+  let toolchainPackageDBs :: PackageDBStackCWD = fmap (fmap (interpretSymbolicPath Nothing)) (interpretPackageDbFlags False configPackageDBs)
 
   return Toolchain {..}
   where
@@ -85,6 +88,7 @@ configToolchains verbosity ConfigFlags {..} ConfigExFlags {..} = do
         (flagToMaybe configHcPath)
         (flagToMaybe configHcPkg)
         programDb
+    let toolchainPackageDBs :: PackageDBStackCWD = fmap (fmap (interpretSymbolicPath Nothing)) (interpretPackageDbFlags False configPackageDBs) 
     return Toolchain {..}
 
   buildToolchain <- do
@@ -95,6 +99,7 @@ configToolchains verbosity ConfigFlags {..} ConfigExFlags {..} = do
         (flagToMaybe configBuildHcPath)
         (flagToMaybe configBuildHcPkg)
         programDb
+    let toolchainPackageDBs :: PackageDBStackCWD = fmap (fmap (interpretSymbolicPath Nothing)) (interpretPackageDbFlags False configBuildPackageDBs) 
     return Toolchain {..}
 
   return $ Staged (\case Build -> buildToolchain; Host -> hostToolchain)
