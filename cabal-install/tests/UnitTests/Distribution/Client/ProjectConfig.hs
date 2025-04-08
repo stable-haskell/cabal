@@ -603,13 +603,8 @@ instance Arbitrary ProjectConfigBuildOnly where
         preShrink_NumJobs = fmap (fmap Positive)
         postShrink_NumJobs = fmap (fmap getPositive)
 
-instance Arbitrary ProjectConfigShared where
+instance Arbitrary ProjectConfigToolchain where
   arbitrary = do
-    projectConfigDistDir <- arbitraryFlag arbitraryShortToken
-    projectConfigConfigFile <- arbitraryFlag arbitraryShortToken
-    projectConfigProjectDir <- arbitraryFlag arbitraryShortToken
-    projectConfigProjectFile <- arbitraryFlag arbitraryShortToken
-    projectConfigIgnoreProject <- arbitrary
     projectConfigHcFlavor <- arbitrary
     projectConfigHcPath <- arbitraryFlag arbitraryShortToken
     projectConfigHcPkg <- arbitraryFlag arbitraryShortToken
@@ -618,6 +613,28 @@ instance Arbitrary ProjectConfigShared where
     projectConfigBuildHcPath <- arbitraryFlag arbitraryShortToken
     projectConfigBuildHcPkg <- arbitraryFlag arbitraryShortToken
     projectConfigBuildPackageDBs <- shortListOf 2 arbitrary
+    return ProjectConfigToolchain{..}
+
+  shrink ProjectConfigToolchain{..} = 
+    runShrinker $ 
+        pure ProjectConfigToolchain
+          <*> shrinker projectConfigHcFlavor
+          <*> shrinkerAla (fmap NonEmpty) projectConfigHcPath
+          <*> shrinkerAla (fmap NonEmpty) projectConfigHcPkg
+          <*> shrinker projectConfigPackageDBs
+          <*> shrinker projectConfigBuildHcFlavor
+          <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPath
+          <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPkg
+          <*> shrinker projectConfigBuildPackageDBs
+
+instance Arbitrary ProjectConfigShared where
+  arbitrary = do
+    projectConfigDistDir <- arbitraryFlag arbitraryShortToken
+    projectConfigConfigFile <- arbitraryFlag arbitraryShortToken
+    projectConfigProjectDir <- arbitraryFlag arbitraryShortToken
+    projectConfigProjectFile <- arbitraryFlag arbitraryShortToken
+    projectConfigIgnoreProject <- arbitrary
+    projectConfigToolchain <- arbitrary
     projectConfigHaddockIndex <- arbitrary
     projectConfigInstallDirs <- fixInstallDirs <$> arbitrary
     projectConfigRemoteRepos <- arbitrary
@@ -660,15 +677,8 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigProjectDir
         <*> shrinker projectConfigProjectFile
         <*> shrinker projectConfigIgnoreProject
-        <*> shrinker projectConfigHcFlavor
-        <*> shrinkerAla (fmap NonEmpty) projectConfigHcPath
-        <*> shrinkerAla (fmap NonEmpty) projectConfigHcPkg
-        <*> shrinker projectConfigPackageDBs
-        <*> shrinker projectConfigBuildHcFlavor
-        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPath
-        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPkg
-        <*> shrinker projectConfigBuildPackageDBs
         <*> shrinker projectConfigHaddockIndex
+        <*> shrinker projectConfigToolchain
         <*> shrinker projectConfigInstallDirs
         <*> shrinker projectConfigRemoteRepos
         <*> shrinker projectConfigLocalNoIndexRepos

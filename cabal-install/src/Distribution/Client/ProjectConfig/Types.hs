@@ -8,9 +8,9 @@ module Distribution.Client.ProjectConfig.Types
   , ProjectConfigToParse (..)
   , ProjectConfigBuildOnly (..)
   , ProjectConfigShared (..)
+  , ProjectConfigToolchain(..)
   , ProjectConfigProvenance (..)
   , PackageConfig (..)
-
     -- * Resolving configuration
   , SolverSettings (..)
   , BuildTimeSettings (..)
@@ -69,8 +69,8 @@ import Distribution.Simple.Compiler
   , CompilerFlavor
   , DebugInfoLevel (..)
   , OptimisationLevel (..)
-  , PackageDBCWD
   , ProfDetailLevel
+  , PackageDBCWD
   )
 import Distribution.Simple.InstallDirs
   ( InstallDirs
@@ -181,6 +181,18 @@ data ProjectConfigBuildOnly = ProjectConfigBuildOnly
   }
   deriving (Eq, Show, Generic)
 
+data ProjectConfigToolchain = ProjectConfigToolchain
+  { projectConfigHcFlavor :: Flag CompilerFlavor
+  , projectConfigHcPath :: Flag FilePath
+  , projectConfigHcPkg :: Flag FilePath
+  , projectConfigPackageDBs :: [Maybe PackageDBCWD]
+  , projectConfigBuildHcFlavor :: Flag CompilerFlavor
+  , projectConfigBuildHcPath :: Flag FilePath
+  , projectConfigBuildHcPkg :: Flag FilePath
+  , projectConfigBuildPackageDBs :: [Maybe PackageDBCWD]
+  }
+  deriving (Eq, Show, Generic)
+
 -- | Project configuration that is shared between all packages in the project.
 -- In particular this includes configuration that affects the solver.
 data ProjectConfigShared = ProjectConfigShared
@@ -189,15 +201,8 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigProjectDir :: Flag FilePath
   , projectConfigProjectFile :: Flag FilePath
   , projectConfigIgnoreProject :: Flag Bool
-  , projectConfigHcFlavor :: Flag CompilerFlavor
-  , projectConfigHcPath :: Flag FilePath
-  , projectConfigHcPkg :: Flag FilePath
-  , projectConfigPackageDBs :: [Maybe PackageDBCWD]
-  , projectConfigBuildHcFlavor :: Flag CompilerFlavor
-  , projectConfigBuildHcPath :: Flag FilePath
-  , projectConfigBuildHcPkg :: Flag FilePath
-  , projectConfigBuildPackageDBs :: [Maybe PackageDBCWD]
   , projectConfigHaddockIndex :: Flag PathTemplate
+  , projectConfigToolchain :: ProjectConfigToolchain
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!
     -- projectConfigUserInstall       :: Flag Bool,
@@ -329,12 +334,14 @@ data PackageConfig = PackageConfig
 
 instance Binary ProjectConfig
 instance Binary ProjectConfigBuildOnly
+instance Binary ProjectConfigToolchain
 instance Binary ProjectConfigShared
 instance Binary ProjectConfigProvenance
 instance Binary PackageConfig
 
 instance Structured ProjectConfig
 instance Structured ProjectConfigBuildOnly
+instance Structured ProjectConfigToolchain
 instance Structured ProjectConfigShared
 instance Structured ProjectConfigProvenance
 instance Structured PackageConfig
@@ -383,6 +390,13 @@ instance Monoid ProjectConfigBuildOnly where
   mappend = (<>)
 
 instance Semigroup ProjectConfigBuildOnly where
+  (<>) = gmappend
+
+instance Monoid ProjectConfigToolchain where
+  mempty = gmempty
+  mappend = (<>)
+
+instance Semigroup ProjectConfigToolchain where
   (<>) = gmappend
 
 instance Monoid ProjectConfigShared where
