@@ -266,7 +266,7 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
     -- that a user enabled tests globally, and some local packages
     -- just happen not to have any tests.  (But perhaps we should
     -- warn if ALL local packages don't have any tests.)
-    elabPackageDbs :: [Maybe PackageDBCWD]
+    elabPackageDbs ::  [PackageDBCWD]
   , elabSetupPackageDBStack :: PackageDBStackCWD
   , elabBuildPackageDBStack :: PackageDBStackCWD
   , elabRegisterPackageDBStack :: PackageDBStackCWD

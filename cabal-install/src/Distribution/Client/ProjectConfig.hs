@@ -10,6 +10,7 @@ module Distribution.Client.ProjectConfig
   , ProjectConfigToParse (..)
   , ProjectConfigBuildOnly (..)
   , ProjectConfigShared (..)
+  , ProjectConfigToolchain (..)
   , ProjectConfigProvenance (..)
   , PackageConfig (..)
   , MapLast (..)
@@ -251,6 +252,7 @@ import System.IO
 import Distribution.Deprecated.ProjectParseUtils (ProjectParseError (..), ProjectParseWarning)
 import Distribution.Simple.Program.Db (prependProgramSearchPath)
 import Distribution.Solver.Types.ProjectConfigPath
+
 
 ----------------------------------------
 -- Resolving configuration to settings
