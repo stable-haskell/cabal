@@ -23,6 +23,7 @@ data Toolchain = Toolchain
   { toolchainPlatform :: Platform
   , toolchainCompiler :: Compiler
   , toolchainProgramDb :: ProgramDb
+  , toolchainPackageDBs :: PackageDBStackCWD
   }
   deriving (Show, Generic, Typeable)
 

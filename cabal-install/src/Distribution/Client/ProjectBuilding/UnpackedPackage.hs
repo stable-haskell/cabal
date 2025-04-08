@@ -118,7 +118,6 @@ import Distribution.Compat.Directory (listDirectory)
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 import Distribution.System (Platform(..))
-import Distribution.Simple.Configure (interpretPackageDbFlags)
 
 -- | Each unpacked package is processed in the following phases:
 --
@@ -752,7 +751,7 @@ buildAndInstallUnpackedPackage
                       "registerPkg: elab does NOT require registration for "
                         ++ prettyShow uid
                 | otherwise = do
-                    let packageDbStack = interpretPackageDbFlags False (elabPackageDbs pkg) ++ [storePackageDB storeDirLayout toolchainCompiler]
+                    let packageDbStack = elabPackageDbs pkg ++ [storePackageDB storeDirLayout toolchainCompiler]
                     assert (elabRegisterPackageDBStack pkg == packageDbStack) (return ())
                     _ <-
                       runRegister
