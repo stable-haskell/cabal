@@ -1557,7 +1557,7 @@ elaborateInstallPlan
   toolchains
   pkgConfigDB
   distDirLayout@DistDirLayout{..}
-  storeDirLayout@StoreDirLayout{storePackageDBStack}
+  storeDirLayout
   solverPlan
   localPackages
   sourcePackageHashes
@@ -2220,7 +2220,9 @@ elaborateInstallPlan
 
             inplacePackageDbs = corePackageDbs ++ [distPackageDB (compilerId elabCompiler)]
 
-            corePackageDbs = storePackageDBStack elabCompiler (projectConfigPackageDBs sharedPackageConfig)
+            corePackageDbs = 
+              Cabal.interpretPackageDbFlags False (projectConfigPackageDBs sharedPackageConfig)
+              ++ [storePackageDB storeDirLayout elabCompiler]
 
             elabInplaceBuildPackageDBStack = inplacePackageDbs
             elabInplaceRegisterPackageDBStack = inplacePackageDbs
