@@ -1,11 +1,16 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE InstanceSigs #-}
+
 module Distribution.Solver.Types.Progress
     ( Progress(..)
     , foldProgress
+    , step
+    , fail
     ) where
 
 import Prelude ()
-import Distribution.Solver.Compat.Prelude hiding (fail)
+import Distribution.Solver.Compat.Prelude
 
 -- | A type to represent the unfolding of an expensive long running
 -- calculation that may fail. We may get intermediate steps before the final
@@ -16,6 +21,14 @@ data Progress step fail done = Step step (Progress step fail done)
                              | Done done
   deriving (Functor)                        
 
+instance (Show step, Show fail, Show done) => Show (Progress step fail done) where
+  showsPrec _ = foldProgress
+    (\s p -> showString "Step: " . shows s . showChar '\n' . p)
+    (\f -> showString "Fail: " . shows f)
+    (\r -> showString "Done: " . shows r)
+
+step :: step -> Progress step fail ()
+step s = Step s (Done ())
 
 -- | Consume a 'Progress' calculation. Much like 'foldr' for lists but with two
 -- base cases, one for a final result and one for failure.
@@ -26,14 +39,18 @@ data Progress step fail done = Step step (Progress step fail done)
 --
 foldProgress :: (step -> a -> a) -> (fail -> a) -> (done -> a)
              -> Progress step fail done -> a
-foldProgress step fail done = fold
-  where fold (Step s p) = step s (fold p)
-        fold (Fail f)   = fail f
-        fold (Done r)   = done r
+foldProgress step_ fail_ done_ = fold
+  where fold (Step s p) = step_ s (fold p)
+        fold (Fail f)   = fail_ f
+        fold (Done r)   = done_ r
 
 instance Monad (Progress step fail) where
   return   = pure
   p >>= f  = foldProgress Step Fail f p
+
+instance MonadFail (Progress step String) where
+  fail :: String -> Progress step String a
+  fail s = Fail s
 
 instance Applicative (Progress step fail) where
   pure a  = Done a
