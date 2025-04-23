@@ -38,12 +38,12 @@ tests =
   , testProperty "failWith" $ \step failure ->
       toProgress (failWith step failure)
         === (Step step (Fail failure) :: Log Int)
-  , testProperty "succeedWith" $ \step success ->
-      toProgress (succeedWith step success)
-        === (Step step (Done success) :: Log Int)
-  , testProperty "continueWith" $ \step p ->
-      toProgress (continueWith step (fromProgress p))
-        === (Step step p :: Log Int)
+  , testProperty "succeedWith" $ \step' success ->
+      toProgress (succeedWith step' success)
+        === (Step step' (Done success) :: Log Int)
+  , testProperty "continueWith" $ \step' p ->
+      toProgress (continueWith step' (fromProgress p))
+        === (Step step' p :: Log Int)
   , testCase "tryWith with failure" $
       let failure = Fail "Error"
           s = Step Success
