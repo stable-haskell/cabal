@@ -18,8 +18,8 @@ import Distribution.Pretty (prettyShow) -- from Cabal
 
 import qualified Distribution.Solver.Modular.ConflictSet as CS
 import Distribution.Solver.Modular.Dependency
-import Distribution.Solver.Modular.Flag ( QFN, QSN )
-import qualified Distribution.Solver.Modular.Flag as Flag ( showQFN, showQFNBool, showQSN, showQSNBool )
+import Distribution.Solver.Modular.Flag ( QFN, QSN, FN (..) )
+import qualified Distribution.Solver.Modular.Flag as Flag ( showQFN, showQSN, showQSNBool )
 import Distribution.Solver.Modular.MessageUtils
          (showUnsupportedExtension, showUnsupportedLanguage)
 import Distribution.Solver.Modular.Package
@@ -33,6 +33,7 @@ import Distribution.Solver.Types.ProjectConfigPath (docProjectConfigPathFailReas
 import Distribution.Types.LibraryName
 import Distribution.Types.UnqualComponentName
 import Text.PrettyPrint (nest, render)
+import qualified Distribution.PackageDescription as P
 
 data Message =
     Enter           -- ^ increase indentation level
@@ -220,12 +221,15 @@ data ProgressAction =
 
 blurb :: ProgressAction -> String
 blurb = \case
-  Trying -> "trying "
+  Trying -> "trying: "
   Skipping -> "skipping "
   Rejecting -> "rejecting "
 
 blurbQFNBool :: ProgressAction -> QFN -> Bool -> String
-blurbQFNBool a q b = blurb a ++ Flag.showQFNBool q b
+blurbQFNBool a qfn@(FN qpn _f) b = blurb a ++ "flag assignment " ++ showFBool qfn b ++ " for " ++ showQPN qpn
+
+showFBool :: FN qpn -> Bool -> String
+showFBool (FN _ f) v = P.showFlagValue (f, v)
 
 blurbQSNBool :: ProgressAction -> QSN -> Bool -> String
 blurbQSNBool a q b = blurb a ++ Flag.showQSNBool q b
@@ -239,8 +243,8 @@ blurbOptions a q ps = blurb a ++ showOptions q ps
 showOption :: QPN -> POption -> String
 showOption qpn@(Q _pp pn) (POption i linkedTo) =
   case linkedTo of
-    Nothing  -> showQPN qpn ++ " == " ++ showI i
-    Just pp' -> showQPN qpn ++ " ~> " ++ showQPN (Q pp' pn)
+    Nothing  -> showI i ++ " for " ++ showQPN qpn
+    Just pp' -> "to reuse " ++ showQPN (Q pp' pn) ++ " for " ++ showQPN qpn
 
 -- | Shows a mixed list of instances and versions in a human-friendly way,
 -- abbreviated.
