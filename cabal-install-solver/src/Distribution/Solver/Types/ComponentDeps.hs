@@ -36,6 +36,7 @@ module Distribution.Solver.Types.ComponentDeps (
   , setupDeps
   , select
   , components
+  , Distribution.Solver.Types.ComponentDeps.null
   ) where
 
 import Prelude ()
@@ -132,6 +133,9 @@ insert comp a = ComponentDeps . Map.alter aux comp . unComponentDeps
   where
     aux Nothing   = Just a
     aux (Just a') = Just $ a `mappend` a'
+
+null :: ComponentDeps a -> Bool
+null = Map.null . unComponentDeps
 
 -- | Zip two 'ComponentDeps' together by 'Component', using 'mempty'
 -- as the neutral element when a 'Component' is present only in one.
