@@ -4,6 +4,7 @@ module Distribution.Solver.Types.ResolverPackage
     ( ResolverPackage(..)
     , resolverPackageLibDeps
     , resolverPackageExeDeps
+    , dumpResolverPackage
     ) where
 
 import Distribution.Solver.Compat.Prelude
@@ -17,6 +18,7 @@ import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Compat.Graph (IsNode(..))
 import Distribution.Package (Package(..), HasUnitId(..))
 import Distribution.Simple.Utils (ordNub)
+import Text.PrettyPrint (Doc)
 
 -- | The dependency resolver picks either pre-existing installed packages
 -- or it picks source packages along with package configuration.
@@ -50,3 +52,7 @@ instance IsNode (ResolverPackage loc) where
   nodeNeighbors pkg =
     ordNub $ CD.flatDeps (resolverPackageLibDeps pkg) ++
              CD.flatDeps (resolverPackageExeDeps pkg)
+
+dumpResolverPackage :: ResolverPackage loc -> Doc
+dumpResolverPackage (PreExisting ipkg) = dumpInstSolverPackage ipkg
+dumpResolverPackage (Configured spkg) = dumpSolverPackage spkg
