@@ -11,7 +11,7 @@ module Distribution.Client.Types.PackageSpecifier
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import Distribution.Package (Package (..), PackageIdentifier (..), packageName, packageVersion)
+import Distribution.Package (Package (..), PackageIdentifier (..), packageName)
 import Distribution.Types.PackageName (PackageName)
 import Distribution.Version (nullVersion, thisVersion)
 
