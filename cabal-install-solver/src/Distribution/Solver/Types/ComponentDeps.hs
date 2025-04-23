@@ -212,3 +212,7 @@ setupDeps = select (== ComponentSetup)
 -- | Select dependencies satisfying a given predicate.
 select :: Monoid a => (Component -> Bool) -> ComponentDeps a -> a
 select p = foldMap snd . filter (p . fst) . toList
+
+instance Pretty a => Pretty (ComponentDeps a) where
+    pretty (ComponentDeps m) =
+      PP.vcat [PP.hang (pretty c) 2 (pretty a) | (c,a) <- Map.toList m] 
