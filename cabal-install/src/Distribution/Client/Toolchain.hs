@@ -3,13 +3,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Distribution.Client.Toolchain
-  ( Stage (..),
-    Staged,
-    Toolchain (..),
-    Toolchains,
-    mkProgramDb,
+  ( mkProgramDb,
     configToolchain,
     configToolchains,
+    module Distribution.Solver.Types.Stage,
+    module Distribution.Solver.Types.Toolchain
   )
 where
 
@@ -19,12 +17,8 @@ import Distribution.Simple.Configure
 import Distribution.Simple.Program (ProgArg)
 import Distribution.Simple.Program.Db
 import Distribution.Simple.Setup
+import Distribution.Solver.Types.Stage
 import Distribution.Solver.Types.Toolchain
-  ( Stage (..),
-    Staged (..),
-    Toolchain (..),
-    Toolchains,
-  )
 import Distribution.System (Platform)
 import Distribution.Utils.NubList
 import Distribution.Verbosity (Verbosity)
@@ -88,7 +82,7 @@ configToolchains verbosity ConfigFlags {..} ConfigExFlags {..} = do
         (flagToMaybe configHcPath)
         (flagToMaybe configHcPkg)
         programDb
-    let toolchainPackageDBs :: PackageDBStackCWD = fmap (fmap (interpretSymbolicPath Nothing)) (interpretPackageDbFlags False configPackageDBs) 
+    let toolchainPackageDBs :: PackageDBStackCWD = fmap (fmap (interpretSymbolicPath Nothing)) (interpretPackageDbFlags False configPackageDBs)
     return Toolchain {..}
 
   buildToolchain <- do
@@ -99,7 +93,7 @@ configToolchains verbosity ConfigFlags {..} ConfigExFlags {..} = do
         (flagToMaybe configBuildHcPath)
         (flagToMaybe configBuildHcPkg)
         programDb
-    let toolchainPackageDBs :: PackageDBStackCWD = fmap (fmap (interpretSymbolicPath Nothing)) (interpretPackageDbFlags False configBuildPackageDBs) 
+    let toolchainPackageDBs :: PackageDBStackCWD = fmap (fmap (interpretSymbolicPath Nothing)) (interpretPackageDbFlags False configBuildPackageDBs)
     return Toolchain {..}
 
   return $ Staged (\case Build -> buildToolchain; Host -> hostToolchain)
