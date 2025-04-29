@@ -122,10 +122,7 @@ data BuildType =
   | Instance QPN PInfo -- ^ build a tree for a concrete instance
 
 build :: Linker BuildState -> Tree () QGoalReason
-build = ana go
-  where
-    go :: Linker BuildState -> TreeF () QGoalReason (Linker BuildState)
-    go s = addLinking (linkingState s) $ addChildren (buildState s)
+build = ana addChildren . buildState
 
 addChildren :: BuildState -> TreeF () QGoalReason BuildState
 
@@ -140,8 +137,8 @@ addChildren bs@(BS { rdeps = rdm, open = gs, next = Goals })
 
 -- If we have already picked a goal, then the choice depends on the kind
 -- of goal.
-addChildren bs@(BS { rdeps, index, next = OneGoal goal }) = 
-  case goal of 
+addChildren bs@(BS { rdeps, index, next = OneGoal goal }) =
+  case goal of
     PkgGoal qpn@(Q (PackagePath s _) pn) gr ->
       -- For a package goal, we look up the instances available in the global
       -- info, and then handle each instance in turn.
@@ -184,66 +181,6 @@ addChildren bs@(BS { rdeps, index, next = OneGoal goal }) =
 addChildren bs@(BS { next = Instance qpn (PInfo fdeps _ fdefs _) }) =
   addChildren ((scopedExtendOpen qpn fdeps fdefs bs)
          { next = Goals })
-
-{-------------------------------------------------------------------------------
-  Add linking
--------------------------------------------------------------------------------}
-
--- | Introduce link nodes into the tree
---
--- Linking is a phase that adapts package choice nodes and adds the option to
--- link wherever appropriate: Package goals are called "related" if they are for
--- the same instance of the same package (but have different prefixes). A link
--- option is available in a package choice node whenever we can choose an
--- instance that has already been chosen for a related goal at a higher position
--- in the tree. We only create link options for related goals that are not
--- themselves linked, because the choice to link to a linked goal is the same as
--- the choice to link to the target of that goal's linking.
---
--- The code here proceeds by maintaining a finite map recording choices that
--- have been made at higher positions in the tree. For each pair of package name
--- and instance, it stores the prefixes at which we have made a choice for this
--- package instance. Whenever we make an unlinked choice, we extend the map.
--- Whenever we find a choice, we look into the map in order to find out what
--- link options we have to add.
---
--- A separate tree traversal would be simpler. However, 'addLinking' creates
--- linked nodes from existing unlinked nodes, which leads to sharing between the
--- nodes. If we copied the nodes when they were full trees of type
--- 'Tree () QGoalReason', then the sharing would cause a space leak during
--- exploration of the tree. Instead, we only copy the 'BuildState', which is
--- relatively small, while the tree is being constructed. See
--- https://github.com/haskell/cabal/issues/2899
-addLinking :: LinkingState -> TreeF () c a -> TreeF () c (Linker a)
--- The only nodes of interest are package nodes
-addLinking ls (PChoiceF qpn@(Q pp pn) rdm gr cs) =
-  let linkedCs = fmap (\bs -> Linker bs ls) $
-                 W.fromList $ concatMap (linkChoices ls qpn) (W.toList cs)
-      unlinkedCs = W.mapWithKey goP cs
-      allCs = unlinkedCs `W.union` linkedCs
-
-      -- Recurse underneath package choices. Here we just need to make sure
-      -- that we record the package choice so that it is available below
-      goP :: POption -> a -> Linker a
-      goP (POption i Nothing) bs = Linker bs $ M.insertWith (++) (pn, i) [pp] ls
-      goP _                   _  = alreadyLinked
-  in PChoiceF qpn rdm gr allCs
-addLinking ls t = fmap (\bs -> Linker bs ls) t
-
-linkChoices :: forall a w . LinkingState
-            -> QPN
-            -> (w, POption, a)
-            -> [(w, POption, a)]
-linkChoices related (Q _pp pn) (weight, POption i Nothing, subtree) =
-    L.map aux (M.findWithDefault [] (pn, i) related)
-  where
-    aux :: PackagePath -> (w, POption, a)
-    aux pp = (weight, POption i (Just pp), subtree)
-linkChoices _ _ (_, POption _ (Just _), _) =
-    alreadyLinked
-
-alreadyLinked :: a
-alreadyLinked = error "addLinking called on tree that already contains linked nodes"
 
 -------------------------------------------------------------------------------
 
