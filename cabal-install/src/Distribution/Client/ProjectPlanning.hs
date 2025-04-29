@@ -1562,7 +1562,7 @@ elaborateInstallPlan
   distDirLayout@DistDirLayout{..}
   storeDirLayout
   solverPlan
-  localPackages
+  projectPackages
   sourcePackageHashes
   defaultInstallDirs
   sharedPackageConfig
@@ -2395,9 +2395,7 @@ elaborateInstallPlan
 
       pkgsLocalToProject :: Set PackageId
       pkgsLocalToProject =
-        Set.fromList (catMaybes (map shouldBeLocal localPackages))
-      -- TODO: localPackages is a misnomer, it's all project packages
-      -- here is where we decide which ones will be local!
+        Set.fromList (catMaybes (map shouldBeLocal projectPackages))
 
       pkgsUseSharedLibrary :: Set PackageId
       pkgsUseSharedLibrary =
