@@ -86,6 +86,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Distribution.Compat.Graph (Graph, IsNode (..))
 import qualified Distribution.Compat.Graph as Graph
+import GHC.Stack (HasCallStack)
 
 type SolverPlanPackage = ResolverPackage UnresolvedPkgLoc
 
@@ -163,7 +164,8 @@ toMap = Graph.toMap . planIndex
 -- the dependencies of a package or set of packages without actually
 -- installing the package itself, as when doing development.
 remove
-  :: (SolverPlanPackage -> Bool)
+  :: HasCallStack
+  => (SolverPlanPackage -> Bool)
   -> SolverInstallPlan
   -> Either
       [SolverPlanProblem]

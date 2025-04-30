@@ -588,6 +588,7 @@ fromSolverInstallPlan f plan =
     (\mapDep planpkg -> return $ f mapDep planpkg)
     plan
 
+
 fromSolverInstallPlanWithProgress
   :: HasCallStack
   => ( IsNode ipkg, Key ipkg ~ key

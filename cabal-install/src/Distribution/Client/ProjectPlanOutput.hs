@@ -73,6 +73,7 @@ import System.FilePath
 import System.IO
 
 import Distribution.Simple.Program.GHC (packageDbArgsDb)
+import GHC.Stack (HasCallStack)
 
 -----------------------------------------------------------------------------
 -- Writing plan.json files
@@ -524,7 +525,8 @@ data PostBuildProjectStatus = PostBuildProjectStatus
 
 -- | Work out which packages are out of date or invalid after a build.
 postBuildProjectStatus
-  :: ElaboratedInstallPlan
+  :: HasCallStack 
+  => ElaboratedInstallPlan
   -> PackagesUpToDate
   -> BuildStatusMap
   -> BuildOutcomes
@@ -621,7 +623,7 @@ postBuildProjectStatus
               )
 
       -- The plan graph but only counting dependency-on-library edges
-      packagesLibDepGraph :: Graph (Node UnitId ElaboratedPlanPackage)
+      packagesLibDepGraph :: HasCallStack => Graph (Node UnitId ElaboratedPlanPackage)
       packagesLibDepGraph =
         Graph.fromDistinctList
           [ Graph.N pkg (installedUnitId pkg) libdeps
