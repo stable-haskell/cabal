@@ -40,6 +40,7 @@ data PInfo = PInfo
   FlagInfo
   --
   (Maybe FailReason)
+  deriving Show
 
 -- | Info associated with each library and executable in a package instance.
 data ComponentInfo = ComponentInfo {

@@ -143,6 +143,7 @@ import Distribution.Client.Store
 import Distribution.Client.Targets (userToPackageConstraint)
 import Distribution.Client.Types
 import Distribution.Client.Utils (concatMapM)
+import Distribution.Client.Toolchain
 
 import qualified Distribution.Client.BuildReports.Storage as BuildReports
 import qualified Distribution.Client.IndexUtils as IndexUtils
@@ -168,7 +169,6 @@ import Distribution.Solver.Types.PkgConfigDb
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
-import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.ModuleName
 import Distribution.Package
@@ -712,8 +712,8 @@ rebuildInstallPlan
         toolchains <- configureToolchains verbosity distDirLayout projectConfig
         liftIO $ do
           putStrLn "Toolchains:"
-          for_ (Stage.tabulate toolchains) $ \(s, t) ->
-            print $ Disp.hsep [Disp.text "-" <+> pretty s <+> Disp.text "compiler" <+> pretty (compilerId (toolchainCompiler t))]
+          for_ stages $ \s ->
+            print $ Disp.hsep [Disp.text "-" <+> pretty s <+> Disp.text "compiler" <+> pretty (compilerId (toolchainCompiler (getStage toolchains s)))]
         return toolchains
 
       -- Configuring other programs.
@@ -2382,7 +2382,7 @@ elaborateInstallPlan
       pkgsToBuildInplaceOnly =
         Set.fromList [
           packageId pkg
-        | stage <- Stage.stages
+        | stage <- stages
         , let solverIds = [PlannedId stage pkgId | pkgId <- Set.toList pkgsLocalToProject]
         , pkg <- SolverInstallPlan.reverseDependencyClosure solverPlan solverIds
         ]

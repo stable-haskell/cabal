@@ -21,6 +21,7 @@
 -- consumed by various other parts of Cabal.
 module Distribution.Client.SolverInstallPlan
   ( SolverInstallPlan (..)
+  , SolverPlanIndex
   , SolverPlanPackage
   , ResolverPackage (..)
 
@@ -48,6 +49,7 @@ module Distribution.Client.SolverInstallPlan
   , reverseDependencyClosure
   , topologicalOrder
   , reverseTopologicalOrder
+
   , libraryRoots
   , setupRoots
   , rootSets
@@ -85,6 +87,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Distribution.Compat.Graph (Graph, IsNode (..))
 import qualified Distribution.Compat.Graph as Graph
+import Data.List (sortOn)
 
 
 
@@ -97,6 +100,9 @@ data SolverInstallPlan = SolverInstallPlan
   { planIndex :: !SolverPlanIndex
   }
   deriving (Generic)
+
+instance Show SolverInstallPlan where
+  show = showInstallPlan
 
 {-
 -- | Much like 'planPkgIdOf', but mapping back to full packages.
@@ -114,7 +120,7 @@ instance Binary SolverInstallPlan
 instance Structured SolverInstallPlan
 
 showPlanIndex :: [SolverPlanPackage] -> String
-showPlanIndex = intercalate "\n" . map showPlanPackage
+showPlanIndex = intercalate "\n" . map showPlanPackage . sortOn (solverSrcId . nodeKey)
 
 showInstallPlan :: SolverInstallPlan -> String
 showInstallPlan = showPlanIndex . toList

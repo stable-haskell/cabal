@@ -175,7 +175,7 @@ data FailReason = UnsupportedExtension Extension
                 | MalformedStanzaChoice QSN
                 | EmptyGoalChoice
                 | Backjump
-                | MultipleInstances
+                -- | MultipleInstances
                 | DependenciesNotLinked String
                 | CyclicDependencies
                 | UnsupportedSpecVer Ver

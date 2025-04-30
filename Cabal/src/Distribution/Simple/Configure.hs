@@ -77,7 +77,7 @@ import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.PackageDescription.Check hiding (doesFileExist)
 import Distribution.PackageDescription.Configuration
-import Distribution.PackageDescription.PrettyPrint
+-- import Distribution.PackageDescription.PrettyPrint
 import Distribution.Simple.BuildTarget
 import Distribution.Simple.BuildToolDepends
 import Distribution.Simple.BuildWay
@@ -929,9 +929,9 @@ configurePackage cfg lbc0 pkg_descr00 flags enabled comp platform programDb0 pac
         , extraCoverageFor = []
         }
 
-  debug verbosity $
-    "Finalized package description:\n"
-      ++ showPackageDescription pkg_descr2
+  -- debug verbosity $
+  --   "Finalized package description:\n"
+  --     ++ showPackageDescription pkg_descr2
 
   return (lbc, pbd)
 

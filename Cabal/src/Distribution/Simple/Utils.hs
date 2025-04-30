@@ -887,9 +887,9 @@ logCommand verbosity cp = do
     "Running: " <> case Process.cmdspec cp of
       Process.ShellCommand sh -> sh
       Process.RawCommand path args -> Process.showCommandForUser path args
-  case Process.env cp of
-    Just env -> debugNoWrap verbosity $ "with environment: " ++ show env
-    Nothing -> return ()
+  -- case Process.env cp of
+  --   Just env -> debugNoWrap verbosity $ "with environment: " ++ show env
+  --   Nothing -> return ()
   case Process.cwd cp of
     Just cwd -> debugNoWrap verbosity $ "with working directory: " ++ show cwd
     Nothing -> return ()

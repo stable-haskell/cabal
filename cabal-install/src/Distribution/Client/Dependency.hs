@@ -14,6 +14,8 @@
 -- Portability :  portable
 --
 -- Top level interface to dependency resolution.
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Distribution.Client.Dependency
   ( -- * The main package dependency resolver
     DepResolverParams
@@ -71,7 +73,7 @@ import Distribution.Client.Compat.Prelude
 import Distribution.Client.Dependency.Types
   ( PackagesPreferenceDefault (..)
   )
-import Distribution.Client.SolverInstallPlan (SolverInstallPlan)
+import Distribution.Client.SolverInstallPlan (SolverInstallPlan, SolverPlanIndex, qualifications)
 import qualified Distribution.Client.SolverInstallPlan as SolverInstallPlan
 import Distribution.Client.Types
   ( AllowNewer (..)
@@ -163,7 +165,8 @@ import Data.List
   )
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Text.PrettyPrint
+import Text.PrettyPrint hiding ((<>))
+import Data.Maybe (fromJust)
 
 -- ------------------------------------------------------------
 
@@ -769,34 +772,40 @@ resolveDependencies
   -> Staged InstalledPackageIndex
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
-resolveDependencies toolchains pkgConfigDB installedPkgIndex params =
-  Step (showDepResolverParams finalparams) $
-    fmap (validateSolverResult toolchains) $
-      runSolver
-        ( SolverConfig
-            reordGoals
-            cntConflicts
-            fineGrained
-            minimize
-            noReinstalls
-            shadowing
-            strFlags
-            onlyConstrained_
-            maxBkjumps
-            enableBj
-            solveExes
-            order
-            verbosity
-            (PruneAfterFirstSuccess False)
-        )
-        toolchains
-        pkgConfigDB
-        (fmap installedPkgIndexM installedPkgIndex)
-        sourcePkgIndex
-        preferences
-        constraints
-        targets
+resolveDependencies toolchains pkgConfigDB installedPkgIndex params = do
+  step (showDepResolverParams finalparams)
+  pkgs <- runSolver
+    config
+    toolchains
+    pkgConfigDB
+    installedPkgIndex'
+    sourcePkgIndex
+    preferences
+    constraints
+    targets
+  step $ render $ dumpResolverPackageIndex pkgs
+  validateSolverResult toolchains pkgs
   where
+    installedPkgIndex' = Staged $ \case
+      Build -> getStage installedPkgIndex Build
+      Host  -> installedPkgIndexM (getStage installedPkgIndex Host)
+
+    config = SolverConfig
+          reordGoals
+          cntConflicts
+          fineGrained
+          minimize
+          noReinstalls
+          shadowing
+          strFlags
+          onlyConstrained_
+          maxBkjumps
+          enableBj
+          solveExes
+          order
+          verbosity
+          (PruneAfterFirstSuccess False)
+
     finalparams@( DepResolverParams
                     targets
                     constraints
@@ -825,6 +834,119 @@ resolveDependencies toolchains pkgConfigDB installedPkgIndex params =
 
     preferences :: PackageName -> PackagePreferences
     preferences = interpretPackagesPreference targets defpref prefs
+
+dumpResolverPackageIndex :: [ResolverPackage UnresolvedPkgLoc] -> Doc
+dumpResolverPackageIndex pkgs =
+  vcat
+  [
+  --   text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , text "Solver results"
+  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , vcat
+  --   [ text "-" <+> nest 2 (dumpResolverPackage pkg)
+  --   | pkg <- pkgs
+  --   ]
+    text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , text "Library roots"
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , vcat
+    [ text "-" <+> pretty root
+    | root <- SolverInstallPlan.libraryRoots g
+    ]
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , text "Root sets"
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , vcat
+    [ text "-" <+> nest 2 (hsep (punctuate (text ",") (map pretty rootset)))
+    | rootset <- SolverInstallPlan.rootSets g
+    ]
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , text "Qualifications"
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , vcat [ text "-" <+> pretty pp $$ nest 4 (vcat [ text "-" <+> pretty sid | sid <- Set.toList sids ])
+         | (pp, sids) <- Map.toList (qualifications g)
+         ]
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , text "Subplans"
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , vcat
+      [ hang (text "Subplan" <+> pretty no) 4 $ vcat
+        [ hang (text "- roots: ") 4 $ vcat $ map pretty rootset'
+        -- , hang (text "- nodes: ") 4 $ dumpNodes subplan
+        , hang (text "- mistakes: ") 4 $ vcat
+          [ text "package" <+> pretty sid <+> text "has inconsistent dependency:" <+> pretty depId
+          | node <- Graph.toList subplan
+          , let sid = Graph.nodeKey node
+          , dep <- fromMaybe [] (Graph.neighbors subplan sid)
+          , let depId = Graph.nodeKey dep
+          , solverStage depId /= solverStage sid
+          ]
+        , hang (text "- inconsistencies:") 4 $ vcat
+          [ hang (text "-" <+> pretty pn) 4 $ vcat
+              [ (pretty (solverStage sid) <> colon <> pretty (solverSrcId sid)) <+> text "requires" <+> pretty ver
+              | (sid, ver) <- ds
+              ]
+          | (pn, ds) <- SolverInstallPlan.dependencyInconsistencies' subplan
+          ]
+        ]
+      | (no, rootset) <- zip [1::Int ..] (SolverInstallPlan.rootSets g)
+      , let rootset' = sort rootset
+      , let subplan = SolverInstallPlan.nonSetupClosure g rootset
+      ]
+  -- , vcat [ hang (pretty key) 4 (vcat [ text "-" <+> pretty n | n <- neigh]) | (_pkg, key, neigh) <- edges ]
+  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , text "Dependency graph"
+  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , vcat
+  --   [ pretty (sndOf3 (vmap v)) <+> text "indegree" <+> pretty indegree <+> text "outdegree" <+> pretty outdegree
+  --   | v <- Data.Graph.vertices g
+  --   , let indegree = Data.Graph.indegree g ! v
+  --   , let outdegree = Data.Graph.outdegree g ! v
+  --   ]
+  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , text "Dependency tree"
+  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , text (Data.Tree.drawForest dfs)
+  ]
+  -- ]
+  where
+    g :: SolverPlanIndex
+    g = Graph.fromDistinctList pkgs
+
+
+dumpNodes :: SolverPlanIndex -> Doc
+dumpNodes solverPlanIndex = vcat
+  [ hang (pretty node) 4 $
+    vcat [ hang (text "deps:") 4 $ vcat
+           [ pretty depid <+> (if solverStage node /= solverStage depid then text "WRONG" else mempty)
+           | depid <- map Graph.nodeKey deps
+           ]
+      | let deps = fromJust (Graph.neighbors solverPlanIndex node)
+      , not (null deps)
+      ]
+    $$
+    vcat [ hang (text "reverse-deps:") 4 $
+           vcat [ pretty rdepid <+> (if solverStage node /= solverStage rdepid then text "WRONG" else mempty)
+                | rdepid <- map Graph.nodeKey rdeps
+                ]
+         | let rdeps = fromJust (Graph.revNeighbors solverPlanIndex node)
+         , not (null rdeps)
+         ]
+  | node <- Graph.keys solverPlanIndex
+  ]
+
+-- drawForest :: Pretty a => [Tree a] -> Doc
+-- drawForest  = vcat . map drawTree
+
+-- drawTree :: Pretty a => Tree a -> Doc
+-- drawTree (Node a ts0) = vcat [pretty a, nest 4 (vcat (map drawTree ts0))]
+--   where
+--     -- drawSubTrees [] = mempty
+--     -- drawSubTrees [t] =
+--     --     "|" : shift "`- " "   " (draw t)
+--     -- drawSubTrees (t:ts) =
+--     --     "|" : shift "+- " "|  " (draw t) ++ drawSubTrees ts
+--     -- shift first other = zipWith (++) (first : repeat other)
 
 -- | Give an interpretation to the global 'PackagesPreference' as
 --  specific per-package 'PackageVersionPreference'.
@@ -890,13 +1012,14 @@ interpretPackagesPreference selected defaultPref prefs =
 validateSolverResult
   :: Staged (CompilerInfo, Platform)
   -> [ResolverPackage UnresolvedPkgLoc]
-  -> SolverInstallPlan
+  -> Progress String String SolverInstallPlan
 validateSolverResult toolchains pkgs =
   case planPackagesProblems toolchains pkgs of
     [] -> case SolverInstallPlan.new graph of
-      Right plan -> plan
-      Left problems -> error (formatPlanProblems problems)
-    problems -> error (formatPkgProblems problems)
+      Right plan -> return plan
+      Left problems ->
+        fail (formatPlanProblems problems)
+    problems -> fail (formatPkgProblems problems)
   where
     graph :: Graph.Graph (ResolverPackage UnresolvedPkgLoc)
     graph = Graph.fromDistinctList pkgs
@@ -1180,6 +1303,7 @@ resolveWithoutDependencies
       packageConstraints :: PackageName -> VersionRange
       packageConstraints pkgname =
         Map.findWithDefault anyVersion pkgname packageVersionConstraintMap
+
       packageVersionConstraintMap :: Map PackageName VersionRange
       packageVersionConstraintMap =
         let pcs = map unlabelPackageConstraint constraints

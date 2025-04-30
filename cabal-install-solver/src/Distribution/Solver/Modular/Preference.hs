@@ -6,7 +6,7 @@ module Distribution.Solver.Modular.Preference
     , deferWeakFlagChoices
     , enforceManualFlags
     , enforcePackageConstraints
-    , enforceSingleInstanceRestriction
+    -- , enforceSingleInstanceRestriction
     , firstGoal
     , preferBaseGoalChoice
     , preferLinked
@@ -22,7 +22,7 @@ import Distribution.Solver.Compat.Prelude
 
 import qualified Data.List as L
 import qualified Data.Map as M
-import Control.Monad.Trans.Reader (Reader, runReader, ask, local)
+-- import Control.Monad.Trans.Reader (Reader, runReader, ask, local)
 
 import Distribution.PackageDescription (lookupFlagAssignment, unFlagAssignment) -- from Cabal
 
@@ -453,47 +453,47 @@ preferReallyEasyGoalChoices = go
     go (GoalChoiceF rdm xs) = GoalChoiceF rdm (P.filterIfAny zeroOrOneChoices xs)
     go x                    = x
 
--- | Monad used internally in enforceSingleInstanceRestriction
---
--- For each package instance we record the goal for which we picked a concrete
--- instance. The SIR means that for any package instance there can only be one.
-type EnforceSIR = Reader (Map (PI PN) QPN)
+-- -- | Monad used internally in enforceSingleInstanceRestriction
+-- --
+-- -- For each package instance we record the goal for which we picked a concrete
+-- -- instance. The SIR means that for any package instance there can only be one.
+-- type EnforceSIR = Reader (Map (PI PN) QPN)
 
--- | Enforce ghc's single instance restriction
---
--- From the solver's perspective, this means that for any package instance
--- (that is, package name + package version) there can be at most one qualified
--- goal resolving to that instance (there may be other goals _linking_ to that
--- instance however).
-enforceSingleInstanceRestriction :: Tree d c -> Tree d c
-enforceSingleInstanceRestriction = (`runReader` M.empty) . go
-  where
-    go :: Tree d c -> EnforceSIR (Tree d c)
+-- -- | Enforce ghc's single instance restriction
+-- --
+-- -- From the solver's perspective, this means that for any package instance
+-- -- (that is, package name + package version) there can be at most one qualified
+-- -- goal resolving to that instance (there may be other goals _linking_ to that
+-- -- instance however).
+-- enforceSingleInstanceRestriction :: Tree d c -> Tree d c
+-- enforceSingleInstanceRestriction = (`runReader` M.empty) . go
+--   where
+--     go :: Tree d c -> EnforceSIR (Tree d c)
 
-    -- We just verify package choices.
-    go (PChoice qpn rdm gr cs) =
-      PChoice qpn rdm gr <$> sequenceA (W.mapWithKey (goP qpn) (fmap go cs))
-    go (FChoice qfn rdm y t m d ts) =
-      FChoice qfn rdm y t m d <$> traverse go ts
-    go (SChoice qsn rdm y t ts) =
-      SChoice qsn rdm y t <$> traverse go ts
-    go (GoalChoice rdm ts) =
-      GoalChoice rdm <$> traverse go ts
-    go x@(Fail _ _) = return x
-    go x@(Done _ _) = return x
+--     -- We just verify package choices.
+--     go (PChoice qpn rdm gr cs) =
+--       PChoice qpn rdm gr <$> sequenceA (W.mapWithKey (goP qpn) (fmap go cs))
+--     go (FChoice qfn rdm y t m d ts) =
+--       FChoice qfn rdm y t m d <$> traverse go ts
+--     go (SChoice qsn rdm y t ts) =
+--       SChoice qsn rdm y t <$> traverse go ts
+--     go (GoalChoice rdm ts) =
+--       GoalChoice rdm <$> traverse go ts
+--     go x@(Fail _ _) = return x
+--     go x@(Done _ _) = return x
 
-    -- The check proper
-    goP :: QPN -> POption -> EnforceSIR (Tree d c) -> EnforceSIR (Tree d c)
-    goP qpn@(Q _ pn) (POption i linkedTo) r = do
-      let inst = PI pn i
-      env <- ask
-      case (linkedTo, M.lookup inst env) of
-        (Just _, _) ->
-          -- For linked nodes we don't check anything
-          r
-        (Nothing, Nothing) ->
-          -- Not linked, not already used
-          local (M.insert inst qpn) r
-        (Nothing, Just qpn') -> do
-          -- Not linked, already used. This is an error
-          return $ Fail (CS.union (varToConflictSet (P qpn)) (varToConflictSet (P qpn'))) MultipleInstances
+--     -- The check proper
+--     goP :: QPN -> POption -> EnforceSIR (Tree d c) -> EnforceSIR (Tree d c)
+--     goP qpn@(Q _ pn) (POption i linkedTo) r = do
+--       let inst = PI pn i
+--       env <- ask
+--       case (linkedTo, M.lookup inst env) of
+--         (Just _, _) ->
+--           -- For linked nodes we don't check anything
+--           r
+--         (Nothing, Nothing) ->
+--           -- Not linked, not already used
+--           local (M.insert inst qpn) r
+--         (Nothing, Just qpn') -> do
+--           -- Not linked, already used. This is an error
+--           return $ Fail (CS.union (varToConflictSet (P qpn)) (varToConflictSet (P qpn'))) MultipleInstances
