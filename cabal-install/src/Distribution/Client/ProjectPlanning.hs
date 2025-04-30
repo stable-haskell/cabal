@@ -697,7 +697,6 @@ rebuildInstallPlan
       newFileMonitorInCacheDir = newFileMonitor . distProjectCacheFile
 
       -- Configure the compiler we're using.
-      
       -- This is moderately expensive and doesn't change that often so we cache
       -- it independently.
       --
@@ -819,7 +818,7 @@ rebuildInstallPlan
                 toolchains
 
             -- corePackageDbs :: Staged PackageDBStackCWD
-            -- corePackageDbs = 
+            -- corePackageDbs =
             --   Cabal.interpretPackageDbFlags False <$> Staged (\case
             --     Host -> projectConfigPackageDBs projectConfigShared
             --     Build -> projectConfigBuildPackageDBs projectConfigShared)
@@ -1632,7 +1631,7 @@ elaborateInstallPlan
                 (map fst src_comps)
             let whyNotPerComp = why_not_per_component src_comps
             case NE.nonEmpty whyNotPerComp of
-              Nothing ->                
+              Nothing ->
                 return comps
               Just notPerCompReasons -> do
                 checkPerPackageOk comps notPerCompReasons
@@ -2220,7 +2219,7 @@ elaborateInstallPlan
 
             inplacePackageDbs = corePackageDbs ++ [distPackageDB (compilerId elabCompiler)]
 
-            corePackageDbs = 
+            corePackageDbs =
               Cabal.interpretPackageDbFlags False (projectConfigPackageDBs (projectConfigToolchain sharedPackageConfig))
               ++ [storePackageDB storeDirLayout elabCompiler]
 
@@ -2413,7 +2412,7 @@ elaborateInstallPlan
 
             pkgSharedLib = lookupPerPkgOption pkgid packageConfigSharedLib
             pkgDynExe = lookupPerPkgOption pkgid packageConfigDynExe
-            pkgProf = lookupPerPkgOption pkgid packageConfigProf    
+            pkgProf = lookupPerPkgOption pkgid packageConfigProf
 
       pkgsUseProfilingLibrary :: Set PackageId
       pkgsUseProfilingLibrary =
