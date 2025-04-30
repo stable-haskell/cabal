@@ -95,7 +95,7 @@ module Distribution.Client.ProjectPlanning
   , binDirectories
   , storePackageInstallDirs
   , storePackageInstallDirs'
-  
+
     -- * Re-exports for backward compatibility
   , programDbSignature
 
@@ -2376,11 +2376,12 @@ elaborateInstallPlan
 
       pkgsToBuildInplaceOnly :: Set PackageId
       pkgsToBuildInplaceOnly =
-        Set.fromList $
-          map packageId $
-            SolverInstallPlan.reverseDependencyClosure
-              solverPlan
-              (map PlannedId (Set.toList pkgsLocalToProject))
+        Set.fromList [
+          packageId pkg
+        | stage <- stages
+        , let solverIds = [PlannedId stage pkgId | pkgId <- Set.toList pkgsLocalToProject]
+        , pkg <- SolverInstallPlan.reverseDependencyClosure solverPlan solverIds
+        ]
 
       isLocalToProject :: Package pkg => pkg -> Bool
       isLocalToProject pkg =
