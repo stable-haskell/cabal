@@ -52,7 +52,7 @@ data BuildState = BS {
   rdeps :: RevDepMap,               -- ^ set of all package goals, completed and open, with reverse dependencies
   open  :: [OpenGoal],              -- ^ set of still open goals (flag and package goals)
   next  :: BuildType                -- ^ kind of node to generate next
-}
+} deriving Show
 
 -- | Map of available linking targets.
 type LinkingState = M.Map (PN, I) [PackagePath]
@@ -135,6 +135,7 @@ data BuildType =
     Goals              -- ^ build a goal choice node
   | OneGoal OpenGoal   -- ^ build a node for this goal
   | Instance QPN PInfo -- ^ build a tree for a concrete instance
+  deriving Show
 
 build :: Linker BuildState -> Tree () QGoalReason
 build = ana go
@@ -273,16 +274,17 @@ buildTree idx igs =
     build Linker {
         buildState = BS {
             index = idx
-          , rdeps = M.fromList (L.map (\ qpn -> (qpn, []))              qpns)
-          , open  = L.map topLevelGoal qpns
+          , rdeps = M.fromList [(qpn, []) | qpn <- qpns]
+          , open  = [ PkgGoal qpn UserGoal | qpn <- qpns ]
           , next  = Goals
           }
       , linkingState = M.empty
       }
   where
-    topLevelGoal qpn = PkgGoal qpn UserGoal
+    -- The package names are interpreted as top-level goals in the host stage.
+    path = PackagePath Stage.Host QualToplevel
+    qpns = [ Q path pn | pn <- igs ]
 
-    qpns = L.map (Q (PackagePath Stage.Host QualToplevel)) igs
 
 {-------------------------------------------------------------------------------
   Goals
@@ -293,6 +295,7 @@ data OpenGoal
   = FlagGoal   (FN QPN) FInfo (FlaggedDeps QPN) (FlaggedDeps QPN) QGoalReason
   | StanzaGoal (SN QPN)       (FlaggedDeps QPN)                   QGoalReason
   | PkgGoal    QPN                                                QGoalReason
+  deriving Show
 
 -- | Closes a goal, i.e., removes all the extraneous information that we
 -- need only during the build phase.

@@ -70,6 +70,8 @@ module Distribution.Compat.Graph
   , revTopSort
 
     -- * Conversions
+  , graphVertexToNode
+  , graphKeyToVertex
 
     -- ** Maps
   , toMap

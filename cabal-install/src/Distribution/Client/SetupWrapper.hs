@@ -219,6 +219,7 @@ data SetupMethod
     SelfExecMethod
   | -- | run Cabal commands through a custom \"Setup\" executable
     ExternalMethod FilePath
+  deriving Show
 
 -- TODO: The 'setupWrapper' and 'SetupScriptOptions' should be split into two
 -- parts: one that has no policy and just does as it's told with all the
@@ -315,6 +316,7 @@ data SetupScriptOptions = SetupScriptOptions
   -- or an non-interactive background task? Based on this flag we
   -- decide whether or not to delegate ctrl+c to the spawned task
   }
+  deriving Show
 
 defaultSetupScriptOptions :: SetupScriptOptions
 defaultSetupScriptOptions =
@@ -377,6 +379,12 @@ getSetup verbosity options mpkg = do
       buildType' = buildType pkg
   (version, method, options'') <-
     getSetupMethod verbosity options' pkg buildType'
+  debug verbosity $ unlines
+    [ "choosen setup method:"
+    , "version: " ++ show version
+    , "method: " ++ show method
+    , "options: " ++ show options''
+    ]
   return
     Setup
       { setupMethod = method
@@ -1135,6 +1143,9 @@ getExternalSetupMethod verbosity options pkg bt = do
                         -- when compiling a Simple Setup.hs file.
                   , ghcOptExtensionMap = Map.fromList . Simple.compilerExtensions $ compiler
                   }
+          debug verbosity $ "maybeCabalLibInstalledPkgId: " ++ show maybeCabalLibInstalledPkgId
+          debug verbosity $ "cabalDep: " ++ show cabalDep
+          debug verbosity $ "packages: " ++ show selectedDeps
           let ghcCmdLine = renderGhcOptions compiler platform ghcOptions
           when (useVersionMacros options') $
             rewriteFileEx verbosity (i cppMacrosFile) $

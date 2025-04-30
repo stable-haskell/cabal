@@ -21,6 +21,7 @@
 -- consumed by various other parts of Cabal.
 module Distribution.Client.SolverInstallPlan
   ( SolverInstallPlan (..)
+  , SolverPlanIndex
   , SolverPlanPackage
   , ResolverPackage (..)
 

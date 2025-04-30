@@ -264,6 +264,9 @@ withJobLimit (JobLimit sem) =
 
 newtype Lock = Lock (MVar ())
 
+instance Show Lock where
+  show _ = "<Lock>"
+
 newLock :: IO Lock
 newLock = fmap Lock $ newMVar ()
 
