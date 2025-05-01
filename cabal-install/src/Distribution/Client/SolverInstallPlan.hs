@@ -64,11 +64,7 @@ import Prelude ()
 import Distribution.Package
   ( HasUnitId (..)
   , Package (..)
-  , PackageId
   , PackageIdentifier (..)
-  , PackageName
-  , packageName
-  , packageVersion
   )
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Types.Flag (nullFlagAssignment)
@@ -76,11 +72,8 @@ import Distribution.Types.Flag (nullFlagAssignment)
 import Distribution.Client.Types
   ( UnresolvedPkgLoc
   )
-import Distribution.Version
-  ( Version
-  )
 
-import Distribution.Solver.Types.PackagePath (PackagePath, Qualified(..))
+import Distribution.Solver.Types.PackagePath (PackagePath, Qualified(..), QPN)
 import Distribution.Solver.Types.ResolverPackage
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
@@ -199,7 +192,7 @@ data SolverPlanProblem
       SolverPlanPackage
       [PackageIdentifier]
   | PackageCycle [SolverPlanPackage]
-  | PackageInconsistency PackageName [(PackageIdentifier, Version)]
+  | PackageInconsistency QPN [(SolverId, SolverId)]
   | PackageStateInvalid SolverPlanPackage SolverPlanPackage
 
 showPlanProblem :: SolverPlanProblem -> String
@@ -220,7 +213,7 @@ showPlanProblem (PackageInconsistency name inconsistencies) =
       [ "  package "
         ++ prettyShow pkg
         ++ " requires "
-        ++ prettyShow (PackageIdentifier name ver)
+        ++ prettyShow ver
       | (pkg, ver) <- inconsistencies
       ]
 showPlanProblem (PackageStateInvalid pkg pkg') =
@@ -277,7 +270,7 @@ problems index =
 -- for them here.
 dependencyInconsistencies
   :: SolverPlanIndex
-  -> [(PackageName, [(PackageIdentifier, Version)])]
+  -> [(QPN, [(SolverId, SolverId)])]
 dependencyInconsistencies index =
   concatMap dependencyInconsistencies' subplans
   where
@@ -335,6 +328,8 @@ qualifications g = Map.fromListWith (<>)
 --
 -- The library roots are the set of packages with no reverse dependencies
 -- (no reverse library dependencies but also no reverse setup dependencies).
+--
+-- FIXME: misleading name, this includes executables too!
 libraryRoots :: SolverPlanIndex -> [SolverId]
 libraryRoots index =
   map (nodeKey . toPkgId) roots
@@ -362,9 +357,14 @@ setupRoots =
 -- distinct.
 dependencyInconsistencies'
   :: SolverPlanIndex
-  -> [(PackageName, [(PackageIdentifier, Version)])]
+  -> [(QPN, [(SolverId, SolverId)])]
 dependencyInconsistencies' index =
-  [ (name, [(pid, packageVersion dep) | (dep, pids) <- uses, pid <- pids])
+  [ (name,
+      [ (sid, solverId dep)
+      | (dep, sids) <- uses
+      , sid <- sids
+      ]
+    )
   | (name, ipid_map) <- Map.toList inverseIndex
   , let uses = Map.elems ipid_map
   , length uses > 1
@@ -374,13 +374,13 @@ dependencyInconsistencies' index =
     --   and each installed ID of that package
     --     the associated package instance
     --     and a list of reverse dependencies (as source IDs)
-    inverseIndex :: Map PackageName (Map SolverId (SolverPlanPackage, [PackageId]))
+    inverseIndex :: Map QPN (Map SolverId (SolverPlanPackage, [SolverId]))
     inverseIndex =
       Map.fromListWith
         (Map.unionWith (\(a, b) (_, b') -> (a, b ++ b')))
-        [ (packageName dep, Map.fromList [(sid, (dep, [packageId pkg]))])
+        [ (solverQPN dep, Map.fromList [(sid, (dep, [solverId pkg]))])
         | -- For each package @pkg@
-        pkg <- Foldable.toList index
+          pkg <- Foldable.toList index
         , -- Find out which @sid@ @pkg@ depends on
         sid <- CD.nonSetupDeps (resolverPackageLibDeps pkg)
         , -- And look up those @sid@ (i.e., @sid@ is the ID of @dep@)
