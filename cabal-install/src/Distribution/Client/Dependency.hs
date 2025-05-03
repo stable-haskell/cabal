@@ -497,13 +497,13 @@ hideInstalledPackagesAllVersions
   :: [PackageName]
   -> DepResolverParams
   -> DepResolverParams
-hideInstalledPackagesAllVersions pkgnames params =
+hideInstalledPackagesAllVersions _pkgnames _params = error "we shouldn't be using this"
   -- TODO: this should work using exclude constraints instead
-  params
-    { depResolverInstalledPkgIndex =
-        fmap (\idx -> foldl' (flip InstalledPackageIndex.deletePackageName) idx pkgnames)
-        (depResolverInstalledPkgIndex params)
-    }
+  -- params
+  --   { depResolverInstalledPkgIndex =
+  --       fmap (\idx -> foldl' (flip InstalledPackageIndex.deletePackageName) idx pkgnames)
+  --       (depResolverInstalledPkgIndex params)
+  --   }
 
 -- | Remove upper bounds in dependencies using the policy specified by the
 -- 'AllowNewer' argument (all/some/none).
@@ -703,8 +703,8 @@ basicInstallPolicy
         (concatMap pkgSpecifierConstraints pkgSpecifiers)
       . addTargets
         (map pkgSpecifierTarget pkgSpecifiers)
-      . hideInstalledPackagesSpecificBySourcePackageId
-        [packageId pkg | SpecificSourcePackage pkg <- pkgSpecifiers]
+      -- . hideInstalledPackagesSpecificBySourcePackageId
+        -- [packageId pkg | SpecificSourcePackage pkg <- pkgSpecifiers]
       . addSourcePackages
         [pkg | SpecificSourcePackage pkg <- pkgSpecifiers]
       $ basicDepResolverParams
