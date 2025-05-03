@@ -48,6 +48,14 @@ module Distribution.Client.SolverInstallPlan
   , reverseDependencyClosure
   , topologicalOrder
   , reverseTopologicalOrder
+  , libraryRoots
+  , setupRoots
+  , rootSets
+  , nonSetupClosure
+  , qualifications
+
+  , dependencyInconsistencies
+  , dependencyInconsistencies'
   ) where
 
 import Distribution.Client.Compat.Prelude hiding (toList)
@@ -72,6 +80,7 @@ import Distribution.Version
   ( Version
   )
 
+import Distribution.Solver.Types.PackagePath (PackagePath, Qualified(..))
 import Distribution.Solver.Types.ResolverPackage
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
@@ -80,6 +89,7 @@ import Data.Array ((!))
 import qualified Data.Foldable as Foldable
 import qualified Data.Graph as OldGraph
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Distribution.Compat.Graph (Graph, IsNode (..))
 import qualified Distribution.Compat.Graph as Graph
 
@@ -313,6 +323,13 @@ rootSets index = [libRoots] ++ setupRoots index
   where
     libRoots :: [SolverId]
     libRoots = libraryRoots index
+
+qualifications :: SolverPlanIndex -> Map PackagePath (Set SolverId)
+qualifications g = Map.fromListWith (<>)
+  [ (pp, Set.singleton (solverId spp))
+  | spp <- Graph.toList g
+  , let Q pp _pn = solverQPN spp
+  ]
 
 -- | Compute the library roots of a plan
 --
