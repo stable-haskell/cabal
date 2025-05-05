@@ -6,7 +6,7 @@ module UnitTests.Distribution.Client.InstallPlan (tests) where
 
 import Distribution.Client.Compat.Prelude
 
-import Distribution.Client.InstallPlan (GenericInstallPlan, IsUnit)
+import Distribution.Client.InstallPlan (GenericInstallPlan)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.JobControl
 import Distribution.Client.Types
@@ -223,8 +223,8 @@ arbitraryTestInstallPlan = do
 -- It takes generators for installed and source packages and the chance that
 -- each package is installed (for those packages with no prerequisites).
 arbitraryInstallPlan
-  :: ( IsUnit ipkg
-     , IsUnit srcpkg
+  :: ( IsNode ipkg
+     , IsNode srcpkg
      )
   => (Vertex -> [Vertex] -> Gen ipkg)
   -> (Vertex -> [Vertex] -> Gen srcpkg)
