@@ -41,6 +41,7 @@ import Distribution.Client.ProjectPlanning.Types
   ( Toolchain (..)
   , elabDistDirParams
   , getStage
+  , ElaboratedInstalledPackageInfo
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -102,6 +103,7 @@ import Distribution.Verbosity as Verbosity
 import Distribution.Client.Errors
 import System.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath (normalise, takeDirectory, (</>))
+import Distribution.Client.ProjectPlanning.Stage (WithStage(..))
 
 haddockProjectAction :: HaddockProjectFlags -> [String] -> GlobalFlags -> IO ()
 haddockProjectAction flags _extraArgs globalFlags = do
@@ -156,7 +158,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
           sharedConfig :: ElaboratedSharedConfig
           sharedConfig = elaboratedShared buildCtx
 
-          pkgs :: [Either InstalledPackageInfo ElaboratedConfiguredPackage]
+          pkgs :: [Either ElaboratedInstalledPackageInfo ElaboratedConfiguredPackage]
           pkgs = matchingPackages elaboratedPlan
 
       -- TODO
@@ -206,7 +208,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
 
       packageInfos <- fmap (nub . concat) $ for pkgs $ \pkg ->
         case pkg of
-          Left package | localStyle -> do
+          Left (WithStage _ package) | localStyle -> do
             let packageName = unPackageName (pkgName $ sourcePackageId package)
                 destDir = outputDir </> packageName
             fmap catMaybes $ for (haddockInterfaces package) $ \interfacePath -> do
@@ -438,7 +440,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
 
     matchingPackages
       :: ElaboratedInstallPlan
-      -> [Either InstalledPackageInfo ElaboratedConfiguredPackage]
+      -> [Either ElaboratedInstalledPackageInfo ElaboratedConfiguredPackage]
     matchingPackages =
       fmap (foldPlanPackage Left Right)
         . InstallPlan.toList

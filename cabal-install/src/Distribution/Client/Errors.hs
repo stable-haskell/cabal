@@ -36,6 +36,7 @@ import Network.URI
 import Text.PrettyPrint hiding (render, (<>))
 import qualified Text.PrettyPrint as PP
 import Text.Regex.Posix.ByteString (WrapError)
+import Distribution.Client.ProjectPlanning.Stage (WithStage)
 
 data CabalInstallException
   = UnpackGet
@@ -94,7 +95,7 @@ data CabalInstallException
   | PlanPackages String
   | NoSupportForRunCommand
   | RunPhaseReached
-  | UnknownExecutable String UnitId
+  | UnknownExecutable String (WithStage UnitId)
   | MultipleMatchingExecutables String [String]
   | CmdRunReportTargetProblems String
   | CleanAction [String]

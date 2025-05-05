@@ -89,7 +89,6 @@ import Distribution.Compiler
 import Distribution.Package
   ( Package (..)
   , UnitId
-  , installedUnitId
   , mkPackageName
   , packageName
   )
@@ -198,7 +197,9 @@ import System.FilePath
   , splitSearchPath
   , (</>)
   )
-import Distribution.Solver.Types.Stage
+import Distribution.Solver.Types.Stage (Stage(..), Staged(..))
+import qualified Distribution.Compat.Graph as Graph
+import Distribution.Client.ProjectPlanning.Stage (WithStage(..))
 
 replCommand :: CommandUI (NixStyleFlags ReplFlags)
 replCommand =
@@ -345,15 +346,16 @@ replAction flags@NixStyleFlags{extraFlags = r@ReplFlags{..}, ..} targetStrings g
         -- especially in the no-project case.
         withInstallPlan (lessVerbose verbosity) baseCtx' $ \elaboratedPlan sharedConfig -> do
           -- targets should be non-empty map, but there's no NonEmptyMap yet.
-          -- TODO: This only makes sense for the build stage
-          let Toolchain { toolchainCompiler = compiler } = getStage (pkgConfigToolchains sharedConfig) Build
-          targets <- validatedTargets (projectConfigShared (projectConfig ctx)) compiler elaboratedPlan targetSelectors
-
+          let stage = Build
+              Toolchain { toolchainCompiler = compiler } = getStage (pkgConfigToolchains sharedConfig) stage
+          -- FIXME there is total confusion here about who is filtering for the stage
+          targets <-
+            validatedTargets (projectConfigShared (projectConfig ctx)) compiler elaboratedPlan targetSelectors
           let
-            (unitId, _) = fromMaybe (error "panic: targets should be non-empty") $ safeHead $ Map.toList targets
-            originalDeps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan unitId
-            oci = OriginalComponentInfo unitId originalDeps
-            pkgId = fromMaybe (error $ "cannot find " ++ prettyShow unitId) $ packageId <$> InstallPlan.lookup elaboratedPlan unitId
+            (key, _uid) = fromMaybe (error "panic: targets should be non-empty") $ safeHead $ Map.toList targets
+            originalDeps = Graph.nodeKey <$> InstallPlan.directDeps elaboratedPlan key
+            oci = OriginalComponentInfo key originalDeps
+            pkgId = fromMaybe (error $ "cannot find " ++ prettyShow key) $ packageId <$> InstallPlan.lookup elaboratedPlan key
             baseCtx'' = addDepsToProjectTarget (envPackages replEnvFlags) pkgId baseCtx'
 
           return (Just oci, baseCtx'')
@@ -512,6 +514,7 @@ replAction flags@NixStyleFlags{extraFlags = r@ReplFlags{..}, ..} targetStrings g
     verbosity = fromFlagOrDefault normal (setupVerbosity $ configCommonFlags configFlags)
     tempFileOptions = commonSetupTempFileOptions $ configCommonFlags configFlags
 
+    -- FIXME: the compiler depends on the stage!!
     validatedTargets ctx compiler elaboratedPlan targetSelectors = do
       let multi_repl_enabled = multiReplDecision ctx compiler r
       -- Interpret the targets on the command line as repl targets
@@ -552,8 +555,8 @@ minMultipleHomeUnitsVersion :: Version
 minMultipleHomeUnitsVersion = mkVersion [9, 4]
 
 data OriginalComponentInfo = OriginalComponentInfo
-  { ociUnitId :: UnitId
-  , ociOriginalDeps :: [UnitId]
+  { ociUnitId :: WithStage UnitId
+  , ociOriginalDeps :: [WithStage UnitId]
   }
   deriving (Show)
 
@@ -588,17 +591,18 @@ addDepsToProjectTarget deps pkgId ctx =
 generateReplFlags :: Bool -> ElaboratedInstallPlan -> OriginalComponentInfo -> [String]
 generateReplFlags includeTransitive elaboratedPlan OriginalComponentInfo{..} = flags
   where
-    exeDeps :: [UnitId]
+    exeDeps :: [WithStage UnitId]
     exeDeps =
       foldMap
         (InstallPlan.foldPlanPackage (const []) elabOrderExeDependencies)
         (InstallPlan.dependencyClosure elaboratedPlan [ociUnitId])
 
-    deps, deps', trans, trans' :: [UnitId]
+    deps, deps', trans, trans' :: [WithStage UnitId]
     flags :: [String]
-    deps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan ociUnitId
+    deps = Graph.nodeKey <$> InstallPlan.directDeps elaboratedPlan ociUnitId
     deps' = deps \\ ociOriginalDeps
-    trans = installedUnitId <$> InstallPlan.dependencyClosure elaboratedPlan deps'
+
+    trans = Graph.nodeKey <$> InstallPlan.dependencyClosure elaboratedPlan deps'
     trans' = trans \\ ociOriginalDeps
     flags =
       fmap (("-package-id " ++) . prettyShow) . (\\ exeDeps) $
@@ -751,7 +755,7 @@ selectComponentTarget = selectComponentTargetBasic
 data ReplProblem
   = TargetProblemMatchesMultiple MultiReplDecision TargetSelector [AvailableTarget ()]
   | -- | Multiple 'TargetSelector's match multiple targets
-    TargetProblemMultipleTargets MultiReplDecision TargetsMap
+    TargetProblemMultipleTargets MultiReplDecision TargetsMapS
   deriving (Eq, Show)
 
 -- | The various error conditions that can occur when matching a
@@ -768,7 +772,7 @@ matchesMultipleProblem decision targetSelector targetsExesBuildable =
 
 multipleTargetsProblem
   :: MultiReplDecision
-  -> TargetsMap
+  -> TargetsMapS
   -> ReplTargetProblem
 multipleTargetsProblem decision = CustomTargetProblem . TargetProblemMultipleTargets decision
 

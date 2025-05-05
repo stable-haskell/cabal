@@ -92,7 +92,7 @@ import Distribution.Client.ProjectPlanning
   ( storePackageInstallDirs'
   )
 import Distribution.Client.ProjectPlanning.Types
-  ( ElaboratedInstallPlan
+  ( ElaboratedInstallPlan, ElaboratedPlanPackage
   )
 import Distribution.Client.RebuildMonad
   ( runRebuild
@@ -114,6 +114,7 @@ import Distribution.Client.Types
 import Distribution.Client.Types.OverwritePolicy
   ( OverwritePolicy (..)
   )
+import qualified Distribution.Compat.Graph as Graph
 import Distribution.Package
   ( Package (..)
   , PackageName
@@ -248,6 +249,7 @@ import System.FilePath
   , (<.>)
   , (</>)
   )
+import qualified Distribution.Client.ProjectPlanning.Types as Stage
 
 -- | Check or check then install an exe. The check is to see if the overwrite
 -- policy allows installation.
@@ -562,7 +564,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
     traverseInstall action cfg@InstallCfg{verbosity = v, buildCtx, installClientFlags} = do
       let overwritePolicy = fromFlagOrDefault NeverOverwrite $ cinstOverwritePolicy installClientFlags
       actionOnExe <- action v overwritePolicy <$> prepareExeInstall cfg
-      traverse_ actionOnExe . Map.toList $ targetsMap buildCtx
+      traverse_ actionOnExe . Map.toList $ filterTargetsWithStage Stage.Host $ targetsMap buildCtx
 
 withProject
   :: Verbosity
@@ -781,7 +783,7 @@ getSpecsAndTargetSelectors verbosity reducedVerbosity sourcePkgDb targetSelector
 
       localPkgs = sdistize <$> localPackages baseCtx
 
-      gatherTargets :: UnitId -> TargetSelector
+      gatherTargets :: Graph.Key ElaboratedPlanPackage -> TargetSelector
       gatherTargets targetId = TargetPackageNamed pkgName targetFilter
         where
           targetUnit = Map.findWithDefault (error "cannot find target unit") targetId planMap
@@ -826,7 +828,7 @@ partitionToKnownTargetsAndHackagePackages
   -> SourcePackageDb
   -> ElaboratedInstallPlan
   -> [TargetSelector]
-  -> IO (TargetsMap, [PackageName])
+  -> IO (TargetsMapS, [PackageName])
 partitionToKnownTargetsAndHackagePackages verbosity pkgDb elaboratedPlan targetSelectors = do
   let mTargets =
         resolveTargets
@@ -1002,7 +1004,7 @@ installLibraries
             ordNub $
               globalEntries
                 ++ envEntries
-                ++ entriesForLibraryComponents (targetsMap buildCtx)
+                ++ entriesForLibraryComponents (filterTargetsWithStage Stage.Host $ targetsMap buildCtx)
           contents' = renderGhcEnvironmentFile (baseEntries ++ pkgEntries)
         createDirectoryIfMissing True (takeDirectory envFile)
         writeFileAtomic envFile (BS.pack contents')

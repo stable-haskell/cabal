@@ -59,7 +59,7 @@ import Distribution.Client.ProjectPlanning
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedPackageOrComponent (..)
   , dataDirsEnvironmentForPlan
-  , elabExeDependencyPaths
+  , elabExeDependencyPaths, WithStage (..)
   )
 
 import Distribution.Client.ScriptUtils
@@ -388,7 +388,7 @@ handleShebang :: FilePath -> [String] -> IO ()
 handleShebang script args =
   runAction (commandDefaultFlags runCommand) (script : args) defaultGlobalFlags
 
-singleExeOrElse :: IO (UnitId, UnqualComponentName) -> TargetsMap -> IO (UnitId, UnqualComponentName)
+singleExeOrElse :: IO (WithStage UnitId, UnqualComponentName) -> TargetsMapS -> IO (WithStage UnitId, UnqualComponentName)
 singleExeOrElse action targetsMap =
   case Set.toList . distinctTargetComponents $ targetsMap of
     [(unitId, CExeName component)] -> return (unitId, component)
@@ -400,16 +400,16 @@ singleExeOrElse action targetsMap =
 -- 'ElaboratedConfiguredPackage's that match the specified
 -- 'UnitId'.
 matchingPackagesByUnitId
-  :: UnitId
+  :: WithStage UnitId
   -> ElaboratedInstallPlan
   -> [ElaboratedConfiguredPackage]
-matchingPackagesByUnitId uid =
+matchingPackagesByUnitId (WithStage s uid) =
   catMaybes
     . fmap
       ( foldPlanPackage
           (const Nothing)
           ( \x ->
-              if elabUnitId x == uid
+              if elabUnitId x == uid && elabStage x == s
                 then Just x
                 else Nothing
           )
@@ -498,7 +498,7 @@ data RunProblem
   | -- | A single 'TargetSelector' matches multiple targets
     TargetProblemMatchesMultiple TargetSelector [AvailableTarget ()]
   | -- | Multiple 'TargetSelector's match multiple targets
-    TargetProblemMultipleTargets TargetsMap
+    TargetProblemMultipleTargets TargetsMapS
   | -- | The 'TargetSelector' refers to a component that is not an executable
     TargetProblemComponentNotExe PackageId ComponentName
   | -- | Asking to run an individual file or module is not supported
@@ -515,7 +515,7 @@ matchesMultipleProblem selector targets =
   CustomTargetProblem $
     TargetProblemMatchesMultiple selector targets
 
-multipleTargetsProblem :: TargetsMap -> TargetProblem RunProblem
+multipleTargetsProblem :: TargetsMapS -> TargetProblem RunProblem
 multipleTargetsProblem = CustomTargetProblem . TargetProblemMultipleTargets
 
 componentNotExeProblem :: PackageId -> ComponentName -> TargetProblem RunProblem

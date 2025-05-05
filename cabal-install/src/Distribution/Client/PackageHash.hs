@@ -181,7 +181,8 @@ data PackageHashInputs = PackageHashInputs
   , pkgHashComponent :: Maybe CD.Component
   , pkgHashSourceHash :: PackageSourceHash
   , pkgHashPkgConfigDeps :: Set (PkgconfigName, Maybe PkgconfigVersion)
-  , pkgHashDirectDeps :: Set InstalledPackageId
+  , pkgHashLibDeps :: Set InstalledPackageId
+  , pkgHashExeDeps :: Set InstalledPackageId
   , pkgHashOtherConfig :: PackageHashConfigInputs
   }
 
@@ -256,7 +257,8 @@ renderPackageHashInputs
     { pkgHashPkgId
     , pkgHashComponent
     , pkgHashSourceHash
-    , pkgHashDirectDeps
+    , pkgHashLibDeps
+    , pkgHashExeDeps
     , pkgHashPkgConfigDeps
     , pkgHashOtherConfig =
       PackageHashConfigInputs{..}
@@ -295,12 +297,19 @@ renderPackageHashInputs
               )
               pkgHashPkgConfigDeps
           , entry
-              "deps"
+              "lib-deps"
               ( intercalate ", "
                   . map prettyShow
                   . Set.toList
               )
-              pkgHashDirectDeps
+              pkgHashLibDeps
+          , entry
+              "exe-deps"
+              ( intercalate ", "
+                  . map prettyShow
+                  . Set.toList
+              )
+              pkgHashExeDeps
           , -- and then all the config
             entry "compilerid" prettyShow pkgHashCompilerId
           , entry "compilerabi" prettyShow pkgHashCompilerABI
