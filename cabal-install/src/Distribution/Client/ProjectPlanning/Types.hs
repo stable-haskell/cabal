@@ -58,6 +58,9 @@ module Distribution.Client.ProjectPlanning.Types
   , isBenchComponentTarget
   , componentOptionalStanza
 
+  -- * Blaah
+  , WithStage(..)
+  
     -- * Toolchain
   , Toolchain (..)
   , Toolchains
@@ -117,6 +120,7 @@ import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Client.Toolchain
+import Distribution.Client.ProjectPlanning.Stage
 import Distribution.Types.ComponentRequestedSpec
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageDescription (PackageDescription (..))
