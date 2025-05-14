@@ -16,6 +16,7 @@ import Distribution.Types.AnnotatedId (AnnotatedId (..))
 import Distribution.Types.ComponentId (ComponentId)
 import Distribution.Types.ComponentName (ComponentName)
 import Distribution.Types.PackageId (PackageId)
+import qualified Text.PrettyPrint as PP
 
 -------------------------------------------------------------------------------
 -- InstalledPackageId
@@ -65,6 +66,12 @@ instance Structured ConfiguredId
 
 instance Show ConfiguredId where
   show cid = show (confInstId cid)
+
+instance Pretty ConfiguredId where
+  pretty cid =
+    case confCompName cid of
+      Nothing -> pretty (confSrcId cid) <> PP.colon <> pretty (confInstId cid)
+      Just cname -> pretty (confSrcId cid) <> PP.colon <> pretty cname <> PP.colon <> pretty (confInstId cid)
 
 instance Package ConfiguredId where
   packageId = confSrcId
