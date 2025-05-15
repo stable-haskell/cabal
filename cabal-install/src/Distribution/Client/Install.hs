@@ -526,7 +526,7 @@ processInstallPlan
   -> IO ()
 processInstallPlan
   verbosity
-  args@(_, _, _, _, _, _, configFlags, _, installFlags, _, _, _)
+  args@(_, _, comp, _, _, _, configFlags, _, installFlags, _, _, _)
   ( installedPkgIndex
     , sourcePkgDb
     , _
@@ -552,7 +552,7 @@ processInstallPlan
           installPlan
       postInstallActions verbosity args userTargets installPlan buildOutcomes
     where
-      installPlan = InstallPlan.configureInstallPlan configFlags installPlan0
+      installPlan = InstallPlan.configureInstallPlan comp configFlags installPlan0
       dryRun = fromFlag (installDryRun installFlags)
       nothingToInstall = null (fst (InstallPlan.ready installPlan))
 

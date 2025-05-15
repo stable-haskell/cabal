@@ -22,6 +22,7 @@ import Distribution.CabalSpecVersion
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.Simple.BuildToolDepends
+import Distribution.Simple.Compiler
 import Distribution.Simple.Flag (Flag)
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Types.AnnotatedId
@@ -242,6 +243,7 @@ toConfiguredComponent pkg_descr this_cid lib_dep_map exe_dep_map component = do
 toConfiguredComponent'
   :: Bool -- use_external_internal_deps
   -> FlagAssignment
+  -> Compiler
   -> PackageDescription
   -> Bool -- deterministic
   -> Flag String -- configIPID (todo: remove me)
@@ -252,6 +254,7 @@ toConfiguredComponent'
 toConfiguredComponent'
   use_external_internal_deps
   flags
+  comp
   pkg_descr
   deterministic
   ipid_flag
@@ -276,6 +279,7 @@ toConfiguredComponent'
           deterministic
           ipid_flag
           cid_flag
+          (compilerId comp)
           (package pkg_descr)
           (componentName component)
           (Just (deps, flags))
@@ -308,6 +312,7 @@ toConfiguredComponents
   -> Bool -- deterministic
   -> Flag String -- configIPID
   -> Flag ComponentId -- configCID
+  -> Compiler
   -> PackageDescription
   -> ConfiguredComponentMap
   -> [Component]
@@ -318,6 +323,7 @@ toConfiguredComponents
   deterministic
   ipid_flag
   cid_flag
+  comp
   pkg_descr
   dep_map
   comps =
@@ -328,6 +334,7 @@ toConfiguredComponents
           toConfiguredComponent'
             use_external_internal_deps
             flags
+            comp
             pkg_descr
             deterministic
             ipid_flag

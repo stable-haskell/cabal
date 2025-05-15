@@ -590,8 +590,8 @@ fromSolverInstallPlanWithProgress f plan = do
 
 -- | Conversion of 'SolverInstallPlan' to 'InstallPlan'.
 -- Similar to 'elaboratedInstallPlan'
-configureInstallPlan :: Cabal.ConfigFlags -> SolverInstallPlan -> InstallPlan
-configureInstallPlan configFlags solverPlan =
+configureInstallPlan :: Cabal.ConfigFlags -> Compiler -> SolverInstallPlan -> InstallPlan
+configureInstallPlan configFlags comp solverPlan =
   flip fromSolverInstallPlan solverPlan $ \mapDep planpkg ->
     [ case planpkg of
         SolverInstallPlan.PreExisting pkg ->
@@ -614,6 +614,7 @@ configureInstallPlan configFlags solverPlan =
               )
               Cabal.NoFlag
               Cabal.NoFlag
+              (compilerId comp)
               (packageId spkg)
               (PD.CLibName PD.LMainLibName)
               ( Just

@@ -59,7 +59,7 @@ mkComponentId :: HasCallStack => String -> ComponentId
 mkComponentId s = case (simpleParsec s) of
     -- Just cid@ComponentId{ unitComp = c, unitId = i } | (fromShortText c) == "ghc-9.8.4", (fromShortText i) == "rts-1.0.3-cec100dd" -> trace ("### ComponentId: `" ++ (fromShortText c) ++ "' `" ++ (fromShortText i) ++ "' is a full one.\n" ++ prettyCallStack callStack) cid
     Just cid@ComponentId{} -> cid
-    Just cid@PartialComponentId{} -> error $ "mkPartialComponentId: `" ++ s ++ "' is a partial component id, not a full one."
+    Just cid@PartialComponentId{} -> error $ "mkPartialComponentId: `" ++ s ++ "' is a partial component id, not a full one.\n" ++ (prettyCallStack callStack)
     _ -> error $ "Unable to parse PartialComponentId: `" ++ s ++ "'."
 
 mkComponentId' :: HasCallStack => String -> String -> Bool -> ComponentId

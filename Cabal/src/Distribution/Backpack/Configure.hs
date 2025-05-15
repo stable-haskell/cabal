@@ -127,6 +127,7 @@ configureComponentLocalBuildInfos
         deterministic
         ipid_flag
         cid_flag
+        comp
         pkg_descr
         conf_pkg_map
         (map fst graph0)

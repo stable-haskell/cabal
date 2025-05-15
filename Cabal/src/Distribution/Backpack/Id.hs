@@ -34,12 +34,13 @@ computeComponentId
   :: Bool -- deterministic mode
   -> Flag String
   -> Flag ComponentId
+  -> CompilerId
   -> PackageIdentifier
   -> ComponentName
   -- This is used by cabal-install's legacy codepath
   -> Maybe ([ComponentId], FlagAssignment)
   -> ComponentId
-computeComponentId deterministic mb_ipid mb_cid pid cname mb_details =
+computeComponentId deterministic mb_ipid mb_cid compid pid cname mb_details =
   -- show is found to be faster than intercalate and then replacement of
   -- special character used in intercalating. We cannot simply hash by
   -- doubly concatenating list, as it just flatten out the nested list, so
@@ -67,6 +68,9 @@ computeComponentId deterministic mb_ipid mb_cid pid cname mb_details =
           -- Hack to reuse install dirs machinery
           -- NB: no real IPID available at this point
           env = packageTemplateEnv pid (mkUnitId "")
+      -- can't use pkgCompiler pid here, because it's
+      -- likely not set.
+      compiler_prefix = prettyShow compid ++ "_"
       actual_base = case mb_ipid of
         Flag ipid0 -> explicit_base ipid0
         NoFlag
@@ -76,7 +80,9 @@ computeComponentId deterministic mb_ipid mb_cid pid cname mb_details =
         Flag cid -> cid
         NoFlag ->
           mkComponentId $
-            actual_base
+            (if compiler_prefix `isPrefixOf` actual_base
+            then actual_base
+            else compiler_prefix ++ actual_base)
               ++ ( case componentNameString cname of
                     Nothing -> ""
                     Just s -> "-" ++ unUnqualComponentName s
