@@ -49,6 +49,31 @@ import Distribution.Compat.GetShortPathName (getShortPathName)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 
+import Control.Concurrent.MVar
+import Data.IORef
+import System.IO.Unsafe (unsafePerformIO)
+--- BEGIN MODIFICATION: Locking Mechanism ---
+
+-- Global state for locks, one MVar per build directory path.
+-- The MVar () acts as a mutex: it's full when the lock is available (unlocked),
+-- and empty when taken (locked).
+{-# NOINLINE configureLocks #-}
+configureLocks :: IORef (Map.Map FilePath (MVar ()))
+configureLocks = unsafePerformIO (newIORef Map.empty)
+
+-- Gets or creates a lock for a given path.
+-- Ensures that only one MVar is associated with each path.
+getOrCreateLock :: FilePath -> IO (MVar ())
+getOrCreateLock path = do
+    -- Optimistically create a new MVar. It will be used if the path is not already in the map.
+    -- This MVar is created "full" (i.e., containing ()), meaning the lock is initially available.
+    newLock <- newMVar ()
+    atomicModifyIORef' configureLocks $ \currentMap ->
+        case Map.lookup path currentMap of
+            Just existingLock -> (currentMap, existingLock) -- Lock already exists, return it. The newLock we created is discarded.
+            Nothing           -> (Map.insert path newLock currentMap, newLock) -- New lock inserted, return it.
+--- END MODIFICATION: Locking Mechanism ---
+
 runConfigureScript
   :: ConfigFlags
   -> FlagAssignment
@@ -179,15 +204,32 @@ runConfigureScript cfg flags programDb hp = do
   shConfiguredProg <-
     lookupProgram shProg
       `fmap` configureProgram verbosity shProg progDb
-  case shConfiguredProg of
-    Just sh -> do
-      let build_in = interpretSymbolicPath mbWorkDir build_dir
-      createDirectoryIfMissing True build_in
-      runProgramInvocation verbosity $
-        (programInvocation (sh{programOverrideEnv = overEnv}) args')
-          { progInvokeCwd = Just build_in
-          }
-    Nothing -> dieWithException verbosity NotFoundMsg
+
+  --- BEGIN MODIFICATION: Apply Locking ---
+  -- Acquire the lock specific to this build_dir
+  -- build_dir is used as the key for the lock.
+  configureLock <- getOrCreateLock (interpretSymbolicPath mbWorkDir build_dir)
+
+  let runLockedConfigureAction = do
+        case shConfiguredProg of
+          Just sh -> do
+            let build_in = interpretSymbolicPath mbWorkDir build_dir
+            createDirectoryIfMissing True build_in
+            warn verbosity $ "Configure lock acquired. Running configure script in " ++ build_in
+            runProgramInvocation verbosity $
+              (programInvocation (sh{programOverrideEnv = overEnv}) args')
+                { progInvokeCwd = Just build_in
+                }
+          Nothing -> dieWithException verbosity NotFoundMsg
+
+  warn verbosity $ "Attempting to acquire configure lock for " ++ interpretSymbolicPath mbWorkDir build_dir
+  -- withMVar takes the MVar (blocks if already taken), runs the action,
+  -- and ensures the MVar is put back, even if the action throws an exception.
+  withMVar configureLock $ \() ->
+    -- The '()' means the MVar holds a unit value; we're interested in its full/empty state.
+    runLockedConfigureAction
+  warn verbosity $ "Configure lock released for " ++ interpretSymbolicPath mbWorkDir build_dir
+  --- END MODIFICATION: Apply Locking ---
   where
     args = configureArgs backwardsCompatHack cfg
     backwardsCompatHack = False

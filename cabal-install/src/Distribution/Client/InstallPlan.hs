@@ -93,6 +93,7 @@ import Distribution.Package
   , UnitId
   )
 import Distribution.Pretty (defaultStyle)
+import Distribution.Simple.Compiler ( Compiler (compilerId) )
 import Distribution.Solver.Types.SolverPackage
 import Text.PrettyPrint
 
@@ -590,8 +591,8 @@ fromSolverInstallPlanWithProgress f plan = do
 
 -- | Conversion of 'SolverInstallPlan' to 'InstallPlan'.
 -- Similar to 'elaboratedInstallPlan'
-configureInstallPlan :: Cabal.ConfigFlags -> Compiler -> SolverInstallPlan -> InstallPlan
-configureInstallPlan configFlags comp solverPlan =
+configureInstallPlan :: Compiler -> Cabal.ConfigFlags -> SolverInstallPlan -> InstallPlan
+configureInstallPlan comp configFlags solverPlan =
   flip fromSolverInstallPlan solverPlan $ \mapDep planpkg ->
     [ case planpkg of
         SolverInstallPlan.PreExisting pkg ->
