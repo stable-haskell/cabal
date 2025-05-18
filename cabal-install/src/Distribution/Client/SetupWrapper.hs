@@ -314,6 +314,12 @@ data SetupScriptOptions = SetupScriptOptions
   -- ^ Is the task we are going to run an interactive foreground task,
   -- or an non-interactive background task? Based on this flag we
   -- decide whether or not to delegate ctrl+c to the spawned task
+  , isComponent :: Bool
+  -- ^ Let the setup script logic know if it is being run to build a component
+  -- or a package.  This is used to determine if we should use the configure
+  -- command, if the build-type is 'Configure'.  For configure, only the
+  -- main library has 'configure' support, and thus we can skip running
+  -- configure for components.
   }
 
 defaultSetupScriptOptions :: SetupScriptOptions
@@ -338,6 +344,7 @@ defaultSetupScriptOptions =
     , forceExternalSetupMethod = False
     , setupCacheLock = Nothing
     , isInteractive = False
+    , isComponent = False
     }
 
 workingDir :: SetupScriptOptions -> FilePath
@@ -374,7 +381,9 @@ getSetup verbosity options mpkg = do
                 (useCabalVersion options)
                 (orLaterVersion (mkVersion (cabalSpecMinimumLibraryVersion (specVersion pkg))))
           }
-      buildType' = buildType pkg
+      buildType' = case (buildType pkg, isComponent options) of
+        (Configure, True) -> Simple
+        (bt, _) -> bt
   (version, method, options'') <-
     getSetupMethod verbosity options' pkg buildType'
   return
