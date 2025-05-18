@@ -93,6 +93,7 @@ import Distribution.Package
   , UnitId
   )
 import Distribution.Pretty (defaultStyle)
+import Distribution.Simple.Compiler ( Compiler (compilerId) )
 import Distribution.Solver.Types.SolverPackage
 import Text.PrettyPrint
 

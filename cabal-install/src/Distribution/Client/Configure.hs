@@ -205,7 +205,7 @@ configure
           (const (return configFlags))
           (const extraArgs)
       Right installPlan0 ->
-        let installPlan = InstallPlan.configureInstallPlan comp configFlags installPlan0
+        let installPlan = InstallPlan.configureInstallPlan configFlags comp installPlan0
          in case fst (InstallPlan.ready installPlan) of
               [ pkg@( ReadyPackage
                         ( ConfiguredPackage

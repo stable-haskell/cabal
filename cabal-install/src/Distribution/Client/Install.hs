@@ -552,7 +552,7 @@ processInstallPlan
           installPlan
       postInstallActions verbosity args userTargets installPlan buildOutcomes
     where
-      installPlan = InstallPlan.configureInstallPlan comp configFlags installPlan0
+      installPlan = InstallPlan.configureInstallPlan configFlags comp installPlan0
       dryRun = fromFlag (installDryRun installFlags)
       nothingToInstall = null (fst (InstallPlan.ready installPlan))
 
