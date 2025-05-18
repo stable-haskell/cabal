@@ -16,7 +16,7 @@ import Prelude ()
 
 import Distribution.Backpack
 import Distribution.Compat.Graph (IsNode (..))
-import Distribution.Compiler (CompilerId, buildCompilerId)
+import Distribution.Compiler (CompilerId)
 import Distribution.License
 import Distribution.ModuleName
 import Distribution.Package hiding (installedUnitId, pkgCompiler)

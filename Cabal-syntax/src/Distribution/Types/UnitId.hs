@@ -32,8 +32,7 @@ import Distribution.Types.PackageId
 
 import Text.PrettyPrint (text)
 
-import GHC.Stack (HasCallStack, prettyCallStack, callStack)
-import Data.List (isInfixOf)
+import GHC.Stack (HasCallStack)
 
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -135,7 +134,7 @@ dropPrefixFromUnitId (UnitId _c s _fromPartial) = PartialUnitId s
 -- instead, which is supported by all versions of Cabal.
 unUnitId :: HasCallStack => UnitId -> String
 unUnitId (UnitId c s False) = fromShortText c ++ '_':fromShortText s
-unUnitId (UnitId c s True) = fromShortText s
+unUnitId (UnitId _ s True) = fromShortText s
 unUnitId (PartialUnitId s) = fromShortText s
 
 mkUnitId :: HasCallStack => String -> UnitId
