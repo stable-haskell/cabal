@@ -1833,6 +1833,7 @@ elaborateInstallPlan
               -- Once you've implemented this, swap it for the code below.
               cuz_buildtype =
                 case bt of
+                  PD.Configure -> [CuzBuildType CuzConfigureBuildType]
                   PD.Custom -> [CuzBuildType CuzCustomBuildType]
                   PD.Hooks -> [CuzBuildType CuzHooksBuildType]
                   PD.Make -> [CuzBuildType CuzMakeBuildType]
