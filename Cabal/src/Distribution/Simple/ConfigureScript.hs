@@ -52,6 +52,7 @@ import qualified Data.Map as Map
 import Control.Concurrent.MVar
 import Data.IORef
 import System.IO.Unsafe (unsafePerformIO)
+--- BEGIN MODIFICATION: Locking Mechanism ---
 
 -- Global state for locks, one MVar per build directory path.
 -- The MVar () acts as a mutex: it's full when the lock is available (unlocked),
@@ -71,6 +72,7 @@ getOrCreateLock path = do
         case Map.lookup path currentMap of
             Just existingLock -> (currentMap, existingLock) -- Lock already exists, return it. The newLock we created is discarded.
             Nothing           -> (Map.insert path newLock currentMap, newLock) -- New lock inserted, return it.
+--- END MODIFICATION: Locking Mechanism ---
 
 runConfigureScript
   :: ConfigFlags
@@ -203,9 +205,10 @@ runConfigureScript cfg flags programDb hp = do
     lookupProgram shProg
       `fmap` configureProgram verbosity shProg progDb
 
+  --- BEGIN MODIFICATION: Apply Locking ---
   -- Acquire the lock specific to this build_dir
   -- build_dir is used as the key for the lock.
-  configureLock <- getOrCreateLock configureFile'
+  configureLock <- getOrCreateLock (interpretSymbolicPath mbWorkDir build_dir)
 
   let runLockedConfigureAction = do
         case shConfiguredProg of
@@ -219,14 +222,14 @@ runConfigureScript cfg flags programDb hp = do
                 }
           Nothing -> dieWithException verbosity NotFoundMsg
 
-  warn verbosity $ "Attempting to acquire configure lock for " ++ configureFile'
+  warn verbosity $ "Attempting to acquire configure lock for " ++ interpretSymbolicPath mbWorkDir build_dir
   -- withMVar takes the MVar (blocks if already taken), runs the action,
   -- and ensures the MVar is put back, even if the action throws an exception.
   withMVar configureLock $ \() ->
     -- The '()' means the MVar holds a unit value; we're interested in its full/empty state.
     runLockedConfigureAction
-  warn verbosity $ "Configure lock released for " ++ configureFile'
-
+  warn verbosity $ "Configure lock released for " ++ interpretSymbolicPath mbWorkDir build_dir
+  --- END MODIFICATION: Apply Locking ---
   where
     args = configureArgs backwardsCompatHack cfg
     backwardsCompatHack = False

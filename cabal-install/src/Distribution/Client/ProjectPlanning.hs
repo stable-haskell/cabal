@@ -1836,7 +1836,7 @@ elaborateInstallPlan
                   PD.Custom -> [CuzBuildType CuzCustomBuildType]
                   PD.Hooks -> [CuzBuildType CuzHooksBuildType]
                   PD.Make -> [CuzBuildType CuzMakeBuildType]
-                  _ -> []
+                  PD.Simple -> []
               -- cabal-format versions prior to 1.8 have different build-depends semantics
               -- for now it's easier to just fallback to legacy-mode when specVersion < 1.8
               -- see, https://github.com/haskell/cabal/issues/4121
