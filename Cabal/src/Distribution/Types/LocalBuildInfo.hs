@@ -333,7 +333,7 @@ localComponentId lbi =
 -- | Extract the 'PackageIdentifier' of a 'LocalBuildInfo'.
 -- This is a "safe" use of 'localPkgDescr'
 localPackage :: LocalBuildInfo -> PackageId
-localPackage (LocalBuildInfo{localPkgDescr = pkg}) = package pkg
+localPackage (LocalBuildInfo{localPkgDescr = pkg, compiler = comp}) = (package pkg){pkgCompiler = Just (compilerId comp)}
 
 -- | Extract the 'UnitId' from the library component of a
 -- 'LocalBuildInfo' if it exists, or make a fake unit ID based on

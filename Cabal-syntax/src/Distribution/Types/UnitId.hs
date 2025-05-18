@@ -167,7 +167,8 @@ newSimpleUnitId = unsafeCoerce
 -- | Make an old-style UnitId from a package identifier.
 -- Assumed to be for the public library
 mkLegacyUnitId :: HasCallStack => PackageId -> UnitId
-mkLegacyUnitId = newSimpleUnitId . mkComponentId . prettyShow
+mkLegacyUnitId pid@PackageIdentifier{pkgCompiler = Just c} = newSimpleUnitId . mkComponentId $ prettyShow c ++ "_" ++ prettyShow pid
+mkLegacyUnitId pid = newSimpleUnitId . mkComponentId $ prettyShow pid
 
 -- | Returns library name prefixed with HS, suitable for filenames
 getHSLibraryName :: UnitId -> String
