@@ -1833,10 +1833,7 @@ elaborateInstallPlan
               -- Once you've implemented this, swap it for the code below.
               cuz_buildtype =
                 case bt of
-                  PD.Configure -> []
-                  -- Configure is supported, but we only support configuring the
-                  -- main library in cabal. Other components will need to depend
-                  -- on the main library for configured data.
+                  PD.Configure -> [CuzBuildType CuzConfigureBuildType]
                   PD.Custom -> [CuzBuildType CuzCustomBuildType]
                   PD.Hooks -> [CuzBuildType CuzHooksBuildType]
                   PD.Make -> [CuzBuildType CuzMakeBuildType]
@@ -4031,9 +4028,6 @@ setupHsScriptOptions
       , forceExternalSetupMethod = isParallelBuild
       , setupCacheLock = Just cacheLock
       , isInteractive = False
-      , isComponent = case elabPkgOrComp of
-          ElabPackage{} -> False
-          ElabComponent{} -> True
       }
 
 -- | To be used for the input for elaborateInstallPlan.
