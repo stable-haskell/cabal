@@ -2069,15 +2069,7 @@ elaborateInstallPlan
         -> LogProgress ElaboratedConfiguredPackage
       elaborateSolverToPackage
         pkgWhyNotPerComponent
-        pkg@( SolverPackage
-                _stage
-                _qpn
-                (SourcePackage pkgid _gpd _srcloc _descOverride)
-                _flags
-                _stanzas
-                _deps0
-                _exe_deps0
-              )
+        pkg@SolverPackage {solverPkgSource = SourcePackage {srcpkgPackageId}}
         compGraph
         comps = do
           -- Knot tying: the final elab includes the
@@ -2125,7 +2117,7 @@ elaborateInstallPlan
 
             pkgInstalledId
               | shouldBuildInplaceOnly pkg =
-                  mkComponentId (prettyShow pkgid ++ "-inplace")
+                  mkComponentId (prettyShow srcpkgPackageId ++ "-inplace")
               | otherwise =
                   assert (isJust elabPkgSourceHash) $
                     hashedInstalledPackageId
@@ -2136,7 +2128,7 @@ elaborateInstallPlan
 
             -- Need to filter out internal dependencies, because they don't
             -- correspond to anything real anymore.
-            isExternal confid = confSrcId confid /= pkgid
+            isExternal confid = confSrcId confid /= srcpkgPackageId
             isExternal' (WithStage stage confId) = stage /= elabStage || isExternal confId
 
             pkgLibDependencies =
@@ -2184,15 +2176,18 @@ elaborateInstallPlan
         :: SolverPackage UnresolvedPkgLoc
         -> ElaboratedConfiguredPackage
       elaborateSolverToCommon
-        pkg@( SolverPackage
-                stage
-                _qpn
-                (SourcePackage pkgid gdesc srcloc descOverride)
-                flags
-                stanzas
-                deps0
-                _exe_deps0
-              ) =
+        pkg@SolverPackage{
+                solverPkgStage,
+                solverPkgSource = SourcePackage
+                  { srcpkgPackageId
+                  , srcpkgDescription
+                  , srcpkgSource
+                  , srcpkgDescrOverride
+                  },
+                solverPkgFlags,
+                solverPkgStanzas,
+                solverPkgLibDeps
+              } =
           elaboratedPackage
           where
             elaboratedPackage = ElaboratedConfiguredPackage{..}
@@ -2205,33 +2200,33 @@ elaborateInstallPlan
             elabModuleShape = error "elaborateSolverToCommon: elabModuleShape"
 
             elabIsCanonical = True
-            elabPkgSourceId = pkgid
+            elabPkgSourceId = srcpkgPackageId
 
-            elabStage = stage
-            elabCompiler = toolchainCompiler (getStage toolchains stage)
-            elabPlatform = toolchainPlatform (getStage toolchains stage)
-            elabProgramDb = toolchainProgramDb (getStage toolchains stage)
-            elabPackageDbs = toolchainPackageDBs (getStage toolchains stage)
+            elabStage = solverPkgStage
+            elabCompiler = toolchainCompiler (getStage toolchains solverPkgStage)
+            elabPlatform = toolchainPlatform (getStage toolchains solverPkgStage)
+            elabProgramDb = toolchainProgramDb (getStage toolchains solverPkgStage)
+            elabPackageDbs = toolchainPackageDBs (getStage toolchains solverPkgStage)
 
             elabPkgDescription = case PD.finalizePD
-              flags
+              solverPkgFlags
               elabEnabledSpec
               (const Satisfied)
               elabPlatform
               (compilerInfo elabCompiler)
               []
-              gdesc of
+              srcpkgDescription of
               Right (desc, _) -> desc
               Left _ -> error "Failed to finalizePD in elaborateSolverToCommon"
-            elabFlagAssignment = flags
+            elabFlagAssignment = solverPkgFlags
             elabFlagDefaults =
               PD.mkFlagAssignment
                 [ (PD.flagName flag, PD.flagDefault flag)
-                | flag <- PD.genPackageFlags gdesc
+                | flag <- PD.genPackageFlags srcpkgDescription
                 ]
 
-            elabEnabledSpec = enableStanzas stanzas
-            elabStanzasAvailable = stanzas
+            elabEnabledSpec = enableStanzas solverPkgStanzas
+            elabStanzasAvailable = solverPkgStanzas
 
             elabStanzasRequested :: OptionalStanzaMap (Maybe Bool)
             elabStanzasRequested = optStanzaTabulate $ \o -> case o of
@@ -2245,8 +2240,8 @@ elaborateInstallPlan
               BenchStanzas -> listToMaybe [v | v <- maybeToList benchmarks, _ <- PD.benchmarks elabPkgDescription]
               where
                 tests, benchmarks :: Maybe Bool
-                tests = perPkgOptionMaybe pkgid packageConfigTests
-                benchmarks = perPkgOptionMaybe pkgid packageConfigBenchmarks
+                tests = perPkgOptionMaybe srcpkgPackageId packageConfigTests
+                benchmarks = perPkgOptionMaybe srcpkgPackageId packageConfigBenchmarks
 
             -- This is a placeholder which will get updated by 'pruneInstallPlanPass1'
             -- and 'pruneInstallPlanPass2'.  We can't populate it here
@@ -2264,7 +2259,7 @@ elaborateInstallPlan
             elabHaddockTargets = []
 
             elabBuildHaddocks =
-              perPkgOptionFlag pkgid False packageConfigDocumentation
+              perPkgOptionFlag srcpkgPackageId False packageConfigDocumentation
 
             -- `documentation: true` should imply `-haddock` for GHC
             addHaddockIfDocumentationEnabled :: ConfiguredProgram -> ConfiguredProgram
@@ -2273,8 +2268,8 @@ elaborateInstallPlan
                 then cp{programOverrideArgs = "-haddock" : programOverrideArgs}
                 else cp
 
-            elabPkgSourceLocation = srcloc
-            elabPkgSourceHash = Map.lookup pkgid sourcePackageHashes
+            elabPkgSourceLocation = srcpkgSource
+            elabPkgSourceHash = Map.lookup srcpkgPackageId sourcePackageHashes
             elabLocalToProject = isLocalToProject pkg
             elabBuildStyle =
               if shouldBuildInplaceOnly pkg
@@ -2290,7 +2285,7 @@ elaborateInstallPlan
                 elabSetupScriptStyle
                 elabPkgDescription
                 libDepGraph
-                deps0
+                solverPkgLibDeps
             elabSetupPackageDBStack = buildAndRegisterDbs
 
             inplacePackageDbs = corePackageDbs ++ [distPackageDB (compilerId elabCompiler)]
@@ -2307,28 +2302,28 @@ elaborateInstallPlan
               | shouldBuildInplaceOnly pkg = inplacePackageDbs
               | otherwise = corePackageDbs
 
-            elabPkgDescriptionOverride = descOverride
+            elabPkgDescriptionOverride = srcpkgDescrOverride
 
             elabBuildOptions =
               LBC.BuildOptions
-                { withVanillaLib = perPkgOptionFlag pkgid True packageConfigVanillaLib -- TODO: [required feature]: also needs to be handled recursively
-                , withSharedLib = pkgid `Set.member` pkgsUseSharedLibrary
-                , withStaticLib = perPkgOptionFlag pkgid False packageConfigStaticLib
-                , withDynExe = perPkgOptionFlag pkgid False packageConfigDynExe
-                , withFullyStaticExe = perPkgOptionFlag pkgid False packageConfigFullyStaticExe
-                , withGHCiLib = perPkgOptionFlag pkgid False packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
-                , withProfExe = perPkgOptionFlag pkgid False packageConfigProf
-                , withProfLib = pkgid `Set.member` pkgsUseProfilingLibrary
-                , withProfLibShared = pkgid `Set.member` pkgsUseProfilingLibraryShared
-                , exeCoverage = perPkgOptionFlag pkgid False packageConfigCoverage
-                , libCoverage = perPkgOptionFlag pkgid False packageConfigCoverage
-                , withOptimization = perPkgOptionFlag pkgid NormalOptimisation packageConfigOptimization
-                , splitObjs = perPkgOptionFlag pkgid False packageConfigSplitObjs
-                , splitSections = perPkgOptionFlag pkgid False packageConfigSplitSections
-                , stripLibs = perPkgOptionFlag pkgid False packageConfigStripLibs
-                , stripExes = perPkgOptionFlag pkgid False packageConfigStripExes
-                , withDebugInfo = perPkgOptionFlag pkgid NoDebugInfo packageConfigDebugInfo
-                , relocatable = perPkgOptionFlag pkgid False packageConfigRelocatable
+                { withVanillaLib = perPkgOptionFlag srcpkgPackageId True packageConfigVanillaLib -- TODO: [required feature]: also needs to be handled recursively
+                , withSharedLib = srcpkgPackageId `Set.member` pkgsUseSharedLibrary
+                , withStaticLib = perPkgOptionFlag srcpkgPackageId False packageConfigStaticLib
+                , withDynExe = perPkgOptionFlag srcpkgPackageId False packageConfigDynExe
+                , withFullyStaticExe = perPkgOptionFlag srcpkgPackageId False packageConfigFullyStaticExe
+                , withGHCiLib = perPkgOptionFlag srcpkgPackageId False packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
+                , withProfExe = perPkgOptionFlag srcpkgPackageId False packageConfigProf
+                , withProfLib = srcpkgPackageId `Set.member` pkgsUseProfilingLibrary
+                , withProfLibShared = srcpkgPackageId `Set.member` pkgsUseProfilingLibraryShared
+                , exeCoverage = perPkgOptionFlag srcpkgPackageId False packageConfigCoverage
+                , libCoverage = perPkgOptionFlag srcpkgPackageId False packageConfigCoverage
+                , withOptimization = perPkgOptionFlag srcpkgPackageId NormalOptimisation packageConfigOptimization
+                , splitObjs = perPkgOptionFlag srcpkgPackageId False packageConfigSplitObjs
+                , splitSections = perPkgOptionFlag srcpkgPackageId False packageConfigSplitSections
+                , stripLibs = perPkgOptionFlag srcpkgPackageId False packageConfigStripLibs
+                , stripExes = perPkgOptionFlag srcpkgPackageId False packageConfigStripExes
+                , withDebugInfo = perPkgOptionFlag srcpkgPackageId NoDebugInfo packageConfigDebugInfo
+                , relocatable = perPkgOptionFlag srcpkgPackageId False packageConfigRelocatable
                 , withProfLibDetail = elabProfExeDetail
                 , withProfExeDetail = elabProfLibDetail
                 }
@@ -2337,12 +2332,12 @@ elaborateInstallPlan
               , elabProfLibDetail
               ) =
                 perPkgOptionLibExeFlag
-                  pkgid
+                  srcpkgPackageId
                   ProfDetailDefault
                   packageConfigProfDetail
                   packageConfigProfLibDetail
 
-            elabDumpBuildInfo = perPkgOptionFlag pkgid NoDumpBuildInfo packageConfigDumpBuildInfo
+            elabDumpBuildInfo = perPkgOptionFlag srcpkgPackageId NoDumpBuildInfo packageConfigDumpBuildInfo
 
             -- Combine the configured compiler prog settings with the user-supplied
             -- config. For the compiler progs any user-supplied config was taken
@@ -2354,7 +2349,7 @@ elaborateInstallPlan
                 [ (programId prog, programPath prog)
                 | prog <- configuredPrograms elabProgramDb
                 ]
-                <> perPkgOptionMapLast pkgid packageConfigProgramPaths
+                <> perPkgOptionMapLast srcpkgPackageId packageConfigProgramPaths
             elabProgramArgs =
               Map.fromList
                 [ (programId prog, args)
@@ -2362,45 +2357,45 @@ elaborateInstallPlan
                 , let args = programOverrideArgs $ addHaddockIfDocumentationEnabled prog
                 , not (null args)
                 ]
-                <> perPkgOptionMapMappend pkgid packageConfigProgramArgs
-            elabProgramPathExtra = perPkgOptionNubList pkgid packageConfigProgramPathExtra
-            elabConfigureScriptArgs = perPkgOptionList pkgid packageConfigConfigureArgs
-            elabExtraLibDirs = perPkgOptionList pkgid packageConfigExtraLibDirs
-            elabExtraLibDirsStatic = perPkgOptionList pkgid packageConfigExtraLibDirsStatic
-            elabExtraFrameworkDirs = perPkgOptionList pkgid packageConfigExtraFrameworkDirs
-            elabExtraIncludeDirs = perPkgOptionList pkgid packageConfigExtraIncludeDirs
-            elabProgPrefix = perPkgOptionMaybe pkgid packageConfigProgPrefix
-            elabProgSuffix = perPkgOptionMaybe pkgid packageConfigProgSuffix
+                <> perPkgOptionMapMappend srcpkgPackageId packageConfigProgramArgs
+            elabProgramPathExtra = perPkgOptionNubList srcpkgPackageId packageConfigProgramPathExtra
+            elabConfigureScriptArgs = perPkgOptionList srcpkgPackageId packageConfigConfigureArgs
+            elabExtraLibDirs = perPkgOptionList srcpkgPackageId packageConfigExtraLibDirs
+            elabExtraLibDirsStatic = perPkgOptionList srcpkgPackageId packageConfigExtraLibDirsStatic
+            elabExtraFrameworkDirs = perPkgOptionList srcpkgPackageId packageConfigExtraFrameworkDirs
+            elabExtraIncludeDirs = perPkgOptionList srcpkgPackageId packageConfigExtraIncludeDirs
+            elabProgPrefix = perPkgOptionMaybe srcpkgPackageId packageConfigProgPrefix
+            elabProgSuffix = perPkgOptionMaybe srcpkgPackageId packageConfigProgSuffix
 
-            elabHaddockHoogle = perPkgOptionFlag pkgid False packageConfigHaddockHoogle
-            elabHaddockHtml = perPkgOptionFlag pkgid False packageConfigHaddockHtml
-            elabHaddockHtmlLocation = perPkgOptionMaybe pkgid packageConfigHaddockHtmlLocation
-            elabHaddockForeignLibs = perPkgOptionFlag pkgid False packageConfigHaddockForeignLibs
-            elabHaddockForHackage = perPkgOptionFlag pkgid Cabal.ForDevelopment packageConfigHaddockForHackage
-            elabHaddockExecutables = perPkgOptionFlag pkgid False packageConfigHaddockExecutables
-            elabHaddockTestSuites = perPkgOptionFlag pkgid False packageConfigHaddockTestSuites
-            elabHaddockBenchmarks = perPkgOptionFlag pkgid False packageConfigHaddockBenchmarks
-            elabHaddockInternal = perPkgOptionFlag pkgid False packageConfigHaddockInternal
-            elabHaddockCss = perPkgOptionMaybe pkgid packageConfigHaddockCss
-            elabHaddockLinkedSource = perPkgOptionFlag pkgid False packageConfigHaddockLinkedSource
-            elabHaddockQuickJump = perPkgOptionFlag pkgid False packageConfigHaddockQuickJump
-            elabHaddockHscolourCss = perPkgOptionMaybe pkgid packageConfigHaddockHscolourCss
-            elabHaddockContents = perPkgOptionMaybe pkgid packageConfigHaddockContents
-            elabHaddockIndex = perPkgOptionMaybe pkgid packageConfigHaddockIndex
-            elabHaddockBaseUrl = perPkgOptionMaybe pkgid packageConfigHaddockBaseUrl
-            elabHaddockResourcesDir = perPkgOptionMaybe pkgid packageConfigHaddockResourcesDir
-            elabHaddockOutputDir = perPkgOptionMaybe pkgid packageConfigHaddockOutputDir
-            elabHaddockUseUnicode = perPkgOptionFlag pkgid False packageConfigHaddockUseUnicode
+            elabHaddockHoogle = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockHoogle
+            elabHaddockHtml = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockHtml
+            elabHaddockHtmlLocation = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockHtmlLocation
+            elabHaddockForeignLibs = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockForeignLibs
+            elabHaddockForHackage = perPkgOptionFlag srcpkgPackageId Cabal.ForDevelopment packageConfigHaddockForHackage
+            elabHaddockExecutables = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockExecutables
+            elabHaddockTestSuites = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockTestSuites
+            elabHaddockBenchmarks = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockBenchmarks
+            elabHaddockInternal = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockInternal
+            elabHaddockCss = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockCss
+            elabHaddockLinkedSource = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockLinkedSource
+            elabHaddockQuickJump = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockQuickJump
+            elabHaddockHscolourCss = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockHscolourCss
+            elabHaddockContents = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockContents
+            elabHaddockIndex = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockIndex
+            elabHaddockBaseUrl = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockBaseUrl
+            elabHaddockResourcesDir = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockResourcesDir
+            elabHaddockOutputDir = perPkgOptionMaybe srcpkgPackageId packageConfigHaddockOutputDir
+            elabHaddockUseUnicode = perPkgOptionFlag srcpkgPackageId False packageConfigHaddockUseUnicode
 
-            elabTestMachineLog = perPkgOptionMaybe pkgid packageConfigTestMachineLog
-            elabTestHumanLog = perPkgOptionMaybe pkgid packageConfigTestHumanLog
-            elabTestShowDetails = perPkgOptionMaybe pkgid packageConfigTestShowDetails
-            elabTestKeepTix = perPkgOptionFlag pkgid False packageConfigTestKeepTix
-            elabTestWrapper = perPkgOptionMaybe pkgid packageConfigTestWrapper
-            elabTestFailWhenNoTestSuites = perPkgOptionFlag pkgid False packageConfigTestFailWhenNoTestSuites
-            elabTestTestOptions = perPkgOptionList pkgid packageConfigTestTestOptions
+            elabTestMachineLog = perPkgOptionMaybe srcpkgPackageId packageConfigTestMachineLog
+            elabTestHumanLog = perPkgOptionMaybe srcpkgPackageId packageConfigTestHumanLog
+            elabTestShowDetails = perPkgOptionMaybe srcpkgPackageId packageConfigTestShowDetails
+            elabTestKeepTix = perPkgOptionFlag srcpkgPackageId False packageConfigTestKeepTix
+            elabTestWrapper = perPkgOptionMaybe srcpkgPackageId packageConfigTestWrapper
+            elabTestFailWhenNoTestSuites = perPkgOptionFlag srcpkgPackageId False packageConfigTestFailWhenNoTestSuites
+            elabTestTestOptions = perPkgOptionList srcpkgPackageId packageConfigTestTestOptions
 
-            elabBenchmarkOptions = perPkgOptionList pkgid packageConfigBenchmarkOptions
+            elabBenchmarkOptions = perPkgOptionList srcpkgPackageId packageConfigBenchmarkOptions
 
       perPkgOptionFlag :: PackageId -> a -> (PackageConfig -> Flag a) -> a
       perPkgOptionMaybe :: PackageId -> (PackageConfig -> Flag a) -> Maybe a
