@@ -42,6 +42,11 @@ module Distribution.Client.ProjectPlanning
   , ElaboratedReadyPackage
   , BuildStyle (..)
   , CabalFileText
+  
+  , elabOrderLibDependencies
+  , elabOrderExeDependencies
+  , elabLibDependencies
+  , elabExeDependencies
 
     -- * Reading the project configuration
     -- $readingTheProjectConfiguration
@@ -925,14 +930,24 @@ rebuildInstallPlan
                 projectConfigAllPackages
                 projectConfigLocalPackages
                 (getMapMappend projectConfigSpecificPackage)
+        
+          liftIO $ do
+            putStrLn "\nelaboratedPlan\n"
+            dumpPlan elaboratedPlan
 
           instantiatedPlan <- liftIO . runLogProgress verbosity $ do
-                infoProgress (text "Instantiating the elaborated plan...")
-                instantiateInstallPlan
-                  cabalStoreDirLayout
-                  installDirs
-                  elaboratedShared
-                  elaboratedPlan
+            infoProgress (text "Instantiating the elaborated plan...")
+            instantiateInstallPlan
+              cabalStoreDirLayout
+              installDirs
+              elaboratedShared
+              elaboratedPlan
+
+          liftIO $ do
+            putStrLn "\ninstantiatedPlan\n"
+            dumpPlan instantiatedPlan
+            putStrLn ""
+            debugNoWrap verbosity $ showElaboratedInstallPlan instantiatedPlan
 
           return (instantiatedPlan, elaboratedShared)
           where
@@ -1598,37 +1613,27 @@ elaborateInstallPlan
 
       elaboratedInstallPlan :: LogProgress ElaboratedInstallPlan
       elaboratedInstallPlan = do
-        infoProgress (Disp.text "here")
-        
-        for_ (SolverInstallPlan.toList solverPlan) $ \case
-          SolverInstallPlan.PreExisting inst -> do
-            let ipkg = instSolverPkgIPI inst
-            infoProgress $
-              pretty (instSolverStage inst)
-                <+> text "pre-existing:"
-                <+> pretty (IPI.installedUnitId ipkg)
-                <+> Disp.parens (pretty (IPI.installedComponentId ipkg))
-          SolverInstallPlan.Configured pkg -> do
-            infoProgress $
-              pretty (solverPkgStage pkg)
-                <+> text "configured:"
-                <+> pretty (packageId (solverPkgSource pkg))
-
-        flip InstallPlan.fromSolverInstallPlanWithProgress solverPlan $ \mapDep planpkg ->
-          case planpkg of
-            SolverInstallPlan.PreExisting pkg ->
-              return [InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))]
-            SolverInstallPlan.Configured pkg ->
+        infoProgress (Disp.text "elaboratedInstallPlan")
+        flip InstallPlan.fromSolverInstallPlanWithProgress solverPlan $ \mapDep planpkg -> do
+          infoProgress (text "Elaborating" <+> pretty (solverId planpkg))
+          elabs <- case planpkg of
+            SolverInstallPlan.PreExisting pkg -> do
+              let ipkg = InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))
+              return [ipkg]
+            SolverInstallPlan.Configured pkg -> do
               let inplace_doc
                     | shouldBuildInplaceOnly pkg = text "inplace"
                     | otherwise = Disp.empty
-               in addProgressCtx
+              elabs <- addProgressCtx
                     ( text "In the"
                         <+> inplace_doc
                         <+> text "package"
                         <+> quotes (pretty (packageId pkg))
-                    )
-                    $ map InstallPlan.Configured <$> elaborateSolverToComponents mapDep pkg
+                    ) (elaborateSolverToComponents mapDep pkg)
+              infoProgress $ hang (pretty (solverId planpkg) <+> text "->") 4 $ vcat (map pretty elabs)
+              return $ map InstallPlan.Configured elabs
+          
+          return elabs
 
       -- NB: We don't INSTANTIATE packages at this point.  That's
       -- a post-pass.  This makes it simpler to compute dependencies.
@@ -1657,6 +1662,13 @@ elaborateInstallPlan
                 return comps
               Just notPerCompReasons -> do
                 checkPerPackageOk comps notPerCompReasons
+                infoProgress $
+                  text "Per-component builds disabled because"
+                    <+> fsep (punctuate comma $ map (text . whyNotPerComponent) $ toList notPerCompReasons)
+                infoProgress $
+                  case setupComponent of
+                    Nothing -> text "No setup component"
+                    Just _ -> text "Setup component present"
                 pkgComp <-
                   elaborateSolverToPackage
                     notPerCompReasons
@@ -1792,6 +1804,8 @@ elaborateInstallPlan
               $ do
                 let lib_dep_map = Map.unionWith Map.union external_lib_cc_map cc_map
                     -- TODO: is cc_map correct here?
+                    -- NOTE: I think this is the build-depends as build-tool-depends workaround.
+                    -- TODO: Remove.
                     exe_dep_map = Map.unionWith Map.union external_exe_cc_map cc_map
 
                 -- 1. Configure the component, but with a place holder ComponentId.
@@ -1904,7 +1918,7 @@ elaborateInstallPlan
                           )
                     cc = cc0{cc_ann_id = fmap (const cid) (cc_ann_id cc0)}
                 
-                infoProgress $ hang (text "configured component:") 4 (dispConfiguredComponent cc)
+                infoProgress $ dispConfiguredComponent cc
 
                 -- 4. Perform mix-in linking
                 let lookup_uid def_uid =
@@ -1926,7 +1940,7 @@ elaborateInstallPlan
                     cc
                     -- ^ configured component
 
-                infoProgress $ hang (text "linked component:") 4 (dispLinkedComponent lc)
+                infoProgress $ dispLinkedComponent lc
                 -- NB: elab is setup to be the correct form for an
                 -- indefinite library, or a definite library with no holes.
                 -- We will modify it in 'instantiateInstallPlan' to handle
@@ -2072,6 +2086,9 @@ elaborateInstallPlan
         pkg@SolverPackage {solverPkgSource = SourcePackage {srcpkgPackageId}}
         compGraph
         comps = do
+          infoProgress $ hang (text "[elaborateSolverToPackage]") 4 $ vcat
+            [ text "collecting" <+> pretty (length comps) <+> text "components"
+            ]
           -- Knot tying: the final elab includes the
           -- pkgInstalledId, which is calculated by hashing many
           -- of the other fields of the elaboratedPackage.
@@ -4681,3 +4698,27 @@ inplaceBinRoot layout config package =
 -- setupMaxCabalVersionConstraint :: Version
 -- setupMaxCabalVersionConstraint =
 --   alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion
+dumpPlan :: (Graph.Key ipkg ~ WithStage UnitId, Graph.IsNode ipkg, Package ipkg) => InstallPlan.GenericInstallPlan ipkg ElaboratedConfiguredPackage -> IO ()
+dumpPlan elaboratedInstallPlan = do
+    for_ (filter ((== mkPackageName "genprimopcode") . packageName . packageId) $ InstallPlan.toList elaboratedInstallPlan) $
+      foldPlanPackage 
+        (print . pretty . Graph.nodeKey)
+        (\elab -> 
+          print $ Disp.hang (pretty $ Graph.nodeKey elab) 4 $ Disp.vcat
+            [ Disp.hang (Disp.text "elabOrderDependencies:") 4 $ Disp.vcat $ map pretty (elabOrderDependencies elab)
+            , Disp.hang (Disp.text "elabOrderLibDependencies:") 4 $ Disp.vcat $ map pretty (elabOrderLibDependencies elab)
+            , Disp.hang (Disp.text "elabOrderExeDependencies:") 4 $ Disp.vcat $ map pretty (elabOrderExeDependencies elab)
+            , Disp.hang (Disp.text "elabLibDependencies:") 4 $ Disp.vcat $ map (pretty . fst) (elabLibDependencies elab)
+            , Disp.hang (Disp.text "elabExeDependencies:") 4 $ Disp.vcat $ map pretty (elabExeDependencies elab)
+            , Disp.hang (Disp.text "InstallPlan.directDeps") 4 $
+                Disp.vcat
+                  $ map (pretty . Graph.nodeKey)
+                  $ InstallPlan.directDeps elaboratedInstallPlan (Graph.nodeKey elab)
+            , Disp.hang (Disp.text "Graph.neighbors") 4
+                $ case Graph.neighbors (InstallPlan.toGraph elaboratedInstallPlan) (Graph.nodeKey elab) of
+                    Nothing -> Disp.text "error"
+                    Just ds  -> Disp.vcat $ map (pretty . Graph.nodeKey) ds
+            , Disp.hang (Disp.text "Graph.nodeNeighbors") 4
+                $ Disp.vcat $ map pretty $ Graph.nodeNeighbors elab
+            ]
+        )

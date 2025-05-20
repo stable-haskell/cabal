@@ -96,7 +96,7 @@ import Distribution.Package
   )
 import Distribution.Pretty (defaultStyle)
 import Distribution.Solver.Types.SolverPackage
-import Text.PrettyPrint
+import Text.PrettyPrint hiding ((<>))
 
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.InstSolverPackage
@@ -367,7 +367,7 @@ showInstallPlan = showInstallPlan_gen toShow
     toShow :: GenericPlanPackage ipkg srcpkg -> ShowPlanNode
     toShow p =
       ShowPlanNode
-        ( hsep
+        ( sep
             [ text (showPlanPackageTag p)
             , pretty (packageId p)
             , parens (pretty (nodeKey p))
@@ -601,20 +601,40 @@ fromSolverInstallPlanWithProgress
   -> SolverInstallPlan
   -> LogProgress (GenericInstallPlan ipkg srcpkg)
 fromSolverInstallPlanWithProgress f plan = do
-  (_, pkgs'') <-
+  (_m, epkgs) <-
     foldM
       f'
       (Map.empty, [])
       (SolverInstallPlan.reverseTopologicalOrder plan)
-  return $
-    mkInstallPlan
-      "fromSolverInstallPlanWithProgress"
-      (Graph.fromDistinctList pkgs'')
+  
+  let g = Graph.fromDistinctList epkgs
+  
+  -- infoProgress $ text "map"
+  -- for_ (Map.toList m) $ \(sid, pkg) ->
+  --   infoProgress $ pretty sid <+> text "->" <+> hsep (punctuate comma $ map pretty (map nodeKey pkg))
+
+  infoProgress $ text "[fromSolverInstallPlanWithProgress] packages in the plan:"
+  for_ epkgs $ \pkg -> infoProgress (pretty (nodeKey pkg))
+
+  unless (null (Graph.broken g)) $ do
+    infoProgress $ text "[fromSolverInstallPlanWithProgress] broken dependencies:"
+    for_ (Graph.broken g) $ \(pkg, deps) ->
+      infoProgress $ pretty (nodeKey pkg) <+> text "missing dep" <+> hsep (punctuate comma $ map pretty deps)
+
+  return $ mkInstallPlan "fromSolverInstallPlanWithProgress" g
   where
-    f' (pMap, pkgs) pkg = do
-      pkgs' <- f (mapDep pMap) pkg
-      let pMap' = Map.insert (nodeKey pkg) pkgs' pMap
-      return (pMap', pkgs' ++ pkgs)
+    f' (pMap, epkgs) spkg = do
+      infoProgress $
+        text "feeding" <+> pretty (nodeKey spkg) <+> text "with dependencies" <+> sep (punctuate comma $ map pretty (nodeNeighbors spkg))
+      epkgs' <- f (mapDep pMap) spkg
+      infoProgress $
+        hang (text "produced") 4 $ vcat
+          [ pretty (nodeKey epkg) <+> text "with dependencies" <+> sep (punctuate comma $ map pretty (nodeNeighbors epkg))
+          | epkg <- epkgs'
+          ]
+      -- We insert the new packages into the map, but we also
+      let pMap' = Map.insertWith (<>) (nodeKey spkg) epkgs' pMap
+      return (pMap', epkgs' ++ epkgs)
 
     -- The error below shouldn't happen, since mapDep should only
     -- be called on neighbor SolverId, which must have all been done
@@ -1089,12 +1109,7 @@ problems
   => Graph (GenericPlanPackage ipkg srcpkg)
   -> [PlanProblem ipkg srcpkg]
 problems graph =
-  [ PackageMissingDeps
-    pkg
-    ( mapMaybe
-        (fmap nodeKey . flip Graph.lookup graph)
-        missingDeps
-    )
+  [ PackageMissingDeps pkg missingDeps
   | (pkg, missingDeps) <- Graph.broken graph
   ]
     ++ [ PackageCycle cycleGroup

@@ -73,7 +73,7 @@ import Distribution.Client.Compat.Prelude
 import Distribution.Client.Dependency.Types
   ( PackagesPreferenceDefault (..)
   )
-import Distribution.Client.SolverInstallPlan (SolverInstallPlan)
+import Distribution.Client.SolverInstallPlan (SolverInstallPlan, SolverPlanIndex)
 import qualified Distribution.Client.SolverInstallPlan as SolverInstallPlan
 import Distribution.Client.Types
   ( AllowNewer (..)
@@ -168,6 +168,8 @@ import qualified Data.Set as Set
 import Text.PrettyPrint hiding ((<>))
 import Data.Maybe (fromJust)
 import GHC.Stack (HasCallStack)
+import qualified Data.Tree
+import qualified Data.Graph
 
 -- ------------------------------------------------------------
 
@@ -839,79 +841,60 @@ dumpResolverPackageIndex :: HasCallStack => [ResolverPackage UnresolvedPkgLoc] -
 dumpResolverPackageIndex pkgs =
   vcat
   [
-  --   text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , text "Solver results"
-  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , vcat
-  --   [ text "-" <+> nest 2 (dumpResolverPackage pkg)
-  --   | pkg <- pkgs
-  --   ]
     text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , text "Library roots"
+  , text "Solver results"
   , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   , vcat
-    [ text "-" <+> pretty root
-    | root <- SolverInstallPlan.libraryRoots g
+    [ text "-" <+> nest 2 (dumpResolverPackage pkg)
+    | pkg <- pkgs
     ]
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , text "Root sets"
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , vcat
-    [ text "-" <+> nest 2 (hsep (punctuate (text ",") (map pretty rootset)))
-    | rootset <- SolverInstallPlan.rootSets g
-    ]
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , text "Qualifications"
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , vcat [ text "-" <+> pretty pp $$ nest 4 (vcat [ text "-" <+> pretty sid | sid <- Set.toList sids ])
-         | (pp, sids) <- Map.toList (qualifications g)
-         ]
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , text "Subplans"
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , vcat
-      [ hang (text "Subplan" <+> pretty no) 4 $ vcat
-        [ hang (text "- roots: ") 4 $ vcat $ map pretty rootset'
-        -- , hang (text "- nodes: ") 4 $ dumpNodes subplan
-        , hang (text "- mistakes: ") 4 $ vcat
-          [ text "package" <+> pretty sid <+> text "has inconsistent dependency:" <+> pretty depId
-          | node <- Graph.toList subplan
-          , let sid = Graph.nodeKey node
-          , dep <- fromMaybe [] (Graph.neighbors subplan sid)
-          , let depId = Graph.nodeKey dep
-          , solverStage depId /= solverStage sid
-          ]
-        , hang (text "- inconsistencies:") 4 $ vcat
-          [ hang (text "-" <+> pretty pn) 4 $ vcat
-              [ (pretty (solverStage sid) <> colon <> pretty (solverSrcId sid)) <+> text "requires" <+> pretty ver
-              | (sid, ver) <- ds
-              ]
-          | (pn, ds) <- SolverInstallPlan.dependencyInconsistencies' subplan
-          ]
-        ]
-      | (no, rootset) <- zip [1::Int ..] (SolverInstallPlan.rootSets g)
-      , let rootset' = sort rootset
-      , let subplan = SolverInstallPlan.nonSetupClosure g rootset
-      ]
-  -- , vcat [ hang (pretty key) 4 (vcat [ text "-" <+> pretty n | n <- neigh]) | (_pkg, key, neigh) <- edges ]
-  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , text "Dependency graph"
+  --   text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , text "Library roots"
   -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   -- , vcat
-  --   [ pretty (sndOf3 (vmap v)) <+> text "indegree" <+> pretty indegree <+> text "outdegree" <+> pretty outdegree
-  --   | v <- Data.Graph.vertices g
-  --   , let indegree = Data.Graph.indegree g ! v
-  --   , let outdegree = Data.Graph.outdegree g ! v
+  --   [ text "-" <+> pretty root
+  --   | root <- SolverInstallPlan.libraryRoots g
   --   ]
+  -- , hang (text "closure") 4 $
+  --     vcat $ map (pretty . Graph.nodeKey) $ fromJust $ Graph.closure g $ SolverInstallPlan.libraryRoots g
+  -- , hang (text "nonSetupClosure") 4 $
+  --       vcat $ map (pretty . Graph.nodeKey) $ Graph.toList $ SolverInstallPlan.nonSetupClosure g $ SolverInstallPlan.libraryRoots g
   -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , text "Dependency tree"
+  -- , text "Setup roots"
   -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , text (Data.Tree.drawForest dfs)
+  -- , vcat
+  --     [ hang (pretty i <> text ".") 4 $ vcat
+  --       [ hang (text "roots:") 4 $
+  --           vcat $ map pretty rootset'
+  --       , hang (text "closure:") 4 $
+  --           vcat $ map (pretty . Graph.nodeKey) $ fromJust $ Graph.closure g rootset'
+  --       , hang (text "nonSetupClosure:") 4 $
+  --           vcat $ map (pretty . Graph.nodeKey) $ Graph.toList $ SolverInstallPlan.nonSetupClosure g rootset'
+  --       ]
+  --     | (i, rootset) <- zip [1::Int ..] (SolverInstallPlan.setupRoots g)
+  --     , let rootset' = sort rootset
+  --     ]
+  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , text "Scopes"
+  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  -- , vcat [ (pretty pp <+> text "/") $+$ nest 4 (vcat (map pretty (Set.toList sids)))
+  --        | (pp, sids) <- Map.toList (qualifications g)
+  --        ]
+  -- , vcat [ hang (pretty key) 4 (vcat [ text "-" <+> pretty n | n <- neigh]) | (_pkg, key, neigh) <- edges ]
+   , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , text "Dependency tree"
+  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  , text (Data.Tree.drawForest dfs)
   ]
   -- ]
   where
     g :: SolverPlanIndex
     g = Graph.fromDistinctList pkgs
+
+    (graphForward, graphVertexToNode, graphKeyToVertex) = Graph.toGraph g
+
+    dfs = fmap (fmap (prettyShow . solverId . graphVertexToNode)) $ Data.Graph.dfs graphForward roots
+    Just roots = traverse graphKeyToVertex $ concat $ SolverInstallPlan.libraryRoots g : SolverInstallPlan.setupRoots g
 
 
 dumpNodes :: SolverPlanIndex -> Doc
@@ -935,18 +918,11 @@ dumpNodes solverPlanIndex = vcat
   | node <- Graph.keys solverPlanIndex
   ]
 
--- drawForest :: Pretty a => [Tree a] -> Doc
--- drawForest  = vcat . map drawTree
+drawForest :: Pretty a => [Data.Graph.Tree a] -> Doc
+drawForest  = vcat . map drawTree
 
--- drawTree :: Pretty a => Tree a -> Doc
--- drawTree (Node a ts0) = vcat [pretty a, nest 4 (vcat (map drawTree ts0))]
---   where
---     -- drawSubTrees [] = mempty
---     -- drawSubTrees [t] =
---     --     "|" : shift "`- " "   " (draw t)
---     -- drawSubTrees (t:ts) =
---     --     "|" : shift "+- " "|  " (draw t) ++ drawSubTrees ts
---     -- shift first other = zipWith (++) (first : repeat other)
+drawTree :: Pretty a => Data.Graph.Tree a -> Doc
+drawTree (Data.Graph.Node a ts0) = vcat [pretty a, nest 4 (vcat (map drawTree ts0))]
 
 -- | Give an interpretation to the global 'PackagesPreference' as
 --  specific per-package 'PackageVersionPreference'.

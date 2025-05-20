@@ -992,6 +992,7 @@ printPlan
         unwords $
           filter (not . null) $
             [ " -"
+            , prettyShow (elabStage elab)
             , if verbosity >= deafening
                 then prettyShow (installedUnitId elab)
                 else prettyShow (packageId elab)
