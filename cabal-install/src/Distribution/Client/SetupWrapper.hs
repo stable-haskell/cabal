@@ -198,6 +198,7 @@ import System.FilePath     ( equalFilePath, takeDirectory )
 import System.Directory    ( doesDirectoryExist )
 import qualified System.Win32 as Win32
 #endif
+import Text.PrettyPrint (text, sep, vcat, hang)
 
 -- | @Setup@ encapsulates the outcome of configuring a setup method to build a
 -- particular package.
@@ -341,6 +342,30 @@ defaultSetupScriptOptions =
     , setupCacheLock = Nothing
     , isInteractive = False
     }
+
+instance Pretty SetupScriptOptions where
+  pretty opts =
+    hang (text "ElaboratedComponent") 4 $ vcat $
+      [ text "useCabalVersion: " <> pretty (useCabalVersion opts)
+      , text "useCabalSpecVersion: " <> maybe (text "Nothing") pretty (useCabalSpecVersion opts)
+      , text "useCompiler: " <> maybe (text "Nothing") (pretty . compilerId) (useCompiler opts)
+      , text "usePlatform: " <> maybe (text "Nothing") pretty (usePlatform opts)
+      , text "usePackageDB: " <> sep (map (text . show) (usePackageDB opts))
+      , text "usePackageIndex: " <> pretty (isJust (usePackageIndex opts))
+      , text "useProgramDb: <ProgramDb>"
+      , text "useDistPref: " <> text (getSymbolicPath (useDistPref opts))
+      , text "useLoggingHandle: " <> pretty (isJust (useLoggingHandle opts))
+      , text "useWorkingDir: " <> maybe (text "Nothing") (text . getSymbolicPath) (useWorkingDir opts)
+      , text "useExtraPathEnv: " <> sep (map text (useExtraPathEnv opts))
+      , text "useExtraEnvOverrides: " <> sep (map (\(k,v) -> text k <> "=" <> text (show v)) (useExtraEnvOverrides opts))
+      , text "forceExternalSetupMethod: " <> pretty (forceExternalSetupMethod opts)
+      , text "useDependencies: " <> sep (map (\(cid, pid) -> pretty cid <> ":" <> pretty pid) (useDependencies opts))
+      , text "useDependenciesExclusive: " <> pretty (useDependenciesExclusive opts)
+      , text "useVersionMacros: " <> pretty (useVersionMacros opts)
+      , text "useWin32CleanHack: " <> pretty (useWin32CleanHack opts)
+      , text "setupCacheLock: " <> pretty (isJust (setupCacheLock opts))
+      , text "isInteractive: " <> pretty (isInteractive opts)
+      ]
 
 workingDir :: SetupScriptOptions -> FilePath
 workingDir options = case useWorkingDir options of
