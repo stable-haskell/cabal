@@ -26,9 +26,8 @@ import Distribution.Client.FileMonitor (MonitorChangedReason (..))
 import Distribution.Client.Types (DocsResult, TestsResult)
 
 import Distribution.InstalledPackageInfo (InstalledPackageInfo)
-import Distribution.Package (PackageId)
 import Distribution.Simple.LocalBuildInfo (ComponentName)
-import Distribution.Client.ProjectPlanning.Types (ElaboratedPlanPackage)
+import Distribution.Client.ProjectPlanning.Types (ElaboratedPlanPackage, ElaboratedConfiguredPackage)
 import qualified Distribution.Compat.Graph as Graph
 
 ------------------------------------------------------------------------------
@@ -162,7 +161,7 @@ instance Exception BuildFailure
 
 -- | Detail on the reason that a package failed to build.
 data BuildFailureReason
-  = DependentFailed PackageId
+  = DependentFailed (Graph.Key ElaboratedConfiguredPackage)
   | GracefulFailure String
   | DownloadFailed SomeException
   | UnpackFailed SomeException
