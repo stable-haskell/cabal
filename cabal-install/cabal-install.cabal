@@ -229,6 +229,7 @@ library
         Distribution.Client.Utils
         Distribution.Client.Utils.Json
         Distribution.Client.Utils.Parsec
+        Distribution.Client.Utils.Silently
         Distribution.Client.VCS
         Distribution.Client.Version
         Distribution.Client.Win32SelfUpgrade

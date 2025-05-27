@@ -118,6 +118,7 @@ import Distribution.Compat.Directory (listDirectory)
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 import Distribution.System (Platform(..))
+import Distribution.Client.Utils.Silently (silence)
 
 -- | Each unpacked package is processed in the following phases:
 --
@@ -218,7 +219,7 @@ buildAndRegisterUnpackedPackage
               ipkg0 <- generateInstalledPackageInfo
               let ipkg = ipkg0{Installed.installedUnitId = uid}
               criticalSection registerLock $
-                Cabal.registerPackage
+                silence $ Cabal.registerPackage
                   verbosity
                   toolchainCompiler
                   toolchainProgramDb
