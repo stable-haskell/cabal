@@ -1899,7 +1899,7 @@ elaborateInstallPlan
                 -- correctly.
                 let elab1 =
                       elab0
-                        { elabPkgOrComp = ElabComponent $ elab_comp
+                        { elabPkgOrComp = ElabComponent elab_comp
                         }
                     cid = case elabBuildStyle elab0 of
                       BuildInplaceOnly{} ->
@@ -2207,6 +2207,11 @@ elaborateInstallPlan
               } =
           elaboratedPackage
           where
+            compilers = fmap toolchainCompiler toolchains
+            platforms = fmap toolchainPlatform toolchains
+            programDbs = fmap toolchainProgramDb toolchains
+            packageDbs = fmap toolchainPackageDBs toolchains
+
             elaboratedPackage = ElaboratedConfiguredPackage{..}
 
             -- These get filled in later
@@ -2220,10 +2225,10 @@ elaborateInstallPlan
             elabPkgSourceId = srcpkgPackageId
 
             elabStage = solverPkgStage
-            elabCompiler = toolchainCompiler (getStage toolchains solverPkgStage)
-            elabPlatform = toolchainPlatform (getStage toolchains solverPkgStage)
-            elabProgramDb = toolchainProgramDb (getStage toolchains solverPkgStage)
-            elabPackageDbs = toolchainPackageDBs (getStage toolchains solverPkgStage)
+            elabCompiler = getStage compilers solverPkgStage
+            elabPlatform = getStage platforms solverPkgStage
+            elabProgramDb = getStage programDbs solverPkgStage
+            elabPackageDbs = getStage packageDbs solverPkgStage
 
             elabPkgDescription = case PD.finalizePD
               solverPkgFlags
@@ -2293,9 +2298,23 @@ elaborateInstallPlan
                 then BuildInplaceOnly OnDisk
                 else BuildAndInstall
 
-            elabBuildPackageDBStack = buildAndRegisterDbs
-            elabRegisterPackageDBStack = buildAndRegisterDbs
+            elabBuildPackageDBStack = buildAndRegisterDbs elabStage
+            elabRegisterPackageDBStack = buildAndRegisterDbs elabStage
+            elabSetupPackageDBStack = buildAndRegisterDbs (prevStage elabStage)
 
+            elabInplaceBuildPackageDBStack = inplacePackageDbs elabStage
+            elabInplaceRegisterPackageDBStack = inplacePackageDbs elabStage
+            elabInplaceSetupPackageDBStack = inplacePackageDbs (prevStage elabStage)
+
+            buildAndRegisterDbs stage
+              | shouldBuildInplaceOnly pkg = inplacePackageDbs stage
+              | otherwise = corePackageDbs stage
+            -- Same as corePackageDbs but with the addition of the in-place packagedb.
+            inplacePackageDbs stage = corePackageDbs stage ++ [distPackageDB (compilerId (getStage compilers stage))]
+
+            -- The project packagedbs (typically the global packagedb but others can be added) followed by the store.
+            corePackageDbs stage = getStage packageDbs stage ++ [storePackageDB storeDirLayout (getStage compilers stage)]
+           
             elabSetupScriptStyle = packageSetupScriptStyle elabPkgDescription
             elabSetupScriptCliVersion =
               packageSetupScriptSpecVersion
@@ -2303,22 +2322,7 @@ elaborateInstallPlan
                 elabPkgDescription
                 libDepGraph
                 solverPkgLibDeps
-            elabSetupPackageDBStack = buildAndRegisterDbs
-
-            inplacePackageDbs = corePackageDbs ++ [distPackageDB (compilerId elabCompiler)]
-
-            corePackageDbs =
-              Cabal.interpretPackageDbFlags False (projectConfigPackageDBs (projectConfigToolchain sharedPackageConfig))
-              ++ [storePackageDB storeDirLayout elabCompiler]
-
-            elabInplaceBuildPackageDBStack = inplacePackageDbs
-            elabInplaceRegisterPackageDBStack = inplacePackageDbs
-            elabInplaceSetupPackageDBStack = inplacePackageDbs
-
-            buildAndRegisterDbs
-              | shouldBuildInplaceOnly pkg = inplacePackageDbs
-              | otherwise = corePackageDbs
-
+            
             elabPkgDescriptionOverride = srcpkgDescrOverride
 
             elabBuildOptions =
@@ -3928,7 +3932,7 @@ storePackageInstallDirs
   :: StoreDirLayout
   -> Compiler
   -> InstalledPackageId
-  -> InstallDirs.InstallDirs FilePath
+  -> InstallDirs.InstallDirs FilePath 
 storePackageInstallDirs storeDirLayout compiler ipkgid =
   storePackageInstallDirs' storeDirLayout compiler $ newSimpleUnitId ipkgid
 
