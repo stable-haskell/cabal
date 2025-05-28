@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- | This module deals with building and incrementally rebuilding a collection
 -- of packages. It is what backs the @cabal build@ and @configure@ commands,
@@ -1185,38 +1186,23 @@ dieOnBuildFailures
   -> IO ()
 dieOnBuildFailures verbosity currentCommand plan buildOutcomes
   | null failures = return ()
-  | isSimpleCase = exitFailure
+  -- | isSimpleCase = exitFailure
   | otherwise = do
-      -- For failures where we have a build log, print the log plus a header
-      sequence_
-        [ do
+      for_ failuresClassification $ \case
+        -- For failures where we have a build log, print the log plus a header
+        (pkg, ShowBuildSummaryAndLog reason logfile) -> do
           notice verbosity $
             '\n'
-              : renderFailureDetail False pkg reason
+              : renderFailureDetail True pkg reason
               ++ "\nBuild log ( "
               ++ logfile
               ++ " ):"
           readFile logfile >>= noticeNoWrap verbosity
-        | (pkg, ShowBuildSummaryAndLog reason logfile) <-
-            failuresClassification
-        ]
-
-      -- For all failures, print either a short summary (if we showed the
-      -- build log) or all details
-      dieIfNotHaddockFailure verbosity $
-        unlines
-          [ case failureClassification of
-            ShowBuildSummaryAndLog reason _
-              | verbosity > normal ->
-                  renderFailureDetail mentionDepOf pkg reason
-              | otherwise ->
-                  renderFailureSummary mentionDepOf pkg reason
-                    ++ ". See the build log above for details."
-            ShowBuildSummaryOnly reason ->
-              renderFailureDetail mentionDepOf pkg reason
-          | let mentionDepOf = verbosity <= normal
-          , (pkg, failureClassification) <- failuresClassification
-          ]
+        -- For all failures, print either a short summary (if we showed the
+        -- build log) or all details
+        (pkg, ShowBuildSummaryOnly reason) ->
+          dieIfNotHaddockFailure verbosity $
+            renderFailureDetail True pkg reason
   where
     failures :: [(Graph.Key ElaboratedPlanPackage, BuildFailure)]
     failures =
@@ -1263,45 +1249,45 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
             ExitFailure 1 <- fromException e
             return logfile
 
-    -- Special case: we don't want to report anything complicated in the case
-    -- of just doing build on the current package, since it's clear from
-    -- context which package failed.
-    --
-    -- We generalise this rule as follows:
-    --  - if only one failure occurs, and it is in a single root
-    --    package (i.e. a package with nothing else depending on it)
-    --  - and that failure is of a kind that always reports enough
-    --    detail itself (e.g. ghc reporting errors on stdout)
-    --  - then we do not report additional error detail or context.
-    --
-    isSimpleCase :: Bool
-    isSimpleCase
-      | [(WithStage s pkgid, failure)] <- failures
-      , [pkg] <- rootpkgs
-      , installedUnitId pkg == pkgid
-      , stageOf pkg == s
-      , isFailureSelfExplanatory (buildFailureReason failure)
-      , currentCommand `notElem` [InstallCommand, BuildCommand, ReplCommand] =
-          True
-      | otherwise =
-          False
+    -- -- Special case: we don't want to report anything complicated in the case
+    -- -- of just doing build on the current package, since it's clear from
+    -- -- context which package failed.
+    -- --
+    -- -- We generalise this rule as follows:
+    -- --  - if only one failure occurs, and it is in a single root
+    -- --    package (i.e. a package with nothing else depending on it)
+    -- --  - and that failure is of a kind that always reports enough
+    -- --    detail itself (e.g. ghc reporting errors on stdout)
+    -- --  - then we do not report additional error detail or context.
+    -- --
+    -- isSimpleCase :: Bool
+    -- isSimpleCase
+    --   | [(WithStage s pkgid, failure)] <- failures
+    --   , [pkg] <- rootpkgs
+    --   , installedUnitId pkg == pkgid
+    --   , stageOf pkg == s
+    --   , isFailureSelfExplanatory (buildFailureReason failure)
+    --   , currentCommand `notElem` [InstallCommand, BuildCommand, ReplCommand] =
+    --       True
+    --   | otherwise =
+    --       False
 
-    -- NB: if the Setup script segfaulted or was interrupted,
-    -- we should give more detailed information.  So only
-    -- assume that exit code 1 is "pedestrian failure."
-    isFailureSelfExplanatory :: BuildFailureReason -> Bool
-    isFailureSelfExplanatory (BuildFailed e)
-      | Just (ExitFailure 1) <- fromException e = True
-    isFailureSelfExplanatory (ConfigureFailed e)
-      | Just (ExitFailure 1) <- fromException e = True
-    isFailureSelfExplanatory _ = False
+    -- -- NB: if the Setup script segfaulted or was interrupted,
+    -- -- we should give more detailed information.  So only
+    -- -- assume that exit code 1 is "pedestrian failure."
+    -- isFailureSelfExplanatory :: BuildFailureReason -> Bool
+    -- isFailureSelfExplanatory (BuildFailed e)
+    --   | Just (ExitFailure 1) <- fromException e = True
+    -- isFailureSelfExplanatory (ConfigureFailed e)
+    --   | Just (ExitFailure 1) <- fromException e = True
+    -- isFailureSelfExplanatory _ = False
 
-    rootpkgs :: [ElaboratedConfiguredPackage]
-    rootpkgs =
-      [ pkg
-      | InstallPlan.Configured pkg <- InstallPlan.toList plan
-      , hasNoDependents pkg
-      ]
+    -- rootpkgs :: [ElaboratedConfiguredPackage]
+    -- rootpkgs =
+    --   [ pkg
+    --   | InstallPlan.Configured pkg <- InstallPlan.toList plan
+    --   , hasNoDependents pkg
+    --   ]
 
     ultimateDeps :: (WithStage UnitId) -> [ElaboratedPlanPackage]
     ultimateDeps pkgid@(WithStage s uid) =

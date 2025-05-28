@@ -931,10 +931,6 @@ rebuildInstallPlan
                 projectConfigLocalPackages
                 (getMapMappend projectConfigSpecificPackage)
         
-          liftIO $ do
-            putStrLn "\nelaboratedPlan\n"
-            dumpPlan elaboratedPlan
-
           instantiatedPlan <- liftIO . runLogProgress verbosity $ do
             infoProgress (text "Instantiating the elaborated plan...")
             instantiateInstallPlan
@@ -945,8 +941,6 @@ rebuildInstallPlan
 
           liftIO $ do
             putStrLn "\ninstantiatedPlan\n"
-            dumpPlan instantiatedPlan
-            putStrLn ""
             debugNoWrap verbosity $ showElaboratedInstallPlan instantiatedPlan
 
           return (instantiatedPlan, elaboratedShared)
@@ -1614,6 +1608,10 @@ elaborateInstallPlan
       elaboratedInstallPlan :: LogProgress ElaboratedInstallPlan
       elaboratedInstallPlan = do
         infoProgress (Disp.text "elaboratedInstallPlan")
+
+        infoProgress $ hang (Disp.text "pkgsLocalToProject") 4 $ vcat $ map pretty $ Set.toList pkgsLocalToProject
+        infoProgress $ hang (Disp.text "pkgsToBuildInplaceOnly") 4 $ vcat $ map pretty $ Set.toList pkgsToBuildInplaceOnly
+
         flip InstallPlan.fromSolverInstallPlanWithProgress solverPlan $ \mapDep planpkg -> do
           infoProgress (text "Elaborating" <+> pretty (solverId planpkg))
           elabs <- case planpkg of
@@ -1813,6 +1811,7 @@ elaborateInstallPlan
                   [ text "lib_dep_map:" <+> Disp.hsep (punctuate comma $ map pretty (Map.keys lib_dep_map))
                   , text "exe_dep_map:" <+> Disp.hsep (punctuate comma $ map pretty (Map.keys exe_dep_map))
                   ]
+                
                 cc0 <-
                   toConfiguredComponent
                     pd
@@ -1893,6 +1892,8 @@ elaborateInstallPlan
                   , text "compExeDependencyPaths:" <+> Disp.hsep (punctuate comma $ map (pretty . fst) compExeDependencyPaths)
                   , text "compPkgConfigDependencies:" <+> Disp.hsep (punctuate comma $ map (pretty . fst) compPkgConfigDependencies)
                   ]
+
+                infoProgress $ text "elabBuildStyle =" <+> text (show (elabBuildStyle elab0))
 
                 -- 3. Construct a preliminary ElaboratedConfiguredPackage,
                 -- and use this to compute the component ID.  Fix up cc_id
@@ -2240,6 +2241,7 @@ elaborateInstallPlan
               srcpkgDescription of
               Right (desc, _) -> desc
               Left _ -> error "Failed to finalizePD in elaborateSolverToCommon"
+            
             elabFlagAssignment = solverPkgFlags
             elabFlagDefaults =
               PD.mkFlagAssignment
@@ -4704,27 +4706,3 @@ inplaceBinRoot layout config package =
 -- setupMaxCabalVersionConstraint :: Version
 -- setupMaxCabalVersionConstraint =
 --   alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion
-dumpPlan :: (Graph.Key ipkg ~ WithStage UnitId, Graph.IsNode ipkg, Package ipkg) => InstallPlan.GenericInstallPlan ipkg ElaboratedConfiguredPackage -> IO ()
-dumpPlan elaboratedInstallPlan = do
-    for_ (filter ((== mkPackageName "genprimopcode") . packageName . packageId) $ InstallPlan.toList elaboratedInstallPlan) $
-      foldPlanPackage 
-        (print . pretty . Graph.nodeKey)
-        (\elab -> 
-          print $ Disp.hang (pretty $ Graph.nodeKey elab) 4 $ Disp.vcat
-            [ Disp.hang (Disp.text "elabOrderDependencies:") 4 $ Disp.vcat $ map pretty (elabOrderDependencies elab)
-            , Disp.hang (Disp.text "elabOrderLibDependencies:") 4 $ Disp.vcat $ map pretty (elabOrderLibDependencies elab)
-            , Disp.hang (Disp.text "elabOrderExeDependencies:") 4 $ Disp.vcat $ map pretty (elabOrderExeDependencies elab)
-            , Disp.hang (Disp.text "elabLibDependencies:") 4 $ Disp.vcat $ map (pretty . fst) (elabLibDependencies elab)
-            , Disp.hang (Disp.text "elabExeDependencies:") 4 $ Disp.vcat $ map pretty (elabExeDependencies elab)
-            , Disp.hang (Disp.text "InstallPlan.directDeps") 4 $
-                Disp.vcat
-                  $ map (pretty . Graph.nodeKey)
-                  $ InstallPlan.directDeps elaboratedInstallPlan (Graph.nodeKey elab)
-            , Disp.hang (Disp.text "Graph.neighbors") 4
-                $ case Graph.neighbors (InstallPlan.toGraph elaboratedInstallPlan) (Graph.nodeKey elab) of
-                    Nothing -> Disp.text "error"
-                    Just ds  -> Disp.vcat $ map (pretty . Graph.nodeKey) ds
-            , Disp.hang (Disp.text "Graph.nodeNeighbors") 4
-                $ Disp.vcat $ map pretty $ Graph.nodeNeighbors elab
-            ]
-        )

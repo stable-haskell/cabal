@@ -16,6 +16,7 @@
 -- Top level interface to dependency resolution.
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module Distribution.Client.Dependency
   ( -- * The main package dependency resolver
     DepResolverParams
@@ -73,7 +74,7 @@ import Distribution.Client.Compat.Prelude
 import Distribution.Client.Dependency.Types
   ( PackagesPreferenceDefault (..)
   )
-import Distribution.Client.SolverInstallPlan (SolverInstallPlan, SolverPlanIndex)
+import Distribution.Client.SolverInstallPlan (SolverInstallPlan)
 import qualified Distribution.Client.SolverInstallPlan as SolverInstallPlan
 import Distribution.Client.Types
   ( AllowNewer (..)
@@ -141,6 +142,7 @@ import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.DependencyResolver
 import Distribution.Solver.Types.InstalledPreference as Preference
+import Distribution.Solver.Types.InstSolverPackage (InstSolverPackage(..))
 import Distribution.Solver.Types.LabeledPackageConstraint
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PackageConstraint
@@ -166,7 +168,6 @@ import Data.List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.PrettyPrint hiding ((<>))
-import Data.Maybe (fromJust)
 import GHC.Stack (HasCallStack)
 import qualified Data.Tree
 import qualified Data.Graph
@@ -786,6 +787,46 @@ resolveDependencies toolchains pkgConfigDB installedPkgIndex params = do
     preferences
     constraints
     targets
+
+  step $ render $ vcat
+    [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    , text "Solver plan"
+    , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    ]
+  for_ pkgs $ \pkg -> do 
+    step $ render $ 
+      hang (pretty (solverQPN pkg) <+> text "->" <+> pretty (solverId pkg)) 4 $ case pkg of
+        PreExisting InstSolverPackage{instSolverPkgExeDeps, instSolverPkgLibDeps} ->
+          vcat
+              [ hang (pretty comp) 2 $ vcat
+                  [ vcat [ hang (text "lib-deps:") 2 (vcat (map pretty libDeps)) | not (null libDeps) ]
+                  , vcat [ hang (text "exe-deps:") 2 (vcat (map pretty exeDeps)) | not (null exeDeps) ]
+                  ]
+              | (comp, (libDeps, exeDeps)) <- CD.toList (CD.zip instSolverPkgLibDeps instSolverPkgExeDeps)
+              ]
+        Configured SolverPackage{solverPkgExeDeps, solverPkgLibDeps} ->
+          vcat
+            [ hang (pretty comp) 2 $ vcat
+                [ vcat [ hang (text "lib-deps:") 2 (vcat (map pretty libDeps)) | not (null libDeps) ]
+                , vcat [ hang (text "exe-deps:") 2 (vcat (map pretty exeDeps)) | not (null exeDeps) ]
+                ]
+            | (comp, (libDeps, exeDeps)) <- CD.toList (CD.zip solverPkgLibDeps solverPkgExeDeps)
+            ]
+
+  step $ render $ vcat
+    [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    , text "Scopes"
+    , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    , renderSolverPlanScopes pkgs
+    ]
+  
+  step $ render $ vcat
+    [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    , text "Dependency tree"
+    , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    , renderSolverPlanTree pkgs
+    ]
+
   validateSolverResult toolchains pkgs
   where
     installedPkgIndex' = Staged $ \case
@@ -837,92 +878,29 @@ resolveDependencies toolchains pkgConfigDB installedPkgIndex params = do
     preferences :: PackageName -> PackagePreferences
     preferences = interpretPackagesPreference targets defpref prefs
 
-dumpResolverPackageIndex :: HasCallStack => [ResolverPackage UnresolvedPkgLoc] -> Doc
-dumpResolverPackageIndex pkgs =
-  vcat
-  [
-    text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , text "Solver results"
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , vcat
-    [ text "-" <+> nest 2 (dumpResolverPackage pkg)
-    | pkg <- pkgs
-    ]
-  --   text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , text "Library roots"
-  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , vcat
-  --   [ text "-" <+> pretty root
-  --   | root <- SolverInstallPlan.libraryRoots g
-  --   ]
-  -- , hang (text "closure") 4 $
-  --     vcat $ map (pretty . Graph.nodeKey) $ fromJust $ Graph.closure g $ SolverInstallPlan.libraryRoots g
-  -- , hang (text "nonSetupClosure") 4 $
-  --       vcat $ map (pretty . Graph.nodeKey) $ Graph.toList $ SolverInstallPlan.nonSetupClosure g $ SolverInstallPlan.libraryRoots g
-  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , text "Setup roots"
-  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , vcat
-  --     [ hang (pretty i <> text ".") 4 $ vcat
-  --       [ hang (text "roots:") 4 $
-  --           vcat $ map pretty rootset'
-  --       , hang (text "closure:") 4 $
-  --           vcat $ map (pretty . Graph.nodeKey) $ fromJust $ Graph.closure g rootset'
-  --       , hang (text "nonSetupClosure:") 4 $
-  --           vcat $ map (pretty . Graph.nodeKey) $ Graph.toList $ SolverInstallPlan.nonSetupClosure g rootset'
-  --       ]
-  --     | (i, rootset) <- zip [1::Int ..] (SolverInstallPlan.setupRoots g)
-  --     , let rootset' = sort rootset
-  --     ]
-  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , text "Scopes"
-  -- , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  -- , vcat [ (pretty pp <+> text "/") $+$ nest 4 (vcat (map pretty (Set.toList sids)))
-  --        | (pp, sids) <- Map.toList (qualifications g)
-  --        ]
-  -- , vcat [ hang (pretty key) 4 (vcat [ text "-" <+> pretty n | n <- neigh]) | (_pkg, key, neigh) <- edges ]
-   , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , text "Dependency tree"
-  , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-  , text (Data.Tree.drawForest dfs)
+renderSolverPlanScopes :: [SolverInstallPlan.SolverPlanPackage] -> Doc
+renderSolverPlanScopes pkgs = vcat
+  [ vcat [ (pretty pp <+> text "/") $+$ nest 4 (vcat (map pretty (Set.toList sids)))
+         | (pp, sids) <- Map.toList (SolverInstallPlan.qualifications g)
+         ]
+  -- , vcat [ hang (pretty key) 4 (vcat [ text "-" <+> pretty n | n <- neigh]) | (_pkg, key, neigh) <- mapG ]
   ]
-  -- ]
   where
-    g :: SolverPlanIndex
+    g = Graph.fromDistinctList pkgs
+    -- (_g', mapG, _invG) = Data.Graph.graphFromEdges [ (pkg, Graph.nodeKey pkg,  Graph.nodeNeighbors pkg) | pkg <- pkgs]
+
+
+renderSolverPlanTree :: HasCallStack => [SolverInstallPlan.SolverPlanPackage] -> Doc
+renderSolverPlanTree pkgs = text (Data.Tree.drawForest dfs)
+  where
     g = Graph.fromDistinctList pkgs
 
     (graphForward, graphVertexToNode, graphKeyToVertex) = Graph.toGraph g
-
+    
     dfs = fmap (fmap (prettyShow . solverId . graphVertexToNode)) $ Data.Graph.dfs graphForward roots
+    
     Just roots = traverse graphKeyToVertex $ concat $ SolverInstallPlan.libraryRoots g : SolverInstallPlan.setupRoots g
 
-
-dumpNodes :: SolverPlanIndex -> Doc
-dumpNodes solverPlanIndex = vcat
-  [ hang (pretty node) 4 $
-    vcat [ hang (text "deps:") 4 $ vcat
-           [ pretty depid <+> (if solverStage node /= solverStage depid then text "WRONG" else mempty)
-           | depid <- map Graph.nodeKey deps
-           ]
-      | let deps = fromJust (Graph.neighbors solverPlanIndex node)
-      , not (null deps)
-      ]
-    $$
-    vcat [ hang (text "reverse-deps:") 4 $
-           vcat [ pretty rdepid <+> (if solverStage node /= solverStage rdepid then text "WRONG" else mempty)
-                | rdepid <- map Graph.nodeKey rdeps
-                ]
-         | let rdeps = fromJust (Graph.revNeighbors solverPlanIndex node)
-         , not (null rdeps)
-         ]
-  | node <- Graph.keys solverPlanIndex
-  ]
-
-drawForest :: Pretty a => [Data.Graph.Tree a] -> Doc
-drawForest  = vcat . map drawTree
-
-drawTree :: Pretty a => Data.Graph.Tree a -> Doc
-drawTree (Data.Graph.Node a ts0) = vcat [pretty a, nest 4 (vcat (map drawTree ts0))]
 
 -- | Give an interpretation to the global 'PackagesPreference' as
 --  specific per-package 'PackageVersionPreference'.
