@@ -192,17 +192,17 @@ convSP
 convSP stage os arch cinfo constraints strfl solveExes (SourcePackage (PackageIdentifier pn pv) gpd _ _pl) =
   let i = I stage pv (InRepo pn)
       pkgConstraints = fromMaybe [] $ M.lookup pn constraints
-  in  (pn, i, convGPD os arch cinfo pkgConstraints strfl solveExes pn gpd)
+  in  (pn, i, convGPD stage os arch cinfo pkgConstraints strfl solveExes pn gpd)
 
 -- We do not use 'flattenPackageDescription' or 'finalizePD'
 -- from 'Distribution.PackageDescription.Configuration' here, because we
 -- want to keep the condition tree, but simplify much of the test.
 
 -- | Convert a generic package description to a solver-specific 'PInfo'.
-convGPD :: OS -> Arch -> CompilerInfo -> [LabeledPackageConstraint]
+convGPD :: Stage -> OS -> Arch -> CompilerInfo -> [LabeledPackageConstraint]
         -> StrongFlags -> SolveExecutables -> PN -> GenericPackageDescription
         -> PInfo
-convGPD os arch cinfo constraints strfl solveExes pn
+convGPD stage os arch cinfo constraints strfl solveExes pn
         (GenericPackageDescription pkg scannedVersion flags mlib sub_libs flibs exes tests benchs) =
   let
     fds  = flagInfo strfl flags
@@ -260,7 +260,7 @@ convGPD os arch cinfo constraints strfl solveExes pn
               , compIsBuildable = IsBuildable $ testCondition (buildable . libBuildInfo) lib /= Just False
               }
 
-        testCondition = testConditionForComponent os arch cinfo constraints
+        testCondition = testConditionForComponent stage os arch cinfo constraints
 
         isPrivate LibraryVisibilityPrivate = True
         isPrivate LibraryVisibilityPublic  = False
@@ -273,14 +273,15 @@ convGPD os arch cinfo constraints strfl solveExes pn
 -- before dependency solving. Additionally, this function only considers flags
 -- that are set by unqualified flag constraints, and it doesn't check the
 -- intra-package dependencies of a component.
-testConditionForComponent :: OS
+testConditionForComponent :: Stage 
+                          -> OS
                           -> Arch
                           -> CompilerInfo
                           -> [LabeledPackageConstraint]
                           -> (a -> Bool)
                           -> CondTree ConfVar [Dependency] a
                           -> Maybe Bool
-testConditionForComponent os arch cinfo constraints p tree =
+testConditionForComponent stage os arch cinfo constraints p tree =
     case go $ extractCondition p tree of
       Lit True  -> Just True
       Lit False -> Just False
@@ -290,8 +291,9 @@ testConditionForComponent os arch cinfo constraints p tree =
     flagAssignment :: [(FlagName, Bool)]
     flagAssignment =
         mconcat [ unFlagAssignment fa
-                | PackageConstraint (ConstraintScope _stage (ScopeAnyQualifier _)) (PackagePropertyFlags fa)
-                    <- L.map unlabelPackageConstraint constraints]
+                | PackageConstraint (ConstraintScope stage' (ScopeAnyQualifier _)) (PackagePropertyFlags fa)
+                    <- L.map unlabelPackageConstraint constraints
+                , maybe True (== stage) stage']
 
     -- Simplify the condition, using the current environment. Most of this
     -- function was copied from convBranch and
