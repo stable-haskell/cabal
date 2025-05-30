@@ -98,10 +98,10 @@ instance Pretty ConstraintScope where
     maybe mempty pretty mstage <+> pretty qualifier
 
 instance Pretty ConstraintQualifier where
-  pretty (ScopeTarget pn) = pretty pn <<>> Disp.text "." <<>> pretty pn
-  pretty (ScopeQualified q pn) = dispQualifier q <<>> pretty pn
-  pretty (ScopeAnySetupQualifier pn) = Disp.text "setup." <<>> pretty pn
-  pretty (ScopeAnyQualifier pn) = Disp.text "any." <<>> pretty pn
+  pretty (ScopeTarget pn) = pretty pn <> Disp.text "." <> pretty pn
+  pretty (ScopeQualified q pn) = dispQualifierPrefix q <> pretty pn
+  pretty (ScopeAnySetupQualifier pn) = Disp.text "setup." <> pretty pn
+  pretty (ScopeAnyQualifier pn) = Disp.text "any." <> pretty pn
 
 -- | A package property is a logical predicate on packages.
 data PackageProperty

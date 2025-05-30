@@ -3,7 +3,7 @@
 module Distribution.Solver.Types.PackagePath
     ( PackagePath(..)
     , Qualifier(..)
-    , dispQualifier
+    , dispQualifierPrefix
     , Qualified(..)
     , QPN
     , dispQPN
@@ -25,7 +25,7 @@ instance Structured PackagePath
 
 instance Pretty PackagePath where
   pretty (PackagePath stage qualifier) =
-    pretty stage <<>> Disp.text ":" <<>> pretty qualifier
+    pretty stage <> Disp.text ":" <> pretty qualifier
 
 -- | Qualifier of a package within a namespace (see 'PackagePath')
 data Qualifier =
@@ -59,14 +59,20 @@ instance Structured Qualifier
 
 instance Pretty Qualifier where
   pretty QualToplevel = Disp.text "toplevel"
-  pretty (QualSetup pn) = pretty pn <<>> Disp.text ":setup"
-  pretty (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
-                            pretty pn2 <<>> Disp.text ":exe"
+  pretty (QualSetup pn) = pretty pn <> Disp.text ":setup"
+  pretty (QualExe pn pn2) = pretty pn <> Disp.text ":" <>
+                            pretty pn2 <> Disp.text ":exe"
 
 -- | Pretty-prints a qualifier. The result is either empty or
 -- ends in a period, so it can be prepended onto a package name.
-dispQualifier :: Qualifier -> Disp.Doc
-dispQualifier = pretty
+dispQualifierPrefix :: Qualifier -> Disp.Doc
+dispQualifierPrefix QualToplevel = mempty
+dispQualifierPrefix (QualSetup pn) = pretty pn <> Disp.text ":setup."
+dispQualifierPrefix (QualExe pn pn2) =
+  pretty pn
+    <> Disp.text ":"
+    <> pretty pn2
+    <> Disp.text ":exe."
 
 -- | A qualified entity. Pairs a package path with the entity.
 data Qualified a = Q PackagePath a
@@ -80,7 +86,7 @@ type QPN = Qualified PackageName
 
 instance Pretty (Qualified PackageName) where
   pretty (Q (PackagePath stage qual) pn) =
-    pretty stage <<>> Disp.colon <<>> pretty qual <<>> Disp.char '.' <<>> pretty pn
+    pretty stage <> Disp.colon <> pretty qual <> Disp.char '.' <> pretty pn
 
 -- | Pretty-prints a qualified package name.
 dispQPN :: QPN -> Disp.Doc
