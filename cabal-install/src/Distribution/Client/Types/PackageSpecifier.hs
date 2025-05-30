@@ -11,7 +11,7 @@ module Distribution.Client.Types.PackageSpecifier
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import Distribution.Package (Package (..), PackageIdentifier (..), packageName)
+import Distribution.Package (Package (..), PackageIdentifier (..), packageName, packageVersion)
 import Distribution.Types.PackageName (PackageName)
 import Distribution.Version (nullVersion, thisVersion)
 
@@ -53,7 +53,7 @@ pkgSpecifierConstraints (SpecificSourcePackage pkg) =
     pc =
       PackageConstraint
         (ConstraintScope Nothing (ScopeTarget $ packageName pkg))
-        PackagePropertySource
+        (PackagePropertyVersion $ thisVersion (packageVersion pkg))
 
 mkNamedPackage :: PackageIdentifier -> PackageSpecifier pkg
 mkNamedPackage pkgId =
