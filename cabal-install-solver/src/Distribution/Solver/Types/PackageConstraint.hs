@@ -35,7 +35,13 @@ import Distribution.Solver.Types.Toolchain (Stage)
 
 -- | Determines to what packages and in what contexts a
 -- constraint applies.
-data ConstraintScope = ConstraintScope (Maybe Stage) ConstraintQualifier
+data ConstraintScope =
+    ConstraintScope
+      -- | The stage at which the constraint applies, if any.
+      -- If Nothing, the constraint applies to all stages.
+    (Maybe Stage)
+      -- | The qualifier that determines the scope of the constraint.
+    ConstraintQualifier
   deriving (Eq, Show)
 
 data ConstraintQualifier

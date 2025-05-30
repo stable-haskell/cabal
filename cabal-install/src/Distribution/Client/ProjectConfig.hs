@@ -1461,13 +1461,12 @@ syncAndReadSourcePackagesRemoteRepos
             ]
 
     let progPathExtra = fromNubList projectConfigProgPathExtra
-
     getConfiguredVCS <- delayInitSharedResources $ \repoType ->
       let vcs = Map.findWithDefault (error $ "Unknown VCS: " ++ prettyShow repoType) repoType knownVCSs
        in configureVCS verbosity progPathExtra vcs
 
-    x <-
-      rerunConcurrentlyIfChanged
+    concat
+      <$> rerunConcurrentlyIfChanged
         verbosity
         (newParallelJobControl maxNumFetchJobs)
         [ ( monitor
@@ -1487,8 +1486,6 @@ syncAndReadSourcePackagesRemoteRepos
                     [PackageSpecifier (SourcePackage UnresolvedPkgLoc)]
               monitor = newFileMonitor (pathStem <.> "cache")
         ]
-
-    return (concat x)
     where
       syncRepoGroupAndReadSourcePackages
         :: VCS ConfiguredProgram

@@ -494,21 +494,21 @@ hideInstalledPackagesSpecificBySourcePackageId pkgids params =
   -- TODO: this should work using exclude constraints instead
   params
     { depResolverInstalledPkgIndex =
-        fmap (\idx -> foldl' (flip InstalledPackageIndex.deleteSourcePackageId) idx pkgids)
-        (depResolverInstalledPkgIndex params)
+        (\idx -> foldl' (flip InstalledPackageIndex.deleteSourcePackageId) idx pkgids)
+        . depResolverInstalledPkgIndex params
     }
 
 hideInstalledPackagesAllVersions
   :: [PackageName]
   -> DepResolverParams
   -> DepResolverParams
-hideInstalledPackagesAllVersions _pkgnames _params = error "we shouldn't be using this"
+hideInstalledPackagesAllVersions pkgnames params =
   -- TODO: this should work using exclude constraints instead
-  -- params
-  --   { depResolverInstalledPkgIndex =
-  --       fmap (\idx -> foldl' (flip InstalledPackageIndex.deletePackageName) idx pkgnames)
-  --       (depResolverInstalledPkgIndex params)
-  --   }
+  params
+    { depResolverInstalledPkgIndex =
+        (\idx -> foldl' (flip InstalledPackageIndex.deletePackageName) idx pkgnames)
+        . depResolverInstalledPkgIndex params
+    }
 
 -- | Remove upper bounds in dependencies using the policy specified by the
 -- 'AllowNewer' argument (all/some/none).

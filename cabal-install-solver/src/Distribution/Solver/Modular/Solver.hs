@@ -156,16 +156,6 @@ solve sc cinfo pkgConfigDB idx userPrefs userConstraints userGoals =
       | asBool (reorderGoals sc) = P.preferReallyEasyGoalChoices
       | otherwise                = id {- P.firstGoal -}
 
--- myCheckPhase :: TreeTrav () QGoalReason QGoalReason
--- myCheckPhase = go
---   where
---     go (PChoiceF (Q pp pn) revdepmap gr ws) | False
---       = FailF
---         _
---         NotExplicit
---     go x
---       = x
-
 -- | Replace all goal reasons with a dummy goal reason in the tree
 --
 -- This is useful for debugging (when experimenting with the impact of GRs)
