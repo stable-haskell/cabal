@@ -480,8 +480,8 @@ addSourcePackages
 addSourcePackages pkgs params =
   params
     { depResolverSourcePkgIndex =
-        foldl
-          (flip PackageIndex.insert)
+        foldl'
+          (\idx pkg -> PackageIndex.insert pkg $ PackageIndex.deletePackageName (packageName pkg) idx)
           (depResolverSourcePkgIndex params)
           pkgs
     }
