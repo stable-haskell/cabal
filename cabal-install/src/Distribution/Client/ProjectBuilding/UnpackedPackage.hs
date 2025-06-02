@@ -190,35 +190,35 @@ buildAndRegisterUnpackedPackage
     info verbosity $ "\n\nbuildAndRegisterUnpackedPackage: " ++ prettyShow (Graph.nodeKey pkg)
     -- Configure phase
     delegate $
-      PBConfigurePhase $
-        annotateFailure mlogFile ConfigureFailed $ do
+      PBConfigurePhase $ do
+        -- annotateFailure mlogFile ConfigureFailed $ do
           info verbosity $ "--- Configure phase " ++ prettyShow (Graph.nodeKey pkg)
           setup configureCommand Cabal.configCommonFlags configureFlags configureArgs
 
     -- Build phase
     delegate $
-      PBBuildPhase $
-        annotateFailure mlogFile BuildFailed $ do
+      PBBuildPhase $ do
+        -- annotateFailure mlogFile BuildFailed $ do
           info verbosity $ "--- Build phase " ++ prettyShow (Graph.nodeKey pkg)
           setup buildCommand Cabal.buildCommonFlags (return . buildFlags) buildArgs
 
     -- Haddock phase
     whenHaddock $
       delegate $
-        PBHaddockPhase $
-          annotateFailure mlogFile HaddocksFailed $ do
+        PBHaddockPhase $ do
+          -- annotateFailure mlogFile HaddocksFailed $ do
             info verbosity $ "--- Haddock phase " ++ prettyShow (Graph.nodeKey pkg)
             setup haddockCommand Cabal.haddockCommonFlags (return . haddockFlags) haddockArgs
 
     -- Install phase
     delegate $
       PBInstallPhase
-        { runCopy = \destdir ->
-            annotateFailure mlogFile InstallFailed $ do
+        { runCopy = \destdir -> do
+            -- annotateFailure mlogFile InstallFailed $ do
               info verbosity $ "--- Install phase, copy " ++ prettyShow (Graph.nodeKey pkg)
               setup Cabal.copyCommand Cabal.copyCommonFlags (return . copyFlags destdir) copyArgs
-        , runRegister = \pkgDBStack registerOpts ->
-            annotateFailure mlogFile InstallFailed $ do
+        , runRegister = \pkgDBStack registerOpts -> do
+            -- annotateFailure mlogFile InstallFailed $ do
               info verbosity $ "--- Install phase, register " ++ prettyShow (Graph.nodeKey pkg)
               -- We register ourselves rather than via Setup.hs. We need to
               -- grab and modify the InstalledPackageInfo. We decide what
@@ -240,24 +240,24 @@ buildAndRegisterUnpackedPackage
     -- Test phase
     whenTest $
       delegate $
-        PBTestPhase $
-          annotateFailure mlogFile TestsFailed $ do
+        PBTestPhase $ do
+          -- annotateFailure mlogFile TestsFailed $ do
             info verbosity $ "--- Test phase " ++ prettyShow (Graph.nodeKey pkg)
             setup testCommand Cabal.testCommonFlags (return . testFlags) testArgs
 
     -- Bench phase
     whenBench $
       delegate $
-        PBBenchPhase $
-          annotateFailure mlogFile BenchFailed $ do
+        PBBenchPhase $ do
+          -- annotateFailure mlogFile BenchFailed $ do
             info verbosity $ "--- Benchmark phase " ++ prettyShow (Graph.nodeKey pkg)
             setup benchCommand Cabal.benchmarkCommonFlags (return . benchFlags) benchArgs
 
     -- Repl phase
     whenRepl $
       delegate $
-        PBReplPhase $
-          annotateFailure mlogFile ReplFailed $ do
+        PBReplPhase $ do
+          -- annotateFailure mlogFile ReplFailed $ do
             info verbosity $ "--- Repl phase " ++ prettyShow (Graph.nodeKey pkg)
             setupInteractive replCommand Cabal.replCommonFlags replFlags replArgs
 

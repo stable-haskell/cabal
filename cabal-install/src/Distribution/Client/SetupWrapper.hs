@@ -210,6 +210,16 @@ data Setup = Setup
   , setupPackage :: PackageDescription
   }
 
+instance Pretty Setup where
+  pretty setup =
+    hang (text "Setup") 4 $ vcat
+      [ text "setupMethod: " <> pretty (setupMethod setup)
+      , text "setupScriptOptions: " <> pretty (setupScriptOptions setup)
+      , text "setupVersion: " <> pretty (setupVersion setup)
+      , text "setupBuildType: " <> pretty (setupBuildType setup)
+      , text "setupPackage: " <> pretty (packageName $ setupPackage setup)
+      ]
+
 -- | @SetupMethod@ represents one of the methods used to run Cabal commands.
 data SetupMethod
   = -- | run Cabal commands through \"cabal\" in the
@@ -221,6 +231,11 @@ data SetupMethod
   | -- | run Cabal commands through a custom \"Setup\" executable
     ExternalMethod FilePath
   deriving Show
+
+instance Pretty SetupMethod where
+  pretty InternalMethod = text "InternalMethod"
+  pretty SelfExecMethod = text "SelfExecMethod"
+  pretty (ExternalMethod path) = text "ExternalMethod" <+> text path
 
 -- TODO: The 'setupWrapper' and 'SetupScriptOptions' should be split into two
 -- parts: one that has no policy and just does as it's told with all the
@@ -357,7 +372,7 @@ instance Pretty SetupScriptOptions where
       , text "useLoggingHandle: " <> pretty (isJust (useLoggingHandle opts))
       , text "useWorkingDir: " <> maybe (text "Nothing") (text . getSymbolicPath) (useWorkingDir opts)
       , text "useExtraPathEnv: " <> sep (map text (useExtraPathEnv opts))
-      , text "useExtraEnvOverrides: " <> sep (map (\(k,v) -> text k <> "=" <> text (show v)) (useExtraEnvOverrides opts))
+      , text "useExtraEnvOverrides: " <> sep (map (\(k,v) -> text k <> "=" <> foldMap text v) (useExtraEnvOverrides opts))
       , text "forceExternalSetupMethod: " <> pretty (forceExternalSetupMethod opts)
       , text "useDependencies: " <> sep (map (\(cid, pid) -> pretty cid <> ":" <> pretty pid) (useDependencies opts))
       , text "useDependenciesExclusive: " <> pretty (useDependenciesExclusive opts)
@@ -404,11 +419,11 @@ getSetup verbosity options mpkg = do
       buildType' = buildType pkg
   (version, method, options'') <-
     getSetupMethod verbosity options' pkg buildType'
-  debug verbosity $ unlines
+  info verbosity $ unlines
     [ "choosen setup method:"
     , "version: " ++ show version
     , "method: " ++ show method
-    , "options: " ++ show options''
+    , show $ hang (text "options:") 4 (pretty options'')
     ]
   return
     Setup
