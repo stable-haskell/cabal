@@ -59,7 +59,7 @@ data ConstraintSource =
 
   -- | TODO
   | ConstraintHideInstalledPackagesSpecificBySourcePackageId 
-  deriving (Show, Eq, Generic)
+  deriving (Eq, Ord, Show, Generic)
 
 instance Binary ConstraintSource
 instance Structured ConstraintSource

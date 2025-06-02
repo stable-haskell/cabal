@@ -171,6 +171,7 @@ import Text.PrettyPrint hiding ((<>))
 import GHC.Stack (HasCallStack)
 import qualified Data.Tree
 import qualified Data.Graph
+import Distribution.Simple.Utils (ordNub)
 
 -- ------------------------------------------------------------
 
@@ -216,10 +217,8 @@ showDepResolverParams :: DepResolverParams -> String
 showDepResolverParams p = render $ vcat [
     hang (text "targets:") 2 $
       vcat [ text (prettyShow pkgname) | pkgname <- Set.toList (depResolverTargets p) ],
-    hang (text "constraints:") 2 $
-      vcat [ prettyLabeledConstraint lc | lc <- depResolverConstraints p ],
-    hang (text "constraints:") 2 $
-      vcat [ prettyLabeledConstraint lc | lc <- depResolverConstraints p ],
+    hang (text "constraints (unique)") 2 $
+      vcat (map prettyLabeledConstraint lcs),
     hang (text "preferences:") 2 $
       if depResolverVerbosity p >= deafening
         then vcat [ text (showPackagePreference pref) | pref <- depResolverPreferences p ]
@@ -254,6 +253,8 @@ showDepResolverParams p = render $ vcat [
     prettyLabeledConstraint :: LabeledPackageConstraint -> Doc
     prettyLabeledConstraint (LabeledPackageConstraint pc src) =
       pretty pc <+> parens (pretty src)
+
+    lcs = Set.toList $ Set.fromList $ depResolverConstraints p
 
 -- | A package selection preference for a particular package.
 --
@@ -787,13 +788,13 @@ resolveDependencies toolchains pkgConfigDB installedPkgIndex params = do
     preferences
     constraints
     targets
-
+  let pkgs' = sortBy (comparing solverId) pkgs
   step $ render $ vcat
     [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     , text "Solver plan"
     , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     ]
-  for_ pkgs $ \pkg -> do 
+  for_ pkgs' $ \pkg -> do 
     step $ render $ 
       hang (pretty (solverQPN pkg) <+> text "->" <+> pretty (solverId pkg)) 4 $ case pkg of
         PreExisting InstSolverPackage{instSolverPkgExeDeps, instSolverPkgLibDeps} ->
@@ -817,17 +818,17 @@ resolveDependencies toolchains pkgConfigDB installedPkgIndex params = do
     [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     , text "Scopes"
     , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    , renderSolverPlanScopes pkgs
+    , renderSolverPlanScopes pkgs'
     ]
   
   step $ render $ vcat
     [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     , text "Dependency tree"
     , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    , renderSolverPlanTree pkgs
+    , renderSolverPlanTree pkgs'
     ]
 
-  validateSolverResult toolchains pkgs
+  validateSolverResult toolchains pkgs'
   where
     installedPkgIndex' = Staged $ \case
       Build -> getStage installedPkgIndex Build

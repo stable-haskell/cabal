@@ -42,7 +42,7 @@ data ConstraintScope =
     (Maybe Stage)
       -- | The qualifier that determines the scope of the constraint.
     ConstraintQualifier
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data ConstraintQualifier
      -- | A scope that applies when the given package is used as a build target.
@@ -63,7 +63,7 @@ data ConstraintQualifier
      -- | The package with the specified name regardless of
      -- qualifier.
    | ScopeAnyQualifier PackageName
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 -- | Constructor for a common use case: the constraint applies to
 -- the package with the specified name when that package is a
@@ -99,7 +99,7 @@ instance Pretty ConstraintScope where
 
 instance Pretty ConstraintQualifier where
   pretty (ScopeTarget pn) = pretty pn <> Disp.text "." <> pretty pn
-  pretty (ScopeQualified q pn) = dispQualifierPrefix q <> pretty pn
+  pretty (ScopeQualified q pn) = dispQualifier q <> pretty pn
   pretty (ScopeAnySetupQualifier pn) = Disp.text "setup." <> pretty pn
   pretty (ScopeAnyQualifier pn) = Disp.text "any." <> pretty pn
 
@@ -110,7 +110,7 @@ data PackageProperty
    | PackagePropertySource
    | PackagePropertyFlags     FlagAssignment
    | PackagePropertyStanzas   [OptionalStanza]
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Ord, Show, Generic)
 
 instance Binary PackageProperty
 instance Structured PackageProperty
@@ -126,7 +126,7 @@ instance Pretty PackageProperty where
 -- | A package constraint consists of a scope plus a property
 -- that must hold for all packages within that scope.
 data PackageConstraint = PackageConstraint ConstraintScope PackageProperty
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance Pretty PackageConstraint where
   pretty (PackageConstraint scope prop) =

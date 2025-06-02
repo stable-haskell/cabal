@@ -3,7 +3,7 @@
 module Distribution.Solver.Types.PackagePath
     ( PackagePath(..)
     , Qualifier(..)
-    , dispQualifierPrefix
+    , dispQualifier
     , Qualified(..)
     , QPN
     , dispQPN
@@ -65,10 +65,10 @@ instance Pretty Qualifier where
 
 -- | Pretty-prints a qualifier. The result is either empty or
 -- ends in a period, so it can be prepended onto a package name.
-dispQualifierPrefix :: Qualifier -> Disp.Doc
-dispQualifierPrefix QualToplevel = mempty
-dispQualifierPrefix (QualSetup pn) = pretty pn <> Disp.text ":setup."
-dispQualifierPrefix (QualExe pn pn2) =
+dispQualifier :: Qualifier -> Disp.Doc
+dispQualifier QualToplevel = mempty
+dispQualifier (QualSetup pn) = pretty pn <> Disp.text ":setup."
+dispQualifier (QualExe pn pn2) =
   pretty pn
     <> Disp.text ":"
     <> pretty pn2
@@ -86,7 +86,7 @@ type QPN = Qualified PackageName
 
 instance Pretty (Qualified PackageName) where
   pretty (Q (PackagePath stage qual) pn) =
-    pretty stage <> Disp.colon <> pretty qual <> Disp.char '.' <> pretty pn
+    pretty stage <> Disp.colon <> dispQualifier qual <> pretty pn
 
 -- | Pretty-prints a qualified package name.
 dispQPN :: QPN -> Disp.Doc
