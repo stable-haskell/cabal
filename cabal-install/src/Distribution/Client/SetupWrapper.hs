@@ -474,55 +474,11 @@ runSetup
   -> [String]
   -- ^ command-line arguments
   -> IO ()
-runSetup verbosity setup args0 = do
+runSetup verbosity setup args = do
   let method = setupMethod setup
       options = setupScriptOptions setup
       bt = setupBuildType setup
-      args = verbosityHack (setupVersion setup) args0
-  when (verbosity >= deafening {- avoid test if not debug -} && args /= args0) $
-    infoNoWrap verbose $
-      "Applied verbosity hack:\n"
-        ++ "  Before: "
-        ++ show args0
-        ++ "\n"
-        ++ "  After:  "
-        ++ show args
-        ++ "\n"
   runSetupMethod method verbosity options bt args
-
--- | This is a horrible hack to make sure passing fancy verbosity
--- flags (e.g., @-v'info +callstack'@) doesn't break horribly on
--- old Setup.  We can't do it in 'filterConfigureFlags' because
--- verbosity applies to ALL commands.
-verbosityHack :: Version -> [String] -> [String]
-verbosityHack ver args0
-  | ver >= mkVersion [2, 1] = args0
-  | otherwise = go args0
-  where
-    go (('-' : 'v' : rest) : args)
-      | Just rest' <- munch rest = ("-v" ++ rest') : go args
-    go (('-' : '-' : 'v' : 'e' : 'r' : 'b' : 'o' : 's' : 'e' : '=' : rest) : args)
-      | Just rest' <- munch rest = ("--verbose=" ++ rest') : go args
-    go ("--verbose" : rest : args)
-      | Just rest' <- munch rest = "--verbose" : rest' : go args
-    go rest@("--" : _) = rest
-    go (arg : args) = arg : go args
-    go [] = []
-
-    munch rest =
-      case runReadE flagToVerbosity rest of
-        Right v
-          | ver < mkVersion [2, 0]
-          , verboseHasFlags v ->
-              -- We could preserve the prefix, but since we're assuming
-              -- it's Cabal's verbosity flag, we can assume that
-              -- any format is OK
-              Just (showForCabal (verboseNoFlags v))
-          | ver < mkVersion [2, 1]
-          , isVerboseTimestamp v ->
-              -- +timestamp wasn't yet available in Cabal-2.0.0
-              Just (showForCabal (verboseNoTimestamp v))
-        _ -> Nothing
 
 -- | Run a command through a configured 'Setup'.
 runSetupCommand
