@@ -1924,8 +1924,6 @@ elaborateInstallPlan
                       BuildInplaceOnly{} ->
                         mkComponentId $
                           prettyShow pkgid
-                            ++ "-inplace-"
-                            ++ prettyShow (elabStage elab0)
                             ++ ( case Cabal.componentNameString cname of
                                   Nothing -> ""
                                   Just s -> "-" ++ prettyShow s
@@ -2154,7 +2152,7 @@ elaborateInstallPlan
 
             pkgInstalledId
               | shouldBuildInplaceOnly pkg =
-                  mkComponentId (prettyShow srcpkgPackageId ++ "-inplace-" ++ prettyShow solverPkgStage)
+                  mkComponentId (prettyShow srcpkgPackageId)
               | otherwise =
                   assert (isJust elabPkgSourceHash) $
                     hashedInstalledPackageId

@@ -48,7 +48,7 @@ import Distribution.Simple.Compiler
   )
 import Distribution.System
 import Distribution.Types.ComponentName
-import Distribution.Types.LibraryName
+import Distribution.Client.Toolchain (Stage)
 
 -- | Information which can be used to construct the path to
 -- the build directory of a build.  This is LESS fine-grained
@@ -56,7 +56,8 @@ import Distribution.Types.LibraryName
 -- and for good reason: we don't want this path to change if
 -- the user, say, adds a dependency to their project.
 data DistDirParams = DistDirParams
-  { distParamUnitId :: UnitId
+  { distParamStage :: Stage
+  , distParamUnitId :: UnitId
   , distParamPackageId :: PackageId
   , distParamComponentId :: ComponentId
   , distParamComponentName :: Maybe ComponentName
@@ -194,6 +195,7 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
     distBuildDirectory :: DistDirParams -> FilePath
     distBuildDirectory params =
       distBuildRootDirectory
+        </> prettyShow (distParamStage params)
         </> prettyShow (distParamPlatform params)
         </> prettyShow (distParamCompilerId params)
         </> prettyShow (distParamUnitId params)
