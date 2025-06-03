@@ -542,7 +542,7 @@ rebuildTarget
           _ -> return ()
         return $ BuildResult DocsNotTried TestsNotTried Nothing
     | otherwise = do
-        info verbosity $ "[rebuildTarget] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " with current status " ++ buildStatusToString pkgBuildStatus
+        infoNoWrap verbosity $ "[rebuildTarget] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " with current status " ++ buildStatusToString pkgBuildStatus
         -- We rely on the 'BuildStatus' to decide which phase to start from:
         case pkgBuildStatus of
           BuildStatusDownload -> downloadPhase

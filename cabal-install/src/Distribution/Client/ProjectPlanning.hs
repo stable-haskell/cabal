@@ -108,7 +108,7 @@ module Distribution.Client.ProjectPlanning
   , reportPlanningFailure
   ) where
 
-import Distribution.Client.Compat.Prelude
+import Distribution.Client.Compat.Prelude hiding (get)
 import Text.PrettyPrint
   ( comma
   , fsep
@@ -231,7 +231,7 @@ import qualified Distribution.Compat.Graph as Graph
 import Control.Exception (assert)
 import Control.Monad (sequence)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State as State (StateT (..), execStateT, gets, modify)
+import Control.Monad.State (StateT (..), evalStateT, execStateT, gets, modify, get)
 import Data.Foldable (fold)
 import Data.List (deleteBy, groupBy)
 import qualified Data.List.NonEmpty as NE
@@ -245,6 +245,7 @@ import GHC.Stack (HasCallStack)
 import Distribution.Client.InstallPlan (foldPlanPackage)
 import Distribution.Solver.Types.ResolverPackage (solverId)
 import qualified Distribution.Solver.Types.ResolverPackage as ResolverPackage
+import System.Console.ANSI
 
 -- | Check that an 'ElaboratedConfiguredPackage' actually makes
 -- sense under some 'ElaboratedSharedConfig'.
@@ -694,6 +695,23 @@ rebuildInstallPlan
           -- changes, so it's worth caching them separately.
           improvedPlan <- phaseImprovePlan elaboratedPlan elaboratedShared
 
+          let s = flip foldMap (InstallPlan.toList elaboratedPlan) $
+                    foldPlanPackage
+                      (Set.singleton . Graph.nodeKey)
+                      (const Set.empty)
+              badMsg s = Disp.text (setSGRCode [SetColor Foreground Vivid Red] <> s <> setSGRCode [Reset])
+              goodMsg s = Disp.text (setSGRCode [SetColor Foreground Vivid Green] <> s <> setSGRCode [Reset]) 
+          flip evalStateT s $ for_ (InstallPlan.executionOrder elaboratedPlan) $ \(ReadyPackage pkg) -> do
+            s' <- get
+            liftIO $ infoNoWrap verbosity $ show $ 
+              Disp.hang (Disp.text "Elaborated package: " <+> pretty (Graph.nodeKey pkg)) 4 $ vcat
+                [ Disp.hang (text "elabOrderDependencies") 4 $ Disp.vcat
+                    [ pretty dep <+> Disp.parens (if Set.member dep s' then goodMsg "preset" else badMsg "missing")
+                    | dep <- sort (elabOrderDependencies pkg)
+                    ]
+                ]
+            modify (Set.insert (Graph.nodeKey pkg))
+ 
           return (improvedPlan, elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
     where
       fileMonitorSolverPlan = newFileMonitorInCacheDir "solver-plan"
@@ -2305,6 +2323,7 @@ elaborateInstallPlan
             elabRegisterPackageDBStack = buildAndRegisterDbs elabStage
             elabSetupPackageDBStack = buildAndRegisterDbs (prevStage elabStage)
 
+            -- used in fixupBuildStyle :facepalm:
             elabInplaceBuildPackageDBStack = inplacePackageDbs elabStage
             elabInplaceRegisterPackageDBStack = inplacePackageDbs elabStage
             elabInplaceSetupPackageDBStack = inplacePackageDbs (prevStage elabStage)
@@ -2312,8 +2331,9 @@ elaborateInstallPlan
             buildAndRegisterDbs stage
               | shouldBuildInplaceOnly pkg = inplacePackageDbs stage
               | otherwise = corePackageDbs stage
+
             -- Same as corePackageDbs but with the addition of the in-place packagedb.
-            inplacePackageDbs stage = corePackageDbs stage ++ [distPackageDB (compilerId (getStage compilers stage))]
+            inplacePackageDbs stage = corePackageDbs stage ++ [SpecificPackageDB (distDirectory </> "packagedb" </> prettyShow stage </> prettyShow (compilerId (getStage compilers stage)))]
 
             -- The project packagedbs (typically the global packagedb but others can be added) followed by the store.
             corePackageDbs stage = getStage packageDbs stage ++ [storePackageDB storeDirLayout (getStage compilers stage)]

@@ -72,6 +72,9 @@ module Distribution.Client.InstallPlan
   , reverseTopologicalOrder
   , reverseDependencyClosure
   , project
+  , toForest
+  , renderForest
+  , renderPlanForest
   ) where
 
 import Distribution.Client.Compat.Prelude hiding (lookup, toList)
@@ -120,6 +123,8 @@ import GHC.Stack
 import Data.Bifunctor
 import Data.Bifoldable
 import Data.Bitraversable
+import Data.Graph (dfs, topSort)
+import Data.Tree (Tree, drawForest)
 
 -- When cabal tries to install a number of packages, including all their
 -- dependencies it has a non-trivial problem to solve.
@@ -538,6 +543,18 @@ reverseDependencyClosure
 reverseDependencyClosure plan =
   fromMaybe []
     . Graph.revClosure (planGraph plan)
+
+toForest :: Graph.Graph a -> [Tree a]
+toForest g = fmap (fmap graphVertexToNode) $ dfs graphForward (topSort graphForward)
+ 
+  where
+    (graphForward, graphVertexToNode, _graphKeyToVertex) = Graph.toGraph g
+
+renderForest :: (IsNode a, Pretty (Key a)) => Graph a -> String
+renderForest = drawForest . fmap (fmap (prettyShow . Graph.nodeKey)) . toForest
+
+renderPlanForest :: (IsNode ipkg, IsNode srcpkg, Key ipkg ~ Key srcpkg, Pretty (Key srcpkg)) => GenericInstallPlan' key ipkg srcpkg -> String
+renderPlanForest = renderForest . planGraph
 
 project
   :: HasCallStack

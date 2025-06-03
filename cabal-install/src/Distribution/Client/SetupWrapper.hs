@@ -169,7 +169,6 @@ import Distribution.Utils.Generic
   )
 
 import Distribution.Compat.Stack
-import Distribution.ReadE
 import Distribution.System (Platform (..), buildPlatform)
 import Distribution.Utils.NubList
   ( toNubListR
@@ -1139,9 +1138,10 @@ getExternalSetupMethod verbosity options pkg bt = do
                         -- when compiling a Simple Setup.hs file.
                   , ghcOptExtensionMap = Map.fromList . Simple.compilerExtensions $ compiler
                   }
-          debug verbosity $ "maybeCabalLibInstalledPkgId: " ++ show maybeCabalLibInstalledPkgId
-          debug verbosity $ "cabalDep: " ++ show cabalDep
-          debug verbosity $ "packages: " ++ show selectedDeps
+          infoNoWrap verbosity $ prettyShow options'
+          infoNoWrap verbosity $ "maybeCabalLibInstalledPkgId: " ++ show maybeCabalLibInstalledPkgId
+          infoNoWrap verbosity $ "cabalDep: " ++ show cabalDep
+          infoNoWrap verbosity $ "packages: " ++ show selectedDeps
           let ghcCmdLine = renderGhcOptions compiler platform ghcOptions
           when (useVersionMacros options') $
             rewriteFileEx verbosity (i cppMacrosFile) $

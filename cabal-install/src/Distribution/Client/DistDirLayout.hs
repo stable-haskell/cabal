@@ -196,27 +196,8 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
       distBuildRootDirectory
         </> prettyShow (distParamPlatform params)
         </> prettyShow (distParamCompilerId params)
-        </> prettyShow (distParamPackageId params)
-        </> ( case distParamComponentName params of
-                Nothing -> ""
-                Just (CLibName LMainLibName) -> ""
-                Just (CLibName (LSubLibName name)) -> "l" </> prettyShow name
-                Just (CFLibName name) -> "f" </> prettyShow name
-                Just (CExeName name) -> "x" </> prettyShow name
-                Just (CTestName name) -> "t" </> prettyShow name
-                Just (CBenchName name) -> "b" </> prettyShow name
-            )
-        </> ( case distParamOptimization params of
-                NoOptimisation -> "noopt"
-                NormalOptimisation -> ""
-                MaximumOptimisation -> "opt"
-            )
-        </> ( let uid_str = prettyShow (distParamUnitId params)
-               in if uid_str == prettyShow (distParamComponentId params)
-                    then ""
-                    else uid_str
-            )
-
+        </> prettyShow (distParamUnitId params)
+ 
     distUnpackedSrcRootDirectory :: FilePath
     distUnpackedSrcRootDirectory = distDirectory </> "src"
 
@@ -224,6 +205,7 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
     distUnpackedSrcDirectory pkgid =
       distUnpackedSrcRootDirectory
         </> prettyShow pkgid
+
     -- we shouldn't get name clashes so this should be fine:
     distDownloadSrcDirectory :: FilePath
     distDownloadSrcDirectory = distUnpackedSrcRootDirectory

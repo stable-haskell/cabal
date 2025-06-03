@@ -169,9 +169,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.PrettyPrint hiding ((<>))
 import GHC.Stack (HasCallStack)
-import qualified Data.Tree
-import qualified Data.Graph
-import Distribution.Simple.Utils (ordNub)
+import Distribution.Client.InstallPlan (toForest, renderForest)
 
 -- ------------------------------------------------------------
 
@@ -825,7 +823,7 @@ resolveDependencies toolchains pkgConfigDB installedPkgIndex params = do
     [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     , text "Dependency tree"
     , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    , renderSolverPlanTree pkgs'
+    , text (renderForest $ Graph.fromDistinctList pkgs')
     ]
 
   validateSolverResult toolchains pkgs'
@@ -889,19 +887,6 @@ renderSolverPlanScopes pkgs = vcat
   where
     g = Graph.fromDistinctList pkgs
     -- (_g', mapG, _invG) = Data.Graph.graphFromEdges [ (pkg, Graph.nodeKey pkg,  Graph.nodeNeighbors pkg) | pkg <- pkgs]
-
-
-renderSolverPlanTree :: HasCallStack => [SolverInstallPlan.SolverPlanPackage] -> Doc
-renderSolverPlanTree pkgs = text (Data.Tree.drawForest dfs)
-  where
-    g = Graph.fromDistinctList pkgs
-
-    (graphForward, graphVertexToNode, graphKeyToVertex) = Graph.toGraph g
-    
-    dfs = fmap (fmap (prettyShow . solverId . graphVertexToNode)) $ Data.Graph.dfs graphForward roots
-    
-    Just roots = traverse graphKeyToVertex $ concat $ SolverInstallPlan.libraryRoots g : SolverInstallPlan.setupRoots g
-
 
 -- | Give an interpretation to the global 'PackagesPreference' as
 --  specific per-package 'PackageVersionPreference'.

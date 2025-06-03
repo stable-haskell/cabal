@@ -265,6 +265,7 @@ library
       , regex-posix >= 0.96.0.0 && <0.97
       , safe-exceptions >= 0.1.7.0 && < 0.2
       , semaphore-compat >= 1.0.0 && < 1.1
+      , ansi-terminal
 
     if flag(native-dns)
       if os(windows)
