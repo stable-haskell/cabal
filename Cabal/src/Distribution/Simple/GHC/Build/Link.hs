@@ -220,7 +220,7 @@ linkOrLoadComponent
           get_rpaths ways =
             if DynWay `Set.member` ways then getRPaths pbci else return (toNubListR [])
          in
-          when (not $ componentIsIndefinite clbi) $ do
+          unless (componentIsIndefinite clbi) $ do
             -- If not building dynamically, we don't pass any runtime paths.
             liftIO $ do
               info verbosity "Linking..."
@@ -481,13 +481,12 @@ linkLibrary buildTargetDir cleanedExtraLibDirs pkg_descr verbosity runGhcProg li
   -- This would be simpler by not adding every object to the invocation, and
   -- rather using module names.
   unless (null staticObjectFiles) $ do
-    info verbosity (show (ghcOptPackages (Internal.componentGhcOptions verbosity lbi libBi clbi buildTargetDir)))
     traverse_ linkWay wantedWays
 
 -- | Link the executable resulting from building this component, be it an
 -- executable, test, or benchmark component.
 linkExecutable
-  :: (GhcOptions)
+  :: GhcOptions
   -- ^ The linker-specific GHC options
   -> (BuildWay, BuildWay -> GhcOptions)
   -- ^ The wanted build ways and corresponding GhcOptions that were
@@ -528,7 +527,7 @@ linkFLib
   :: ForeignLib
   -> BuildInfo
   -> LocalBuildInfo
-  -> (GhcOptions)
+  -> GhcOptions
   -- ^ The linker-specific GHC options
   -> (BuildWay, BuildWay -> GhcOptions)
   -- ^ The wanted build ways and corresponding GhcOptions that were
@@ -574,7 +573,7 @@ linkFLib flib bi lbi linkerOpts (way, buildOpts) targetDir runGhcProg = do
     linkOpts :: GhcOptions
     linkOpts = case foreignLibType flib of
       ForeignLibNativeShared ->
-        (buildOpts way)
+        buildOpts way
           `mappend` linkerOpts
           `mappend` rtsLinkOpts
           `mappend` mempty
