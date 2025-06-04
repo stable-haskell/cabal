@@ -705,7 +705,7 @@ instance Parsec UserConstraint where
     where
       parseConstraintScope :: forall m. CabalParsing m => m UserConstraintScope
       parseConstraintScope = do
-        mstage <- P.optional (parsec <* P.char ':')
+        mstage <- P.optional (P.try (parsec <* P.char ':'))
         pn <- parsec
         c <- P.choice
           [ P.char '.' *> withDot pn
@@ -725,3 +725,24 @@ instance Parsec UserConstraint where
             UserQualified (UserQualSetup pn)
               <$ P.string "setup."
               <*> parsec
+
+-- >>> eitherParsec "foo > 1.2.3.4" :: Either String UserConstraint
+-- Right (UserConstraintX (UserConstraintScope Nothing (UserQualified UserQualToplevel (PackageName "foo"))) (PackagePropertyVersion (LaterVersion (mkVersion [1,2,3,4]))))
+--
+-- >>> eitherParsec "foo ^>= 1.2.3.4" :: Either String UserConstraint
+-- Right (UserConstraintX (UserConstraintScope Nothing (UserQualified UserQualToplevel (PackageName "foo"))) (PackagePropertyVersion (MajorBoundVersion (mkVersion [1,2,3,4]))))
+--
+-- >>> eitherParsec "foo:setup.bar > 1.2.3.4" :: Either String UserConstraint
+-- Right (UserConstraintX (UserConstraintScope Nothing (UserQualified (UserQualSetup (PackageName "foo")) (PackageName "bar"))) (PackagePropertyVersion (LaterVersion (mkVersion [1,2,3,4]))))
+--
+-- >>> eitherParsec "setup.any source" :: Either String UserConstraint
+-- Right (UserConstraintX (UserConstraintScope Nothing (UserAnySetupQualifier (PackageName "any"))) PackagePropertySource)
+--
+-- >>> eitherParsec "build:rts source" :: Either String UserConstraint
+-- Right (UserConstraintX (UserConstraintScope (Just Build) (UserQualified UserQualToplevel (PackageName "rts"))) PackagePropertySource)
+--
+-- >>> eitherParsec "setup.any installed" :: Either String UserConstraint
+-- Right (UserConstraintX (UserConstraintScope Nothing (UserAnySetupQualifier (PackageName "any"))) PackagePropertyInstalled)
+-- 
+-- >>> eitherParsec "build:ghc-internal installed" :: Either String UserConstraint
+-- Right (UserConstraintX (UserConstraintScope (Just Build) (UserQualified UserQualToplevel (PackageName "ghc-internal"))) PackagePropertyInstalled)
