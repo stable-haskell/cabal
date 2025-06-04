@@ -30,7 +30,7 @@ import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PackagePath
 
 import qualified Text.PrettyPrint as Disp
-import Distribution.Solver.Types.Toolchain (Stage)
+import Distribution.Solver.Types.Toolchain (Stage (Host))
 
 
 -- | Determines to what packages and in what contexts a
@@ -67,9 +67,9 @@ data ConstraintQualifier
 
 -- | Constructor for a common use case: the constraint applies to
 -- the package with the specified name when that package is a
--- top-level dependency in the default namespace.
+-- top-level dependency in the host stage.
 scopeToplevel :: PackageName -> ConstraintScope
-scopeToplevel = ConstraintScope Nothing . ScopeQualified QualToplevel
+scopeToplevel = ConstraintScope (Just Host) . ScopeQualified QualToplevel
 
 -- | Returns the package name associated with a constraint scope.
 scopeToPackageName :: ConstraintScope -> PackageName
