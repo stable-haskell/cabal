@@ -169,7 +169,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.PrettyPrint hiding ((<>))
 import GHC.Stack (HasCallStack)
-import Distribution.Client.InstallPlan (toForest, renderForest)
+import Distribution.Client.InstallPlan (renderForest')
 
 -- ------------------------------------------------------------
 
@@ -823,7 +823,7 @@ resolveDependencies toolchains pkgConfigDB installedPkgIndex params = do
     [ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     , text "Dependency tree"
     , text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    , text (renderForest $ Graph.fromDistinctList pkgs')
+    , text (renderForest' (\p -> show (pretty (solverQPN p) <+> text "->" <+> pretty (Graph.nodeKey p))) $ Graph.fromDistinctList pkgs')
     ]
 
   validateSolverResult toolchains pkgs'

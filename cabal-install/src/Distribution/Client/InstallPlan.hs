@@ -74,6 +74,7 @@ module Distribution.Client.InstallPlan
   , project
   , toForest
   , renderForest
+  , renderForest'
   , renderPlanForest
   ) where
 
@@ -552,6 +553,9 @@ toForest g = fmap (fmap graphVertexToNode) $ dfs graphForward (topSort graphForw
 
 renderForest :: (IsNode a, Pretty (Key a)) => Graph a -> String
 renderForest = drawForest . fmap (fmap (prettyShow . Graph.nodeKey)) . toForest
+
+renderForest' :: (a -> String) -> Graph a -> String
+renderForest' f = drawForest . fmap (fmap f) . toForest
 
 renderPlanForest :: (IsNode ipkg, IsNode srcpkg, Key ipkg ~ Key srcpkg, Pretty (Key srcpkg)) => GenericInstallPlan' key ipkg srcpkg -> String
 renderPlanForest = renderForest . planGraph
