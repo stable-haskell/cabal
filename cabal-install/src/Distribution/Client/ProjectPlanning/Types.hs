@@ -372,36 +372,36 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
 instance Pretty ElaboratedConfiguredPackage where
     pretty elab =
       hang (text "ElaboratedConfiguredPackage") 4 $ vcat $
-        [ text "elabUnitId =" <+> pretty (elabUnitId elab)
-        , text "elabComponentId =" <+> pretty (elabComponentId elab)
-        , text "elabIsCanonical =" <+> text (show (elabIsCanonical elab))
-        , text "elabPkgSourceId =" <+> pretty (elabPkgSourceId elab)
-        , text "elabModuleShape =" <+> text (show (elabModuleShape elab))
-        , text "elabFlagAssignment =" <+> Cabal.dispFlagAssignment (elabFlagAssignment elab)
-        , text "elabFlagDefaults =" <+> Cabal.dispFlagAssignment (elabFlagDefaults elab)
-        , text "elabPkgDescription =" <+> text "<PackageDescription>"
-        , text "elabPkgSourceLocation =" <+> text (show (elabPkgSourceLocation elab))
-        , text "elabPkgSourceHash =" <+> text (show (elabPkgSourceHash elab))
-        , text "elabLocalToProject =" <+> text (show (elabLocalToProject elab))
-        , text "elabBuildStyle =" <+> text (show (elabBuildStyle elab))
-        , text "elabEnabledSpec =" <+> text (show (elabEnabledSpec elab))
+        [ hang (text "elabUnitId =") 2 $ pretty (elabUnitId elab)
+        , hang (text "elabComponentId =") 2 $ pretty (elabComponentId elab)
+        , hang (text "elabIsCanonical =") 2 $ pretty (elabIsCanonical elab)
+        , hang (text "elabPkgSourceId =") 2 $ pretty (elabPkgSourceId elab)
+        , hang (text "elabModuleShape =") 2 $ pretty (elabModuleShape elab)
+        , hang (text "elabFlagAssignment =") 2 $ Cabal.dispFlagAssignment (elabFlagAssignment elab)
+        , hang (text "elabFlagDefaults =") 2 $ Cabal.dispFlagAssignment (elabFlagDefaults elab)
+        , hang (text "elabPkgDescription =") 2 $ text "<PackageDescription>"
+        , hang (text "elabPkgSourceLocation =") 2 $ pretty (maybe mempty text <$> elabPkgSourceLocation elab)
+        , hang (text "elabPkgSourceHash =") 2 $ maybe mempty pretty (elabPkgSourceHash elab)
+        , hang (text "elabLocalToProject =") 2 $ text (show (elabLocalToProject elab))
+        , hang (text "elabBuildStyle =") 2 $ text $ show $ elabBuildStyle elab
+        , hang (text "elabEnabledSpec =") 2 $ text $ show $ elabEnabledSpec elab
         -- , text "elabStanzasAvailable =" <+> text (show (elabStanzasAvailable elab))
         -- , text "elabStanzasRequested =" <+> text (show (elabStanzasRequested elab))
-        , text "elabStage =" <+> text (show (elabStage elab))
-        -- , text "elabPackageDbs =" <+> text (show (elabPackageDbs elab))
-        -- , text "elabSetupPackageDBStack =" <+> text (show (elabSetupPackageDBStack elab))
-        -- , text "elabBuildPackageDBStack =" <+> text (show (elabBuildPackageDBStack elab))
-        -- , text "elabRegisterPackageDBStack =" <+> text (show (elabRegisterPackageDBStack elab))
+        , hang (text "elabStage =") 2 $ pretty (elabStage elab)
+        , hang (text "elabPackageDbs =") 2 $ sep $ map pretty $ fmap text <$> elabPackageDbs elab
+        , hang (text "elabSetupPackageDBStack =") 2 $ text (show (elabSetupPackageDBStack elab))
+        , hang (text "elabBuildPackageDBStack =") 2 $ text (show (elabBuildPackageDBStack elab))
+        , hang (text "elabRegisterPackageDBStack =") 2 $ text (show (elabRegisterPackageDBStack elab))
         -- , text "elabInplaceSetupPackageDBStack =" <+> text (show (elabInplaceSetupPackageDBStack elab))
         -- , text "elabInplaceBuildPackageDBStack =" <+> text (show (elabInplaceBuildPackageDBStack elab))
         -- , text "elabInplaceRegisterPackageDBStack =" <+> text (show (elabInplaceRegisterPackageDBStack elab))
-        , text "elabPkgDescriptionOverride =" <+> text (show (elabPkgDescriptionOverride elab))
-        , text "elabBuildOptions =" <+> text "<BuildOptions>"
+        , hang (text "elabPkgDescriptionOverride =") 2 $ text (show (elabPkgDescriptionOverride elab))
+        , hang (text "elabBuildOptions =") 2 $ text "<BuildOptions>"
         -- , text "elabDumpBuildInfo =" <+> text (show (elabDumpBuildInfo elab))
         -- , text "elabProgramPaths =" <+> text (show (elabProgramPaths elab))
         -- , text "elabProgramArgs =" <+> text (show (elabProgramArgs elab))
         -- , text "elabProgramPathExtra =" <+> text (show (elabProgramPathExtra elab))
-        , text "elabConfigureScriptArgs =" <+> text (show (elabConfigureScriptArgs elab))
+        , hang (text "elabConfigureScriptArgs =") 2 $ text (show (elabConfigureScriptArgs elab))
         -- , text "elabExtraLibDirs =" <+> text (show (elabExtraLibDirs elab))
         -- , text "elabExtraLibDirsStatic =" <+> text (show (elabExtraLibDirsStatic elab))
         -- , text "elabExtraFrameworkDirs =" <+> text (show (elabExtraFrameworkDirs elab))
@@ -435,19 +435,19 @@ instance Pretty ElaboratedConfiguredPackage where
         -- , text "elabTestWrapper =" <+> text (show (elabTestWrapper elab))
         -- , text "elabTestFailWhenNoTestSuites =" <+> text (show (elabTestFailWhenNoTestSuites elab))
         -- , text "elabTestTestOptions =" <+> text (show (elabTestTestOptions elab))
-        , text "elabBenchmarkOptions =" <+> text (show (elabBenchmarkOptions elab))
-        , text "elabSetupScriptStyle =" <+> text (show (elabSetupScriptStyle elab))
-        , text "elabSetupScriptCliVersion =" <+> pretty (elabSetupScriptCliVersion elab)
-        , text "elabConfigureTargets =" <+> text (show (elabConfigureTargets elab))
-        , text "elabBuildTargets =" <+> text (show (elabBuildTargets elab))
-        , text "elabTestTargets =" <+> text (show (elabTestTargets elab))
-        , text "elabBenchTargets =" <+> text (show (elabBenchTargets elab))
-        , text "elabReplTarget =" <+> text (show (elabReplTarget elab))
-        , text "elabHaddockTargets =" <+> text (show (elabHaddockTargets elab))
-        , text "elabBuildHaddocks =" <+> text (show (elabBuildHaddocks elab))
-        , text "elabPkgOrComp =" <+> pretty (elabPkgOrComp elab)
+        , hang (text "elabBenchmarkOptions =") 2 $ text (show (elabBenchmarkOptions elab))
+        , hang (text "elabSetupScriptStyle =") 2 $ text (show (elabSetupScriptStyle elab))
+        , hang (text "elabSetupScriptCliVersion =") 2 $ pretty (elabSetupScriptCliVersion elab)
+        , hang (text "elabConfigureTargets =") 2 $ text (show (elabConfigureTargets elab))
+        , hang (text "elabBuildTargets =") 2 $ text (show (elabBuildTargets elab))
+        , hang (text "elabTestTargets =") 2 $ text (show (elabTestTargets elab))
+        , hang (text "elabBenchTargets =") 2 $ text (show (elabBenchTargets elab))
+        , hang (text "elabReplTarget =") 2 $ text (show (elabReplTarget elab))
+        , hang (text "elabHaddockTargets =") 2 $ text (show (elabHaddockTargets elab))
+        , hang (text "elabBuildHaddocks =") 2 $ text (show (elabBuildHaddocks elab))
+        , hang (text "elabPkgOrComp =") 2 $ pretty (elabPkgOrComp elab)
         ]
-      
+
 normaliseConfiguredPackage
   :: ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
@@ -847,8 +847,8 @@ instance Structured ElaboratedComponent
 instance Pretty ElaboratedComponent where
   pretty comp =
     hang (text "ElaboratedComponent") 4 $ vcat $
-      [ text "compSolverName =" <+> text (show (compSolverName comp))
-      , text "compComponentName =" <+> text (show (compComponentName comp))
+      [ hang (text "compSolverName =") 2 $ text (show (compSolverName comp))
+      , hang (text "compComponentName =") 2 $ text (show (compComponentName comp))
       , hang (text "compLibDependencies =") 4 $ sep
           [ pretty cid <+> if promised then text "promised" else mempty
           | (cid, promised) <- compLibDependencies comp
@@ -857,14 +857,14 @@ instance Pretty ElaboratedComponent where
           [ pretty ouid
           | ouid <- compLinkedLibDependencies comp
           ]
-      , text "compInstantiatedWith =" <+> text (show (compInstantiatedWith comp))
-      , text "compLinkedInstantiatedWith =" <+> text (show (compLinkedInstantiatedWith comp))
+      , hang (text "compInstantiatedWith =") 2 $ text (show (compInstantiatedWith comp))
+      , hang (text "compLinkedInstantiatedWith =") 2 $ text (show (compLinkedInstantiatedWith comp))
       , hang (text "compExeDependencies =") 4 $ sep
           [ pretty cid
           | cid <- compExeDependencies comp
           ]
-      , text "compPkgConfigDependencies =" <+> text (show (compPkgConfigDependencies comp))
-      , text "compExeDependencyPaths =" <+> text (show (compExeDependencyPaths comp))
+      , hang (text "compPkgConfigDependencies =") 2 $ text (show (compPkgConfigDependencies comp))
+      , hang (text "compExeDependencyPaths =") 2 $ text (show (compExeDependencyPaths comp))
       , hang (text "compOrderLibDependencies =") 4 $ sep $
           map pretty (compOrderLibDependencies comp)
       ]
@@ -903,21 +903,21 @@ instance Structured ElaboratedPackage
 instance Pretty ElaboratedPackage where
   pretty pkg =
     hang (text "ElaboratedPackage") 4 $ vcat $
-      [ text "pkgStage =" <+> pretty (pkgStage pkg)
-      , text "pkgInstalledId =" <+> pretty (pkgInstalledId pkg)
-      , text "pkgLibDependencies =" <+> pretty (fmap (vcat .  map prettyPromised) (pkgLibDependencies pkg))
-      , text "pkgDependsOnSelfLib =" <+> pretty (fmap (vcat . map (const (text "*"))) (pkgDependsOnSelfLib pkg))
-      , text "pkgExeDependencies =" <+> pretty (fmap (vcat . map pretty) (pkgExeDependencies pkg))
-      , text "pkgExeDependencyPaths =" <+> pretty (fmap (vcat . map prettyExePath) (pkgExeDependencyPaths pkg))
-      , text "pkgPkgConfigDependencies =" <+> text (show (pkgPkgConfigDependencies pkg))
-      , text "pkgStanzasEnabled =" <+> text (show (pkgStanzasEnabled pkg))
-      , text "pkgWhyNotPerComponent =" <+> text (show (pkgWhyNotPerComponent pkg))
+      [ hang (text "pkgStage =") 2 $ pretty (pkgStage pkg)
+      , hang (text "pkgInstalledId =") 2 $ pretty (pkgInstalledId pkg)
+      , hang (text "pkgLibDependencies =") 2 $ pretty (fmap (vcat .  map prettyPromised) (pkgLibDependencies pkg))
+      , hang (text "pkgDependsOnSelfLib =") 2 $ pretty (fmap (vcat . map (const (text "*"))) (pkgDependsOnSelfLib pkg))
+      , hang (text "pkgExeDependencies =") 2 $ pretty (fmap (vcat . map pretty) (pkgExeDependencies pkg))
+      , hang (text "pkgExeDependencyPaths =") 2 $ pretty (fmap (vcat . map prettyExePath) (pkgExeDependencyPaths pkg))
+      , hang (text "pkgPkgConfigDependencies =") 2 $ text (show (pkgPkgConfigDependencies pkg))
+      , hang (text "pkgStanzasEnabled =") 2 $ text (show (pkgStanzasEnabled pkg))
+      , hang (text "pkgWhyNotPerComponent =") 2 $ text (show (pkgWhyNotPerComponent pkg))
       ]
     where
       prettyPromised (l, p) =
         pretty l <+> if p then text "promised" else mempty
       prettyExePath (l, p) =
-        pretty l <+> text "at" <+> text (show p)
+        pretty l <+> hang (text "at") 2 (text (show p))
 
 -- | Why did we fall-back to a per-package build, instead of using
 -- a per-component build?

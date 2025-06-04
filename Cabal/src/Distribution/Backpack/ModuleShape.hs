@@ -19,6 +19,8 @@ import Distribution.Backpack.ModSubst
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Distribution.Pretty
+import qualified Text.PrettyPrint as Disp
 
 -----------------------------------------------------------------------
 -- Module shapes
@@ -34,6 +36,12 @@ data ModuleShape = ModuleShape
 
 instance Binary ModuleShape
 instance Structured ModuleShape
+instance Pretty ModuleShape where
+  pretty (ModuleShape provs reqs) =
+    Disp.hang (Disp.text "ModuleShape") 2 $ Disp.vcat
+      [ Disp.hang (Disp.text "provides =") 2 $ dispOpenModuleSubst provs
+      , Disp.hang (Disp.text "requires =") 2 $ Disp.hsep (map pretty (Set.toList reqs))
+      ]
 
 instance ModSubst ModuleShape where
   modSubst subst (ModuleShape provs reqs) =

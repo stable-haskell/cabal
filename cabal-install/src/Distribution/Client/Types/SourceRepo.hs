@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Distribution.Client.Types.SourceRepo
   ( SourceRepositoryPackage (..)
@@ -24,6 +25,7 @@ import Prelude ()
 
 import Distribution.FieldGrammar
 import Distribution.Types.SourceRepo (RepoType (..))
+import qualified Text.PrettyPrint as Disp
 
 -- | @source-repository-package@ definition
 data SourceRepositoryPackage f = SourceRepositoryPackage
@@ -41,6 +43,17 @@ deriving instance Ord (f FilePath) => Ord (SourceRepositoryPackage f)
 deriving instance Show (f FilePath) => Show (SourceRepositoryPackage f)
 deriving instance Binary (f FilePath) => Binary (SourceRepositoryPackage f)
 deriving instance (Typeable f, Structured (f FilePath)) => Structured (SourceRepositoryPackage f)
+
+instance (Foldable f) => Pretty (SourceRepositoryPackage f) where
+  pretty SourceRepositoryPackage{..} =
+    Disp.hang (Disp.text "SourceRepositoryPackage") 2 $ Disp.vcat
+      [ Disp.hang (Disp.text "type =") 2 $ pretty srpType
+      , Disp.hang (Disp.text "location =") 2 $ Disp.text srpLocation
+      , Disp.hang (Disp.text "tag =") 2 $ maybe Disp.empty Disp.text srpTag
+      , Disp.hang (Disp.text "branch =") 2 $ maybe Disp.empty Disp.text srpBranch
+      , Disp.hang (Disp.text "subdir =") 2 $ Disp.vcat (map Disp.text (toList srpSubdir))
+      , Disp.hang (Disp.text "post-checkout-command =") 2 $ Disp.vcat (map Disp.text srpCommand)
+      ]
 
 -- | Read from @cabal.project@
 type SourceRepoList = SourceRepositoryPackage []

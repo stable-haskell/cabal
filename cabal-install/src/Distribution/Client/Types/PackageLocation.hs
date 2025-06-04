@@ -18,6 +18,7 @@ import Distribution.Types.PackageId (PackageId)
 import Distribution.Client.Types.Repo
 import Distribution.Client.Types.SourceRepo (SourceRepoMaybe)
 import Distribution.Solver.Types.SourcePackage (SourcePackage)
+import Text.PrettyPrint (text)
 
 type UnresolvedPkgLoc = PackageLocation (Maybe FilePath)
 
@@ -38,6 +39,18 @@ data PackageLocation local
   | -- | A package available from a version control system source repository
     RemoteSourceRepoPackage SourceRepoMaybe local
   deriving (Show, Functor, Eq, Ord, Generic)
+
+instance Pretty local => Pretty (PackageLocation local) where
+  pretty (LocalUnpackedPackage dir) =
+    text "LocalUnpackedPackage" <+> text dir
+  pretty (LocalTarballPackage file) =
+    text "LocalTarballPackage" <+> text file
+  pretty (RemoteTarballPackage uri loc) =
+    text "RemoteTarballPackage" <+> text (show uri) <+> pretty loc
+  pretty (RepoTarballPackage repo pkgId loc) =
+    text "RepoTarballPackage" <+> pretty repo <+> pretty pkgId <+> pretty loc
+  pretty (RemoteSourceRepoPackage repo loc) =
+    text "RemoteSourceRepoPackage" <+> pretty repo <+> pretty loc
 
 instance Binary local => Binary (PackageLocation local)
 instance Structured local => Structured (PackageLocation local)

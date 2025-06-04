@@ -182,6 +182,11 @@ data Repo
 instance Binary Repo
 instance Structured Repo
 
+instance Pretty Repo where
+  pretty (RepoLocalNoIndex r _) = pretty r
+  pretty (RepoRemote r _) = pretty r
+  pretty (RepoSecure r _) = pretty r
+
 -- | Check if this is a remote repo
 isRepoRemote :: Repo -> Bool
 isRepoRemote RepoLocalNoIndex{} = False

@@ -105,6 +105,7 @@ import Language.Haskell.Extension
 
 import qualified Data.Map as Map (lookup)
 import System.Directory (canonicalizePath)
+import Text.PrettyPrint (text)
 
 data Compiler = Compiler
   { compilerId :: CompilerId
@@ -198,6 +199,11 @@ data PackageDBX fp
   | -- | NB: the path might be relative or it might be absolute
     SpecificPackageDB fp
   deriving (Eq, Generic, Ord, Show, Read, Functor, Foldable, Traversable)
+
+instance Pretty fp => Pretty (PackageDBX fp) where
+  pretty GlobalPackageDB = text "GlobalPackageDB"
+  pretty UserPackageDB = text "UserPackageDB"
+  pretty (SpecificPackageDB db) = text "SpecificPackageDB" <+> pretty db
 
 instance Binary fp => Binary (PackageDBX fp)
 instance Structured fp => Structured (PackageDBX fp)

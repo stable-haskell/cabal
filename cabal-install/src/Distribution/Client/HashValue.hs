@@ -22,6 +22,7 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 
 import System.IO (IOMode (..), withBinaryFile)
+import qualified Text.PrettyPrint as Disp
 
 -----------------------------------------------
 -- The specific choice of hash implementation
@@ -47,6 +48,9 @@ newtype HashValue = HashValue BS.ByteString
 -- Therefore, we simply derive this structurally.
 instance Binary HashValue
 instance Structured HashValue
+
+instance Pretty HashValue where
+  pretty = Disp.text . showHashValue
 
 -- | Hash some data. Currently uses SHA256.
 hashValue :: LBS.ByteString -> HashValue
