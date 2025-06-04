@@ -161,6 +161,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
                   then "installed"
                   else "configured"
               )
+        , "stage" J..= jdisplay (elabStage elab)
         , "id" J..= (jdisplay . Graph.nodeKey) elab
         , "pkg-name" J..= (jdisplay . pkgName . packageId) elab
         , "pkg-version" J..= (jdisplay . pkgVersion . packageId) elab
