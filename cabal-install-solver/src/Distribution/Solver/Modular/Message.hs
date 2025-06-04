@@ -221,7 +221,7 @@ data ProgressAction =
 
 blurb :: ProgressAction -> String
 blurb = \case
-  Trying -> "trying: "
+  Trying -> "trying "
   Skipping -> "skipping "
   Rejecting -> "rejecting "
 
