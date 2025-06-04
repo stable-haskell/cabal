@@ -60,6 +60,9 @@ data ConstraintQualifier
      -- | The package with the specified name when it has a
      -- setup qualifier.
    | ScopeAnySetupQualifier PackageName
+     -- | The package with the specified name when it has a
+     -- setup qualifier.
+   | ScopeAnyExeQualifier PackageName
      -- | The package with the specified name regardless of
      -- qualifier.
    | ScopeAnyQualifier PackageName
@@ -76,6 +79,7 @@ scopeToPackageName :: ConstraintScope -> PackageName
 scopeToPackageName (ConstraintScope _stage (ScopeTarget pn)) = pn
 scopeToPackageName (ConstraintScope _stage (ScopeQualified _ pn)) = pn
 scopeToPackageName (ConstraintScope _stage (ScopeAnySetupQualifier pn)) = pn
+scopeToPackageName (ConstraintScope _stage (ScopeAnyExeQualifier pn)) = pn
 scopeToPackageName (ConstraintScope _stage (ScopeAnyQualifier pn)) = pn
 
 constraintScopeMatches :: ConstraintScope -> QPN -> Bool
@@ -83,15 +87,17 @@ constraintScopeMatches (ConstraintScope mstage qualifier) (Q (PackagePath stage'
   maybe True (== stage') mstage && constraintQualifierMatches qualifier q pn'
 
 constraintQualifierMatches :: ConstraintQualifier -> Qualifier -> PackageName -> Bool
-constraintQualifierMatches (ScopeTarget pn) q pn' =
-    q == QualToplevel && pn == pn'
-constraintQualifierMatches (ScopeQualified q pn) q' pn' =
-    q == q' && pn == pn'
-constraintQualifierMatches (ScopeAnySetupQualifier pn) (QualSetup _) pn' =
-  pn == pn'
-constraintQualifierMatches (ScopeAnyQualifier pn) _ pn' =
-    pn == pn'
-constraintQualifierMatches _ _ _ = False
+constraintQualifierMatches (ScopeTarget pn) QualToplevel pn' = pn == pn'
+constraintQualifierMatches (ScopeTarget _) (QualSetup _) _ = False
+constraintQualifierMatches (ScopeTarget _) (QualExe _ _) _ = False
+constraintQualifierMatches (ScopeQualified q pn) q' pn' = q == q' && pn == pn'
+constraintQualifierMatches (ScopeAnySetupQualifier _) QualToplevel _ = False
+constraintQualifierMatches (ScopeAnySetupQualifier _) (QualExe _ _) _ = False
+constraintQualifierMatches (ScopeAnySetupQualifier pn) (QualSetup _) pn' = pn == pn'
+constraintQualifierMatches (ScopeAnyExeQualifier pn) (QualExe _ _) pn' = pn == pn'
+constraintQualifierMatches (ScopeAnyExeQualifier _) QualToplevel _ = False
+constraintQualifierMatches (ScopeAnyExeQualifier _) (QualSetup _) _compile = False
+constraintQualifierMatches (ScopeAnyQualifier pn) _ pn' = pn == pn'
 
 instance Pretty ConstraintScope where
   pretty (ConstraintScope mstage qualifier) =
@@ -101,6 +107,7 @@ instance Pretty ConstraintQualifier where
   pretty (ScopeTarget pn) = pretty pn <> Disp.text "." <> pretty pn
   pretty (ScopeQualified q pn) = dispQualifier q <> pretty pn
   pretty (ScopeAnySetupQualifier pn) = Disp.text "setup." <> pretty pn
+  pretty (ScopeAnyExeQualifier pn) = Disp.text "exe." <> pretty pn
   pretty (ScopeAnyQualifier pn) = Disp.text "any." <> pretty pn
 
 -- | A package property is a logical predicate on packages.
