@@ -1632,7 +1632,7 @@ elaborateInstallPlan
 
         flip InstallPlan.fromSolverInstallPlanWithProgress solverPlan $ \mapDep planpkg -> do
           infoProgress (text "Elaborating" <+> pretty (solverId planpkg))
-          elabs <- case planpkg of
+          case planpkg of
             SolverInstallPlan.PreExisting pkg -> do
               let ipkg = InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))
               return [ipkg]
@@ -1648,8 +1648,6 @@ elaborateInstallPlan
                     ) (elaborateSolverToComponents mapDep pkg)
               infoProgress $ hang (pretty (solverId planpkg) <+> text "->") 4 $ vcat (map pretty elabs)
               return $ map InstallPlan.Configured elabs
-          
-          return elabs
 
       -- NB: We don't INSTANTIATE packages at this point.  That's
       -- a post-pass.  This makes it simpler to compute dependencies.
