@@ -161,7 +161,7 @@ import Distribution.Types.UnqualComponentName
 
 import Distribution.Solver.Types.OptionalStanza
 
-import Control.Exception (assert, handle)
+import Control.Exception (assert)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -192,8 +192,8 @@ import Distribution.Simple.Utils
   , notice
   , noticeNoWrap
   , ordNub
-  , warn, die'
-  , installExecutableFile
+  , warn
+  , installExecutableFile, infoNoWrap
   )
 import Distribution.Types.Flag
   ( FlagAssignment
@@ -532,22 +532,24 @@ installExecutables
   ProjectBaseContext {distDirLayout}
   ProjectBuildContext {elaboratedPlanOriginal, elaboratedShared, targetsMap}
   postBuildStatus =
-    for_ (Map.toList targetsMap) $ \(key@(WithStage stage _unitId), targets) -> do
-      guard $ stage == Stage.Host
-      guard $ key `Set.member` packagesDefinitelyUpToDate postBuildStatus
-      case InstallPlan.lookup elaboratedPlanOriginal key of
-        Nothing -> die' verbosity "target missing from the plan"
-        Just (InstallPlan.PreExisting _) -> return ()
-        Just (InstallPlan.Installed _) -> return ()
-        Just (InstallPlan.Configured elab) -> do
-          for_ targets $ \case
-            (ComponentTarget (CExeName cname) _subtarget, _targetSelectors) -> do
-              let exe = unUnqualComponentName cname 
-                  dir = binDirectoryFor distDirLayout elaboratedShared elab exe
-              handle (\(e :: IOException) -> do putStrLn "Error copying executable files:"; print e) $ do
-                -- Copy the executable to the dist/bin directory
-                installExecutableFile verbosity (dir </> exe) (distBinDirectory distDirLayout </> exe)
-            _ -> return () -- nothing to do for non-executables
+    unless (null srcdst) $ do
+      infoNoWrap verbosity $ "Copying executables to " <> bindir
+      -- Create the bin directory if it does not exist
+      createDirectoryIfMissingVerbose verbosity True bindir
+      -- Install the executables
+      for_ srcdst $ \(exe, src) -> do
+        installExecutableFile verbosity src (bindir </> exe)
+  where
+    bindir = distBinDirectory distDirLayout
+    srcdst = [ (exe, dir </> exe)
+             | (pkg, targets) <- Map.toList targetsMap
+             , stageOf pkg == Stage.Host
+             , pkg `Set.member` packagesDefinitelyUpToDate postBuildStatus
+             , Just (InstallPlan.Configured elab) <- [InstallPlan.lookup elaboratedPlanOriginal pkg]
+             , (ComponentTarget (CExeName cname) _subtarget, _targetSelectors) <- targets
+             , let exe = unUnqualComponentName cname
+             , let dir = binDirectoryFor distDirLayout elaboratedShared elab exe
+             ]
 
 -- Note that it is a deliberate design choice that the 'buildTargets' is
 -- not passed to phase 1, and the various bits of input config is not
