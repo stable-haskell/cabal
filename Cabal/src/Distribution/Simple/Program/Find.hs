@@ -69,7 +69,7 @@ logExtraProgramSearchPath
   -> [FilePath]
   -> IO ()
 logExtraProgramSearchPath verbosity extraPaths =
-  info verbosity . unlines $
+  debug verbosity . unlines $
     "Including the following directories in PATH:"
       : map ("- " ++) extraPaths
 
@@ -78,7 +78,7 @@ logExtraProgramOverrideEnv
   -> [(String, Maybe String)]
   -> IO ()
 logExtraProgramOverrideEnv verbosity extraEnv =
-  info verbosity . unlines $
+  debug verbosity . unlines $
     "Including the following environment variable overrides:"
       : [ "- " ++ case mbVal of
           Nothing -> "unset " ++ var

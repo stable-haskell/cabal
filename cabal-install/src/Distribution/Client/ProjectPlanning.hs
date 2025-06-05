@@ -232,7 +232,7 @@ import qualified Distribution.Compat.Graph as Graph
 import Control.Exception (assert)
 import Control.Monad (sequence)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (StateT (..), evalStateT, execStateT, gets, modify, get)
+import Control.Monad.State (StateT (..), execStateT, gets, modify)
 import Data.Foldable (fold)
 import Data.List (deleteBy, groupBy)
 import qualified Data.List.NonEmpty as NE
@@ -246,7 +246,6 @@ import GHC.Stack (HasCallStack)
 import Distribution.Client.InstallPlan (foldPlanPackage)
 import Distribution.Solver.Types.ResolverPackage (solverId)
 import qualified Distribution.Solver.Types.ResolverPackage as ResolverPackage
-import System.Console.ANSI
 
 -- | Check that an 'ElaboratedConfiguredPackage' actually makes
 -- sense under some 'ElaboratedSharedConfig'.
@@ -696,23 +695,6 @@ rebuildInstallPlan
           -- changes, so it's worth caching them separately.
           improvedPlan <- phaseImprovePlan elaboratedPlan elaboratedShared
 
-          let s = flip foldMap (InstallPlan.toList elaboratedPlan) $
-                    foldPlanPackage
-                      (Set.singleton . Graph.nodeKey)
-                      (const Set.empty)
-              badMsg s = Disp.text (setSGRCode [SetColor Foreground Vivid Red] <> s <> setSGRCode [Reset])
-              goodMsg s = Disp.text (setSGRCode [SetColor Foreground Vivid Green] <> s <> setSGRCode [Reset]) 
-          flip evalStateT s $ for_ (InstallPlan.executionOrder elaboratedPlan) $ \(ReadyPackage pkg) -> do
-            s' <- get
-            liftIO $ infoNoWrap verbosity $ show $ 
-              Disp.hang (Disp.text "Elaborated package: " <+> pretty (Graph.nodeKey pkg)) 4 $ vcat
-                [ Disp.hang (text "elabOrderDependencies") 4 $ Disp.vcat
-                    [ pretty dep <+> Disp.parens (if Set.member dep s' then goodMsg "preset" else badMsg "missing")
-                    | dep <- sort (elabOrderDependencies pkg)
-                    ]
-                ]
-            modify (Set.insert (Graph.nodeKey pkg))
- 
           return (improvedPlan, elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
     where
       fileMonitorSolverPlan = newFileMonitorInCacheDir "solver-plan"
@@ -1628,13 +1610,7 @@ elaborateInstallPlan
 
       elaboratedInstallPlan :: LogProgress ElaboratedInstallPlan
       elaboratedInstallPlan = do
-        infoProgress (Disp.text "elaboratedInstallPlan")
-
-        infoProgress $ hang (Disp.text "pkgsLocalToProject") 4 $ vcat $ map pretty $ Set.toList pkgsLocalToProject
-        infoProgress $ hang (Disp.text "pkgsToBuildInplaceOnly") 4 $ vcat $ map pretty $ Set.toList pkgsToBuildInplaceOnly
-
         flip InstallPlan.fromSolverInstallPlanWithProgress solverPlan $ \mapDep planpkg -> do
-          infoProgress (text "Elaborating" <+> pretty (solverId planpkg))
           case planpkg of
             SolverInstallPlan.PreExisting pkg -> do
               let ipkg = InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))
@@ -1649,7 +1625,6 @@ elaborateInstallPlan
                         <+> text "package"
                         <+> quotes (pretty (packageId pkg))
                     ) (elaborateSolverToComponents mapDep pkg)
-              infoProgress $ hang (pretty (solverId planpkg) <+> text "->") 4 $ vcat (map pretty elabs)
               return $ map InstallPlan.Configured elabs
 
       -- NB: We don't INSTANTIATE packages at this point.  That's
@@ -2106,7 +2081,7 @@ elaborateInstallPlan
         -> LogProgress ElaboratedConfiguredPackage
       elaborateSolverToPackage
         pkgWhyNotPerComponent
-        pkg@SolverPackage {solverPkgStage, solverPkgSource = SourcePackage {srcpkgPackageId}}
+        pkg@SolverPackage {solverPkgSource = SourcePackage {srcpkgPackageId}}
         compGraph
         comps = do
           infoProgress $ hang (text "[elaborateSolverToPackage]") 4 $ vcat

@@ -156,7 +156,6 @@ import Distribution.Simple.Utils
   , die'
   , dieWithException
   , info
-  , infoNoWrap
   , installExecutableFile
   , maybeExit
   , rawSystemProc
@@ -432,12 +431,6 @@ getSetup verbosity options mpkg = do
         (bt, _) -> bt
   (version, method, options'') <-
     getSetupMethod verbosity options' pkg buildType'
-  info verbosity $ unlines
-    [ "choosen setup method:"
-    , "version: " ++ show version
-    , "method: " ++ show method
-    , show $ hang (text "options:") 4 (pretty options'')
-    ]
   return
     Setup
       { setupMethod = method
@@ -1152,10 +1145,6 @@ getExternalSetupMethod verbosity options pkg bt = do
                         -- when compiling a Simple Setup.hs file.
                   , ghcOptExtensionMap = Map.fromList . Simple.compilerExtensions $ compiler
                   }
-          infoNoWrap verbosity $ prettyShow options'
-          infoNoWrap verbosity $ "maybeCabalLibInstalledPkgId: " ++ show maybeCabalLibInstalledPkgId
-          infoNoWrap verbosity $ "cabalDep: " ++ show cabalDep
-          infoNoWrap verbosity $ "packages: " ++ show selectedDeps
           let ghcCmdLine = renderGhcOptions compiler platform ghcOptions
           when (useVersionMacros options') $
             rewriteFileEx verbosity (i cppMacrosFile) $
