@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- | cabal-install CLI command: build
 module Distribution.Client.CmdBuild
@@ -49,8 +50,9 @@ import Distribution.Simple.Command
   ( CommandUI (..)
   , option
   , usageAlternatives
+  , reqArg
   )
-import Distribution.Simple.Flag (Flag (..), fromFlag, fromFlagOrDefault, toFlag)
+import Distribution.Simple.Flag (Flag (..), fromFlag, fromFlagOrDefault, toFlag, flagToList)
 import Distribution.Simple.Utils
   ( dieWithException
   , wrapText
@@ -58,6 +60,7 @@ import Distribution.Simple.Utils
 import Distribution.Verbosity
   ( normal
   )
+import Distribution.ReadE (succeedReadE)
 
 buildCommand :: CommandUI (NixStyleFlags BuildFlags)
 buildCommand =
@@ -113,18 +116,27 @@ buildCommand =
                     buildOnlyConfigure
                     (\v flags -> flags{buildOnlyConfigure = v})
                     (yesNoOpt showOrParseArgs)
+                , option
+                    []
+                    ["install-closure"]
+                    "Install the closure of the build plan to the given directory"
+                    buildInstallClosure
+                    (\path flags -> flags{buildInstallClosure = path})
+                    (reqArg "DIR" (succeedReadE Flag) flagToList)
                 ]
             )
     }
 
 data BuildFlags = BuildFlags
   { buildOnlyConfigure :: Flag Bool
+  , buildInstallClosure :: Flag FilePath
   }
 
 defaultBuildFlags :: BuildFlags
 defaultBuildFlags =
   BuildFlags
     { buildOnlyConfigure = toFlag False
+    , buildInstallClosure = mempty
     }
 
 -- | The @build@ command does a lot. It brings the install plan up to date,
