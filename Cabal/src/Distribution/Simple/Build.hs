@@ -1107,8 +1107,6 @@ componentInitialBuildSteps
   -- ^ The verbosity to use
   -> IO ()
 componentInitialBuildSteps _distPref pkg_descr lbi clbi verbosity = do
-  let compBuildDir = interpretSymbolicPathLBI lbi $ componentBuildDir lbi clbi
-  createDirectoryIfMissingVerbose verbosity True compBuildDir
   writeBuiltinAutogenFiles verbosity pkg_descr lbi clbi
 {-# DEPRECATED
   componentInitialBuildSteps
@@ -1128,8 +1126,6 @@ preBuildComponent
 preBuildComponent preBuildHook verbosity lbi tgt = do
   let pkg_descr = localPkgDescr lbi
       clbi = targetCLBI tgt
-      compBuildDir = interpretSymbolicPathLBI lbi $ componentBuildDir lbi clbi
-  createDirectoryIfMissingVerbose verbosity True compBuildDir
   writeBuiltinAutogenFiles verbosity pkg_descr lbi clbi
   preBuildHook lbi tgt
 
