@@ -156,12 +156,12 @@ import Distribution.Types.ComponentName
   )
 import Distribution.Types.UnqualComponentName
   ( UnqualComponentName
-  , packageNameToUnqualComponentName
+  , packageNameToUnqualComponentName, unUnqualComponentName
   )
 
 import Distribution.Solver.Types.OptionalStanza
 
-import Control.Exception (assert)
+import Control.Exception (assert, handle)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -192,7 +192,8 @@ import Distribution.Simple.Utils
   , notice
   , noticeNoWrap
   , ordNub
-  , warn
+  , warn, die'
+  , installExecutableFile
   )
 import Distribution.Types.Flag
   ( FlagAssignment
@@ -202,10 +203,11 @@ import Distribution.Types.Flag
 import Distribution.Utils.NubList
   ( fromNubList
   )
-import Distribution.Utils.Path (makeSymbolicPath)
+import Distribution.Utils.Path (makeSymbolicPath, (</>))
 import Distribution.Verbosity
 #ifdef MIN_VERSION_unix
 import           System.Posix.Signals (sigKILL, sigSEGV)
+import qualified Distribution.Client.ProjectPlanning.Stage as Stage
 
 #endif
 
@@ -475,8 +477,8 @@ runProjectPostBuildPhase _ ProjectBaseContext{buildSettings} _ _
       return ()
 runProjectPostBuildPhase
   verbosity
-  ProjectBaseContext{..}
-  ProjectBuildContext{..}
+  baseCtx@ProjectBaseContext{..}
+  buildCtx@ProjectBuildContext{..}
   buildOutcomes = do
     -- Update other build artefacts
     -- TODO: currently none, but could include:
@@ -493,6 +495,8 @@ runProjectPostBuildPhase
         pkgsBuildStatus
         buildOutcomes
 
+    installExecutables verbosity baseCtx buildCtx postBuildStatus
+      
     -- Write the .ghc.environment file (if allowed by the env file write policy).
     let writeGhcEnvFilesPolicy =
           projectConfigWriteGhcEnvironmentFilesPolicy . projectConfigShared $
@@ -521,6 +525,29 @@ runProjectPostBuildPhase
     -- Finally if there were any build failures then report them and throw
     -- an exception to terminate the program
     dieOnBuildFailures verbosity currentCommand elaboratedPlanToExecute buildOutcomes
+
+installExecutables :: Verbosity -> ProjectBaseContext -> ProjectBuildContext -> PostBuildProjectStatus -> IO ()
+installExecutables
+  verbosity
+  ProjectBaseContext {distDirLayout}
+  ProjectBuildContext {elaboratedPlanOriginal, elaboratedShared, targetsMap}
+  postBuildStatus =
+    for_ (Map.toList targetsMap) $ \(key@(WithStage stage _unitId), targets) -> do
+      guard $ stage == Stage.Host
+      guard $ key `Set.member` packagesDefinitelyUpToDate postBuildStatus
+      case InstallPlan.lookup elaboratedPlanOriginal key of
+        Nothing -> die' verbosity "target missing from the plan"
+        Just (InstallPlan.PreExisting _) -> return ()
+        Just (InstallPlan.Installed _) -> return ()
+        Just (InstallPlan.Configured elab) -> do
+          for_ targets $ \case
+            (ComponentTarget (CExeName cname) _subtarget, _targetSelectors) -> do
+              let exe = unUnqualComponentName cname 
+                  dir = binDirectoryFor distDirLayout elaboratedShared elab exe
+              handle (\(e :: IOException) -> do putStrLn "Error copying executable files:"; print e) $ do
+                -- Copy the executable to the dist/bin directory
+                installExecutableFile verbosity (dir </> exe) (distBinDirectory distDirLayout </> exe)
+            _ -> return () -- nothing to do for non-executables
 
 -- Note that it is a deliberate design choice that the 'buildTargets' is
 -- not passed to phase 1, and the various bits of input config is not
