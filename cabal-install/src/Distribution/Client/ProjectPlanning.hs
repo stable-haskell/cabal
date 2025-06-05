@@ -2335,8 +2335,10 @@ elaborateInstallPlan
               | shouldBuildInplaceOnly pkg = inplacePackageDbs stage
               | otherwise = corePackageDbs stage
 
+            inplacePackageDb stage = SpecificPackageDB (distDirectory </> "packagedb" </> prettyShow stage </> prettyShow (compilerId (getStage compilers stage)))
+
             -- Same as corePackageDbs but with the addition of the in-place packagedb.
-            inplacePackageDbs stage = corePackageDbs stage ++ [SpecificPackageDB (distDirectory </> "packagedb" </> prettyShow stage </> prettyShow (compilerId (getStage compilers stage)))]
+            inplacePackageDbs stage = corePackageDbs stage ++ [inplacePackageDb stage]
 
             -- The project packagedbs (typically the global packagedb but others can be added) followed by the store.
             corePackageDbs stage = getStage packageDbs stage ++ [storePackageDB storeDirLayout (getStage compilers stage)]
