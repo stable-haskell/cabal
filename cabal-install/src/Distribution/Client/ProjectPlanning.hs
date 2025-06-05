@@ -106,6 +106,7 @@ module Distribution.Client.ProjectPlanning
 
     -- TODO this is just to fix a warning
   , reportPlanningFailure
+  , binPaths
   ) where
 
 import Distribution.Client.Compat.Prelude hiding (get)
@@ -2722,6 +2723,35 @@ binDirectories layout config package = case elabBuildStyle package of
         $ package
   where
     noExecutables = null . PD.executables . elabPkgDescription $ package
+    root =
+      distBuildDirectory layout (elabDistDirParams config package)
+        </> "build"
+
+binPaths
+  :: DistDirLayout
+  -> ElaboratedSharedConfig
+  -> ElaboratedConfiguredPackage
+  -> [FilePath]
+binPaths layout config package =
+  case package of
+    ElaboratedConfiguredPackage {
+      elabBuildStyle = BuildInplaceOnly _,
+      elabPkgOrComp = ElabComponent (ElaboratedComponent {compSolverName = CD.ComponentExe n})
+    } -> [root </> prettyShow n </> prettyShow n]
+    ElaboratedConfiguredPackage {
+      elabBuildStyle = BuildInplaceOnly _,
+      elabPkgOrComp = ElabPackage _
+    } ->
+      [ root </> prettyShow exeName </> prettyShow exeName
+      | exe <- PD.executables $ elabPkgDescription $ package
+      , let exeName = PD.exeName exe
+      ]
+    ElaboratedConfiguredPackage {
+      elabBuildStyle = BuildAndInstall
+    } ->
+      [installedBinDirectory package]
+    _ -> []
+  where
     root =
       distBuildDirectory layout (elabDistDirParams config package)
         </> "build"
