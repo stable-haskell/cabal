@@ -67,6 +67,8 @@ module Distribution.Simple
   , autoconfUserHooks
   , autoconfSetupHooks
   , emptyUserHooks
+  , getBuildConfigSimple
+  , getBuildConfigConfigure
   ) where
 
 import Control.Exception (try)
@@ -830,6 +832,12 @@ getBuildConfig globalFlags hooks verbosity distPref = do
                     }
               }
       configureAction globalFlags hooks cFlags' (extraConfigArgs lbi)
+
+getBuildConfigSimple :: GlobalFlags -> Verbosity -> SymbolicPath Pkg (Dir Dist) -> IO LocalBuildInfo
+getBuildConfigSimple globalFlags verbosity distPref = getBuildConfig globalFlags simpleUserHooks verbosity distPref
+
+getBuildConfigConfigure :: GlobalFlags -> Verbosity -> SymbolicPath Pkg (Dir Dist) -> IO LocalBuildInfo
+getBuildConfigConfigure globalFlags verbosity distPref = getBuildConfig globalFlags autoconfUserHooks verbosity distPref
 
 -- --------------------------------------------------------------------------
 -- Cleaning
