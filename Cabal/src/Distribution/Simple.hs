@@ -401,7 +401,6 @@ confPkgDescr hooks verbosity cwd mb_path = do
       pdfile <- case mb_path of
         Nothing -> relativeSymbolicPath <$> tryFindPackageDesc verbosity cwd
         Just path -> return path
-      info verbosity "Using Parsec parser"
       descr <- readGenericPackageDescription verbosity cwd pdfile
       return (Just pdfile, descr)
 
