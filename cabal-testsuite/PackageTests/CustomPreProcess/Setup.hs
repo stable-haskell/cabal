@@ -60,5 +60,5 @@ main = defaultMainWithHooks
       do exitCode <- rawSystem path args
          case exitCode of ExitSuccess       -> return ()
                           f@(ExitFailure _) -> fail $ "callProcess " ++ show path
-                                               ++ " " ++ show args ++ " failed: "
+                                               ++ " " ++ unwords args ++ " failed: "
                                                ++ show f
