@@ -2767,7 +2767,7 @@ checkRelocatable verbosity pkg lbi =
     -- and RPATH, make sure you add your OS to RPATH-support list of:
     -- Distribution.Simple.GHC.getRPaths
     checkOS =
-      unless (os `elem` [OSX, Linux]) $
+      unless (os `elem` [OSX, Linux, FreeBSD]) $
         dieWithException verbosity $
           NoOSSupport os "relocatable builds"
       where
