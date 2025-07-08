@@ -593,29 +593,29 @@ jobs:
           DISTRO: ${{ matrix.platform.DISTRO }}
           ADD_CABAL_ARGS: ${{ matrix.platform.ADD_CABAL_ARGS }}
 
-  test-linux-32bit:
-    name: Test linux binaries (32bit)
-    runs-on: ubuntu-latest
-    needs: ["build-linux-32bit"]
-    env:
-      TARBALL_EXT: tar.xz
-      ARCH: 32
-      DISTRO: "Unknown"
-      ARTIFACT: "i386-linux-unknown"
-      ADD_CABAL_ARGS: ""
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: artifacts-${{ env.ARTIFACT }}
-          path: ./out
-
-      - name: Run build (32 bit linux)
-        uses: docker://hasufell/i386-alpine-haskell:3.21
-        with:
-          args: sh -c "apk update && apk add groff bash binutils-gold curl gcc g++ gmp-dev libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static && git config --system --add safe.directory $GITHUB_WORKSPACE && export PATH=$HOME/.ghcup/bin:$PATH && bash .github/scripts/test.sh"
+# test-linux-32bit:
+#   name: Test linux binaries (32bit)
+#   runs-on: ubuntu-latest
+#   needs: ["build-linux-32bit"]
+#   env:
+#     TARBALL_EXT: tar.xz
+#     ARCH: 32
+#     DISTRO: "Unknown"
+#     ARTIFACT: "i386-linux-unknown"
+#     ADD_CABAL_ARGS: ""
+#   steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
+#
+#     - uses: actions/download-artifact@v4
+#       with:
+#         name: artifacts-${{ env.ARTIFACT }}
+#         path: ./out
+#
+#     - name: Run build (32 bit linux)
+#       uses: docker://hasufell/i386-alpine-haskell:3.21
+#       with:
+#         args: sh -c "apk update && apk add groff bash binutils-gold curl gcc g++ gmp-dev libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static && git config --system --add safe.directory $GITHUB_WORKSPACE && export PATH=$HOME/.ghcup/bin:$PATH && bash .github/scripts/test.sh"
 
   test-arm:
     name: Test ARM binary
@@ -813,7 +813,8 @@ jobs:
            , "build-win"
            , "build-freebsd-x86_64"
            , "test-linux"
-           , "test-linux-32bit"
+           # TODO: broken: https://github.com/haskell/cabal/issues/11049
+           # , "test-linux-32bit"
            , "test-arm"
            , "test-mac-x86_64"
            , "test-mac-aarch64"
