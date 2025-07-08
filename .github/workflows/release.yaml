@@ -20,123 +20,149 @@ env:
   TZ: Asia/Singapore
 
 jobs:
+  tool-output:
+    runs-on: ubuntu-latest
+    outputs:
+      apt_tools: ${{ steps.gen_output.outputs.apt_tools }}
+      apt_tools_ncurses6: ${{ steps.gen_output.outputs.apt_tools_ncurses6 }}
+      rpm_tools: ${{ steps.gen_output.outputs.rpm_tools }}
+      apk_tools: ${{ steps.gen_output.outputs.apk_tools }}
+      apk_latest_tools: ${{ steps.gen_output.outputs.apk_latest_tools }}
+      xbps_tools: ${{ steps.gen_output.outputs.xbps_tools }}
+    env:
+      APT: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev patchelf"
+      RPM: "groff-base autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+      APK: "groff binutils-gold curl gcc g++ gmp-dev libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev patch python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static"
+      XBPS: "groff ncurses-libtinfo-libs autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils findutils gcc gmp gmp-devel jq lbzip2 make ncurses ncurses-devel openssh patch perl python3 sqlite sudo wget which xz tar zlib-devel patchelf gzip"
+    steps:
+      - name: Generate output
+        id: gen_output
+        run: |
+          echo apt_tools="${{ env.APT }} libncurses5 libtinfo5" >> "$GITHUB_OUTPUT"
+          echo apt_tools_ncurses6="${{ env.APT }} libncurses6 libtinfo6" >> "$GITHUB_OUTPUT"
+          echo rpm_tools="${{ env.RPM }}" >> "$GITHUB_OUTPUT"
+          echo apk_tools="${{ env.APK }}" >> "$GITHUB_OUTPUT"
+          echo apk_latest_tools="${{ env.APK }} gmp-static" >> "$GITHUB_OUTPUT"
+          echo xbps_tools="${{ env.XBPS }}" >> "$GITHUB_OUTPUT"
+
   build-linux:
     name: Build linux binaries
     runs-on: ubuntu-latest
+    needs: ["tool-output"]
     env:
       TARBALL_EXT: tar.xz
       ARCH: 64
     strategy:
       fail-fast: false
       matrix:
-        platform: [ { image: "debian:12"
+        platform: [ { image: "debian:10"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Debian"
                     , ARTIFACT: "x86_64-linux-deb10"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "debian:11"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Debian"
                     , ARTIFACT: "x86_64-linux-deb11"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "debian:12"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Debian"
                     , ARTIFACT: "x86_64-linux-deb12"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ubuntu:20.04"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Ubuntu"
                     , ARTIFACT: "x86_64-linux-ubuntu20.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ubuntu:22.04"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Ubuntu"
                     , ARTIFACT: "x86_64-linux-ubuntu22.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ubuntu:24.04"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses6 libtinfo6 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools_ncurses6 }}"
                     , DISTRO: "Ubuntu"
                     , ARTIFACT: "x86_64-linux-ubuntu24.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "linuxmintd/mint20.3-amd64"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Mint"
                     , ARTIFACT: "x86_64-linux-mint20"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "linuxmintd/mint21.3-amd64"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Mint"
                     , ARTIFACT: "x86_64-linux-mint21"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "fedora:33"
                     , installCmd: "dnf install -y"
-                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Fedora"
                     , ARTIFACT: "x86_64-linux-fedora33"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "fedora:37"
                     , installCmd: "dnf install -y"
-                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Fedora"
                     , ARTIFACT: "x86_64-linux-fedora37"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "rockylinux:8"
                     , installCmd: "yum -y install epel-release && yum install -y --allowerasing"
-                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-rocky8"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "rockylinux:9"
                     , installCmd: "yum -y install epel-release && yum install -y --allowerasing"
-                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-rocky9"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "alpine:latest"
                     , installCmd: "apk update && apk add"
-                    , toolRequirements: "binutils-gold curl gcc g++ gmp-dev gmp-static libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apk_latest_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-unknown"
                     , ADD_CABAL_ARGS: "--enable-split-sections --enable-executable-static"
                     },
                     { image: "alpine:3.12"
                     , installCmd: "apk update && apk add"
-                    , toolRequirements: "binutils-gold curl gcc g++ gmp-dev libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apk_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-alpine312"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "alpine:3.19"
                     , installCmd: "apk update && apk add"
-                    , toolRequirements: "binutils-gold curl gcc g++ gmp-dev libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apk_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-alpine319"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ghcr.io/void-linux/void-glibc:latest"
                     , installCmd: "xbps-install -Suy xbps && xbps-install -Sy"
-                    , toolRequirements: "ncurses-libtinfo-libs autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils findutils gcc gmp gmp-devel jq lbzip2 make ncurses ncurses-devel openssh patch perl python3 sqlite sudo wget which xz tar zlib-devel patchelf gzip"
+                    , toolRequirements: "${{ needs.tool-output.outputs.xbps_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-void-glibc"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
@@ -416,121 +442,121 @@ jobs:
   test-linux:
     name: Test linux binaries
     runs-on: ubuntu-latest
-    needs: ["build-linux"]
+    needs: ["tool-output", "build-linux"]
     env:
       TARBALL_EXT: tar.xz
       ARCH: 64
     strategy:
       fail-fast: false
       matrix:
-        platform: [ { image: "debian:12"
+        platform: [ { image: "debian:10"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Debian"
                     , ARTIFACT: "x86_64-linux-deb10"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "debian:11"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Debian"
                     , ARTIFACT: "x86_64-linux-deb11"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "debian:12"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Debian"
                     , ARTIFACT: "x86_64-linux-deb12"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ubuntu:20.04"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Ubuntu"
                     , ARTIFACT: "x86_64-linux-ubuntu20.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ubuntu:22.04"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Ubuntu"
                     , ARTIFACT: "x86_64-linux-ubuntu22.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ubuntu:24.04"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses6 libtinfo6 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools_ncurses6 }}"
                     , DISTRO: "Ubuntu"
                     , ARTIFACT: "x86_64-linux-ubuntu24.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "linuxmintd/mint20.3-amd64"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Mint"
                     , ARTIFACT: "x86_64-linux-mint20"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "linuxmintd/mint21.3-amd64"
                     , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "groff-base libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apt_tools }}"
                     , DISTRO: "Mint"
                     , ARTIFACT: "x86_64-linux-mint21"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "fedora:33"
                     , installCmd: "dnf install -y"
-                    , toolRequirements: "groff-base autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Fedora"
                     , ARTIFACT: "x86_64-linux-fedora33"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "fedora:37"
                     , installCmd: "dnf install -y"
-                    , toolRequirements: "groff-base autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Fedora"
                     , ARTIFACT: "x86_64-linux-fedora37"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "rockylinux:8"
                     , installCmd: "yum -y install epel-release && yum install -y --allowerasing"
-                    , toolRequirements: "groff-base autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-rocky8"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "rockylinux:9"
                     , installCmd: "yum -y install epel-release && yum install -y --allowerasing"
-                    , toolRequirements: "groff-base autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , toolRequirements: "${{ needs.tool-output.outputs.rpm_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-rocky9"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "alpine:latest"
                     , installCmd: "apk update && apk add"
-                    , toolRequirements: "groff binutils-gold curl gcc g++ gmp-dev gmp-static libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apk_latest_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-unknown"
                     , ADD_CABAL_ARGS: "--enable-split-sections --enable-executable-static"
                     },
                     { image: "alpine:3.12"
                     , installCmd: "apk update && apk add"
-                    , toolRequirements: "groff binutils-gold curl gcc g++ gmp-dev libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apk_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-alpine312"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "alpine:3.19"
                     , installCmd: "apk update && apk add"
-                    , toolRequirements: "groff binutils-gold curl gcc g++ gmp-dev libc-dev libffi-dev make musl-dev ncurses-dev perl tar xz autoconf automake bzip2 coreutils elfutils-dev findutils git jq bzip2-dev  patch  python3 sqlite sudo wget which zlib-dev patchelf zlib zlib-dev zlib-static"
+                    , toolRequirements: "${{ needs.tool-output.outputs.apk_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-alpine319"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
                     { image: "ghcr.io/void-linux/void-glibc:latest"
                     , installCmd: "xbps-install -Suy xbps && xbps-install -Sy"
-                    , toolRequirements: "groff ncurses-libtinfo-libs autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils findutils gcc gmp gmp-devel jq lbzip2 make ncurses ncurses-devel openssh patch perl python3 sqlite sudo wget which xz tar zlib-devel patchelf gzip"
+                    , toolRequirements: "${{ needs.tool-output.outputs.xbps_tools }}"
                     , DISTRO: "Unknown"
                     , ARTIFACT: "x86_64-linux-void-glibc"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
