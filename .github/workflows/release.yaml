@@ -11,7 +11,7 @@ on:
     branches:
       - master
   schedule:
-    - cron: '20 12 * * *'
+    - cron: '15 3 * * *'
 
 env:
   GHC_VERSION: 9.6.7
@@ -828,14 +828,14 @@ jobs:
         id: date
         run: echo "NIGHTLY_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Nightly tag
         if: ${{ github.event_name == 'schedule' }}
         run: |
           git tag nightly-${{ env.NIGHTLY_DATE }}
           git push origin nightly-${{ env.NIGHTLY_DATE }}
-
-      - name: Checkout code
-        uses: actions/checkout@v4
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -866,7 +866,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' }}
         uses: softprops/action-gh-release@v1
         with:
-          name: nightly-${{ env.NIGHTLY_DATE }}
+          tag: nightly-${{ env.NIGHTLY_DATE }}
           draft: false
           prerelease: true
           files: |
