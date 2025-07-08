@@ -11,7 +11,7 @@ on:
     branches:
       - master
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '20 12 * * *'
 
 env:
   GHC_VERSION: 9.6.7
@@ -796,8 +796,18 @@ jobs:
            , "test-freebsd-x86_64"
     ]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || ${{ github.event_name == 'schedule' }}
     steps:
+      - name: Get current date
+        id: date
+        run: echo "NIGHTLY_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Nightly tag
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          git tag nightly-${{ env.NIGHTLY_DATE }}
+          git push origin nightly-${{ env.NIGHTLY_DATE }}
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -819,9 +829,19 @@ jobs:
         shell: bash
 
       - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           files: |
             ./out/*
 
+      - name: Release nightly
+        if: ${{ github.event_name == 'schedule' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          name: nightly-${{ env.NIGHTLY_DATE }}
+          draft: false
+          prerelease: true
+          files: |
+            ./out/*
