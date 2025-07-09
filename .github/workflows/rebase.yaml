@@ -1,0 +1,138 @@
+name: Rebase against upstream
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+
+jobs:
+  rebase:
+    name: Rebase now!
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPO: https://github.com/haskell/cabal.git
+      CI_BRANCH: stable-haskell/feature/rebase-CI
+    outputs:
+      rebase_output_json: ${{ steps.rebase.outputs.branches_json }}
+      rebase_output: ${{ steps.rebase.outputs.branches }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: rebase
+        name: rebase
+        run: |
+          set -eux
+
+          git switch --detach
+          git fetch origin refs/heads/*:refs/heads/*
+
+          gh repo set-default stable-haskell/cabal
+          git config checkout.defaultRemote origin
+
+          # required to apply patches
+          git config user.email "ci@users.noreply.github.com"
+          git config user.name "GitHub CI"
+
+          # this does not push
+          branch_spec=$(bash .github/scripts/rebase_spec.sh '^stable-haskell/feature/.*')
+          rebased_branches=( $(bash .github/scripts/rebase_local.sh ${{ env.UPSTREAM_REPO }} "${branch_spec}") )
+
+          echo "branches_json=$(jq --compact-output --null-input '$ARGS.positional' --args -- "${rebased_branches[@]}")" >> "$GITHUB_OUTPUT"
+          echo "branches=${rebased_branches[*]}" >> "$GITHUB_OUTPUT"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - if: always()
+        name: backup
+        run: |
+          git checkout -f master || true
+          git archive master > backup.tar
+          tar -rf backup.tar .git rebase
+
+      - if: always()
+        name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          retention-days: 7
+          name: backup
+          path: |
+            ./backup.tar
+
+      - name: checkout reusable workflow
+        run: |
+          git checkout -f "${{ env.CI_BRANCH }}"
+
+  release-workflow:
+    needs: ["rebase"]
+    uses: ./.github/workflows/reusable-release.yml
+    with:
+      branches: ${{ needs.rebase.outputs.rebase_output_json }}
+      ghc: "9.6.7"
+      cabal: "3.12.1.0"
+
+  push-job:
+    runs-on: ubuntu-latest
+    needs: [rebase, release-workflow]
+    steps:
+      - name: update feature branches
+        run: |
+          set -eux
+
+          # now push to temp branches
+          for branch in ${{ needs.rebase.outputs.rebase_output_json }} ; do
+              git checkout "${branch}"
+              echo "git push -f https://${{ secrets.REBASE_PAT }}@github.com/${{ github.repository }}.git ${branch}
+          done
+
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: update stable-master
+        run: |
+          set -eux
+
+          # cherry-pick on stable-master
+          git checkout stable-master
+          for branch in ${{ needs.rebase.outputs.rebase_output_json }} ; do
+            if [ -e "rebase/${branch}" ] && compgen -G "rebase/${branch}"/*.patch > /dev/null; then
+              git am --3way "rebase/${branch}"/*.patch
+            fi
+          done
+          echo "git push -f https://${{ secrets.REBASE_PAT }}@github.com/${{ github.repository }}.git stable-master
+
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  notify-job:
+    runs-on: ubuntu-latest
+    needs: [release-workflow]
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # create an issue with a link to the workflow run on failure
+      # TODO: don't create more issues, only use one
+      - run: |
+          set -eux
+          gh repo set-default stable-haskell/cabal
+          for issue in $(gh issue list --label rebase-failure --json url -q '.[] | .url') ; do
+            gh issue close "${issue}"
+          done
+          gh issue create --title "Rebase failed on $(date -u +"%Y-%m-%d")" --label rebase-failure --body "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
