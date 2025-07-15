@@ -57,8 +57,12 @@ jobs:
     name: release
     needs: [ "release-workflow" ]
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     steps:
+      - name: Get current date
+        id: date
+        run: echo "NIGHTLY_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -86,3 +90,12 @@ jobs:
           files: |
             ./out/*
 
+      - name: Release nightly
+        if: ${{ github.event_name == 'schedule' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: nightly-${{ env.NIGHTLY_DATE }}
+          draft: false
+          prerelease: true
+          files: |
+            ./out/*
