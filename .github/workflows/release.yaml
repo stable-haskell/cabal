@@ -2,11 +2,12 @@ name: Build and release
 
 on:
   push:
+    branches:
+      - master
     tags:
       - 'v*'
       - 'cabal-install-*'
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
     branches:
       - master
   schedule:

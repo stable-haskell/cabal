@@ -8,12 +8,12 @@ on:
         type: string
       ghc:
         type: string
-        default: 9.10.2
+        default: 9.6.7
       # speed up installation by skipping docs
       # starting with GHC 9.10.x, we also need to pass the 'install_extra' target
       ghc_targets:
         type: string
-        default: "install_bin install_lib update_package_db install_extra"
+        default: "install_bin install_lib update_package_db"
       cabal:
         type: string
         default: 3.14.2.0
