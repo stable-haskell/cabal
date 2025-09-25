@@ -119,17 +119,17 @@ linkOrLoadComponent
       -- for foreign libs in the three cases where we use `withFullyStaticExe` below?
       linkerOpts rpaths =
         mempty
-          { ghcOptLinkOptions =
-              PD.ldOptions bi
-                ++ [ "-static"
-                   | withFullyStaticExe lbi
-                   ]
-                -- Pass extra `ld-options` given
-                -- through to GHC's linker.
-                ++ maybe
-                  []
-                  programOverrideArgs
-                  (lookupProgram ldProgram (withPrograms lbi))
+          { ghcOptExtraDefault =
+              [ "-static-external"
+              | withFullyStaticExe lbi
+              ]
+          , ghcOptLinkOptions =
+              -- Pass extra `ld-options` given
+              -- through to GHC's linker.
+              maybe
+                []
+                programOverrideArgs
+                (lookupProgram ldProgram (withPrograms lbi))
           , ghcOptLinkLibs =
               if withFullyStaticExe lbi
                 then extraLibsStatic bi
@@ -226,7 +226,7 @@ linkOrLoadComponent
                 CLib lib -> do
                   let libWays = wantedLibWays isIndef
                   rpaths <- get_rpaths (Set.fromList libWays)
-                  linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi extraSources rpaths libWays
+                  linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosity runGhcProg lib lbi clbi extraSources rpaths libWays
                 CFLib flib -> do
                   let flib_way = wantedFLibWay (withDynFLib flib)
                   rpaths <- get_rpaths (Set.singleton flib_way)
@@ -241,6 +241,8 @@ linkLibrary
   -- ^ The library target build directory
   -> [SymbolicPath Pkg (Dir Lib)]
   -- ^ The list of extra lib dirs that exist (aka "cleaned")
+  -> [SymbolicPath Pkg (Dir Lib)]
+  -- ^ The list of extra static lib dirs that exist (aka "cleaned")
   -> Verbosity
   -> (GhcOptions -> IO ())
   -- ^ Run the configured Ghc program
@@ -254,7 +256,7 @@ linkLibrary
   -> [BuildWay]
   -- ^ Wanted build ways and corresponding build options
   -> IO ()
-linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi extraSources rpaths wantedWays = do
+linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosity runGhcProg lib lbi clbi extraSources rpaths wantedWays = do
   let
     compiler_id = compilerId comp
     comp = compiler lbi
@@ -396,15 +398,13 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
         , ghcOptInputFiles = toNubListR $ map coerceSymbolicPath staticObjectFiles
         , ghcOptOutputFile = toFlag staticLibFilePath
         , ghcOptLinkLibs = extraLibs libBi
-        , -- TODO: Shouldn't this use cleanedExtraLibDirsStatic instead?
-          ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
+        , ghcOptLinkLibPath = toNubListR $ cleanedExtraLibDirsStatic
         }
     ghcBytecodeLinkArgs objectFiles =
       (ghcSharedLinkArgs objectFiles)
         { ghcOptBytecodeLib = toFlag True
         , ghcOptInputFiles = toNubListR $ map coerceSymbolicPath objectFiles
         , ghcOptOutputFile = toFlag bytecodeLibFilePath
-        }
 
   staticObjectFiles <- getObjWayFiles StaticWay
   profObjectFiles <- getObjWayFiles ProfWay
