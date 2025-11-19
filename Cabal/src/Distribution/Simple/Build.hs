@@ -313,7 +313,6 @@ dumpBuildInfo verbosity distPref dumpBuildInfoFlag pkg_descr lbi flags = do
     flavorToProgram :: CompilerFlavor -> Maybe Program
     flavorToProgram GHC = Just ghcProgram
     flavorToProgram GHCJS = Just ghcjsProgram
-    flavorToProgram JHC = Just jhcProgram
     flavorToProgram _ = Nothing
 
 repl
