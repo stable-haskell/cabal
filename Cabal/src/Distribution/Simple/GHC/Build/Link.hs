@@ -727,9 +727,7 @@ extractRtsInfo lbi =
 -- threaded RTS. This is used to determine which RTS to link against when
 -- building a foreign library with a GHC without support for @-flink-rts@.
 hasThreaded :: BuildInfo -> Bool
-hasThreaded bi = elem "-threaded" ghc
-  where
-    PerCompilerFlavor ghc _ = options bi
+hasThreaded bi = elem "-threaded" (options bi)
 
 -- | Load a target component into a repl, or write to disk a script which runs
 -- GHCi with the GHC options Cabal elaborated to load the component interactively.

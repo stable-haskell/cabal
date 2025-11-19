@@ -506,7 +506,6 @@ coverageSupported :: Compiler -> Bool
 coverageSupported comp =
   case compilerFlavor comp of
     GHC -> True
-    GHCJS -> True
     _ -> False
 
 -- | Does this compiler support profiling?
@@ -514,7 +513,6 @@ profilingSupported :: Compiler -> Bool
 profilingSupported comp =
   case compilerFlavor comp of
     GHC -> True
-    GHCJS -> True
     _ -> False
 
 -- | Returns Just if we can certainly determine whether a way is supported
@@ -576,7 +574,6 @@ ghcSupported :: String -> Compiler -> Bool
 ghcSupported key comp =
   case compilerFlavor comp of
     GHC -> checkProp
-    GHCJS -> checkProp
     _ -> False
   where
     checkProp =

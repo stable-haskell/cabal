@@ -406,7 +406,6 @@ ppCpp' :: [String] -> BuildInfo -> LocalBuildInfo -> ComponentLocalBuildInfo -> 
 ppCpp' extraArgs bi lbi clbi =
   case compilerFlavor (compiler lbi) of
     GHC -> ppGhcCpp ghcProgram (const True) args bi lbi clbi
-    GHCJS -> ppGhcCpp ghcjsProgram (const True) args bi lbi clbi
     _ -> ppCpphs args bi lbi clbi
   where
     cppArgs = getCppOptions bi lbi
@@ -644,7 +643,6 @@ ppHsc2hs bi lbi clbi =
     isELF = case buildOS of OSX -> False; Windows -> False; AIX -> False; _ -> True
     packageHacks = case compilerFlavor (compiler lbi) of
       GHC -> hackRtsPackage
-      GHCJS -> hackRtsPackage
       _ -> id
     -- We don't link in the actual Haskell libraries of our dependencies, so
     -- the -u flags in the ldOptions of the rts package mean linking fails on
@@ -746,23 +744,11 @@ platformDefines lbi =
         ++ ["-D" ++ arch ++ "_BUILD_ARCH=1"]
         ++ map (\os' -> "-D" ++ os' ++ "_HOST_OS=1") osStr
         ++ map (\arch' -> "-D" ++ arch' ++ "_HOST_ARCH=1") archStr
-    GHCJS ->
-      compatGlasgowHaskell
-        ++ ["-D__GHCJS__=" ++ versionInt version]
-        ++ ["-D" ++ os ++ "_BUILD_OS=1"]
-        ++ ["-D" ++ arch ++ "_BUILD_ARCH=1"]
-        ++ map (\os' -> "-D" ++ os' ++ "_HOST_OS=1") osStr
-        ++ map (\arch' -> "-D" ++ arch' ++ "_HOST_ARCH=1") archStr
     _ -> []
   where
     comp = compiler lbi
     Platform hostArch hostOS = hostPlatform lbi
     version = compilerVersion comp
-    compatGlasgowHaskell =
-      maybe
-        []
-        (\v -> ["-D__GLASGOW_HASKELL__=" ++ versionInt v])
-        (compilerCompatVersion GHC comp)
     -- TODO: move this into the compiler abstraction
     -- FIXME: this forces GHC's crazy 4.8.2 -> 408 convention on all
     -- the other compilers. Check if that's really what they want.
@@ -832,7 +818,6 @@ ppHappy _ lbi _ = pp{platformIndependent = True}
     pp = standardPP lbi happyProgram (hcFlags hc)
     hc = compilerFlavor (compiler lbi)
     hcFlags GHC = ["-agc"]
-    hcFlags GHCJS = ["-agc"]
     hcFlags _ = []
 
 ppAlex :: BuildInfo -> LocalBuildInfo -> ComponentLocalBuildInfo -> PreProcessor
@@ -841,7 +826,6 @@ ppAlex _ lbi _ = pp{platformIndependent = True}
     pp = standardPP lbi alexProgram (hcFlags hc)
     hc = compilerFlavor (compiler lbi)
     hcFlags GHC = ["-g"]
-    hcFlags GHCJS = ["-g"]
     hcFlags _ = []
 
 standardPP :: LocalBuildInfo -> Program -> [String] -> PreProcessor
