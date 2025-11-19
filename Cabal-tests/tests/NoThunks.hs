@@ -19,7 +19,7 @@ import Data.Proxy                             (Proxy (..))
 import Data.Typeable                          (Typeable, typeRep)
 import Distribution.CabalSpecVersion          (CabalSpecVersion)
 import Distribution.Compat.NonEmptySet        (NonEmptySet)
-import Distribution.Compiler                  (CompilerFlavor, PerCompilerFlavor)
+import Distribution.Compiler                  (CompilerFlavor)
 import Distribution.Fields                    (runParseResult)
 import Distribution.ModuleName                (ModuleName)
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, withSource)
@@ -122,8 +122,6 @@ instance NoThunks Version
 instance NoThunks VersionRange
 
 instance NoThunks ShortText where
-
-instance NoThunks a => NoThunks (PerCompilerFlavor a)
 
 instance (Typeable allowAbs, Typeable from, Typeable to)
        => NoThunks (SymbolicPathX allowAbs from to)
