@@ -119,7 +119,6 @@ import Distribution.Verbosity
 import Distribution.Version
 
 import qualified Distribution.Simple.GHC as GHC
-import qualified Distribution.Simple.GHCJS as GHCJS
 
 import Control.Exception
   ( try
@@ -653,8 +652,6 @@ computeLocalBuildConfig cfg comp programDb = do
         GHC
           | compilerVersion comp >= mkVersion [8, 0] ->
               return True
-        GHCJS ->
-          return True
         _ -> do
           warn
             verbosity
@@ -678,8 +675,6 @@ computeLocalBuildConfig cfg comp programDb = do
               )
             return False
         GHC ->
-          return True
-        GHCJS ->
           return True
         _ -> do
           warn
@@ -711,8 +706,6 @@ computeLocalBuildConfig cfg comp programDb = do
             -- been changed to read shared libraries instead of archive
             -- files (see next code block).
             notElem (GHC.compilerBuildWay comp) [DynWay, ProfDynWay]
-          CompilerId GHCJS _ ->
-            not (GHCJS.isDynamic comp)
           _ -> False
 
   withGHCiLib_ <-
@@ -736,8 +729,6 @@ computeLocalBuildConfig cfg comp programDb = do
               -- if ghc is dynamic, then ghci needs a shared
               -- library, so we build one by default.
               GHC.compilerBuildWay comp == DynWay
-            CompilerId GHCJS _ ->
-              GHCJS.isDynamic comp
             _ -> False
       withSharedLib_ =
         -- build shared libraries if required by GHC or by the
@@ -2069,7 +2060,6 @@ getInstalledPackages verbosity comp mbWorkDir packageDBs progdb = do
   packageDBs' <- filterM packageDBExists packageDBs
   case compilerFlavor comp of
     GHC -> GHC.getInstalledPackages verbosity comp mbWorkDir packageDBs' progdb
-    GHCJS -> GHCJS.getInstalledPackages verbosity mbWorkDir packageDBs' progdb
     flv ->
       dieWithException verbosity $ HowToFindInstalledPackages flv
   where
@@ -2103,7 +2093,6 @@ getPackageDBContents verbosity comp mbWorkDir packageDB progdb = do
   info verbosity "Reading installed packages..."
   case compilerFlavor comp of
     GHC -> GHC.getPackageDBContents verbosity mbWorkDir packageDB progdb
-    GHCJS -> GHCJS.getPackageDBContents verbosity mbWorkDir packageDB progdb
     -- For other compilers, try to fall back on 'getInstalledPackages'.
     _ -> getInstalledPackages verbosity comp mbWorkDir [packageDB] progdb
 
@@ -2501,7 +2490,6 @@ configCompilerEx Nothing _ _ _ verbosity = dieWithException verbosity UnknownCom
 configCompilerEx (Just hcFlavor) hcPath hcPkg progdb verbosity = do
   (comp, maybePlatform, programDb) <- case hcFlavor of
     GHC -> GHC.configure verbosity hcPath hcPkg progdb
-    GHCJS -> GHCJS.configure verbosity hcPath hcPkg progdb
     _ -> dieWithException verbosity UnknownCompilerException
   return (comp, fromMaybe buildPlatform maybePlatform, programDb)
 
@@ -2520,7 +2508,6 @@ configCompiler mbFlavor hcPath progdb verbosity = do
       Just hcFlavor ->
         case hcFlavor of
           GHC -> GHC.configureCompiler verbosity hcPath progdb
-          GHCJS -> GHCJS.configureCompiler verbosity hcPath progdb
           _ -> dieWithException verbosity UnknownCompilerException
   return (comp, fromMaybe buildPlatform maybePlatform, programDb)
 
@@ -2537,7 +2524,6 @@ configCompilerProgDb
 configCompilerProgDb verbosity comp hcProgDb hcPkgPath = do
   case compilerFlavor comp of
     GHC -> GHC.compilerProgramDb verbosity comp hcProgDb hcPkgPath
-    GHCJS -> GHCJS.compilerProgramDb verbosity comp hcProgDb hcPkgPath
     _ -> return hcProgDb
 
 -- -----------------------------------------------------------------------------

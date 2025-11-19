@@ -197,7 +197,7 @@ defaultInstallDirs' True comp userInstall hasLibs = do
       { datasubdir = toPathTemplate $ "$abi" </> "$libname"
       , docdir = toPathTemplate $ "$datadir" </> "doc" </> "$abi" </> "$libname"
       }
-defaultInstallDirs' False comp userInstall _hasLibs = do
+defaultInstallDirs' False _comp userInstall _hasLibs = do
   installPrefix <-
     if userInstall
       then do

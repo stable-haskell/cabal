@@ -10,7 +10,6 @@ import Distribution.Compat.Lens
 import Distribution.Compat.Prelude
 import Prelude ()
 
-import Distribution.Compiler (PerCompilerFlavor)
 import Distribution.ModuleName (ModuleName)
 import Distribution.Types.BuildInfo (BuildInfo)
 import Distribution.Types.Dependency (Dependency)
@@ -192,23 +191,23 @@ class HasBuildInfo a where
   installIncludes = buildInfo . installIncludes
   {-# INLINE installIncludes #-}
 
-  options :: Lens' a (PerCompilerFlavor [String])
+  options :: Lens' a [String]
   options = buildInfo . options
   {-# INLINE options #-}
 
-  profOptions :: Lens' a (PerCompilerFlavor [String])
+  profOptions :: Lens' a [String]
   profOptions = buildInfo . profOptions
   {-# INLINE profOptions #-}
 
-  sharedOptions :: Lens' a (PerCompilerFlavor [String])
+  sharedOptions :: Lens' a [String]
   sharedOptions = buildInfo . sharedOptions
   {-# INLINE sharedOptions #-}
 
-  profSharedOptions :: Lens' a (PerCompilerFlavor [String])
+  profSharedOptions :: Lens' a [String]
   profSharedOptions = buildInfo . profSharedOptions
   {-# INLINE profSharedOptions #-}
 
-  staticOptions :: Lens' a (PerCompilerFlavor [String])
+  staticOptions :: Lens' a [String]
   staticOptions = buildInfo . staticOptions
   {-# INLINE staticOptions #-}
 
