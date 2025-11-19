@@ -71,7 +71,6 @@ data CompilerFlavor
   | Hugs
   | HBC
   | Helium
-  | JHC
   | LHC
   | Eta
   | -- | @since 3.12.1.0
@@ -86,7 +85,7 @@ instance NFData CompilerFlavor where rnf = genericRnf
 
 knownCompilerFlavors :: [CompilerFlavor]
 knownCompilerFlavors =
-  [GHC, GHCJS, NHC, YHC, Hugs, HBC, Helium, JHC, LHC, Eta, MHS]
+  [GHC, GHCJS, NHC, YHC, Hugs, HBC, Helium, LHC, Eta, MHS]
 
 instance Pretty CompilerFlavor where
   pretty (OtherCompiler name) = Disp.text name
