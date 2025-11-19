@@ -90,16 +90,11 @@ normaliseGhcArgs (Just ghcVersion) PackageDescription{..} ghcArgs
         checkComponentFlags getInfo = foldMap (checkComponent . getInfo)
           where
             checkComponent :: BuildInfo -> m
-            checkComponent = foldMap fun . filterGhcOptions . allGhcOptions
+            checkComponent = foldMap fun . allGhcOptions
 
-            allGhcOptions :: BuildInfo -> [(CompilerFlavor, [String])]
-            allGhcOptions =
-              foldMap
-                (perCompilerFlavorToList .)
-                [options, profOptions, sharedOptions, staticOptions]
-
-            filterGhcOptions :: [(CompilerFlavor, [String])] -> [[String]]
-            filterGhcOptions l = [opts | (GHC, opts) <- l]
+            allGhcOptions :: BuildInfo -> [[String]]
+            allGhcOptions bi =
+              [options bi, profOptions bi, sharedOptions bi, staticOptions bi]
 
     safeToFilterWarnings :: Bool
     safeToFilterWarnings = getAll $ checkGhcFlags checkWarnings
@@ -738,10 +733,10 @@ ghcInvocation verbosity ghcProg comp platform mbWorkDir opts = do
 
 renderGhcOptions :: Compiler -> Platform -> GhcOptions -> [String]
 renderGhcOptions comp _platform@(Platform _arch os) opts
-  | compilerFlavor comp `notElem` [GHC, GHCJS] =
+  | compilerFlavor comp `notElem` [GHC] =
       error $
         "Distribution.Simple.Program.GHC.renderGhcOptions: "
-          ++ "compiler flavor must be 'GHC' or 'GHCJS'!"
+          ++ "compiler flavor must be 'GHC'!"
   | otherwise =
       concat
         [ case flagToMaybe (ghcOptMode opts) of

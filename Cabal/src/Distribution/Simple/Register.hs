@@ -58,7 +58,6 @@ import Distribution.Simple.BuildTarget
 import Distribution.Simple.LocalBuildInfo
 
 import qualified Distribution.Simple.GHC as GHC
-import qualified Distribution.Simple.GHCJS as GHCJS
 import qualified Distribution.Simple.PackageIndex as Index
 
 import Distribution.Backpack.DescribeUnitId
@@ -313,8 +312,6 @@ abiHash verbosity pkg distPref lbi lib clbi =
   case compilerFlavor comp of
     GHC -> do
       fmap mkAbiHash $ GHC.libAbiHash verbosity pkg lbi' lib clbi
-    GHCJS -> do
-      fmap mkAbiHash $ GHCJS.libAbiHash verbosity pkg lbi' lib clbi
     _ -> return (mkAbiHash "")
   where
     comp = compiler lbi
@@ -364,7 +361,6 @@ createPackageDB
 createPackageDB verbosity comp progdb preferCompat dbPath =
   case compilerFlavor comp of
     GHC -> HcPkg.init (GHC.hcPkgInfo progdb) verbosity preferCompat dbPath
-    GHCJS -> HcPkg.init (GHCJS.hcPkgInfo progdb) verbosity False dbPath
     _ -> dieWithException verbosity CreatePackageDB
 
 doesPackageDBExist :: FilePath -> IO Bool
@@ -413,7 +409,6 @@ withHcPkg
 withHcPkg verbosity name comp progdb f =
   case compilerFlavor comp of
     GHC -> f (GHC.hcPkgInfo progdb)
-    GHCJS -> f (GHCJS.hcPkgInfo progdb)
     _ -> dieWithException verbosity $ WithHcPkg name
 
 registerPackage
@@ -428,7 +423,6 @@ registerPackage
 registerPackage verbosity comp progdb mbWorkDir packageDbs installedPkgInfo registerOptions =
   case compilerFlavor comp of
     GHC -> GHC.registerPackage verbosity progdb mbWorkDir packageDbs installedPkgInfo registerOptions
-    GHCJS -> GHCJS.registerPackage verbosity progdb mbWorkDir packageDbs installedPkgInfo registerOptions
     _
       | HcPkg.registerMultiInstance registerOptions ->
           dieWithException verbosity RegisMultiplePkgNotSupported
@@ -743,4 +737,4 @@ unregScriptFileName = case buildOS of
   _ -> "unregister.sh"
 
 internalPackageDBPath :: LocalBuildInfo -> SymbolicPath Pkg (Dir Dist) -> SymbolicPath Pkg (Dir PkgDB)
-internalPackageDBPath lbi distPref = distPref </> makeRelativePathEx "package.conf.inplace"
+internalPackageDBPath _lbi distPref = distPref </> makeRelativePathEx "package.conf.inplace"
