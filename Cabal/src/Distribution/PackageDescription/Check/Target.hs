@@ -481,7 +481,7 @@ checkBuildInfoPathsWellFormedness bi = do
   mapM_
     (checkPath True "extra-lib-dirs-static" PathKindDirectory . getSymbolicPath)
     (extraLibDirsStatic bi)
-  mapM_ checkOptionPath (perCompilerFlavorToList $ options bi)
+  mapM_ checkOptionPath [(GHC, options bi)]
   where
     checkOptionPath
       :: Monad m
