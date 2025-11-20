@@ -260,7 +260,7 @@ defaultStoreDirLayout storeRoot =
 
     storePackageDBPath :: Compiler -> FilePath
     storePackageDBPath compiler =
-      storeDirectory compiler </> "package.db"
+      storeDirectory compiler </> "package.conf.d"
 
     storePackageDB :: Compiler -> PackageDBCWD
     storePackageDB compiler =
