@@ -67,7 +67,7 @@ import Distribution.Backpack.DescribeUnitId
 import Distribution.Compat.Graph (IsNode (nodeKey))
 import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import qualified Distribution.InstalledPackageInfo as IPI
-import Distribution.License (licenseFromSPDX, licenseToSPDX)
+import Distribution.License (licenseToSPDX)
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.Pretty
@@ -85,7 +85,6 @@ import Distribution.System
 import Distribution.Utils.MapAccum
 import Distribution.Utils.Path
 import Distribution.Verbosity as Verbosity
-import Distribution.Version
 import System.Directory
 import System.FilePath (isAbsolute)
 
@@ -499,11 +498,7 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
     , IPI.instantiatedWith = expectLibraryComponent (maybeComponentInstantiatedWith clbi)
     , IPI.sourceLibName = libName lib
     , IPI.compatPackageKey = expectLibraryComponent (maybeComponentCompatPackageKey clbi)
-    , -- If GHC >= 8.4 we register with SDPX, otherwise with legacy license
-      IPI.license =
-        if ghc84
-          then Left $ either id licenseToSPDX $ licenseRaw pkg
-          else Right $ either licenseFromSPDX id $ licenseRaw pkg
+    , IPI.license = Left $ either id licenseToSPDX $ licenseRaw pkg
     , IPI.copyright = copyright pkg
     , IPI.maintainer = maintainer pkg
     , IPI.author = author pkg
@@ -554,17 +549,12 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
     , IPI.libVisibility = libVisibility lib
     }
   where
-    ghc84 = case compilerId $ compiler lbi of
-      CompilerId GHC v -> v >= mkVersion [8, 4]
-      _ -> False
-
     bi = libBuildInfo lib
     -- TODO: unclear what the root cause of the
     -- duplication is, but we nub it here for now:
     depends = ordNub $ map fst (componentPackageDeps clbi)
     (absinc, relinc) = partition isAbsolute (map getSymbolicPath $ includeDirs bi)
     hasModules = not $ null (allLibModules lib clbi)
-    comp = compiler lbi
     hasLibrary =
       ( hasModules
           || not (null (cSources bi))
