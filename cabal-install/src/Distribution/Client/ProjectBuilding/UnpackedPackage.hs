@@ -213,11 +213,11 @@ buildAndRegisterUnpackedPackage
       PBInstallPhase
         { runCopy = \destdir ->
             annotateFailure mlogFile InstallFailed $ do
-              info verbosity $ "--- Install phase, copy " ++ prettyShow (Graph.nodeKey pkg)
+              info verbosity $ "--- Install phase (copy) " ++ prettyShow (Graph.nodeKey pkg)
               setup Cabal.copyCommand Cabal.copyCommonFlags (return . copyFlags destdir) copyArgs
         , runRegister = \pkgDBStack registerOpts ->
             annotateFailure mlogFile InstallFailed $ do
-              info verbosity $ "--- Install phase, register " ++ prettyShow (Graph.nodeKey pkg)
+              info verbosity $ "--- Install phase (register) " ++ prettyShow (Graph.nodeKey pkg)
               -- We register ourselves rather than via Setup.hs. We need to
               -- grab and modify the InstalledPackageInfo. We decide what
               -- the installed package id is, not the build system.
