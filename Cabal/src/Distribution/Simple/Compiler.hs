@@ -83,7 +83,6 @@ module Distribution.Simple.Compiler
   , backpackSupported
   , arResponseFilesSupported
   , arDashLSupported
-  , libraryDynDirSupported
   , libraryVisibilitySupported
   , jsemSupported
   , reexportedAsSupported
@@ -487,13 +486,6 @@ reexportedAsSupported comp = case compilerFlavor comp of
   _ -> False
   where
     v = compilerVersion comp
-
--- | Does this compiler support a package database entry with:
--- "dynamic-library-dirs"?
-libraryDynDirSupported :: Compiler -> Bool
-libraryDynDirSupported comp = case compilerFlavor comp of
-  GHC -> True
-  _ -> False
 
 -- | Does this compiler's "ar" command supports response file
 -- arguments (i.e. @file-style arguments).
