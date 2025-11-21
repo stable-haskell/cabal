@@ -569,12 +569,10 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
       -- the dynamic-library-dirs defaults to the library-dirs if not specified,
       -- so this works whether the dynamic-library-dirs field is supported or not
 
-      | libraryDynDirSupported comp =
+      | otherwise =
           ( libdir installDirs : extraLibDirs'
           , dynlibdir installDirs : extraLibDirs'
           )
-      | otherwise =
-          (libdir installDirs : dynlibdir installDirs : extraLibDirs', [])
     expectLibraryComponent (Just attribute) = attribute
     expectLibraryComponent Nothing = (error "generalInstalledPackageInfo: Expected a library component, got something else.")
 
