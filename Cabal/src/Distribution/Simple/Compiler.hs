@@ -82,7 +82,6 @@ module Distribution.Simple.Compiler
   , backpackSupported
   , arResponseFilesSupported
   , arDashLSupported
-  , libraryDynDirSupported
   , libraryVisibilitySupported
   , jsemSupported
   , reexportedAsSupported
@@ -472,20 +471,6 @@ jsemSupported comp = case compilerFlavor comp of
 reexportedAsSupported :: Compiler -> Bool
 reexportedAsSupported comp = case compilerFlavor comp of
   GHC -> v >= mkVersion [9, 12]
-  _ -> False
-  where
-    v = compilerVersion comp
-
--- | Does this compiler support a package database entry with:
--- "dynamic-library-dirs"?
-libraryDynDirSupported :: Compiler -> Bool
-libraryDynDirSupported comp = case compilerFlavor comp of
-  GHC ->
-    -- Not just v >= mkVersion [8,0,1,20161022], as there
-    -- are many GHC 8.1 nightlies which don't support this.
-    ( (v >= mkVersion [8, 0, 1, 20161022] && v < mkVersion [8, 1])
-        || v >= mkVersion [8, 1, 20161021]
-    )
   _ -> False
   where
     v = compilerVersion comp
