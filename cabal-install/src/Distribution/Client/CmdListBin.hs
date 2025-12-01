@@ -193,7 +193,7 @@ listbinAction flags args globalFlags = do
         ]
       ElabComponent comp -> bin_file (compSolverName comp)
       where
-        dist_dir = distBuildDirectory distDirLayout (elabDistDirParams elaboratedSharedConfig elab)
+        dist_dir = distBuildDirectory distDirLayout (elabDistDirParams elab)
 
         bin_file c = case c of
           CD.ComponentExe s
@@ -206,8 +206,7 @@ listbinAction flags args globalFlags = do
             | s == selectedComponent -> [flib_file' s]
           _ -> []
 
-        Toolchain{toolchainPlatform = plat} =
-          getStage (pkgConfigToolchains elaboratedSharedConfig) (elabStage elab)
+        Toolchain{toolchainPlatform = plat} = elabToolchain elab
 
         -- here and in PlanOutput,
         -- use binDirectoryFor?

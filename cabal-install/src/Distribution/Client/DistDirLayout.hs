@@ -45,7 +45,7 @@ import Distribution.Simple.Compiler
   ( Compiler (..)
   , OptimisationLevel (..)
   , PackageDBCWD
-  , PackageDBX (..)
+  , PackageDBX (..), showCompilerIdWithAbi
   )
 import Distribution.System
 import Distribution.Types.ComponentName
@@ -250,9 +250,7 @@ defaultStoreDirLayout storeRoot =
   where
     storeDirectory :: Compiler -> FilePath
     storeDirectory compiler =
-      storeRoot </> case compilerAbiTag compiler of
-        NoAbiTag -> prettyShow (compilerId compiler)
-        AbiTag tag -> prettyShow (compilerId compiler) <> "-" <> tag
+      storeRoot </> showCompilerIdWithAbi compiler
 
     storePackageDirectory :: Compiler -> UnitId -> FilePath
     storePackageDirectory compiler ipkgid =
