@@ -492,7 +492,6 @@ targetedRepl
         pkgsBuildStatus <-
           rebuildTargetsDryRun
             distDirLayout
-            elaboratedShared'
             elaboratedPlan'
 
         let elaboratedPlan'' =

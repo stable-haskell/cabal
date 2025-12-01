@@ -303,7 +303,7 @@ binDirectories layout config = fromElaboratedInstallPlan
   where
     fromElaboratedInstallPlan = fromGraph . toGraph
     fromGraph = foldMap fromPlan
-    fromSrcPkg = S.fromList . Planning.binDirectories layout config
+    fromSrcPkg = S.fromList . Planning.binDirectories layout
 
     fromPlan (PreExisting _) = mempty
     fromPlan (Configured pkg) = fromSrcPkg pkg

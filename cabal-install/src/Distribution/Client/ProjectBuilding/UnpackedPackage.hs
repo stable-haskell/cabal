@@ -279,8 +279,7 @@ buildAndRegisterUnpackedPackage
     where
       uid = installedUnitId rpkg
 
-      Toolchain{toolchainCompiler, toolchainProgramDb} =
-        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
+      Toolchain{toolchainCompiler, toolchainProgramDb} = elabToolchain pkg
 
       comp_par_strat = case maybe_semaphore of
         Just sem_name -> Cabal.toFlag (getSemaphoreName sem_name)
@@ -313,7 +312,6 @@ buildAndRegisterUnpackedPackage
             (fmap makeSymbolicPath . canonicalizePath)
             plan
             rpkg
-            pkgshared
             (commonFlags $ configureArgs v)
       configureArgs _ = setupHsConfigureArgs pkg
 
@@ -369,7 +367,6 @@ buildAndRegisterUnpackedPackage
         flip filterHaddockFlags v $
           setupHsHaddockFlags
             pkg
-            pkgshared
             buildTimeSettings
             (commonFlags $ haddockArgs v)
       haddockArgs v =
@@ -579,12 +576,11 @@ buildInplaceUnpackedPackage
       buildResult :: BuildResultMisc
       buildResult = (docsResult, testsResult)
 
-      dparams = elabDistDirParams pkgshared pkg
+      dparams = elabDistDirParams pkg
 
-      Toolchain{toolchainPlatform = Platform _ os} =
-        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
+      Toolchain{toolchainPlatform = Platform _ os} = elabToolchain pkg
 
-      packageFileMonitor = newPackageFileMonitor pkgshared distDirLayout dparams
+      packageFileMonitor = newPackageFileMonitor distDirLayout dparams
 
       withFileMonitor :: IO [MonitorFilePath] -> IO ()
       withFileMonitor runAction = do
@@ -768,7 +764,7 @@ buildAndInstallUnpackedPackage
               storeDirLayout
               toolchainCompiler
               uid
-              (copyPkgFiles verbosity pkgshared pkg runCopy)
+              (copyPkgFiles verbosity pkg runCopy)
               registerPkg
 
         -- No tests on install
@@ -804,8 +800,7 @@ buildAndInstallUnpackedPackage
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
 
-      Toolchain{toolchainCompiler, toolchainPlatform} =
-        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
+      Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain pkg
 
       dispname :: String
       dispname = case elabPkgOrComp pkg of
@@ -844,7 +839,6 @@ buildAndInstallUnpackedPackage
 -- | The copy part of the installation phase when doing build-and-install
 copyPkgFiles
   :: Verbosity
-  -> ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> (FilePath -> IO ())
   -- ^ The 'runCopy' function which invokes ./Setup copy for the
@@ -852,7 +846,7 @@ copyPkgFiles
   -> FilePath
   -- ^ The temporary dir file path
   -> IO (FilePath, [FilePath])
-copyPkgFiles verbosity pkgshared pkg runCopy tmpDir = do
+copyPkgFiles verbosity pkg runCopy tmpDir = do
   let tmpDirNormalised = normalise tmpDir
   runCopy tmpDirNormalised
   -- Note that the copy command has put the files into
@@ -869,7 +863,7 @@ copyPkgFiles verbosity pkgshared pkg runCopy tmpDir = do
   createDirectoryIfMissingVerbose verbosity True entryDir
 
   let hashFileName = entryDir </> "cabal-hash.txt"
-      outPkgHashInputs = renderPackageHashInputs (packageHashInputs pkgshared pkg)
+      outPkgHashInputs = renderPackageHashInputs (packageHashInputs pkg)
 
   info verbosity $
     "creating file with the inputs used to compute the package hash: " ++ hashFileName
