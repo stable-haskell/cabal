@@ -409,7 +409,6 @@ replAction flags@NixStyleFlags{extraFlags = r@ReplFlags{..}, ..} targetStrings g
         pkgsBuildStatus <-
           rebuildTargetsDryRun
             distDirLayout
-            elaboratedShared'
             elaboratedPlan'
 
         let elaboratedPlan'' =

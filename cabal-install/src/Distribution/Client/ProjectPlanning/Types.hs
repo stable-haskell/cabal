@@ -273,6 +273,7 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   -- helps with error messages when the user asks to build something
   -- they explicitly disabled.
   , elabStage :: Stage
+  , elabToolchain :: Toolchain
   , -- TODO: The 'Bool' here should be refined into an ADT with three
     -- cases: NotRequested, ExplicitlyRequested and
     -- ImplicitlyRequested.  A stanza is explicitly requested if
@@ -366,13 +367,12 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   deriving (Eq, Show, Generic)
 
 normaliseConfiguredPackage
-  :: ElaboratedSharedConfig
+  :: ElaboratedConfiguredPackage
   -> ElaboratedConfiguredPackage
-  -> ElaboratedConfiguredPackage
-normaliseConfiguredPackage shared pkg =
+normaliseConfiguredPackage pkg =
   pkg{elabProgramArgs = Map.mapMaybeWithKey lookupFilter (elabProgramArgs pkg)}
   where
-    Toolchain{toolchainProgramDb} = getStage (pkgConfigToolchains shared) (elabStage pkg)
+    Toolchain{toolchainProgramDb} = elabToolchain pkg
     knownProgramDb = addKnownPrograms builtinPrograms toolchainProgramDb
 
     pkgDesc :: PackageDescription
@@ -561,8 +561,8 @@ elabConfiguredName verbosity elab
   | otherwise =
       prettyShow (elabUnitId elab)
 
-elabDistDirParams :: ElaboratedSharedConfig -> ElaboratedConfiguredPackage -> DistDirParams
-elabDistDirParams shared elab =
+elabDistDirParams :: ElaboratedConfiguredPackage -> DistDirParams
+elabDistDirParams elab =
   DistDirParams
     { distParamStage = elabStage elab
     , distParamUnitId = installedUnitId elab
@@ -571,12 +571,10 @@ elabDistDirParams shared elab =
     , distParamComponentName = case elabPkgOrComp elab of
         ElabComponent comp -> compComponentName comp
         ElabPackage _ -> Nothing
-    , distParamCompilerId = compilerId toolchainCompiler
-    , distParamPlatform = toolchainPlatform
+    , distParamCompilerId = compilerId (toolchainCompiler (elabToolchain elab))
+    , distParamPlatform =  toolchainPlatform (elabToolchain elab)
     , distParamOptimization = LBC.withOptimization $ elabBuildOptions elab
-    }
-  where
-    Toolchain{toolchainCompiler, toolchainPlatform} = getStage (pkgConfigToolchains shared) (elabStage elab)
+    }  where
 
 --
 -- Order dependencies
@@ -728,16 +726,15 @@ pkgSetupLibDependencies pkg =
 -- rebuilds.
 elabInplaceDependencyBuildCacheFiles
   :: DistDirLayout
-  -> ElaboratedSharedConfig
   -> ElaboratedInstallPlan
   -> ElaboratedConfiguredPackage
   -> [FilePath]
-elabInplaceDependencyBuildCacheFiles layout sconf plan root_elab =
+elabInplaceDependencyBuildCacheFiles layout plan root_elab =
   go =<< InstallPlan.directDeps plan (nodeKey root_elab)
   where
     go = InstallPlan.foldPlanPackage (const []) $ \elab -> do
       guard (isInplaceBuildStyle (elabBuildStyle elab))
-      return $ distPackageCacheFile layout (elabDistDirParams sconf elab) "build"
+      return $ distPackageCacheFile layout (elabDistDirParams elab) "build"
 
 -- | Some extra metadata associated with an
 -- 'ElaboratedConfiguredPackage' which indicates that the "package"
