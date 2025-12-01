@@ -167,10 +167,9 @@ import qualified Distribution.Compat.Graph as Graph
 -- 'InstallPlan.Installed' state when we find that they're already up to date.
 rebuildTargetsDryRun
   :: DistDirLayout
-  -> ElaboratedSharedConfig
   -> ElaboratedInstallPlan
   -> IO BuildStatusMap
-rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
+rebuildTargetsDryRun distDirLayout@DistDirLayout{..} =
   -- Do the various checks to work out the 'BuildStatus' of each package
   foldMInstallPlanDepOrder dryRunPkg
   where
@@ -246,9 +245,8 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
         packageFileMonitor :: PackageFileMonitor
         packageFileMonitor =
           newPackageFileMonitor
-            shared
             distDirLayout
-            (elabDistDirParams shared pkg)
+            (elabDistDirParams pkg)
 
 -- | A specialised traversal over the packages in an install plan.
 --
@@ -571,7 +569,7 @@ rebuildTarget
           distDirLayout
           tarball
           (packageId pkg)
-          (elabDistDirParams sharedPackageConfig pkg)
+          (elabDistDirParams pkg)
           (elabBuildStyle pkg)
           (elabPkgDescriptionOverride pkg)
           $ case elabBuildStyle pkg of
@@ -589,7 +587,7 @@ rebuildTarget
         info verbosity $ "[rebuildPhase] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
         buildInplace buildStatus srcdir builddir
         where
-          distdir = distBuildDirectory (elabDistDirParams sharedPackageConfig pkg)
+          distdir = distBuildDirectory (elabDistDirParams pkg)
           builddir =
             makeSymbolicPath $
               makeRelative (normalise $ getSymbolicPath srcdir) distdir

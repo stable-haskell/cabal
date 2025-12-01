@@ -36,12 +36,10 @@ import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
   , ElaboratedInstalledPackageInfo
-  , ElaboratedSharedConfig (..)
   , TargetAction (..)
   , Toolchain (..)
   , WithStage (..)
   , elabDistDirParams
-  , getStage
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -159,9 +157,6 @@ haddockProjectAction flags _extraArgs globalFlags = do
       let elaboratedPlan :: ElaboratedInstallPlan
           elaboratedPlan = elaboratedPlanOriginal buildCtx
 
-          sharedConfig :: ElaboratedSharedConfig
-          sharedConfig = elaboratedShared buildCtx
-
           pkgs :: [Either ElaboratedInstalledPackageInfo ElaboratedConfiguredPackage]
           pkgs = matchingPackages elaboratedPlan
 
@@ -177,7 +172,6 @@ haddockProjectAction flags _extraArgs globalFlags = do
       --     . pkgConfigCompilerProgs
       --     $ sharedConfig
       -- let sharedConfig' = sharedConfig{pkgConfigCompilerProgs = progs}
-      let sharedConfig' = sharedConfig
 
       -- _ <-
       --   requireProgramVersion
@@ -227,7 +221,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
           Right package ->
             case elabLocalToProject package of
               True -> do
-                let distDirParams = elabDistDirParams sharedConfig' package
+                let distDirParams = elabDistDirParams package
                     pkg_descr = elabPkgDescription package
 
                     packageName = pkgName $ elabPkgSourceId package
@@ -299,8 +293,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
               False -> do
                 let pkg_descr = elabPkgDescription package
                     unitId = unUnitId (elabUnitId package)
-                    compilers = toolchainCompiler <$> pkgConfigToolchains sharedConfig'
-                    compiler = getStage compilers (elabStage package)
+                    compiler = toolchainCompiler (elabToolchain package)
                     packageDir =
                       storePackageDirectory
                         (cabalStoreDirLayout cabalLayout)

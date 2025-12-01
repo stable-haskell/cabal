@@ -402,7 +402,6 @@ runProjectPreBuildPhase
     pkgsBuildStatus <-
       rebuildTargetsDryRun
         distDirLayout
-        elaboratedShared
         elaboratedPlan'
 
     -- Improve the plan by marking up-to-date packages as installed.
@@ -1173,7 +1172,7 @@ printPlan
 
       showConfigureFlags :: ElaboratedConfiguredPackage -> String
       showConfigureFlags elab =
-        let Toolchain{toolchainProgramDb} = getStage (pkgConfigToolchains elaboratedShared) (elabStage elab)
+        let Toolchain{toolchainProgramDb} = elabToolchain elab
             commonFlags =
               setupHsCommonFlags
                 verbosity
@@ -1186,7 +1185,6 @@ printPlan
                     (\_ -> return (error "unused"))
                     elaboratedPlan
                     (ReadyPackage elab)
-                    elaboratedShared
                     commonFlags
                 )
             -- \| Given a default value @x@ for a flag, nub @Flag x@

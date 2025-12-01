@@ -697,7 +697,7 @@ rebuildInstallPlan
           -- The improved plan changes each time we install something, whereas
           -- the underlying elaborated plan only changes when input config
           -- changes, so it's worth caching them separately.
-          improvedPlan <- phaseImprovePlan elaboratedPlan elaboratedShared
+          improvedPlan <- phaseImprovePlan elaboratedPlan
 
           return (improvedPlan, elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
     where
@@ -934,7 +934,6 @@ rebuildInstallPlan
               instantiateInstallPlan
                 cabalStoreDirLayout
                 installDirs
-                elaboratedShared
                 elaboratedPlan
 
             infoProgress $ text "Elaborated install plan:" $$ text (showElaboratedInstallPlan instantiatedPlan)
@@ -975,9 +974,8 @@ rebuildInstallPlan
       --
       phaseImprovePlan
         :: ElaboratedInstallPlan
-        -> ElaboratedSharedConfig
         -> Rebuild ElaboratedInstallPlan
-      phaseImprovePlan elaboratedPlan elaboratedShared = do
+      phaseImprovePlan elaboratedPlan = do
         liftIO $ debug verbosity "Improving the install plan..."
         improvedPlan <- liftIO $ InstallPlan.installedM canBeImproved elaboratedPlan
         liftIO $ debugNoWrap verbosity (showElaboratedInstallPlan improvedPlan)
@@ -988,8 +986,10 @@ rebuildInstallPlan
         return improvedPlan
         where
           canBeImproved pkg = do
-            let Toolchain{toolchainCompiler} = getStage (pkgConfigToolchains elaboratedShared) (elabStage pkg)
-            doesStoreEntryExist cabalStoreDirLayout toolchainCompiler (installedUnitId pkg)
+            doesStoreEntryExist
+              cabalStoreDirLayout
+              (toolchainCompiler (elabToolchain pkg))
+              (installedUnitId pkg)
 
 -- | If a 'PackageSpecifier' refers to a single package, return Just that
 -- package.
@@ -1888,11 +1888,7 @@ elaborateInstallPlan
                               Nothing -> prettyShow pkgid
                               Just n -> prettyShow pkgid ++ "-" ++ prettyShow n
                         BuildAndInstall ->
-                          hashedInstalledPackageId
-                            ( packageHashInputs
-                                elaboratedSharedConfig
-                                elab1 -- knot tied
-                            )
+                          hashedInstalledPackageId (packageHashInputs elab1) -- knot tied
 
                       cc = cc0{cc_ann_id = fmap (const cid) (cc_ann_id cc0)}
 
@@ -1949,7 +1945,6 @@ elaborateInstallPlan
                             computeInstallDirs
                               storeDirLayout
                               defaultInstallDirs
-                              elaboratedSharedConfig
                               elab2
                         }
 
@@ -2009,7 +2004,6 @@ elaborateInstallPlan
                 inplace_bin_dir elab =
                   binDirectoryFor
                     distDirLayout
-                    elaboratedSharedConfig
                     elab
                     $ case Cabal.componentNameString cname of
                       Just n -> prettyShow n
@@ -2052,7 +2046,6 @@ elaborateInstallPlan
            in
             binDirectoryFor
               distDirLayout
-              elaboratedSharedConfig
               elab
               <$> executables
 
@@ -2073,8 +2066,7 @@ elaborateInstallPlan
           return elab
           where
             elab0@ElaboratedConfiguredPackage
-              { elabPkgSourceHash
-              , elabStanzasRequested
+              { elabStanzasRequested
               , elabStage
               } = elaborateSolverToCommon solverPkg
 
@@ -2092,7 +2084,6 @@ elaborateInstallPlan
                     computeInstallDirs
                       storeDirLayout
                       defaultInstallDirs
-                      elaboratedSharedConfig
                       elab1
                 }
 
@@ -2104,12 +2095,7 @@ elaborateInstallPlan
               | shouldBuildInplaceOnly solverPkg =
                   mkComponentId (prettyShow srcpkgPackageId)
               | otherwise =
-                  assert (isJust elabPkgSourceHash) $
-                    hashedInstalledPackageId
-                      ( packageHashInputs
-                          elaboratedSharedConfig
-                          elab -- recursive use of elab
-                      )
+                  hashedInstalledPackageId (packageHashInputs elab) -- recursive use of elab
 
             -- Need to filter out internal dependencies, because they don't
             -- correspond to anything real anymore.
@@ -2179,8 +2165,6 @@ elaborateInstallPlan
           elaboratedPackage
           where
             compilers = fmap toolchainCompiler toolchains
-            platforms = fmap toolchainPlatform toolchains
-            programDbs = fmap toolchainProgramDb toolchains
             packageDbs = fmap toolchainPackageDBs toolchains
 
             elaboratedPackage = ElaboratedConfiguredPackage{..}
@@ -2196,9 +2180,10 @@ elaborateInstallPlan
             elabPkgSourceId = srcpkgPackageId
 
             elabStage = solverPkgStage
-            elabCompiler = getStage compilers elabStage
-            elabPlatform = getStage platforms elabStage
-            elabProgramDb = getStage programDbs elabStage
+            elabToolchain = getStage toolchains elabStage
+            elabCompiler = toolchainCompiler elabToolchain
+            elabPlatform = toolchainPlatform elabToolchain
+            elabProgramDb = toolchainProgramDb elabToolchain
 
             elabPkgDescription =
               case PD.finalizePD
@@ -2274,7 +2259,7 @@ elaborateInstallPlan
                 then BuildInplaceOnly OnDisk
                 else BuildAndInstall
 
-            elabPackageDbs = getStage packageDbs elabStage
+            elabPackageDbs = toolchainPackageDBs elabToolchain
             elabBuildPackageDBStack = buildAndRegisterDbs elabStage
             elabRegisterPackageDBStack = buildAndRegisterDbs elabStage
 
@@ -2695,10 +2680,9 @@ mkShapeMapping dpkg =
 -- with multiple executables.
 binDirectories
   :: DistDirLayout
-  -> ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> [FilePath]
-binDirectories layout config package = case elabBuildStyle package of
+binDirectories layout package = case elabBuildStyle package of
   -- quick sanity check: no sense returning a bin directory if we're not going
   -- to put any executables in it, that will just clog up the PATH
   _ | noExecutables -> []
@@ -2715,7 +2699,7 @@ binDirectories layout config package = case elabBuildStyle package of
   where
     noExecutables = null . PD.executables . elabPkgDescription $ package
     root =
-      distBuildDirectory layout (elabDistDirParams config package)
+      distBuildDirectory layout (elabDistDirParams package)
         </> "build"
 
 type InstS = Map (WithStage UnitId) ElaboratedPlanPackage
@@ -2793,10 +2777,9 @@ instantiateInstallPlan
   :: HasCallStack
   => StoreDirLayout
   -> Staged InstallDirs.InstallDirTemplates
-  -> ElaboratedSharedConfig
   -> ElaboratedInstallPlan
   -> LogProgress ElaboratedInstallPlan
-instantiateInstallPlan storeDirLayout defaultInstallDirs elaboratedShared plan = do
+instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
   InstallPlan.new (Map.elems ready_map)
   where
     pkgs = InstallPlan.toList plan
@@ -2875,7 +2858,6 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs elaboratedShared plan =
                             computeInstallDirs
                               storeDirLayout
                               defaultInstallDirs
-                              elaboratedShared
                               elab1
                         }
 
@@ -4001,10 +3983,9 @@ storePackageInstallDirs'
 computeInstallDirs
   :: StoreDirLayout
   -> Staged InstallDirs.InstallDirTemplates
-  -> ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> InstallDirs.InstallDirs FilePath
-computeInstallDirs storeDirLayout defaultInstallDirs sharedConfig elab =
+computeInstallDirs storeDirLayout defaultInstallDirs elab =
   if isInplaceBuildStyle (elabBuildStyle elab)
     then -- use the ordinary default install dirs
 
@@ -4029,7 +4010,7 @@ computeInstallDirs storeDirLayout defaultInstallDirs sharedConfig elab =
         toolchainCompiler
         (elabUnitId elab)
   where
-    Toolchain{toolchainCompiler, toolchainPlatform} = getStage (pkgConfigToolchains sharedConfig) (elabStage elab)
+    Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain elab
     defaultInstallDirs' = getStage defaultInstallDirs (elabStage elab)
 
 -- TODO: [code cleanup] perhaps reorder this code
@@ -4043,21 +4024,19 @@ setupHsConfigureFlags
   -- to do this is to convert the potentially relative path into an absolute path.
   -> ElaboratedInstallPlan
   -> ElaboratedReadyPackage
-  -> ElaboratedSharedConfig
   -> Cabal.CommonSetupFlags
   -> m Cabal.ConfigFlags
 setupHsConfigureFlags
   mkSymbolicPath
   _plan
   (ReadyPackage elab@ElaboratedConfiguredPackage{..})
-  sharedConfig
   configCommonFlags = do
     -- explicitly clear, then our package db stack
     -- TODO: [required eventually] have to do this differently for older Cabal versions
     configPackageDBs <- (traverse . traverse . traverse) mkSymbolicPath (Nothing : map Just elabBuildPackageDBStack)
     return Cabal.ConfigFlags{..}
     where
-      Toolchain{toolchainCompiler} = getStage (pkgConfigToolchains sharedConfig) elabStage
+      Toolchain{toolchainCompiler} = elabToolchain
 
       Cabal.ConfigFlags
         { configVanillaLib
@@ -4353,19 +4332,17 @@ setupHsRegisterFlags
 
 setupHsHaddockFlags
   :: ElaboratedConfiguredPackage
-  -> ElaboratedSharedConfig
   -> BuildTimeSettings
   -> Cabal.CommonSetupFlags
   -> Cabal.HaddockFlags
 setupHsHaddockFlags
   (ElaboratedConfiguredPackage{..})
-  sharedConfig
   _buildTimeSettings
   common =
     Cabal.HaddockFlags
       { haddockCommonFlags = common
       , haddockProgramPaths =
-          case lookupProgram haddockProgram toolchainProgramDb of
+          case lookupProgram haddockProgram (toolchainProgramDb elabToolchain) of
             Nothing -> mempty
             Just prg ->
               [
@@ -4394,8 +4371,6 @@ setupHsHaddockFlags
       , haddockOutputDir = maybe mempty toFlag elabHaddockOutputDir
       , haddockUseUnicode = toFlag elabHaddockUseUnicode
       }
-    where
-      Toolchain{toolchainProgramDb} = getStage (pkgConfigToolchains sharedConfig) elabStage
 
 setupHsHaddockArgs :: ElaboratedConfiguredPackage -> [String]
 -- TODO: Does the issue #3335 affects test as well
@@ -4447,11 +4422,9 @@ setupHsHaddockArgs elab =
 -- not replace installed packages with ghc-pkg.
 
 packageHashInputs
-  :: ElaboratedSharedConfig
-  -> ElaboratedConfiguredPackage
+  :: ElaboratedConfiguredPackage
   -> PackageHashInputs
 packageHashInputs
-  pkgshared
   elab@( ElaboratedConfiguredPackage
           { elabPkgSourceHash = Just srchash
           }
@@ -4463,7 +4436,7 @@ packageHashInputs
       , pkgHashPkgConfigDeps = Set.fromList (elabPkgConfigDependencies elab)
       , pkgHashLibDeps
       , pkgHashExeDeps
-      , pkgHashOtherConfig = packageHashConfigInputs pkgshared elab
+      , pkgHashOtherConfig = packageHashConfigInputs elab
       }
     where
       pkgHashComponent =
@@ -4502,16 +4475,15 @@ packageHashInputs
       -- affect the result, so we do not include them.
       relevantDeps (CD.ComponentTest _) = False
       relevantDeps (CD.ComponentBench _) = False
-packageHashInputs _ pkg =
+packageHashInputs pkg =
   error $
     "packageHashInputs: only for packages with source hashes. "
       ++ prettyShow (packageId pkg)
 
 packageHashConfigInputs
-  :: ElaboratedSharedConfig
-  -> ElaboratedConfiguredPackage
+  :: ElaboratedConfiguredPackage
   -> PackageHashConfigInputs
-packageHashConfigInputs sharedConfig pkg =
+packageHashConfigInputs pkg =
   PackageHashConfigInputs
     { pkgHashCompilerId = compilerId toolchainCompiler
     , pkgHashCompilerABI = compilerAbiTag toolchainCompiler
@@ -4562,8 +4534,8 @@ packageHashConfigInputs sharedConfig pkg =
     , pkgHashHaddockUseUnicode = elabHaddockUseUnicode
     }
   where
-    Toolchain{toolchainCompiler, toolchainPlatform} = getStage (pkgConfigToolchains sharedConfig) elabStage
-    ElaboratedConfiguredPackage{..} = normaliseConfiguredPackage sharedConfig pkg
+    Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain
+    ElaboratedConfiguredPackage{..} = normaliseConfiguredPackage pkg
     LBC.BuildOptions{..} = elabBuildOptions
 
 -- TODO: sanity checks:
@@ -4585,13 +4557,12 @@ packageHashConfigInputs sharedConfig pkg =
 -- HACK.
 binDirectoryFor
   :: DistDirLayout
-  -> ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> FilePath
   -> FilePath
-binDirectoryFor layout config package exe = case elabBuildStyle package of
+binDirectoryFor layout package exe = case elabBuildStyle package of
   BuildAndInstall -> installedBinDirectory package
-  BuildInplaceOnly{} -> inplaceBinRoot layout config package </> exe
+  BuildInplaceOnly{} -> inplaceBinRoot layout package </> exe
 
 -- package has been built and installed.
 installedBinDirectory :: ElaboratedConfiguredPackage -> FilePath
@@ -4600,11 +4571,10 @@ installedBinDirectory = InstallDirs.bindir . elabInstallDirs
 -- | The path to the @build@ directory for an inplace build.
 inplaceBinRoot
   :: DistDirLayout
-  -> ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> FilePath
-inplaceBinRoot layout config package =
-  distBuildDirectory layout (elabDistDirParams config package)
+inplaceBinRoot layout package =
+  distBuildDirectory layout (elabDistDirParams package)
     </> "build"
 
 -- FIXME: whathever
