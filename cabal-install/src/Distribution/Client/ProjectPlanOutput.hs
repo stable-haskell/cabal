@@ -216,8 +216,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               ]
                 ++ bin_file (compSolverName comp)
       where
-        Toolchain{toolchainPlatform = plat} =
-          Stage.getStage toolchains (elabStage elab)
+        Toolchain{toolchainPlatform = plat} = elabToolchain elab
 
         -- \| Only add build-info file location if the Setup.hs CLI
         -- is recent enough to be able to generate build info files.
@@ -293,10 +292,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               ]
 
         dist_dir :: FilePath
-        dist_dir =
-          distBuildDirectory
-            distDirLayout
-            (elabDistDirParams elaboratedSharedConfig elab)
+        dist_dir = distBuildDirectory distDirLayout (elabDistDirParams elab)
 
         bin_file :: ComponentDeps.Component -> [J.Pair]
         bin_file c = case c of

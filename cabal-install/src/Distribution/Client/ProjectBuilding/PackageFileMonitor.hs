@@ -55,19 +55,17 @@ data PackageFileMonitor = PackageFileMonitor
 type BuildResultMisc = (DocsResult, TestsResult)
 
 newPackageFileMonitor
-  :: ElaboratedSharedConfig
-  -> DistDirLayout
+  :: DistDirLayout
   -> DistDirParams
   -> PackageFileMonitor
 newPackageFileMonitor
-  shared
   DistDirLayout{distPackageCacheFile}
   dparams =
     PackageFileMonitor
       { pkgFileMonitorConfig =
           FileMonitor
             { fileMonitorCacheFile = distPackageCacheFile dparams "config"
-            , fileMonitorKeyValid = (==) `on` normaliseConfiguredPackage shared
+            , fileMonitorKeyValid = (==) `on` normaliseConfiguredPackage
             , fileMonitorCheckIfOnlyValueChanged = False
             }
       , pkgFileMonitorBuild =

@@ -305,7 +305,6 @@ runAction flags targetAndArgs globalFlags =
     let defaultExePath =
           binDirectoryFor
             (distDirLayout baseCtx)
-            (elaboratedShared buildCtx)
             pkg
             exeName
             </> exeName
@@ -326,7 +325,7 @@ runAction flags targetAndArgs globalFlags =
         , let pkg_descr = elabPkgDescription pkg
         , thisExe : _ <- filter ((== exeName) . unUnqualComponentName . PD.exeName) $ PD.executables pkg_descr
         , let thisExeBI = PD.buildInfo thisExe =
-            [ binDirectoryFor (distDirLayout baseCtx) (elaboratedShared buildCtx) pkg depExeNm
+            [ binDirectoryFor (distDirLayout baseCtx) pkg depExeNm
             | depExe <- getAllInternalToolDependencies pkg_descr thisExeBI
             , let depExeNm = unUnqualComponentName depExe
             ]
