@@ -35,7 +35,6 @@ import Distribution.Client.Config
   , defaultStoreDir
   )
 import Distribution.Client.Toolchain (Stage, Toolchain (..))
-import Distribution.Compiler
 import Distribution.Package
   ( PackageId
   , PackageIdentifier
@@ -45,6 +44,7 @@ import Distribution.Simple.Compiler
   ( PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
+  
   , showCompilerIdWithAbi
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
@@ -102,9 +102,9 @@ data DistDirLayout = DistDirLayout
   , distSdistDirectory :: FilePath
   , distTempDirectory :: FilePath
   , distBinDirectory :: FilePath
-  , distPackageDB :: CompilerId -> PackageDBCWD
   , distHaddockOutputDir :: Maybe FilePath
   -- ^ Is needed when `--haddock-output-dir` flag is used.
+  , distStoreDirLayout :: StoreDirLayout
   }
 
 -- | The layout of a cabal nix-style store.
@@ -228,14 +228,11 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
     distBinDirectory :: FilePath
     distBinDirectory = distDirectory </> "bin"
 
-    distPackageDBPath :: CompilerId -> FilePath
-    distPackageDBPath compid = distDirectory </> "packagedb" </> prettyShow compid
-
-    distPackageDB :: CompilerId -> PackageDBCWD
-    distPackageDB = SpecificPackageDB . distPackageDBPath
-
     distHaddockOutputDir :: Maybe FilePath
     distHaddockOutputDir = haddockOutputDir
+
+    distStoreDirLayout :: StoreDirLayout
+    distStoreDirLayout = defaultStoreDirLayout (distDirectory </> "store")
 
 defaultStoreDirLayout :: FilePath -> StoreDirLayout
 defaultStoreDirLayout storeRoot =

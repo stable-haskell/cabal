@@ -2229,7 +2229,7 @@ type PlanDetails =
 planProject :: FilePath -> ProjectConfig -> IO PlanDetails
 planProject testdir cliConfig = do
   projDetails@( distDirLayout
-                , cabalDirLayout
+                , _cabalDirLayout
                 , projectConfig
                 , localPackages
                 , _buildSettings
@@ -2240,7 +2240,6 @@ planProject testdir cliConfig = do
     rebuildInstallPlan
       testVerbosity
       distDirLayout
-      cabalDirLayout
       projectConfig
       localPackages
       Nothing
@@ -2253,7 +2252,7 @@ planProject testdir cliConfig = do
 
 executePlan :: PlanDetails -> IO (ElaboratedInstallPlan, BuildOutcomes)
 executePlan
-  ( (distDirLayout, cabalDirLayout, config, _, buildSettings)
+  ( (distDirLayout, _cabalDirLayout, config, _, buildSettings)
     , elaboratedPlan
     , elaboratedShared
     ) = do
@@ -2290,7 +2289,6 @@ executePlan
         testVerbosity
         config
         distDirLayout
-        (cabalStoreDirLayout cabalDirLayout)
         elaboratedPlan''
         elaboratedShared
         pkgsBuildStatus

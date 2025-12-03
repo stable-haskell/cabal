@@ -343,7 +343,6 @@ withInstallPlan
   verbosity
   ProjectBaseContext
     { distDirLayout
-    , cabalDirLayout
     , projectConfig
     , localPackages
     , installedPackages
@@ -357,7 +356,6 @@ withInstallPlan
       rebuildInstallPlan
         verbosity
         distDirLayout
-        cabalDirLayout
         projectConfig
         localPackages
         installedPackages
@@ -372,7 +370,6 @@ runProjectPreBuildPhase
   verbosity
   ProjectBaseContext
     { distDirLayout
-    , cabalDirLayout
     , projectConfig
     , localPackages
     , installedPackages
@@ -386,7 +383,6 @@ runProjectPreBuildPhase
       rebuildInstallPlan
         verbosity
         distDirLayout
-        cabalDirLayout
         projectConfig
         localPackages
         installedPackages
@@ -444,7 +440,6 @@ runProjectBuildPhase
         verbosity
         projectConfig
         distDirLayout
-        (cabalStoreDirLayout cabalDirLayout)
         elaboratedPlanToExecute
         elaboratedShared
         pkgsBuildStatus
@@ -1130,9 +1125,6 @@ printPlan
             , if verbosityLevel verbosity >= Deafening
                 then prettyShow (installedUnitId elab)
                 else prettyShow (packageId elab)
-            , case elabBuildStyle elab of
-                BuildInplaceOnly InMemory -> "(interactive)"
-                _ -> ""
             , case elabPkgOrComp elab of
                 ElabPackage pkg -> showTargets elab ++ ifVerbose (showStanzas (pkgStanzasEnabled pkg))
                 ElabComponent comp ->
@@ -1187,7 +1179,6 @@ printPlan
               runIdentity
                 ( setupHsConfigureFlags
                     (\_ -> return (error "unused"))
-                    elaboratedPlan
                     (ReadyPackage elab)
                     commonFlags
                 )
