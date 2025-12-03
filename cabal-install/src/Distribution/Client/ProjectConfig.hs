@@ -1868,17 +1868,6 @@ truncateString n s
   | length s <= n = s
   | otherwise = take (n - 1) s ++ "_"
 
--- TODO: add something like this, here or in the project planning
--- Based on the package location, which packages will be built inplace in the
--- build tree vs placed in the store. This has various implications on what we
--- can do with the package, e.g. can we run tests, ghci etc.
---
--- packageIsLocalToProject :: ProjectPackageLocation -> Bool
-
----------------------------------------------
--- Checking configuration sanity
---
-
 data BadPerPackageCompilerPaths
   = BadPerPackageCompilerPaths [(PackageName, String)]
   deriving (Show)

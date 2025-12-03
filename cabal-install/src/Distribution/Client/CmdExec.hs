@@ -60,7 +60,6 @@ import Distribution.Client.ProjectPlanning
 import qualified Distribution.Client.ProjectPlanning as Planning
 import Distribution.Client.ProjectPlanning.Types
   ( Toolchain (..)
-  , dataDirsEnvironmentForPlan
   )
 import Distribution.Client.Setup
   ( GlobalFlags
@@ -180,10 +179,7 @@ execAction flags extraArgs globalFlags = do
       -- NOTE: only build-stage dependencies make sense here
       pkgProgs = getStage progdbs Build
       --
-      extraEnvVars =
-        dataDirsEnvironmentForPlan
-          (distDirLayout baseCtx)
-          (elaboratedPlanToExecute buildCtx)
+      extraEnvVars = []
 
   programDb <-
     prependProgramSearchPath verbosity extraPaths extraEnvVars pkgProgs
@@ -304,7 +300,7 @@ binDirectories layout config = fromElaboratedInstallPlan
   where
     fromElaboratedInstallPlan = fromGraph . toGraph
     fromGraph = foldMap fromPlan
-    fromSrcPkg = S.fromList . Planning.binDirectories layout
+    fromSrcPkg = S.fromList . Planning.binDirectories
 
     fromPlan (PreExisting _) = mempty
     fromPlan (Configured pkg) = fromSrcPkg pkg

@@ -41,7 +41,6 @@ module Distribution.Client.ProjectPlanning
   , ElaboratedPlanPackage
   , ElaboratedSharedConfig (..)
   , ElaboratedReadyPackage
-  , BuildStyle (..)
   , CabalFileText
   , Toolchain (..)
   , Stage (..)
@@ -100,7 +99,7 @@ module Distribution.Client.ProjectPlanning
   , packageHashInputs
 
     -- * Path construction
-  , binDirectoryFor
+  , installedBinDirectory
   , binDirectories
   , storePackageInstallDirs
   , storePackageInstallDirs'
@@ -233,7 +232,6 @@ import Control.Exception (assert)
 import Control.Monad (sequence)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (State, execState, gets, modify)
-import Data.Foldable (fold)
 import Data.List (deleteBy, groupBy)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
@@ -630,7 +628,6 @@ rebuildInstallPlan
   :: HasCallStack
   => Verbosity
   -> DistDirLayout
-  -> CabalDirLayout
   -> ProjectConfig
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> Maybe InstalledPackageIndex
@@ -647,10 +644,9 @@ rebuildInstallPlan
   distDirLayout@DistDirLayout
     { distProjectRootDirectory
     , distProjectCacheFile
+    , distStoreDirLayout
     }
-  CabalDirLayout
-    { cabalStoreDirLayout
-    } = \projectConfig localPackages mbInstalledPackages ->
+    = \projectConfig localPackages mbInstalledPackages ->
     runRebuild distProjectRootDirectory $ do
       progsearchpath <- liftIO $ getSystemSearchPath
       let projectConfigMonitored = projectConfig{projectConfigBuildOnly = mempty}
@@ -701,6 +697,7 @@ rebuildInstallPlan
           -- the underlying elaborated plan only changes when input config
           -- changes, so it's worth caching them separately.
           improvedPlan <- phaseImprovePlan elaboratedPlan
+          liftIO $ info verbosity (render (text "Improved install plan:" $$ text (showElaboratedInstallPlan improvedPlan)))
 
           return (improvedPlan, elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
     where
@@ -863,7 +860,7 @@ rebuildInstallPlan
                         packageConfigBenchmarks
                         projectConfig
                         pkgname
-                    isLocal = isJust (shouldBeLocal pkg)
+                    isLocal = isJust (isLocalUnpackedPackage pkg)
                     stanzas
                       | isLocal =
                           Map.fromList $
@@ -911,11 +908,6 @@ rebuildInstallPlan
               (packageLocationsSignature solverPlan)
               $ getPackageSourceHashes verbosity withRepoCtx solverPlan
 
-          installDirs <-
-            for toolchains $ \t -> do
-              defaultInstallDirs <- liftIO $ userInstallDirTemplates (toolchainCompiler t)
-              return $ fmap Cabal.fromFlag $ (fmap Flag defaultInstallDirs) <> (projectConfigInstallDirs projectConfigShared)
-
           liftIO $ runLogProgress verbosity $ do
             (elaboratedPlan, elaboratedShared) <-
               elaborateInstallPlan
@@ -923,11 +915,9 @@ rebuildInstallPlan
                 toolchains
                 pkgConfigDB
                 distDirLayout
-                cabalStoreDirLayout
                 solverPlan
                 localPackages
                 sourcePackageHashes
-                installDirs
                 projectConfigShared
                 projectConfigAllPackages
                 projectConfigLocalPackages
@@ -935,8 +925,7 @@ rebuildInstallPlan
 
             instantiatedPlan <-
               instantiateInstallPlan
-                cabalStoreDirLayout
-                installDirs
+                distStoreDirLayout
                 elaboratedPlan
 
             infoProgress $ text "Elaborated install plan:" $$ text (showElaboratedInstallPlan instantiatedPlan)
@@ -978,22 +967,28 @@ rebuildInstallPlan
       phaseImprovePlan
         :: ElaboratedInstallPlan
         -> Rebuild ElaboratedInstallPlan
-      phaseImprovePlan elaboratedPlan = do
-        liftIO $ debug verbosity "Improving the install plan..."
-        improvedPlan <- liftIO $ InstallPlan.installedM canBeImproved elaboratedPlan
-        liftIO $ debugNoWrap verbosity (showElaboratedInstallPlan improvedPlan)
-        -- TODO: [nice to have] having checked which packages from the store
-        -- we're using, it may be sensible to sanity check those packages
-        -- by loading up the compiler package db and checking everything
-        -- matches up as expected, e.g. no dangling deps, files deleted.
-        return improvedPlan
+      phaseImprovePlan elaboratedPlan = liftIO $ do
+        info verbosity "Improving the install plan using the package store..."
+        InstallPlan.installedM canBeImproved elaboratedPlan
         where
-          canBeImproved pkg = do
-            doesStoreEntryExist
-              cabalStoreDirLayout
-              (elabStage pkg)
-              (elabToolchain pkg)
-              (installedUnitId pkg)
+          -- Only packages that do not depend on source packages can be cached
+          canBeImproved elab = do
+            info verbosity ("Checking if " ++ prettyShow (installedUnitId elab) ++ " is already installed...")
+            isPresent <- doesStoreEntryExist
+                distStoreDirLayout
+                (elabStage elab)
+                (elabToolchain elab)
+                (installedUnitId elab)
+            if isPresent then 
+              if elabIsSourcePackageClosure elab then do
+                info verbosity (prettyShow (installedUnitId elab) ++ " is already present but I will not reuse it because it depends on source packages.")
+                return False
+              else do
+                info verbosity (prettyShow (installedUnitId elab) ++ " is already present and can be reused.")
+                return True
+            else do
+              info verbosity (prettyShow (installedUnitId elab) ++ " is not present in the store.")
+              return False
 
 -- | If a 'PackageSpecifier' refers to a single package, return Just that
 -- package.
@@ -1554,11 +1549,9 @@ elaborateInstallPlan
   -> Staged Toolchain
   -> Staged (Maybe PkgConfigDb)
   -> DistDirLayout
-  -> StoreDirLayout
   -> SolverInstallPlan
   -> [PackageSpecifier (SourcePackage (PackageLocation loc))]
   -> Map PackageId PackageSourceHash
-  -> Staged InstallDirs.InstallDirTemplates
   -> ProjectConfigShared
   -> PackageConfig
   -> PackageConfig
@@ -1568,12 +1561,10 @@ elaborateInstallPlan
   verbosity
   toolchains
   pkgConfigDB
-  distDirLayout@DistDirLayout{..}
-  storeDirLayout
+  distDirLayout
   solverPlan
   localPackages
   sourcePackageHashes
-  defaultInstallDirs
   sharedPackageConfig
   allPackagesConfig
   localPackagesConfig
@@ -1611,7 +1602,7 @@ elaborateInstallPlan
               return [InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))]
             SolverInstallPlan.Configured pkg ->
               let inplace_doc
-                    | shouldBuildInplaceOnly pkg = text "inplace"
+                    | inProjectSourcePackagesClosure pkg = text "is local"
                     | otherwise = Disp.empty
                in addProgressCtx
                     ( text "In the"
@@ -1628,9 +1619,7 @@ elaborateInstallPlan
         => (SolverId -> [ElaboratedPlanPackage])
         -> SolverPackage UnresolvedPkgLoc
         -> LogProgress [ElaboratedConfiguredPackage]
-      elaborateSolverToComponents
-        mapDep
-        solverPkg@SolverPackage{solverPkgStage, solverPkgLibDeps, solverPkgExeDeps} =
+      elaborateSolverToComponents mapDep solverPkg =
           case mkComponentsGraph (elabEnabledSpec elab0) pd of
             Left cns ->
               dieProgress $
@@ -1746,7 +1735,7 @@ elaborateInstallPlan
                                 , compComponentName = Nothing
                                 , compLibDependencies =
                                     [ (configuredId cid, False)
-                                    | cid <- CD.setupDeps solverPkgLibDeps >>= elaborateLibSolverId mapDep
+                                    | cid <- CD.setupDeps (solverPkgLibDeps solverPkg) >>= elaborateLibSolverId mapDep
                                     ]
                                 , compLinkedLibDependencies = notImpl "compLinkedLibDependencies"
                                 , compOrderLibDependencies = notImpl "compOrderLibDependencies"
@@ -1824,17 +1813,18 @@ elaborateInstallPlan
 
                       compExeDependencies :: [WithStage ConfiguredId]
                       compExeDependencies =
-                        -- External
+                        -- External dependencies (confSrcId confId /= pkgid).
                         [ WithStage (stageOf pkg) confId
                         | pkg <- external_exe_dep_pkgs
                         , let confId = configuredId pkg
-                        , -- only executables
-                        Just (CExeName _) <- [confCompName confId]
                         , confSrcId confId /= pkgid
+                        , -- only executables
+                          Just (CExeName _) <- [confCompName confId]
                         ]
                           <>
-                          -- Internal, assume the same stage
-                          [ WithStage solverPkgStage confId
+                          -- Internal dependencies (confSrcId confId == pkgid).
+                          -- Here we assume the same stage.
+                          [ WithStage (solverPkgStage solverPkg) confId
                           | aid <- cc_exe_deps cc0
                           , let confId = annotatedIdToConfiguredId aid
                           , confSrcId confId == pkgid
@@ -1842,18 +1832,19 @@ elaborateInstallPlan
 
                       compExeDependencyPaths :: [(WithStage ConfiguredId, FilePath)]
                       compExeDependencyPaths =
-                        -- External
+                        -- External dependencies (confSrcId confId /= pkgid).
                         [ (WithStage (stageOf pkg) confId, path)
                         | pkg <- external_exe_dep_pkgs
                         , let confId = configuredId pkg
                         , confSrcId confId /= pkgid
                         , -- only executables
-                        Just (CExeName _) <- [confCompName confId]
+                          Just (CExeName _) <- [confCompName confId]
                         , path <- planPackageExePaths pkg
                         ]
                           <>
-                          -- Internal, assume the same stage
-                          [ (WithStage solverPkgStage confId, path)
+                          -- Internal dependencies (confSrcId confId == pkgid).
+                          -- Here we assume the same stage.
+                          [ (WithStage (solverPkgStage solverPkg) confId, path)
                           | aid <- cc_exe_deps cc0
                           , let confId = annotatedIdToConfiguredId aid
                           , confSrcId confId == pkgid
@@ -1885,14 +1876,23 @@ elaborateInstallPlan
                           }
 
                       -- This is where the component id is computed.
-                      cid = case elabBuildStyle elab0 of
-                        BuildInplaceOnly{} ->
-                          mkComponentId $
-                            case Cabal.componentNameString cname of
-                              Nothing -> prettyShow pkgid
-                              Just n -> prettyShow pkgid ++ "-" ++ prettyShow n
-                        BuildAndInstall ->
-                          hashedInstalledPackageId (packageHashInputs elab1) -- knot tied
+                      -- For packages that either:
+                      --  are in the project source package closure, or
+                      --  do not have a source hash
+                      -- we use the package id (plus the component name if there is one).
+                      -- For the other packages, which have a source hash, we use a hash derived from the source hash
+                      -- and the build configuration (computed by 'packageHashInputs').
+                      cid =
+                        case elabPkgSourceHash elab1 of
+                          -- If we have a source hash and the package is in the project closure,
+                          -- we can use it to compute the component ID.
+                          Just srchash | not (inProjectSourcePackagesClosure solverPkg) ->
+                            hashedInstalledPackageId (packageHashInputs srchash elab1) -- knot tied
+                          _otherwise ->
+                            mkComponentId $
+                              case Cabal.componentNameString cname of
+                                Nothing -> prettyShow pkgid
+                                Just n -> prettyShow pkgid ++ "-" ++ prettyShow n
 
                       cc = cc0{cc_ann_id = fmap (const cid) (cc_ann_id cc0)}
 
@@ -1902,6 +1902,7 @@ elaborateInstallPlan
                           Just full -> full
                           Nothing -> error ("lookup_uid: " ++ prettyShow def_uid)
                       lc_dep_map = Map.union external_lc_map lc_map
+
                   lc <-
                     toLinkedComponent
                       verbosity
@@ -1914,7 +1915,7 @@ elaborateInstallPlan
                       lc_dep_map
                       -- \^ linked component map
                       cc
-                  -- \^ configured component
+                      -- \^ configured component
 
                   -- NB: elab is setup to be the correct form for an
                   -- indefinite library, or a definite library with no holes.
@@ -1947,15 +1948,14 @@ elaborateInstallPlan
                       elab2
                         { elabInstallDirs =
                             computeInstallDirs
-                              storeDirLayout
-                              defaultInstallDirs
+                              (distStoreDirLayout distDirLayout)
                               elab2
                         }
 
                   -- 6. Construct the updated local maps
                   let cc_map' = extendConfiguredComponentMap cc cc_map
                       lc_map' = extendLinkedComponentMap lc lc_map
-                      exe_map' = Map.insert cid (inplace_bin_dir elab) exe_map
+                      exe_map' = Map.insert cid (installedBinDirectory elab) exe_map
 
                   return ((cc_map', lc_map', exe_map'), elab)
               where
@@ -1964,9 +1964,9 @@ elaborateInstallPlan
                 compSolverName = CD.componentNameToComponent cname
 
                 -- External dependencies. I.e. dependencies of the component on components of other packages.
-                external_lib_dep_pkgs = concatMap mapDep $ CD.select (== compSolverName) solverPkgLibDeps
+                external_lib_dep_pkgs = concatMap mapDep $ CD.select (== compSolverName) (solverPkgLibDeps solverPkg)
 
-                external_exe_dep_pkgs = concatMap mapDep $ CD.select (== compSolverName) solverPkgExeDeps
+                external_exe_dep_pkgs = concatMap mapDep $ CD.select (== compSolverName) (solverPkgExeDeps solverPkg)
 
                 external_exe_map =
                   Map.fromList $
@@ -2005,14 +2005,6 @@ elaborateInstallPlan
                         (Cabal.componentBuildInfo comp)
                   ]
 
-                inplace_bin_dir elab =
-                  binDirectoryFor
-                    distDirLayout
-                    elab
-                    $ case Cabal.componentNameString cname of
-                      Just n -> prettyShow n
-                      Nothing -> ""
-
       -- \| Given a 'SolverId' referencing a dependency on a library, return
       -- the 'ElaboratedPlanPackage' corresponding to the library.  This
       -- returns at most one result.
@@ -2022,36 +2014,11 @@ elaborateInstallPlan
         -> [ElaboratedPlanPackage]
       elaborateLibSolverId mapDep = filter (matchPlanPkg (== (CLibName LMainLibName))) . mapDep
 
-      -- \| Given an 'ElaboratedPlanPackage', return the paths to where the
-      -- executables that this package represents would be installed.
-      -- The only case where multiple paths can be returned is the inplace
-      -- monolithic package one, since there can be multiple exes and each one
-      -- has its own directory.
       planPackageExePaths :: ElaboratedPlanPackage -> [FilePath]
       planPackageExePaths =
-        -- Pre-existing executables are assumed to be in PATH
-        -- already.  In fact, this should be impossible.
+        -- Note: the packagedb only include libraries, so pre-installed packages cannot have executables to depend on.
         InstallPlan.foldPlanPackage (const []) $ \elab ->
-          let
-            executables :: [FilePath]
-            executables =
-              case elabPkgOrComp elab of
-                -- Monolithic mode: all exes of the package
-                ElabPackage _ ->
-                  unUnqualComponentName . PD.exeName
-                    <$> PD.executables (elabPkgDescription elab)
-                -- Per-component mode: just the selected exe
-                ElabComponent comp ->
-                  case fmap
-                    Cabal.componentNameString
-                    (compComponentName comp) of
-                    Just (Just n) -> [prettyShow n]
-                    _ -> [""]
-           in
-            binDirectoryFor
-              distDirLayout
-              elab
-              <$> executables
+          [ installedBinDirectory elab  ]
 
       elaborateSolverToPackage
         :: NE.NonEmpty NotPerComponentReason
@@ -2086,8 +2053,7 @@ elaborateInstallPlan
               elab1
                 { elabInstallDirs =
                     computeInstallDirs
-                      storeDirLayout
-                      defaultInstallDirs
+                      (distStoreDirLayout distDirLayout)
                       elab1
                 }
 
@@ -2095,11 +2061,15 @@ elaborateInstallPlan
               Nothing -> emptyModuleShape
               Just e -> Ty.elabModuleShape e
 
-            pkgInstalledId
-              | shouldBuildInplaceOnly solverPkg =
+            -- See the equivalent code in buildComponent for explanation.
+            pkgInstalledId = 
+              case elabPkgSourceHash elab of
+                -- If we have a source hash and the package is in the project closure,
+                -- we can use it to compute the component ID.
+                Just srchash | not (inProjectSourcePackagesClosure solverPkg) ->
+                  hashedInstalledPackageId (packageHashInputs srchash elab) -- knot tied
+                _otherwise ->
                   mkComponentId (prettyShow srcpkgPackageId)
-              | otherwise =
-                  hashedInstalledPackageId (packageHashInputs elab) -- recursive use of elab
 
             -- Need to filter out internal dependencies, because they don't
             -- correspond to anything real anymore.
@@ -2168,7 +2138,6 @@ elaborateInstallPlan
           } =
           elaboratedPackage
           where
-            compilers = fmap toolchainCompiler toolchains
             packageDbs = fmap toolchainPackageDBs toolchains
 
             elaboratedPackage = ElaboratedConfiguredPackage{..}
@@ -2256,12 +2225,8 @@ elaborateInstallPlan
 
             elabPkgSourceHash = Map.lookup srcpkgPackageId sourcePackageHashes
 
-            elabLocalToProject = isLocalToProject solverPkg
-
-            elabBuildStyle =
-              if shouldBuildInplaceOnly solverPkg
-                then BuildInplaceOnly OnDisk
-                else BuildAndInstall
+            elabIsSourcePackage = isProjectSourcePackage solverPkg
+            elabIsSourcePackageClosure = inProjectSourcePackagesClosure solverPkg
 
             elabPackageDbs = toolchainPackageDBs elabToolchain
             elabBuildPackageDBStack = buildAndRegisterDbs elabStage
@@ -2278,19 +2243,10 @@ elaborateInstallPlan
 
             elabSetupPackageDBStack = buildAndRegisterDbs (prevStage elabStage)
 
-            -- Same as corePackageDbs but with the addition of the in-place packagedb.
-            inplacePackageDbs stage = corePackageDbs stage ++ [SpecificPackageDB (distDirectory </> "packagedb" </> prettyShow stage </> prettyShow (compilerId (getStage compilers stage)))]
-
             -- The project packagedbs (typically the global packagedb but others can be added) followed by the store.
-            corePackageDbs stage = getStage packageDbs stage ++ [storePackageDB storeDirLayout stage (getStage toolchains stage)]
+            corePackageDbs stage = getStage packageDbs stage ++ [storePackageDB (distStoreDirLayout distDirLayout) stage (getStage toolchains stage)]
 
-            elabInplaceBuildPackageDBStack = inplacePackageDbs elabStage
-            elabInplaceRegisterPackageDBStack = inplacePackageDbs elabStage
-            elabInplaceSetupPackageDBStack = inplacePackageDbs (prevStage elabStage)
-
-            buildAndRegisterDbs stage
-              | shouldBuildInplaceOnly solverPkg = inplacePackageDbs stage
-              | otherwise = corePackageDbs stage
+            buildAndRegisterDbs stage = corePackageDbs stage
 
             elabPkgDescriptionOverride = srcpkgDescrOverride
 
@@ -2402,15 +2358,26 @@ elaborateInstallPlan
 
             elabBenchmarkOptions = perPkgOptionList srcpkgPackageId packageConfigBenchmarkOptions
 
-      perPkgOptionFlag :: PackageId -> a -> (PackageConfig -> Flag a) -> a
-      perPkgOptionMaybe :: PackageId -> (PackageConfig -> Flag a) -> Maybe a
-      perPkgOptionList :: PackageId -> (PackageConfig -> [a]) -> [a]
+      --
+      -- Per-package options
+      -- 
+      -- allPackageConfig applies to all packages
+      -- localPackageConfig applies to all project source packages
+      -- perPackageConfig applies to specific named packages
 
+      perPkgOptionFlag :: PackageId -> a -> (PackageConfig -> Flag a) -> a
       perPkgOptionFlag pkgid def f = fromFlagOrDefault def (lookupPerPkgOption pkgid f)
+
+      perPkgOptionMaybe :: PackageId -> (PackageConfig -> Flag a) -> Maybe a
       perPkgOptionMaybe pkgid f = flagToMaybe (lookupPerPkgOption pkgid f)
+      
+      perPkgOptionList :: PackageId -> (PackageConfig -> [a]) -> [a]
       perPkgOptionList pkgid f = lookupPerPkgOption pkgid f
+      
       perPkgOptionNubList pkgid f = fromNubList (lookupPerPkgOption pkgid f)
+      
       perPkgOptionMapLast pkgid f = getMapLast (lookupPerPkgOption pkgid f)
+      
       perPkgOptionMapMappend pkgid f = getMapMappend (lookupPerPkgOption pkgid f)
 
       perPkgOptionLibExeFlag pkgid def fboth flib = (exe, lib)
@@ -2433,43 +2400,50 @@ elaborateInstallPlan
         where
           global = f allPackagesConfig
           local
-            | isLocalToProject pkg =
+            | isProjectSourcePackage pkg =
                 f localPackagesConfig
             | otherwise =
                 mempty
-          perpkg = maybe mempty f (Map.lookup (packageName pkg) perPackageConfig)
+          perpkg = foldMap f (Map.lookup (packageName pkg) perPackageConfig)
 
-      -- For this local build policy, every package that lives in a local source
-      -- dir (as opposed to a tarball), or depends on such a package, will be
-      -- built inplace into a shared dist dir. Tarball packages that depend on
-      -- source dir packages will also get unpacked locally.
-      shouldBuildInplaceOnly :: SolverPackage loc -> Bool
-      shouldBuildInplaceOnly pkg =
+
+      --
+      -- Project source packages and their closure
+      --
+
+      -- Test if a solver package belongs to the closure of project source packages.
+      inProjectSourcePackagesClosure :: SolverPackage loc -> Bool
+      inProjectSourcePackagesClosure pkg =
         Set.member
           (solverId (ResolverPackage.Configured pkg))
-          pkgsToBuildInplaceOnly
+          projectSourcePackagesClosure
 
-      -- The reverse dependencies of solver packages which match a package id in pkgLocalToProject.
-      pkgsToBuildInplaceOnly :: Set SolverId
-      pkgsToBuildInplaceOnly =
+      -- The set of all packages that are either local source packages,
+      -- or depend (directly or indirectly) on such packages.
+      -- This is a set of SolverIds, which are obtained from the packages in the solver plan
+      -- and checking if their package id or one of their dependencies' package ids
+      -- is in the set of project source packages.
+      projectSourcePackagesClosure :: Set SolverId
+      projectSourcePackagesClosure =
         Set.fromList
           [ solverId pkg
           | spkg <- SolverInstallPlan.toList solverPlan
-          , packageId spkg `elem` pkgsLocalToProject
+          , packageId spkg `elem` projectSourcePackages
           , pkg <- SolverInstallPlan.reverseDependencyClosure solverPlan [solverId spkg]
           ]
 
-      isLocalToProject :: Package pkg => pkg -> Bool
-      isLocalToProject pkg =
+      -- Test if a generic package belongs to the set of project source packages.
+      isProjectSourcePackage :: Package pkg => pkg -> Bool
+      isProjectSourcePackage pkg =
         Set.member
           (packageId pkg)
-          pkgsLocalToProject
+          projectSourcePackages
 
-      pkgsLocalToProject :: Set PackageId
-      pkgsLocalToProject =
-        Set.fromList (catMaybes (map shouldBeLocal localPackages))
-      -- TODO: localPackages is a misnomer, it's all project packages
-      -- here is where we decide which ones will be local!
+      -- This is the set of all "local unpacked packages", which are packages that are unpacked in the project
+      -- directory.
+      projectSourcePackages :: Set PackageId
+      projectSourcePackages =
+        Set.fromList [ pkgId | Just pkgId <- map isLocalUnpackedPackage localPackages ]
 
       pkgsUseSharedLibrary :: Set PackageId
       pkgsUseSharedLibrary =
@@ -2575,10 +2549,14 @@ elaborateInstallPlan
 
 -- TODO: Drop matchPlanPkg/matchElabPkg in favor of mkCCMapping
 
-shouldBeLocal :: PackageSpecifier (SourcePackage (PackageLocation loc)) -> Maybe PackageId
-shouldBeLocal (NamedPackage _ _) =
+-- | If the given package specifier corresponds to a local unpacked package,
+-- return its 'PackageId'.  Otherwise, return 'Nothing'.
+isLocalUnpackedPackage
+  :: PackageSpecifier (SourcePackage (PackageLocation loc))
+  -> Maybe PackageId
+isLocalUnpackedPackage (NamedPackage _ _) =
   Nothing
-shouldBeLocal (SpecificSourcePackage pkg) =
+isLocalUnpackedPackage (SpecificSourcePackage pkg) =
   case srcpkgSource pkg of
     LocalUnpackedPackage _ -> Just (packageId pkg)
     _ -> Nothing
@@ -2683,28 +2661,14 @@ mkShapeMapping dpkg =
 -- The result may have several entries if this is an inplace build of a package
 -- with multiple executables.
 binDirectories
-  :: DistDirLayout
-  -> ElaboratedConfiguredPackage
+  :: ElaboratedConfiguredPackage
   -> [FilePath]
-binDirectories layout package = case elabBuildStyle package of
+binDirectories package =
   -- quick sanity check: no sense returning a bin directory if we're not going
   -- to put any executables in it, that will just clog up the PATH
-  _ | noExecutables -> []
-  BuildAndInstall -> [installedBinDirectory package]
-  BuildInplaceOnly{} -> map (root </>) $ case elabPkgOrComp package of
-    ElabComponent comp -> case compSolverName comp of
-      CD.ComponentExe n -> [prettyShow n]
-      _ -> []
-    ElabPackage _ ->
-      map (prettyShow . PD.exeName)
-        . PD.executables
-        . elabPkgDescription
-        $ package
+  if noExecutables then [] else [installedBinDirectory package]
   where
     noExecutables = null . PD.executables . elabPkgDescription $ package
-    root =
-      distBuildDirectory layout (elabDistDirParams package)
-        </> "build"
 
 type InstS = Map (WithStage UnitId) ElaboratedPlanPackage
 type InstM a = State InstS a
@@ -2715,12 +2679,6 @@ getComponentId
 getComponentId (InstallPlan.PreExisting (WithStage _stage dipkg)) = IPI.installedComponentId dipkg
 getComponentId (InstallPlan.Configured elab) = elabComponentId elab
 getComponentId (InstallPlan.Installed elab) = elabComponentId elab
-
-extractElabBuildStyle
-  :: InstallPlan.GenericPlanPackage ipkg ElaboratedConfiguredPackage
-  -> BuildStyle
-extractElabBuildStyle (InstallPlan.Configured elab) = elabBuildStyle elab
-extractElabBuildStyle _ = BuildAndInstall
 
 -- When using Backpack, packages can have "holes" that need to be filled with concrete implementations.
 
@@ -2780,10 +2738,9 @@ extractElabBuildStyle _ = BuildAndInstall
 instantiateInstallPlan
   :: HasCallStack
   => StoreDirLayout
-  -> Staged InstallDirs.InstallDirTemplates
   -> ElaboratedInstallPlan
   -> LogProgress ElaboratedInstallPlan
-instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
+instantiateInstallPlan storeDirLayout plan = do
   InstallPlan.new (Map.elems ready_map)
   where
     pkgs = InstallPlan.toList plan
@@ -2794,21 +2751,21 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
       :: Stage
       -> ComponentId
       -- \^ The id of the component being instantiated
-      -> Map ModuleName (Module, BuildStyle)
+      -> Map ModuleName Module
       -- \^ A mapping from module names (the "holes" or signatures in Backpack)
-      -- to the concrete modules (and their build styles) that should fill those
+      -- to the concrete modules that should fill those
       -- holes.
-      -> InstM (DefUnitId, BuildStyle)
+      -> InstM DefUnitId
     instantiateUnitId stage cid insts =
       gets (Map.lookup (WithStage stage uid)) >>= \case
         Nothing -> do
           r <- instantiateComponent uid (WithStage stage cid) insts
           modify (Map.insert (WithStage stage uid) r)
-          return (unsafeMkDefUnitId uid, extractElabBuildStyle r)
-        Just r ->
-          return (unsafeMkDefUnitId uid, extractElabBuildStyle r)
+          return (unsafeMkDefUnitId uid)
+        Just _ ->
+          return (unsafeMkDefUnitId uid)
       where
-        uid = mkDefUnitId cid (fmap fst insts)
+        uid = mkDefUnitId cid insts
 
     -- No need to InplaceT; the inplace-ness is properly computed for
     -- the ElaboratedPlanPackage, so that will implicitly pass it on
@@ -2817,7 +2774,7 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
       -- \^ The unit id to assign to the instantiated component
       -> WithStage ComponentId
       -- \^ The id of the component being instantiated
-      -> Map ModuleName (Module, BuildStyle)
+      -> Map ModuleName Module
       -- \^ A mapping from module names (the "holes" or signatures in Backpack)
       -- to the concrete modules (and their build styles) that should fill those
       -- holes.
@@ -2833,15 +2790,13 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
               case elabPkgOrComp elab0 of
                 ElabPackage{} -> return planpkg
                 ElabComponent comp -> do
-                  deps <- traverse (fmap fst . instantiateUnit stage insts) (compLinkedLibDependencies comp)
-                  let build_style = fold (fmap snd insts)
+                  deps <- traverse (instantiateUnit stage insts) (compLinkedLibDependencies comp)
                   let getDep (Module dep_uid _) = [dep_uid]
                       elab1 =
-                        fixupBuildStyle build_style $
                           elab0
                             { elabUnitId = uid
                             , elabComponentId = cid
-                            , elabIsCanonical = Map.null (fmap fst insts)
+                            , elabIsCanonical = Map.null insts
                             , elabPkgOrComp =
                                 ElabComponent
                                   comp
@@ -2850,9 +2805,9 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
                                           ++ ordNub
                                             ( map
                                                 unDefUnitId
-                                                (deps ++ concatMap (getDep . fst) (Map.elems insts))
+                                                (deps ++ concatMap getDep (Map.elems insts))
                                             )
-                                    , compInstantiatedWith = fmap fst insts
+                                    , compInstantiatedWith = insts
                                     }
                             }
                   return $
@@ -2861,7 +2816,6 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
                         { elabInstallDirs =
                             computeInstallDirs
                               storeDirLayout
-                              defaultInstallDirs
                               elab1
                         }
 
@@ -2881,18 +2835,18 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
     --
     instantiateUnit
       :: Stage
-      -> Map ModuleName (Module, BuildStyle)
-      -- \^ A mapping from module names to their corresponding modules and build styles.
+      -> Map ModuleName Module
+      -- \^ A mapping from module names to their corresponding modules.
       -> OpenUnitId
       -- \^ The unit to instantiate. This can be:
       --   DefiniteUnitId uid: already fully instantiated (no holes).
       --   IndefFullUnitId cid insts: an indefinite unit (with holes), described by a component id and a mapping of holes to modules.
-      -> InstM (DefUnitId, BuildStyle)
+      -> InstM DefUnitId
     instantiateUnit _stage _subst (DefiniteUnitId def_uid) =
       -- This COULD actually, secretly, be an inplace package, but in
       -- that case it doesn't matter as it's already been recorded
       -- in the package that depends on this
-      return (def_uid, BuildAndInstall)
+      return def_uid
     instantiateUnit stage subst (IndefFullUnitId cid insts) = do
       insts' <- traverse (instantiateModule stage subst) insts
       instantiateUnitId stage cid insts'
@@ -2901,19 +2855,19 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
     -- and its associated BuildStyle.
     instantiateModule
       :: Stage
-      -> Map ModuleName (Module, BuildStyle)
-      -- \^ A mapping from module names to their corresponding modules and build styles.
+      -> Map ModuleName Module
+      -- \^ A mapping from module names to their corresponding modules.
       -> OpenModule
       -- \^ The module to substitute, which can be:
       --     OpenModuleVar mod_name: a hole (variable) named mod_name
       --     OpenModule uid mod_name: a module from a specific unit (uid).
-      -> InstM (Module, BuildStyle)
+      -> InstM Module
     instantiateModule _stage subst (OpenModuleVar mod_name)
       | Just m <- Map.lookup mod_name subst = return m
       | otherwise = error "substModule: non-closing substitution"
     instantiateModule stage subst (OpenModule uid mod_name) = do
-      (uid', build_style) <- instantiateUnit stage subst uid
-      return (Module uid' mod_name, build_style)
+      uid' <- instantiateUnit stage subst uid
+      return (Module uid' mod_name)
 
     indefiniteComponent
       :: ElaboratedConfiguredPackage
@@ -2939,7 +2893,7 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
           -- DefiniteUnitId (that's what substUnitId does!)
           new_deps <- for (compLinkedLibDependencies elab_comp) $ \uid ->
             if Set.null (openUnitIdFreeHoles uid)
-              then fmap (DefiniteUnitId . fst) (instantiateUnit (elabStage epkg) Map.empty uid)
+              then fmap DefiniteUnitId (instantiateUnit (elabStage epkg) Map.empty uid)
               else return uid
           -- NB: no fixupBuildStyle needed here, as if the indefinite
           -- component depends on any inplace packages, it itself must
@@ -2962,15 +2916,6 @@ instantiateInstallPlan storeDirLayout defaultInstallDirs plan = do
                       }
               }
 
-    fixupBuildStyle BuildAndInstall elab = elab
-    fixupBuildStyle _buildStyle (elab@ElaboratedConfiguredPackage{elabBuildStyle = BuildInplaceOnly{}}) = elab
-    fixupBuildStyle buildStyle@(BuildInplaceOnly{}) elab =
-      elab
-        { elabBuildStyle = buildStyle
-        , elabBuildPackageDBStack = elabInplaceBuildPackageDBStack elab
-        , elabRegisterPackageDBStack = elabInplaceRegisterPackageDBStack elab
-        , elabSetupPackageDBStack = elabInplaceSetupPackageDBStack elab
-        }
 
     ready_map = execState work Map.empty
     work = for_ pkgs $ \pkg ->
@@ -3182,7 +3127,7 @@ availableSourceTargets elab =
             { availableTargetPackageId = packageId elab
             , availableTargetComponentName = cname
             , availableTargetStatus = status
-            , availableTargetLocalToProject = elabLocalToProject elab
+            , availableTargetLocalToProject = elabIsSourcePackage elab
             }
         fake = isFakeTarget cname
   , -- TODO: The goal of this test is to exclude "instantiated"
@@ -3240,7 +3185,7 @@ availableSourceTargets elab =
         cname = componentName component
         buildable = PD.buildable (componentBuildInfo component)
         withinPlan =
-          elabLocalToProject elab
+          elabIsSourcePackage elab
             || case elabPkgOrComp elab of
               ElabComponent elabComponent ->
                 compComponentName elabComponent == Just cname
@@ -3409,7 +3354,6 @@ setRootTargets targetAction perPkgTargetsMap =
           elab
             { elabReplTarget = tgts
             , elabBuildHaddocks = False
-            , elabBuildStyle = BuildInplaceOnly InMemory
             }
         (Just tgts, TargetActionHaddock) ->
           foldr
@@ -3489,7 +3433,6 @@ pruneInstallPlanPass1 pkgs
       | elabUnitId ecp `Set.member` all_desired_repl_targets =
           ecp
             { elabReplTarget = maybeToList (ComponentTarget <$> (elabComponentName ecp) <*> pure WholeComponent)
-            , elabBuildStyle = BuildInplaceOnly InMemory
             }
       | otherwise = ecp
 
@@ -3726,14 +3669,15 @@ pruneInstallPlanPass2 pkgs =
       where
         -- We initially assume that all the dependencies are external (hence the boolean is always
         -- False) and here we correct the dependencies so the right packages are marked promised.
-        addInternal (cid, _) = (cid, (cid `Set.member` inMemoryTargets))
+        -- addInternal (cid, _) = (cid, (cid `Set.member` inMemoryTargets))
+        addInternal (cid, _) = (cid, False)
 
         libTargetsRequiredForRevDeps =
           [ c
           | Graph.nodeKey elab `Set.member` hasReverseLibDeps
           , let c = ComponentTarget (CLibName Cabal.defaultLibName) WholeComponent
-          , -- Don't enable building for anything which is being build in memory
-          elabBuildStyle elab /= BuildInplaceOnly InMemory
+          -- , -- Don't enable building for anything which is being build in memory
+          -- elabBuildStyle elab /= BuildInplaceOnly InMemory
           ]
         exeTargetsRequiredForRevDeps =
           -- TODO: allow requesting executable with different name
@@ -3750,13 +3694,13 @@ pruneInstallPlanPass2 pkgs =
 
     availablePkgs = Set.fromList (map Graph.nodeKey pkgs)
 
-    inMemoryTargets :: Set ConfiguredId
-    inMemoryTargets = do
-      Set.fromList
-        [ configuredId pkg
-        | InstallPlan.Configured pkg <- pkgs
-        , BuildInplaceOnly InMemory <- [elabBuildStyle pkg]
-        ]
+    -- inMemoryTargets :: Set ConfiguredId
+    -- inMemoryTargets = do
+    --   Set.fromList
+    --     [ configuredId pkg
+    --     | InstallPlan.Configured pkg <- pkgs
+    --     , BuildInplaceOnly InMemory <- [elabBuildStyle pkg]
+    --     ]
 
     hasReverseLibDeps =
       Set.fromList
@@ -3857,9 +3801,7 @@ newtype CannotPruneDependencies
 
 setupHsScriptOptions
   :: ElaboratedReadyPackage
-  -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
-  -> DistDirLayout
   -> SymbolicPath CWD (Dir Pkg)
   -> SymbolicPath Pkg (Dir Dist)
   -> Bool
@@ -3869,9 +3811,7 @@ setupHsScriptOptions
 -- be a separate component!!!
 setupHsScriptOptions
   (ReadyPackage elab@ElaboratedConfiguredPackage{..})
-  plan
   ElaboratedSharedConfig{..}
-  distdir
   srcdir
   builddir
   isParallelBuild
@@ -3905,7 +3845,7 @@ setupHsScriptOptions
       , -- note that the above adds the extra-prog-path directly following the elaborated
         -- dep paths, so that it overrides the normal path, but _not_ the elaborated extensions
         -- for build-tools-depends.
-        useExtraEnvOverrides = dataDirsEnvironmentForPlan distdir plan
+        useExtraEnvOverrides = []
       , useWin32CleanHack = False -- TODO: [required eventually]
       , forceExternalSetupMethod = isParallelBuild
       , setupCacheLock = Just cacheLock
@@ -3926,18 +3866,6 @@ setupHsScriptOptions
         -- TODO: It is disappointing that we have to change the stage here
         getStage pkgConfigToolchains (prevStage elabStage)
 
--- | To be used for the input for elaborateInstallPlan.
---
--- TODO: [code cleanup] make InstallDirs.defaultInstallDirs pure.
-userInstallDirTemplates
-  :: Compiler
-  -> IO InstallDirs.InstallDirTemplates
-userInstallDirTemplates compiler = do
-  InstallDirs.defaultInstallDirs
-    (compilerFlavor compiler)
-    True -- user install
-    False -- unused
-
 storePackageInstallDirs
   :: StoreDirLayout
   -> Stage
@@ -3953,73 +3881,37 @@ storePackageInstallDirs'
   -> Toolchain
   -> UnitId
   -> InstallDirs.InstallDirs FilePath
-storePackageInstallDirs'
-  StoreDirLayout
-    { storePackageDirectory
-    , storeDirectory
-    }
-  stage
-  toolchain
-  unitid =
-    InstallDirs.InstallDirs{..}
+storePackageInstallDirs' storeDirLayout stage toolchain unitid =
+  simplePackageInstallDirs $ storePackageDirectory storeDirLayout stage toolchain unitid
+
+simplePackageInstallDirs
+  :: FilePath
+  -> InstallDirs.InstallDirs FilePath
+simplePackageInstallDirs prefix =
+  InstallDirs.InstallDirs{..}
     where
-      store = storeDirectory stage toolchain
-      prefix = storePackageDirectory stage toolchain unitid
-      bindir = prefix </> "bin"
-      libdir = prefix </> "lib"
-      libsubdir = ""
-      -- Note: on macOS, we place libraries into
-      --       @store/lib@ to work around the load
-      --       command size limit of macOSs mach-o linker.
-      --       See also @PackageHash.hashedInstalledPackageIdVeryShort@
-      dynlibdir
-        | buildOS == OSX = store </> "lib"
-        | otherwise = libdir
-      flibdir = libdir
-      libexecdir = prefix </> "libexec"
-      libexecsubdir = ""
-      includedir = libdir </> "include"
-      datadir = prefix </> "share"
-      datasubdir = ""
-      docdir = datadir </> "doc"
-      mandir = datadir </> "man"
-      htmldir = docdir </> "html"
-      haddockdir = htmldir
-      sysconfdir = prefix </> "etc"
+    bindir = prefix </> "bin"
+    libdir = prefix </> "lib"
+    libsubdir = ""
+    dynlibdir = libdir
+    flibdir = libdir
+    libexecdir = prefix </> "libexec"
+    libexecsubdir = ""
+    includedir = libdir </> "include"
+    datadir = prefix </> "share"
+    datasubdir = ""
+    docdir = datadir </> "doc"
+    mandir = datadir </> "man"
+    htmldir = docdir </> "html"
+    haddockdir = htmldir
+    sysconfdir = prefix </> "etc"
 
 computeInstallDirs
   :: StoreDirLayout
-  -> Staged InstallDirs.InstallDirTemplates
   -> ElaboratedConfiguredPackage
   -> InstallDirs.InstallDirs FilePath
-computeInstallDirs storeDirLayout defaultInstallDirs elab =
-  if isInplaceBuildStyle (elabBuildStyle elab)
-    then -- use the ordinary default install dirs
-
-      ( InstallDirs.absoluteInstallDirs
-          (elabPkgSourceId elab)
-          (elabUnitId elab)
-          (compilerInfo toolchainCompiler)
-          InstallDirs.NoCopyDest
-          toolchainPlatform
-          defaultInstallDirs'
-      )
-        { -- absoluteInstallDirs sets these as 'undefined' but we have
-          -- to use them as "Setup.hs configure" args
-          InstallDirs.libsubdir = ""
-        , InstallDirs.libexecsubdir = ""
-        , InstallDirs.datasubdir = ""
-        }
-    else -- use special simplified install dirs
-
-      storePackageInstallDirs'
-        storeDirLayout
-        (elabStage elab)
-        (elabToolchain elab)
-        (elabUnitId elab)
-  where
-    Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain elab
-    defaultInstallDirs' = getStage defaultInstallDirs (elabStage elab)
+computeInstallDirs storeDirLayout elab =
+  simplePackageInstallDirs $ storePackageDirectory storeDirLayout (elabStage elab) (elabToolchain elab) (elabUnitId elab)
 
 -- TODO: [code cleanup] perhaps reorder this code
 -- based on the ElaboratedInstallPlan + ElaboratedSharedConfig,
@@ -4030,13 +3922,11 @@ setupHsConfigureFlags
   -- ^ How to transform a path which is relative to cabal-install cwd to one which
   -- is relative to the route of the package about to be compiled. The simplest way
   -- to do this is to convert the potentially relative path into an absolute path.
-  -> ElaboratedInstallPlan
   -> ElaboratedReadyPackage
   -> Cabal.CommonSetupFlags
   -> m Cabal.ConfigFlags
 setupHsConfigureFlags
   mkSymbolicPath
-  _plan
   (ReadyPackage elab@ElaboratedConfiguredPackage{..})
   configCommonFlags = do
     -- explicitly clear, then our package db stack
@@ -4323,7 +4213,7 @@ setupHsRegisterFlags
   -> FilePath
   -> Cabal.RegisterFlags
 setupHsRegisterFlags
-  ElaboratedConfiguredPackage{..}
+  _
   _
   common
   pkgConfFile =
@@ -4332,9 +4222,7 @@ setupHsRegisterFlags
       , regPackageDB = mempty -- misfeature
       , regGenScript = mempty -- never use
       , regGenPkgConf = toFlag (Just (makeSymbolicPath pkgConfFile))
-      , regInPlace = case elabBuildStyle of
-          BuildInplaceOnly{} -> toFlag True
-          BuildAndInstall -> toFlag False
+      , regInPlace =  toFlag False
       , regPrintId = mempty -- never use
       }
 
@@ -4430,63 +4318,57 @@ setupHsHaddockArgs elab =
 -- not replace installed packages with ghc-pkg.
 
 packageHashInputs
-  :: ElaboratedConfiguredPackage
+  :: HasCallStack
+  => PackageSourceHash
+  -> ElaboratedConfiguredPackage
   -> PackageHashInputs
-packageHashInputs
-  elab@( ElaboratedConfiguredPackage
-          { elabPkgSourceHash = Just srchash
-          }
-        ) =
-    PackageHashInputs
-      { pkgHashPkgId = packageId elab
-      , pkgHashComponent
-      , pkgHashSourceHash = srchash
-      , pkgHashPkgConfigDeps = Set.fromList (elabPkgConfigDependencies elab)
-      , pkgHashLibDeps
-      , pkgHashExeDeps
-      , pkgHashOtherConfig = packageHashConfigInputs elab
-      }
-    where
-      pkgHashComponent =
-        case elabPkgOrComp elab of
-          ElabPackage _ -> Nothing
-          ElabComponent comp -> Just (compSolverName comp)
-      pkgHashLibDeps =
-        case elabPkgOrComp elab of
-          ElabPackage (ElaboratedPackage{..}) ->
-            Set.fromList
-              [confInstId c | (c, _promised) <- CD.select relevantDeps pkgLibDependencies]
-          ElabComponent comp ->
-            Set.fromList
-              [confInstId c | (c, _promised) <- compLibDependencies comp]
-      pkgHashExeDeps =
-        case elabPkgOrComp elab of
-          ElabPackage (ElaboratedPackage{..}) ->
-            Set.fromList
-              [ confInstId c
-              | WithStage _stage c <- CD.select relevantDeps pkgExeDependencies
-              ]
-          ElabComponent comp ->
-            Set.fromList
-              [ confInstId c
-              | WithStage _stage c <- compExeDependencies comp
-              ]
+packageHashInputs srchash elab =
+  PackageHashInputs
+    { pkgHashPkgId = packageId elab
+    , pkgHashComponent
+    , pkgHashSourceHash = srchash
+    , pkgHashPkgConfigDeps = Set.fromList (elabPkgConfigDependencies elab)
+    , pkgHashLibDeps
+    , pkgHashExeDeps
+    , pkgHashOtherConfig = packageHashConfigInputs elab
+    }
+  where
+    pkgHashComponent =
+      case elabPkgOrComp elab of
+        ElabPackage _ -> Nothing
+        ElabComponent comp -> Just (compSolverName comp)
+    pkgHashLibDeps =
+      case elabPkgOrComp elab of
+        ElabPackage (ElaboratedPackage{..}) ->
+          Set.fromList
+            [confInstId c | (c, _promised) <- CD.select relevantDeps pkgLibDependencies]
+        ElabComponent comp ->
+          Set.fromList
+            [confInstId c | (c, _promised) <- compLibDependencies comp]
+    pkgHashExeDeps =
+      case elabPkgOrComp elab of
+        ElabPackage (ElaboratedPackage{..}) ->
+          Set.fromList
+            [ confInstId c
+            | WithStage _stage c <- CD.select relevantDeps pkgExeDependencies
+            ]
+        ElabComponent comp ->
+          Set.fromList
+            [ confInstId c
+            | WithStage _stage c <- compExeDependencies comp
+            ]
 
-      -- Obviously the main deps are relevant
-      relevantDeps CD.ComponentLib = True
-      relevantDeps (CD.ComponentSubLib _) = True
-      relevantDeps (CD.ComponentFLib _) = True
-      relevantDeps (CD.ComponentExe _) = True
-      -- Setup deps can affect the Setup.hs behaviour and thus what is built
-      relevantDeps CD.ComponentSetup = True
-      -- However testsuites and benchmarks do not get installed and should not
-      -- affect the result, so we do not include them.
-      relevantDeps (CD.ComponentTest _) = False
-      relevantDeps (CD.ComponentBench _) = False
-packageHashInputs pkg =
-  error $
-    "packageHashInputs: only for packages with source hashes. "
-      ++ prettyShow (packageId pkg)
+    -- Obviously the main deps are relevant
+    relevantDeps CD.ComponentLib = True
+    relevantDeps (CD.ComponentSubLib _) = True
+    relevantDeps (CD.ComponentFLib _) = True
+    relevantDeps (CD.ComponentExe _) = True
+    -- Setup deps can affect the Setup.hs behaviour and thus what is built
+    relevantDeps CD.ComponentSetup = True
+    -- However testsuites and benchmarks do not get installed and should not
+    -- affect the result, so we do not include them.
+    relevantDeps (CD.ComponentTest _) = False
+    relevantDeps (CD.ComponentBench _) = False
 
 packageHashConfigInputs
   :: ElaboratedConfiguredPackage
@@ -4546,44 +4428,9 @@ packageHashConfigInputs pkg =
     ElaboratedConfiguredPackage{..} = normaliseConfiguredPackage pkg
     LBC.BuildOptions{..} = elabBuildOptions
 
--- TODO: sanity checks:
--- \* the installed package must have the expected deps etc
--- \* the installed package must not be broken, valid dep closure
-
--- TODO: decide what to do if we encounter broken installed packages,
--- since overwriting is never safe.
-
--- Path construction
-------
-
--- | The path to the directory that contains a specific executable.
--- NB: For inplace NOT InstallPaths.bindir installDirs; for an
--- inplace build those values are utter nonsense.  So we
--- have to guess where the directory is going to be.
--- Fortunately this is "stable" part of Cabal API.
--- But the way we get the build directory is A HORRIBLE
--- HACK.
-binDirectoryFor
-  :: DistDirLayout
-  -> ElaboratedConfiguredPackage
-  -> FilePath
-  -> FilePath
-binDirectoryFor layout package exe = case elabBuildStyle package of
-  BuildAndInstall -> installedBinDirectory package
-  BuildInplaceOnly{} -> inplaceBinRoot layout package </> exe
-
--- package has been built and installed.
+-- Where executables have been installed for this package
 installedBinDirectory :: ElaboratedConfiguredPackage -> FilePath
 installedBinDirectory = InstallDirs.bindir . elabInstallDirs
-
--- | The path to the @build@ directory for an inplace build.
-inplaceBinRoot
-  :: DistDirLayout
-  -> ElaboratedConfiguredPackage
-  -> FilePath
-inplaceBinRoot layout package =
-  distBuildDirectory layout (elabDistDirParams package)
-    </> "build"
 
 -- FIXME: whathever
 -- --------------------------------------------------------------------------------

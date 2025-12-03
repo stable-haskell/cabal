@@ -92,14 +92,13 @@ genBoundsAction flags targetStrings globalFlags =
         dieWithException verbosity $
           GenBoundsDoesNotSupportScript path
 
-    let ProjectBaseContext{distDirLayout, cabalDirLayout, projectConfig, localPackages} = baseCtx
+    let ProjectBaseContext{distDirLayout, projectConfig, localPackages} = baseCtx
 
     -- Step 1: Create the install plan for the project.
     (_, elaboratedPlan, _, _, _) <-
       rebuildInstallPlan
         verbosity
         distDirLayout
-        cabalDirLayout
         projectConfig
         localPackages
         Nothing
