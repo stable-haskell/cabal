@@ -728,7 +728,8 @@ buildAndInstallUnpackedPackage
             newStoreEntry
               verbosity
               storeDirLayout
-              toolchainCompiler
+              (elabStage pkg)
+              (elabToolchain pkg)
               uid
               (copyPkgFiles verbosity pkg runCopy)
               registerPkg
