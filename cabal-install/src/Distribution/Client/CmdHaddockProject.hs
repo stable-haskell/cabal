@@ -37,7 +37,6 @@ import Distribution.Client.ProjectPlanning
   , ElaboratedInstallPlan
   , ElaboratedInstalledPackageInfo
   , TargetAction (..)
-  , Toolchain (..)
   , WithStage (..)
   , elabDistDirParams
   )
@@ -293,11 +292,11 @@ haddockProjectAction flags _extraArgs globalFlags = do
               False -> do
                 let pkg_descr = elabPkgDescription package
                     unitId = unUnitId (elabUnitId package)
-                    compiler = toolchainCompiler (elabToolchain package)
                     packageDir =
                       storePackageDirectory
                         (cabalStoreDirLayout cabalLayout)
-                        compiler
+                        (elabStage package)
+                        (elabToolchain package)
                         (elabUnitId package)
                     -- TODO: use `InstallDirTemplates`
                     docDir = packageDir </> "share" </> "doc" </> "html"

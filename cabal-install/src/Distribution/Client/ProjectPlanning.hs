@@ -105,6 +105,9 @@ module Distribution.Client.ProjectPlanning
   , storePackageInstallDirs
   , storePackageInstallDirs'
   , elabDistDirParams
+
+   -- * Toolchain
+  , configToolchainExSafe
   ) where
 
 import Distribution.Client.Compat.Prelude
@@ -988,7 +991,8 @@ rebuildInstallPlan
           canBeImproved pkg = do
             doesStoreEntryExist
               cabalStoreDirLayout
-              (toolchainCompiler (elabToolchain pkg))
+              (elabStage pkg)
+              (elabToolchain pkg)
               (installedUnitId pkg)
 
 -- | If a 'PackageSpecifier' refers to a single package, return Just that
@@ -2278,7 +2282,7 @@ elaborateInstallPlan
             inplacePackageDbs stage = corePackageDbs stage ++ [SpecificPackageDB (distDirectory </> "packagedb" </> prettyShow stage </> prettyShow (compilerId (getStage compilers stage)))]
 
             -- The project packagedbs (typically the global packagedb but others can be added) followed by the store.
-            corePackageDbs stage = getStage packageDbs stage ++ [storePackageDB storeDirLayout (getStage compilers stage)]
+            corePackageDbs stage = getStage packageDbs stage ++ [storePackageDB storeDirLayout stage (getStage toolchains stage)]
 
             elabInplaceBuildPackageDBStack = inplacePackageDbs elabStage
             elabInplaceRegisterPackageDBStack = inplacePackageDbs elabStage
@@ -3936,15 +3940,17 @@ userInstallDirTemplates compiler = do
 
 storePackageInstallDirs
   :: StoreDirLayout
-  -> Compiler
+  -> Stage
+  -> Toolchain
   -> InstalledPackageId
   -> InstallDirs.InstallDirs FilePath
-storePackageInstallDirs storeDirLayout compiler ipkgid =
-  storePackageInstallDirs' storeDirLayout compiler $ newSimpleUnitId ipkgid
+storePackageInstallDirs storeDirLayout stage toolchain ipkgid =
+  storePackageInstallDirs' storeDirLayout stage toolchain $ newSimpleUnitId ipkgid
 
 storePackageInstallDirs'
   :: StoreDirLayout
-  -> Compiler
+  -> Stage
+  -> Toolchain
   -> UnitId
   -> InstallDirs.InstallDirs FilePath
 storePackageInstallDirs'
@@ -3952,12 +3958,13 @@ storePackageInstallDirs'
     { storePackageDirectory
     , storeDirectory
     }
-  compiler
+  stage
+  toolchain
   unitid =
     InstallDirs.InstallDirs{..}
     where
-      store = storeDirectory compiler
-      prefix = storePackageDirectory compiler unitid
+      store = storeDirectory stage toolchain
+      prefix = storePackageDirectory stage toolchain unitid
       bindir = prefix </> "bin"
       libdir = prefix </> "lib"
       libsubdir = ""
@@ -4007,7 +4014,8 @@ computeInstallDirs storeDirLayout defaultInstallDirs elab =
 
       storePackageInstallDirs'
         storeDirLayout
-        toolchainCompiler
+        (elabStage elab)
+        (elabToolchain elab)
         (elabUnitId elab)
   where
     Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain elab
