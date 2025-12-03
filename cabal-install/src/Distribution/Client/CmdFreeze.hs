@@ -131,7 +131,6 @@ freezeAction flags extraArgs globalFlags = do
 
   ProjectBaseContext
     { distDirLayout
-    , cabalDirLayout
     , projectConfig
     , localPackages
     , buildSettings
@@ -142,7 +141,6 @@ freezeAction flags extraArgs globalFlags = do
     rebuildInstallPlan
       verbosity
       distDirLayout
-      cabalDirLayout
       projectConfig
       localPackages
       Nothing
@@ -279,5 +277,5 @@ projectFreezeConstraints plan =
       Map.fromList
         [ (packageName elab, ())
         | InstallPlan.Configured elab <- InstallPlan.toList plan
-        , elabLocalToProject elab
+        , elabIsSourcePackage elab
         ]

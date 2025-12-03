@@ -193,8 +193,6 @@ listbinAction flags args globalFlags = do
         ]
       ElabComponent comp -> bin_file (compSolverName comp)
       where
-        dist_dir = distBuildDirectory distDirLayout (elabDistDirParams elab)
-
         bin_file c = case c of
           CD.ComponentExe s
             | s == selectedComponent -> [moved_bin_file s]
@@ -210,15 +208,9 @@ listbinAction flags args globalFlags = do
 
         -- here and in PlanOutput,
         -- use binDirectoryFor?
-        bin_file' s =
-          if isInplaceBuildStyle (elabBuildStyle elab)
-            then dist_dir </> "build" </> prettyShow s </> prettyShow s <.> exeExtension plat
-            else InstallDirs.bindir (elabInstallDirs elab) </> prettyShow s <.> exeExtension plat
+        bin_file' s = InstallDirs.bindir (elabInstallDirs elab) </> prettyShow s <.> exeExtension plat
 
-        flib_file' s =
-          if isInplaceBuildStyle (elabBuildStyle elab)
-            then dist_dir </> "build" </> prettyShow s </> ("lib" ++ prettyShow s) <.> dllExtension plat
-            else InstallDirs.bindir (elabInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
+        flib_file' s = InstallDirs.bindir (elabInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
 
         moved_bin_file s = fromMaybe (bin_file' s) (movedExePath selectedComponent distDirLayout elaboratedSharedConfig elab)
 
