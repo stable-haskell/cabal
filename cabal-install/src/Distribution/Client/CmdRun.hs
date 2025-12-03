@@ -56,11 +56,10 @@ import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
   , WithStage (..)
-  , binDirectoryFor
+  , installedBinDirectory
   )
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedPackageOrComponent (..)
-  , dataDirsEnvironmentForPlan
   , elabExeDependencyPaths
   )
 
@@ -302,12 +301,7 @@ runAction flags targetAndArgs globalFlags =
         dieWithException verbosity $
           MultipleMatchingExecutables exeName (fmap (\p -> " - in package " ++ prettyShow (elabUnitId p)) elabPkgs)
 
-    let defaultExePath =
-          binDirectoryFor
-            (distDirLayout baseCtx)
-            pkg
-            exeName
-            </> exeName
+    let defaultExePath = installedBinDirectory pkg </> exeName
         exePath = fromMaybe defaultExePath (movedExePath selectedComponent (distDirLayout baseCtx) (elaboratedShared buildCtx) pkg)
 
     let dryRun =
@@ -325,7 +319,7 @@ runAction flags targetAndArgs globalFlags =
         , let pkg_descr = elabPkgDescription pkg
         , thisExe : _ <- filter ((== exeName) . unUnqualComponentName . PD.exeName) $ PD.executables pkg_descr
         , let thisExeBI = PD.buildInfo thisExe =
-            [ binDirectoryFor (distDirLayout baseCtx) pkg depExeNm
+            [ installedBinDirectory pkg </> depExeNm
             | depExe <- getAllInternalToolDependencies pkg_descr thisExeBI
             , let depExeNm = unUnqualComponentName depExe
             ]
@@ -352,11 +346,7 @@ runAction flags targetAndArgs globalFlags =
           emptyProgramInvocation
             { progInvokePath = exePath
             , progInvokeArgs = args
-            , progInvokeEnv =
-                ("PATH", Just $ progPath)
-                  : dataDirsEnvironmentForPlan
-                    (distDirLayout baseCtx)
-                    elaboratedPlan
+            , progInvokeEnv = [("PATH", Just $ progPath)]
             }
   where
     (targetStr, args) = splitAt 1 targetAndArgs

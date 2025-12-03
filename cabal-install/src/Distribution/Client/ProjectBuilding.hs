@@ -49,7 +49,6 @@ import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectConfig.Types
 import Distribution.Client.ProjectPlanning
-import Distribution.Client.Store
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.FetchUtils
@@ -94,7 +93,7 @@ import Distribution.Client.Errors
 import Distribution.Simple.Flag (fromFlagOrDefault)
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
-import Distribution.Client.ProjectBuilding.UnpackedPackage (annotateFailureNoLog, buildAndInstallUnpackedPackage, buildInplaceUnpackedPackage)
+import Distribution.Client.ProjectBuilding.UnpackedPackage (annotateFailureNoLog, buildAndInstallUnpackedPackage)
 import qualified Distribution.Compat.Graph as Graph
 
 ------------------------------------------------------------------------------
@@ -169,7 +168,7 @@ rebuildTargetsDryRun
   :: DistDirLayout
   -> ElaboratedInstallPlan
   -> IO BuildStatusMap
-rebuildTargetsDryRun distDirLayout@DistDirLayout{..} =
+rebuildTargetsDryRun distDirLayout =
   -- Do the various checks to work out the 'BuildStatus' of each package
   foldMInstallPlanDepOrder dryRunPkg
   where
@@ -206,19 +205,8 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} =
       -> [BuildStatus]
       -> FilePath
       -> IO BuildStatus
-    dryRunTarballPkg pkg depsBuildStatus tarball =
-      case elabBuildStyle pkg of
-        BuildAndInstall -> return (BuildStatusUnpack tarball)
-        BuildInplaceOnly{} -> do
-          -- TODO: [nice to have] use a proper file monitor rather
-          -- than this dir exists test
-          exists <- doesDirectoryExist srcdir
-          if exists
-            then dryRunLocalPkg pkg depsBuildStatus srcdir
-            else return (BuildStatusUnpack tarball)
-      where
-        srcdir :: FilePath
-        srcdir = distUnpackedSrcDirectory (packageId pkg)
+    dryRunTarballPkg _pkg _depsBuildStatus tarball =
+      return (BuildStatusUnpack tarball)
 
     dryRunLocalPkg
       :: ElaboratedConfiguredPackage
@@ -330,7 +318,6 @@ rebuildTargets
   :: Verbosity
   -> ProjectConfig
   -> DistDirLayout
-  -> StoreDirLayout
   -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
   -> BuildStatusMap
@@ -340,7 +327,6 @@ rebuildTargets
   verbosity
   projectConfig
   distDirLayout
-  storeDirLayout
   installPlan
   sharedPackageConfig
   pkgsBuildStatus
@@ -361,14 +347,12 @@ rebuildTargets
             rebuildTarget
               verbosity
               distDirLayout
-              storeDirLayout
               (jobControlSemaphore jobControl)
               buildSettings
               downloadMap
               registerLock
               cacheLock
               sharedPackageConfig
-              installPlan
               pkg
               pkgBuildStatus
 
@@ -501,28 +485,24 @@ rebuildTargets'
 rebuildTarget
   :: Verbosity
   -> DistDirLayout
-  -> StoreDirLayout
   -> Maybe SemaphoreName
   -> BuildTimeSettings
   -> AsyncFetchMap
   -> Lock
   -> Lock
   -> ElaboratedSharedConfig
-  -> ElaboratedInstallPlan
   -> ElaboratedReadyPackage
   -> BuildStatus
   -> IO BuildResult
 rebuildTarget
   verbosity
   distDirLayout@DistDirLayout{distBuildDirectory}
-  storeDirLayout
   semaphoreName
   buildSettings
   downloadMap
   registerLock
   cacheLock
   sharedPackageConfig
-  plan
   rpkg@(ReadyPackage pkg)
   pkgBuildStatus
     -- Technically, doing the --only-download filtering only in this function is
@@ -570,61 +550,28 @@ rebuildTarget
           tarball
           (packageId pkg)
           (elabDistDirParams pkg)
-          (elabBuildStyle pkg)
           (elabPkgDescriptionOverride pkg)
-          $ case elabBuildStyle pkg of
-            BuildAndInstall -> buildAndInstall
-            BuildInplaceOnly{} -> buildInplace buildStatus
-              where
-                buildStatus = BuildStatusConfigure MonitorFirstRun
+          buildAndInstall
 
-      -- Note that this really is rebuild, not build. It can only happen for
-      -- 'BuildInplaceOnly' style packages. 'BuildAndInstall' style packages
-      -- would only start from download or unpack phases.
-      --
       rebuildPhase :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> IO BuildResult
       rebuildPhase buildStatus srcdir = do
-        info verbosity $ "[rebuildPhase] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
-        buildInplace buildStatus srcdir builddir
+        info verbosity $ "[rebuildPhase] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir ++ " with rebuild reason " ++ show buildStatus
+        buildAndInstall srcdir (makeSymbolicPath builddir)
         where
-          distdir = distBuildDirectory (elabDistDirParams pkg)
-          builddir =
-            makeSymbolicPath $
-              makeRelative (normalise $ getSymbolicPath srcdir) distdir
-      -- TODO: [nice to have] ^^ do this relative stuff better
+          builddir = distBuildDirectory (elabDistDirParams pkg)
 
       buildAndInstall :: SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
       buildAndInstall srcdir builddir = do
-        info verbosity $ "[buildAndInstall] Building and installing " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
+        info verbosity $ "[buildAndInstall] Building and installing " ++ prettyShow (nodeKey pkg)
         buildAndInstallUnpackedPackage
           verbosity
           distDirLayout
-          storeDirLayout
           semaphoreName
           buildSettings
           registerLock
           cacheLock
           sharedPackageConfig
-          plan
           rpkg
-          srcdir
-          builddir
-
-      buildInplace :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
-      buildInplace buildStatus srcdir builddir = do
-        -- TODO: [nice to have] use a relative build dir rather than absolute
-        info verbosity $ "[buildInplace] Building inplace " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
-        buildInplaceUnpackedPackage
-          verbosity
-          distDirLayout
-          semaphoreName
-          buildSettings
-          registerLock
-          cacheLock
-          sharedPackageConfig
-          plan
-          rpkg
-          buildStatus
           srcdir
           builddir
 
@@ -721,7 +668,6 @@ withTarballLocalDirectory
   -> FilePath
   -> PackageId
   -> DistDirParams
-  -> BuildStyle
   -> Maybe CabalFileText
   -> ( SymbolicPath CWD (Dir Pkg) -- Source directory
        -> SymbolicPath Pkg (Dir Dist) -- Build directory
@@ -730,64 +676,35 @@ withTarballLocalDirectory
   -> IO a
 withTarballLocalDirectory
   verbosity
-  distDirLayout@DistDirLayout{..}
+  distDirLayout
   tarball
   pkgid
   dparams
-  buildstyle
   pkgTextOverride
-  buildPkg =
-    case buildstyle of
-      -- In this case we make a temp dir (e.g. tmp/src2345/), unpack
-      -- the tarball to it (e.g. tmp/src2345/foo-1.0/), and for
-      -- compatibility we put the dist dir within it
-      -- (i.e. tmp/src2345/foo-1.0/dist/).
-      --
-      -- Unfortunately, a few custom Setup.hs scripts do not respect
-      -- the --builddir flag and always look for it at ./dist/ so
-      -- this way we avoid breaking those packages
-      BuildAndInstall ->
-        let tmpdir = distTempDirectory
-            builddir = relativeSymbolicPath $ makeRelativePathEx "dist"
-         in withTempDirectory verbosity tmpdir "src" $ \unpackdir -> do
-              let srcdir = makeSymbolicPath $ unpackdir </> prettyShow pkgid
-              unpackPackageTarball
-                verbosity
-                tarball
-                unpackdir
-                pkgid
-                pkgTextOverride
-              buildPkg srcdir builddir
-
-      -- In this case we make sure the tarball has been unpacked to the
-      -- appropriate location under the shared dist dir, and then build it
-      -- inplace there
-      BuildInplaceOnly{} -> do
-        let srcrootdir = distUnpackedSrcRootDirectory
-            srcdir = distUnpackedSrcDirectory pkgid
-            builddir =
-              makeSymbolicPath $
-                makeRelative (normalise srcdir) $
-                  distBuildDirectory dparams
-        -- TODO: [nice to have] ^^ do this relative stuff better
-        exists <- doesDirectoryExist srcdir
-        -- TODO: [nice to have] use a proper file monitor rather
-        -- than this dir exists test
-        unless exists $ do
-          createDirectoryIfMissingVerbose verbosity True srcrootdir
-          unpackPackageTarball
-            verbosity
-            tarball
-            srcrootdir
-            pkgid
-            pkgTextOverride
-          moveTarballShippedDistDirectory
-            verbosity
-            distDirLayout
-            srcrootdir
-            pkgid
-            dparams
-        buildPkg (makeSymbolicPath srcdir) builddir
+  buildPkg = do
+    exists <- doesDirectoryExist srcdir
+    unless exists $ do
+      createDirectoryIfMissingVerbose verbosity True srcrootdir
+      unpackPackageTarball
+        verbosity
+        tarball
+        srcrootdir
+        pkgid
+        pkgTextOverride
+      moveTarballShippedDistDirectory
+        verbosity
+        distDirLayout
+        srcrootdir
+        pkgid
+        dparams
+    buildPkg (makeSymbolicPath srcdir) builddir
+  where
+    srcrootdir = distUnpackedSrcRootDirectory distDirLayout
+    srcdir = distUnpackedSrcDirectory distDirLayout pkgid
+    builddir =
+      makeSymbolicPath $
+        makeRelative (normalise srcdir) $
+          distBuildDirectory distDirLayout dparams
 
 unpackPackageTarball
   :: Verbosity

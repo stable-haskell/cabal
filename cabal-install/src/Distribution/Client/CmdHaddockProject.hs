@@ -218,7 +218,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
                 False -> return Nothing
           Left _ -> return []
           Right package ->
-            case elabLocalToProject package of
+            case elabIsSourcePackage package of
               True -> do
                 let distDirParams = elabDistDirParams package
                     pkg_descr = elabPkgDescription package

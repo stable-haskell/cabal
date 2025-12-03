@@ -151,7 +151,6 @@ targetAction :: NixStyleFlags () -> [String] -> GlobalFlags -> IO ()
 targetAction flags@NixStyleFlags{..} ts globalFlags = do
   ProjectBaseContext
     { distDirLayout
-    , cabalDirLayout
     , projectConfig
     , localPackages
     } <-
@@ -161,7 +160,6 @@ targetAction flags@NixStyleFlags{..} ts globalFlags = do
     rebuildInstallPlan
       verbosity
       distDirLayout
-      cabalDirLayout
       projectConfig
       localPackages
       Nothing
@@ -208,7 +206,7 @@ printTargetForms verbosity targetStrings targets elaboratedPlan =
        in text "Found" <+> int n <+> text t <+> text "matching" <+> text query Pretty.<> char '.'
 
     localPkgs =
-      [x | Configured x@ElaboratedConfiguredPackage{elabLocalToProject = True} <- InstallPlan.toList elaboratedPlan]
+      [x | Configured x@ElaboratedConfiguredPackage{elabIsSourcePackage = True} <- InstallPlan.toList elaboratedPlan]
 
     targetForm ct x =
       let pkgId@PackageIdentifier{pkgName = n} = elabPkgSourceId x

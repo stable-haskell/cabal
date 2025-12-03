@@ -26,12 +26,11 @@ module Distribution.Client.ProjectPlanning.Types
   , elabOrderExeDependencies
   , elabSetupLibDependencies
   , elabPkgConfigDependencies
-  , elabInplaceDependencyBuildCacheFiles
   , elabRequiresRegistration
-  , dataDirsEnvironmentForPlan
   , elabPlanPackageName
   , elabConfiguredName
   , elabComponentName
+  , elabExeName
   , ElaboratedPackageOrComponent (..)
   , ElaboratedComponent (..)
   , ElaboratedPackage (..)
@@ -39,9 +38,6 @@ module Distribution.Client.ProjectPlanning.Types
   , ElaboratedPlanPackage
   , ElaboratedSharedConfig (..)
   , ElaboratedReadyPackage
-  , BuildStyle (..)
-  , MemoryOrDisk (..)
-  , isInplaceBuildStyle
   , CabalFileText
   , NotPerComponentReason (..)
   , NotPerComponentBuildType (..)
@@ -103,7 +99,6 @@ import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import Distribution.ModuleName (ModuleName)
 import Distribution.Package
 import qualified Distribution.PackageDescription as Cabal
-import Distribution.Simple.Build.PathsModule (pkgPathEnvVar)
 import qualified Distribution.Simple.BuildTarget as Cabal
 import Distribution.Simple.Compiler
 import Distribution.Simple.InstallDirs (PathTemplate)
@@ -127,7 +122,6 @@ import Distribution.Types.ComponentRequestedSpec
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Types.PkgconfigVersion
-import Distribution.Utils.Path (getSymbolicPath)
 import Distribution.Verbosity (normal)
 import Distribution.Version
 
@@ -135,8 +129,8 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Distribution.Compat.Graph as Graph
-import System.FilePath ((</>))
 import Text.PrettyPrint (colon, hsep, parens, text)
+import qualified Distribution.PackageDescription as PD
 
 -- | The combination of an elaborated install plan plus a
 -- 'ElaboratedSharedConfig' contains all the details necessary to be able
@@ -190,15 +184,15 @@ showElaboratedInstallPlan = InstallPlan.showInstallPlan_gen showNode
         herald =
           ( hsep
               [ InstallPlan.renderPlanPackageTag pkg
-              , InstallPlan.foldPlanPackage (const mempty) in_mem pkg
+              -- , InstallPlan.foldPlanPackage (const mempty) in_mem pkg
               , pretty (packageId pkg)
               , parens (pretty (nodeKey pkg))
               ]
           )
 
-        in_mem elab = case elabBuildStyle elab of
-          BuildInplaceOnly InMemory -> parens (text "In Memory")
-          _ -> mempty
+        -- in_mem elab = case elabBuildStyle elab of
+        --   BuildInplaceOnly InMemory -> parens (text "In Memory")
+        --   _ -> mempty
 
         deps = InstallPlan.foldPlanPackage installed_deps local_deps pkg
 
@@ -254,13 +248,10 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   , elabPkgSourceHash :: Maybe PackageSourceHash
   -- ^ The hash of the source, e.g. the tarball. We don't have this for
   -- local source dir packages.
-  , elabLocalToProject :: Bool
-  -- ^ Is this package one of the ones specified by location in the
-  -- project file? (As opposed to a dependency, or a named package pulled
-  -- in)
-  , elabBuildStyle :: BuildStyle
-  -- ^ Are we going to build and install this package to the store, or are
-  -- we going to build it and register it locally.
+  , elabIsSourcePackage :: Bool
+  -- FIXME
+  , elabIsSourcePackageClosure :: Bool
+  -- ^ Is this package in the closure of project source packages?
   , elabEnabledSpec :: ComponentRequestedSpec
   -- ^ Another way of phrasing 'pkgStanzasAvailable'.
   , elabStanzasAvailable :: OptionalStanzaSet
@@ -291,9 +282,6 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   , elabSetupPackageDBStack :: PackageDBStackCWD
   , elabBuildPackageDBStack :: PackageDBStackCWD
   , elabRegisterPackageDBStack :: PackageDBStackCWD
-  , elabInplaceSetupPackageDBStack :: PackageDBStackCWD
-  , elabInplaceBuildPackageDBStack :: PackageDBStackCWD
-  , elabInplaceRegisterPackageDBStack :: PackageDBStackCWD
   , elabPkgDescriptionOverride :: Maybe CabalFileText
   , -- TODO: make per-component variants of these flags
     elabBuildOptions :: LBC.BuildOptions
@@ -417,10 +405,7 @@ elabRequiresRegistration elab =
       -- that was built and installed into the same store folder
       -- as otherwise this will cause build failures once a
       -- target actually depends on lib:cpphs.
-      build_target
-        || ( elabBuildStyle elab == BuildAndInstall
-              && Cabal.hasPublicLib (elabPkgDescription elab)
-           )
+      build_target || Cabal.hasPublicLib (elabPkgDescription elab)
         -- the next sub-condition below is currently redundant
         -- (see discussion in #5604 for more details), but it's
         -- being kept intentionally here as a safeguard because if
@@ -450,64 +435,6 @@ elabRequiresRegistration elab =
     is_lib_target _ = False
     is_lib (CLibName _) = True
     is_lib _ = False
-
--- | Construct the environment needed for the data files to work.
--- This consists of a separate @*_datadir@ variable for each
--- inplace package in the plan.
-dataDirsEnvironmentForPlan
-  :: DistDirLayout
-  -> ElaboratedInstallPlan
-  -> [(String, Maybe FilePath)]
-dataDirsEnvironmentForPlan distDirLayout =
-  catMaybes
-    . fmap
-      ( InstallPlan.foldPlanPackage
-          (const Nothing)
-          (dataDirEnvVarForPackage distDirLayout)
-      )
-    . InstallPlan.toList
-
--- | Construct an environment variable that points
--- the package's datadir to its correct location.
--- This might be:
--- * 'Just' the package's source directory plus the data subdirectory
---   for inplace packages.
--- * 'Nothing' for packages installed in the store (the path was
---   already included in the package at install/build time).
-dataDirEnvVarForPackage
-  :: DistDirLayout
-  -> ElaboratedConfiguredPackage
-  -> Maybe (String, Maybe FilePath)
-dataDirEnvVarForPackage distDirLayout pkg =
-  case elabBuildStyle pkg of
-    BuildAndInstall -> Nothing
-    BuildInplaceOnly{} ->
-      Just
-        ( pkgPathEnvVar (elabPkgDescription pkg) "datadir"
-        , Just dataDirPath
-        )
-  where
-    srcPath (LocalUnpackedPackage path) = path
-    srcPath (LocalTarballPackage _path) = unpackedPath
-    srcPath (RemoteTarballPackage _uri _localTar) = unpackedPath
-    srcPath (RepoTarballPackage _repo _packageId _localTar) = unpackedPath
-    srcPath (RemoteSourceRepoPackage _sourceRepo (Just localCheckout)) = localCheckout
-    -- TODO: see https://github.com/haskell/cabal/wiki/Potential-Refactors#unresolvedpkgloc
-    srcPath (RemoteSourceRepoPackage _sourceRepo Nothing) =
-      error
-        "calling dataDirEnvVarForPackage on a not-downloaded repo is an error"
-    unpackedPath =
-      distUnpackedSrcDirectory distDirLayout $ elabPkgSourceId pkg
-    rawDataDir = getSymbolicPath $ dataDir (elabPkgDescription pkg)
-    pkgDir = srcPath (elabPkgSourceLocation pkg)
-    dataDirPath
-      | null rawDataDir =
-          pkgDir
-      | otherwise =
-          pkgDir </> rawDataDir
-
--- NB: rawDataDir may be absolute, in which case
--- (</>) drops its first argument.
 
 instance Package ElaboratedConfiguredPackage where
   packageId = elabPkgSourceId
@@ -544,6 +471,20 @@ elabComponentName elab =
   case elabPkgOrComp elab of
     ElabPackage _ -> Just $ CLibName LMainLibName -- there could be more, but default this
     ElabComponent comp -> compComponentName comp
+
+-- | The names of the executables provided by this package/component.
+-- For a package, this is all the executables in the package. For a
+-- component, this is either a singleton list (if the component is an
+-- executable) or the empty list (otherwise).
+elabExeName :: ElaboratedConfiguredPackage -> [String]
+elabExeName elab =
+  case elabPkgOrComp elab of
+    ElabPackage _ ->
+      [ PD.unUnqualComponentName (PD.exeName exe) | exe <- PD.executables (elabPkgDescription elab) ]
+    ElabComponent comp ->
+      case compComponentName comp of
+        Just (CExeName name) -> [PD.unUnqualComponentName name]
+        _ -> []
 
 -- | A user-friendly descriptor for an 'ElaboratedConfiguredPackage'.
 elabConfiguredName :: Verbosity -> ElaboratedConfiguredPackage -> String
@@ -696,38 +637,6 @@ pkgSetupLibDependencies pkg =
   where
     stage = prevStage (pkgStage pkg)
 
--- | The cache files of all our inplace dependencies which,
--- when updated, require us to rebuild.  See #4202 for
--- more details.  Essentially, this is a list of filepaths
--- that, if our dependencies get rebuilt, will themselves
--- get updated.
---
--- Note: the hash of these cache files gets built into
--- the build cache ourselves, which means that we end
--- up tracking transitive dependencies!
---
--- Note: This tracks the "build" cache file, but not
--- "registration" or "config" cache files.  Why not?
--- Arguably we should...
---
--- Note: This is a bit of a hack, because it is not really
--- the hashes of the SOURCES of our (transitive) dependencies
--- that we should use to decide whether or not to rebuild,
--- but the output BUILD PRODUCTS.  The strategy we use
--- here will never work if we want to implement unchanging
--- rebuilds.
-elabInplaceDependencyBuildCacheFiles
-  :: DistDirLayout
-  -> ElaboratedInstallPlan
-  -> ElaboratedConfiguredPackage
-  -> [FilePath]
-elabInplaceDependencyBuildCacheFiles layout plan root_elab =
-  go =<< InstallPlan.directDeps plan (nodeKey root_elab)
-  where
-    go = InstallPlan.foldPlanPackage (const []) $ \elab -> do
-      guard (isInplaceBuildStyle (elabBuildStyle elab))
-      return $ distPackageCacheFile layout (elabDistDirParams elab) "build"
-
 -- | Some extra metadata associated with an
 -- 'ElaboratedConfiguredPackage' which indicates that the "package"
 -- in question is actually a single component to be built.  Arguably
@@ -851,58 +760,6 @@ whyNotPerComponent = \case
   CuzNoBuildableComponents -> "there are no buildable components"
   CuzDisablePerComponent -> "you passed --disable-per-component"
 
--- | This is used in the install plan to indicate how the package will be
--- built.
-data BuildStyle
-  = -- | The classic approach where the package is built, then the files
-    -- installed into some location and the result registered in a package db.
-    --
-    -- If the package came from a tarball then it's built in a temp dir and
-    -- the results discarded.
-    BuildAndInstall
-  | -- | For 'OnDisk': The package is built, but the files are not installed anywhere,
-    -- rather the build dir is kept and the package is registered inplace.
-    --
-    -- Such packages can still subsequently be installed.
-    --
-    -- Typically 'BuildAndInstall' packages will only depend on other
-    -- 'BuildAndInstall' style packages and not on 'BuildInplaceOnly' ones.
-    --
-    -- For 'InMemory':  Built in-memory only using GHC multi-repl, they are not built or installed
-    -- anywhere on disk. BuildInMemory packages can't be depended on by BuildAndInstall nor BuildInplaceOnly packages
-    -- (because they don't exist on disk) but can depend on other BuildStyles.
-    --
-    -- At the moment @'BuildInplaceOnly' 'InMemory'@ is only used by the 'repl' command.
-    --
-    -- We use single constructor 'BuildInplaceOnly' as for most cases
-    -- inplace packages are handled similarly.
-    BuildInplaceOnly MemoryOrDisk
-  deriving (Eq, Ord, Show, Generic)
-
--- | How 'BuildInplaceOnly' component is built.
-data MemoryOrDisk
-  = OnDisk
-  | InMemory
-  deriving (Eq, Ord, Show, Generic)
-
--- Note: order of 'BuildStyle' and 'MemoryOrDisk' matters for 'Semigroup' / 'Monoid' instances
-
-isInplaceBuildStyle :: BuildStyle -> Bool
-isInplaceBuildStyle (BuildInplaceOnly{}) = True
-isInplaceBuildStyle BuildAndInstall = False
-
-instance Binary MemoryOrDisk
-instance Structured MemoryOrDisk
-
-instance Semigroup BuildStyle where
-  -- 'BuildAndInstall' i.e. the smallest / first constructor is the unit.
-  (<>) = max
-
-instance Monoid BuildStyle where
-  mempty = BuildAndInstall
-
-instance Binary BuildStyle
-instance Structured BuildStyle
 
 type CabalFileText = LBS.ByteString
 
