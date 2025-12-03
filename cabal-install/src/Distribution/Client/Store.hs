@@ -25,9 +25,9 @@ import Prelude ()
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.RebuildMonad
+import Distribution.Client.Toolchain (Toolchain (..), Stage)
 
 import Distribution.Package (UnitId, mkUnitId)
-import Distribution.Simple.Compiler (Compiler (..))
 
 import Distribution.Simple.Utils
   ( debug
@@ -119,20 +119,19 @@ import GHC.IO.Handle.Lock (LockMode (ExclusiveLock), hLock, hTryLock, hUnlock)
 -- or replace, i.e. not failing if the db entry already exists.
 
 -- | Check if a particular 'UnitId' exists in the store.
-doesStoreEntryExist :: StoreDirLayout -> Compiler -> UnitId -> IO Bool
-doesStoreEntryExist StoreDirLayout{storePackageDirectory} compiler unitid =
-  doesDirectoryExist (storePackageDirectory compiler unitid)
+doesStoreEntryExist :: StoreDirLayout -> Stage -> Toolchain -> UnitId -> IO Bool
+doesStoreEntryExist StoreDirLayout{storePackageDirectory} stage toolchain unitid =
+  doesDirectoryExist (storePackageDirectory stage toolchain unitid)
 
 -- | Return the 'UnitId's of all packages\/components already installed in the
 -- store.
-getStoreEntries :: StoreDirLayout -> Compiler -> Rebuild (Set UnitId)
-getStoreEntries StoreDirLayout{storeDirectory} compiler = do
-  paths <- getDirectoryContentsMonitored (storeDirectory compiler)
+getStoreEntries :: StoreDirLayout -> Stage -> Toolchain -> Rebuild (Set UnitId)
+getStoreEntries StoreDirLayout{storeDirectory} stage toolchain = do
+  paths <- getDirectoryContentsMonitored (storeDirectory stage toolchain)
   return $! mkEntries paths
   where
     mkEntries =
       Set.delete (mkUnitId "package.conf.d")
-        . Set.delete (mkUnitId "incoming")
         . Set.fromList
         . map mkUnitId
         . filter valid
@@ -164,7 +163,8 @@ data NewStoreEntryOutcome
 newStoreEntry
   :: Verbosity
   -> StoreDirLayout
-  -> Compiler
+  -> Stage
+  -> Toolchain
   -> UnitId
   -> (FilePath -> IO (FilePath, [FilePath]))
   -- ^ Action to place files.
@@ -174,7 +174,8 @@ newStoreEntry
 newStoreEntry
   verbosity
   storeDirLayout@StoreDirLayout{..}
-  compiler
+  stage
+  toolchain
   unitid
   copyFiles
   register =
@@ -184,11 +185,11 @@ newStoreEntry
       (incomingEntryDir, otherFiles) <- copyFiles incomingTmpDir
 
       -- Take a lock named after the 'UnitId' in question.
-      let lockfile = storeIncomingLock compiler unitid
+      let lockfile = storeIncomingLock stage toolchain unitid
           message = "Waiting to acquire the store lock for " ++ show unitid
       withIncomingUnitIdLock verbosity lockfile message $ do
         -- Check for the existence of the final store entry directory.
-        exists <- doesStoreEntryExist storeDirLayout compiler unitid
+        exists <- doesStoreEntryExist storeDirLayout stage toolchain unitid
 
         if exists
           then do
@@ -204,15 +205,16 @@ newStoreEntry
             -- Atomically rename the temp dir to the final store entry location.
             renameDirectory incomingEntryDir finalEntryDir
             for_ otherFiles $ \file -> do
-              let finalStoreFile = storeDirectory compiler </> makeRelative (normalise $ incomingTmpDir </> (dropDrive (storeDirectory compiler))) file
+              let finalStoreFile = storeDirectory stage toolchain </> makeRelative (normalise $ incomingTmpDir </> dropDrive (storeDirectory stage toolchain)) file
               createDirectoryIfMissing True (takeDirectory finalStoreFile)
               renameFile file finalStoreFile
 
             debug verbosity $ "Installed entry " ++ finalEntryDir
             return UseNewStoreEntry
     where
-      finalEntryDir = storePackageDirectory compiler unitid
-      incomingDir = storeIncomingDirectory compiler
+      finalEntryDir = storePackageDirectory stage toolchain unitid
+      incomingDir = storeIncomingDirectory stage toolchain
+
 
 withIncomingUnitIdLock
   :: Verbosity
