@@ -253,6 +253,7 @@ import Numeric (showFFloat)
 import System.Directory
   ( Permissions (executable)
   , createDirectory
+  , createDirectoryIfMissing
   , doesDirectoryExist
   , doesFileExist
   , getDirectoryContents
@@ -269,7 +270,6 @@ import System.FilePath (takeFileName)
 import System.FilePath as FilePath
   ( getSearchPath
   , joinPath
-  , normalise
   , searchPathSeparator
   , splitDirectories
   , splitExtension
@@ -1587,40 +1587,9 @@ createDirectoryIfMissingVerbose
   -- ^ Create its parents too?
   -> FilePath
   -> IO ()
-createDirectoryIfMissingVerbose verbosity create_parents path0
-  | create_parents = withFrozenCallStack $ createDirs (parents path0)
-  | otherwise = withFrozenCallStack $ createDirs (take 1 (parents path0))
-  where
-    parents = reverse . scanl1 (</>) . splitDirectories . normalise
-
-    createDirs [] = return ()
-    createDirs (dir : []) = createDir dir throwIO
-    createDirs (dir : dirs) =
-      createDir dir $ \_ -> do
-        createDirs dirs
-        createDir dir throwIO
-
-    createDir :: FilePath -> (IOException -> IO ()) -> IO ()
-    createDir dir notExistHandler = do
-      r <- tryIO $ createDirectoryVerbose verbosity dir
-      case (r :: Either IOException ()) of
-        Right () -> return ()
-        Left e
-          | isDoesNotExistError e -> notExistHandler e
-          -- createDirectory (and indeed POSIX mkdir) does not distinguish
-          -- between a dir already existing and a file already existing. So we
-          -- check for it here. Unfortunately there is a slight race condition
-          -- here, but we think it is benign. It could report an exception in
-          -- the case that the dir did exist but another process deletes the
-          -- directory and creates a file in its place before we can check
-          -- that the directory did indeed exist.
-          | isAlreadyExistsError e ->
-              ( do
-                  isDir <- doesDirectoryExist dir
-                  unless isDir $ throwIO e
-              )
-                `catchIO` ((\_ -> return ()) :: IOException -> IO ())
-          | otherwise -> throwIO e
+createDirectoryIfMissingVerbose verbosity create_parents dir = withFrozenCallStack $ do
+  info verbosity $ "creating directory " ++ dir
+  createDirectoryIfMissing create_parents dir
 
 createDirectoryVerbose :: Verbosity -> FilePath -> IO ()
 createDirectoryVerbose verbosity dir = withFrozenCallStack $ do
