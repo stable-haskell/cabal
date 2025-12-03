@@ -43,12 +43,8 @@ import qualified Data.Set as Set
 import System.Directory
 import System.FilePath
 
-#ifdef MIN_VERSION_lukko
-import Lukko
-#else
 import System.IO (openFile, IOMode(ReadWriteMode), hClose)
 import GHC.IO.Handle.Lock (LockMode (ExclusiveLock), hLock, hTryLock, hUnlock)
-#endif
 
 -- $concurrency
 --
@@ -197,17 +193,13 @@ newStoreEntry
         exists <- doesStoreEntryExist storeDirLayout compiler unitid
 
         if exists
-          then -- If the entry exists then we lost the race and we must abandon,
+          then do
+           -- If the entry exists then we lost the race and we must abandon,
           -- unlock and re-use the existing store entry.
-          do
-            info verbosity $
-              "Concurrent build race: abandoning build in favour of existing "
-                ++ "store entry "
-                ++ prettyShow compid
-                </> prettyShow unitid
+            info verbosity $ "Concurrent build race: abandoning build in favour of existing entry " ++ finalEntryDir
             return UseExistingStoreEntry
-          else -- If the entry does not exist then we won the race and can proceed.
-          do
+          else do
+            -- If the entry does not exist then we won the race and can proceed.
             -- Register the package into the package db (if appropriate).
             register
 
@@ -218,12 +210,9 @@ newStoreEntry
               createDirectoryIfMissing True (takeDirectory finalStoreFile)
               renameFile file finalStoreFile
 
-            debug verbosity $
-              "Installed store entry " ++ prettyShow compid </> prettyShow unitid
+            debug verbosity $ "Installed entry " ++ finalEntryDir
             return UseNewStoreEntry
     where
-      compid = compilerId compiler
-
       finalEntryDir = storePackageDirectory compiler unitid
 
 withTempIncomingDir
@@ -252,37 +241,14 @@ withIncomingUnitIdLock
   action =
     bracket takeLock releaseLock (\_hnd -> action)
     where
-      compid = compilerId compiler
-#ifdef MIN_VERSION_lukko
-      takeLock
-          | fileLockingSupported = do
-              fd <- fdOpen (storeIncomingLock compiler unitid)
-              gotLock <- fdTryLock fd ExclusiveLock
-              unless gotLock  $ do
-                  info verbosity $ "Waiting for file lock on store entry "
-                                ++ prettyShow compid </> prettyShow unitid
-                  fdLock fd ExclusiveLock
-              return fd
-
-          -- if there's no locking, do nothing. Be careful on AIX.
-          | otherwise = return undefined -- :(
-
-      releaseLock fd
-          | fileLockingSupported = do
-              fdUnlock fd
-              fdClose fd
-          | otherwise = return ()
-#else
       takeLock = do
         h <- openFile (storeIncomingLock compiler unitid) ReadWriteMode
         -- First try non-blocking, but if we would have to wait then
         -- log an explanation and do it again in blocking mode.
         gotlock <- hTryLock h ExclusiveLock
         unless gotlock $ do
-          info verbosity $ "Waiting for file lock on store entry "
-                        ++ prettyShow compid </> prettyShow unitid
+          info verbosity $ "Waiting for file lock on store entry " ++ prettyShow unitid
           hLock h ExclusiveLock
         return h
 
       releaseLock h = hUnlock h >> hClose h
-#endif
