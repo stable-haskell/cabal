@@ -110,7 +110,7 @@ jobs:
           curl -O -L ${{ env.GMP_URL }}/gmp-${{ env.GMP_VERSION }}.tar.xz
           tar xf gmp-${{ env.GMP_VERSION }}.tar.xz
           cd gmp-${{ env.GMP_VERSION }}
-          CFLAGS=-fPIC ./configure --prefix=$HOME/.local/ --disable-shared
+          CFLAGS="-fPIC" ./configure --prefix=$HOME/.local/ --disable-shared --host=x86_64-pc-linux-gnu --build=x86_64-pc-linux-gnu
           make install
           cd ..
           echo "extra-lib-dirs: $HOME/.local/lib/" >> cabal.release.project.local
