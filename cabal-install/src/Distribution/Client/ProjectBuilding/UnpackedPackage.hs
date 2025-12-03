@@ -5,22 +5,10 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | This module exposes functions to build and register unpacked packages.
---
--- Mainly, unpacked packages are either:
---  * Built and registered in-place
---  * Built and installed
---
--- The two cases differ significantly for there to be a distinction.
--- For instance, we only care about file monitoring and re-building when dealing
--- with "inplace" registered packages, whereas for installed packages we don't.
+-- | This module exposes functions to build and register packages.
 module Distribution.Client.ProjectBuilding.UnpackedPackage
-  ( buildInplaceUnpackedPackage
-  , buildAndInstallUnpackedPackage
-
-    -- ** Auxiliary definitions
-  , buildAndRegisterUnpackedPackage
-  , PackageBuildingPhase
+  ( buildAndInstallUnpackedPackage
+  , PackageBuildingPhase(..)
 
     -- ** Utilities
   , annotateFailure
@@ -36,11 +24,9 @@ import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectConfig.Types
 import Distribution.Client.ProjectPlanning
 import Distribution.Client.ProjectPlanning.Types
-import Distribution.Client.RebuildMonad
 import Distribution.Client.Store
 
 import Distribution.Client.DistDirLayout
-import Distribution.Client.FileMonitor
 import Distribution.Client.JobControl
 import Distribution.Client.Setup
   ( CommonSetupFlags
@@ -55,9 +41,6 @@ import Distribution.Client.Setup
   , filterTestFlags
   )
 import Distribution.Client.SetupWrapper
-import Distribution.Client.SourceFiles
-import Distribution.Client.SrcDist (allPackageSourceFiles)
-import qualified Distribution.Client.Tar as Tar
 import Distribution.Client.Types hiding
   ( BuildFailure (..)
   , BuildOutcome
@@ -73,8 +56,6 @@ import Distribution.Compat.Lens
 import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import qualified Distribution.InstalledPackageInfo as Installed
 import Distribution.Package
-import qualified Distribution.PackageDescription as PD
-import Distribution.Simple.BuildPaths (haddockDirName)
 import Distribution.Simple.Command (CommandUI)
 import Distribution.Simple.Compiler
   ( PackageDBStackCWD
@@ -89,7 +70,6 @@ import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
 import qualified Distribution.Simple.Setup as Cabal
 
-import Distribution.Types.BuildType
 import Distribution.Types.PackageDescription.Lens (componentModules)
 
 import Distribution.Simple.Utils
@@ -104,20 +84,17 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS.Char8
 import qualified Data.List.NonEmpty as NE
 
-import Control.Exception (ErrorCall, Handler (..), SomeAsyncException, catches, onException)
-import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, removeFile)
-import System.FilePath (dropDrive, normalise, takeDirectory, (<.>), (</>))
+import Control.Exception (Handler (..), SomeAsyncException, catches)
+import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, removeFile, removeDirectoryRecursive, renameDirectory, renameFile)
+import System.FilePath (dropDrive, normalise, takeDirectory, (</>), makeRelative)
 import System.IO (Handle, IOMode (AppendMode), withFile)
 import System.Semaphore (SemaphoreName (..))
 
-import Web.Browser (openBrowser)
 
 import Distribution.Client.Errors
 import Distribution.Compat.Directory (listDirectory)
 
-import Distribution.Client.ProjectBuilding.PackageFileMonitor
 import qualified Distribution.Compat.Graph as Graph
-import Distribution.System (Platform (..))
 
 -- | Each unpacked package is processed in the following phases:
 --
@@ -163,7 +140,6 @@ buildAndRegisterUnpackedPackage
   -> Lock
   -> Lock
   -> ElaboratedSharedConfig
-  -> ElaboratedInstallPlan
   -> ElaboratedReadyPackage
   -> SymbolicPath CWD (Dir Pkg)
   -> SymbolicPath Pkg (Dir Dist)
@@ -173,13 +149,12 @@ buildAndRegisterUnpackedPackage
   -> IO ()
 buildAndRegisterUnpackedPackage
   verbosity
-  distDirLayout@DistDirLayout{distTempDirectory}
+  DistDirLayout{distTempDirectory}
   maybe_semaphore
   buildTimeSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingKeepTempFiles}
   registerLock
   cacheLock
   pkgshared
-  plan
   rpkg@(ReadyPackage pkg)
   srcdir
   builddir
@@ -293,7 +268,6 @@ buildAndRegisterUnpackedPackage
         flip filterConfigureFlags v
           <$> setupHsConfigureFlags
             (\p -> makeSymbolicPath <$> canonicalizePath p)
-            plan
             rpkg
             commonFlags
       configureArgs _ = setupHsConfigureArgs pkg
@@ -359,9 +333,7 @@ buildAndRegisterUnpackedPackage
       scriptOptions =
         setupHsScriptOptions
           rpkg
-          plan
           pkgshared
-          distDirLayout
           srcdir
           builddir
           (isParallelBuild buildSettingNumJobs)
@@ -374,16 +346,10 @@ buildAndRegisterUnpackedPackage
         -> (Version -> [String])
         -> IO ()
       setup cmd getCommonFlags flags args =
-        withLogging $ \mLogFileHandle -> do
+        withLogging $ \mLogFileHandle ->
           setupWrapper
             verbosity
-            scriptOptions
-              { useLoggingHandle = mLogFileHandle
-              , useExtraEnvOverrides =
-                  dataDirsEnvironmentForPlan
-                    distDirLayout
-                    plan
-              }
+            scriptOptions { useLoggingHandle = mLogFileHandle }
             (Just (elabPkgDescription pkg))
             cmd
             getCommonFlags
@@ -399,7 +365,7 @@ buildAndRegisterUnpackedPackage
       setupInteractive cmd getCommonFlags flags args =
         setupWrapper
           verbosity
-          scriptOptions{isInteractive = True}
+          scriptOptions { isInteractive = True }
           (Just (elabPkgDescription pkg))
           cmd
           getCommonFlags
@@ -427,222 +393,10 @@ buildAndRegisterUnpackedPackage
           Nothing -> action Nothing
           Just logFile -> withFile logFile AppendMode (action . Just)
 
---------------------------------------------------------------------------------
-
--- * Build Inplace
-
---------------------------------------------------------------------------------
-
-buildInplaceUnpackedPackage
-  :: Verbosity
-  -> DistDirLayout
-  -> Maybe SemaphoreName
-  -> BuildTimeSettings
-  -> Lock
-  -> Lock
-  -> ElaboratedSharedConfig
-  -> ElaboratedInstallPlan
-  -> ElaboratedReadyPackage
-  -> BuildStatusRebuild
-  -> SymbolicPath CWD (Dir Pkg)
-  -> SymbolicPath Pkg (Dir Dist)
-  -> IO BuildResult
-buildInplaceUnpackedPackage
-  verbosity
-  distDirLayout@DistDirLayout
-    { distPackageCacheDirectory
-    , distDirectory
-    , distHaddockOutputDir
-    }
-  maybe_semaphore
-  buildSettings@BuildTimeSettings{buildSettingHaddockOpen}
-  registerLock
-  cacheLock
-  pkgshared
-  plan
-  rpkg@(ReadyPackage pkg)
-  buildStatus
-  srcdir
-  builddir = do
-    -- TODO: [code cleanup] there is duplication between the
-    --      distdirlayout and the builddir here builddir is not
-    --      enough, we also need the per-package cachedir
-    createDirectoryIfMissingVerbose verbosity True $ interpretSymbolicPath (Just srcdir) builddir
-    createDirectoryIfMissingVerbose
-      verbosity
-      True
-      (distPackageCacheDirectory dparams)
-
-    let docsResult = DocsNotTried
-        testsResult = TestsNotTried
-
-        buildResult :: BuildResultMisc
-        buildResult = (docsResult, testsResult)
-
-    buildAndRegisterUnpackedPackage
-      verbosity
-      distDirLayout
-      maybe_semaphore
-      buildSettings
-      registerLock
-      cacheLock
-      pkgshared
-      plan
-      rpkg
-      srcdir
-      builddir
-      Nothing -- no log file for inplace builds!
-      $ \case
-        PBConfigurePhase{runConfigure} -> do
-          whenReConfigure $ do
-            runConfigure
-            invalidatePackageRegFileMonitor packageFileMonitor
-            updatePackageConfigFileMonitor packageFileMonitor (getSymbolicPath srcdir) pkg
-        PBBuildPhase{runBuild} -> do
-          whenRebuild $ do
-            timestamp <- beginUpdateFileMonitor
-            runBuild
-              -- Be sure to invalidate the cache if building throws an exception!
-              -- If not, we'll abort execution with a stale recompilation cache.
-              -- See ghc#24926 for an example of how this can go wrong.
-              `onException` invalidatePackageRegFileMonitor packageFileMonitor
-
-            let listSimple =
-                  execRebuild (getSymbolicPath srcdir) (needElaboratedConfiguredPackage pkg)
-                listSdist =
-                  fmap (map monitorFileHashed) $
-                    allPackageSourceFiles verbosity (getSymbolicPath srcdir)
-                ifNullThen m m' = do
-                  xs <- m
-                  if null xs then m' else return xs
-            monitors <- case PD.buildType (elabPkgDescription pkg) of
-              Simple -> listSimple
-              -- If a Custom setup was used, AND the Cabal is recent
-              -- enough to have sdist --list-sources, use that to
-              -- determine the files that we need to track.  This can
-              -- cause unnecessary rebuilding (for example, if README
-              -- is edited, we will try to rebuild) but there isn't
-              -- a more accurate Custom interface we can use to get
-              -- this info.  We prefer not to use listSimple here
-              -- as it can miss extra source files that are considered
-              -- by the Custom setup.
-              _
-                | elabSetupScriptCliVersion pkg >= mkVersion [1, 17] ->
-                    -- However, sometimes sdist --list-sources will fail
-                    -- and return an empty list.  In that case, fall
-                    -- back on the (inaccurate) simple tracking.
-                    listSdist `ifNullThen` listSimple
-                | otherwise ->
-                    listSimple
-
-            let dep_monitors =
-                  map monitorFileHashed $
-                    elabInplaceDependencyBuildCacheFiles
-                      distDirLayout
-                      plan
-                      pkg
-            updatePackageBuildFileMonitor
-              packageFileMonitor
-              (getSymbolicPath srcdir)
-              timestamp
-              pkg
-              buildStatus
-              (monitors ++ dep_monitors)
-              buildResult
-        PBHaddockPhase{runHaddock} -> do
-          runHaddock
-          let haddockTarget = elabHaddockForHackage pkg
-          when (haddockTarget == Cabal.ForHackage) $ do
-            let dest = distDirectory </> name <.> "tar.gz"
-                name = haddockDirName haddockTarget (elabPkgDescription pkg)
-                docDir =
-                  distBuildDirectory distDirLayout dparams
-                    </> "doc"
-                    </> "html"
-            Tar.createTarGzFile dest docDir name
-            notice verbosity $ "Documentation tarball created: " ++ dest
-
-          when (buildSettingHaddockOpen && haddockTarget /= Cabal.ForHackage) $ do
-            let dest = docDir </> "index.html"
-                name = haddockDirName haddockTarget (elabPkgDescription pkg)
-                docDir = case distHaddockOutputDir of
-                  Nothing -> distBuildDirectory distDirLayout dparams </> "doc" </> "html" </> name
-                  Just dir -> dir
-            catch
-              (void $ openBrowser dest)
-              ( \(_ :: ErrorCall) ->
-                  dieWithException verbosity $
-                    FindOpenProgramLocationErr $
-                      "Unsupported OS: " <> show os
-              )
-        PBInstallPhase{runCopy = _runCopy, runRegister} -> do
-          -- PURPOSELY omitted: no copy!
-
-          whenReRegister $ do
-            -- Register locally
-            mipkg <-
-              if elabRequiresRegistration pkg
-                then do
-                  ipkg <-
-                    runRegister
-                      (elabRegisterPackageDBStack pkg)
-                      Cabal.defaultRegisterOptions
-                  return (Just ipkg)
-                else return Nothing
-
-            updatePackageRegFileMonitor packageFileMonitor (getSymbolicPath srcdir) mipkg
-        PBTestPhase{runTest} -> runTest
-        PBBenchPhase{runBench} -> runBench
-        PBReplPhase{runRepl} -> runRepl
-
-    return
-      BuildResult
-        { buildResultDocs = docsResult
-        , buildResultTests = testsResult
-        , buildResultLogFile = Nothing
-        }
-    where
-      dparams = elabDistDirParams pkg
-
-      Toolchain{toolchainPlatform = Platform _ os} = elabToolchain pkg
-
-      packageFileMonitor = newPackageFileMonitor distDirLayout dparams
-
-      whenReConfigure action = case buildStatus of
-        BuildStatusConfigure _ -> action
-        _ -> return ()
-
-      whenRebuild action
-        | null (elabBuildTargets pkg)
-        , -- NB: we have to build the test/bench suite!
-          null (elabTestTargets pkg)
-        , null (elabBenchTargets pkg) =
-            return ()
-        | otherwise = action
-
-      whenReRegister action =
-        case buildStatus of
-          -- We registered the package already
-          BuildStatusBuild (Just _) _ ->
-            info verbosity "whenReRegister: previously registered"
-          -- There is nothing to register
-          BuildStatusBuild Nothing _ ->
-            info verbosity "whenReRegister: nothing to register, we know it!"
-          BuildStatusConfigure _reason
-            | null (elabBuildTargets pkg) ->
-                info verbosity "whenReRegister: nothing to register, it seems ..."
-            | otherwise -> action
-
---------------------------------------------------------------------------------
-
--- * Build and Install
-
---------------------------------------------------------------------------------
 
 buildAndInstallUnpackedPackage
   :: Verbosity
   -> DistDirLayout
-  -> StoreDirLayout
   -> Maybe SemaphoreName
   -- ^ Whether to pass a semaphore to build process
   -- this is different to BuildTimeSettings because the
@@ -651,7 +405,6 @@ buildAndInstallUnpackedPackage
   -> Lock
   -> Lock
   -> ElaboratedSharedConfig
-  -> ElaboratedInstallPlan
   -> ElaboratedReadyPackage
   -> SymbolicPath CWD (Dir Pkg)
   -> SymbolicPath Pkg (Dir Dist)
@@ -659,13 +412,11 @@ buildAndInstallUnpackedPackage
 buildAndInstallUnpackedPackage
   verbosity
   distDirLayout
-  storeDirLayout
   maybe_semaphore
   buildSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingLogFile}
   registerLock
   cacheLock
   pkgshared
-  plan
   rpkg@(ReadyPackage pkg)
   srcdir
   builddir = do
@@ -692,7 +443,6 @@ buildAndInstallUnpackedPackage
       registerLock
       cacheLock
       pkgshared
-      plan
       rpkg
       srcdir
       builddir
@@ -710,29 +460,34 @@ buildAndInstallUnpackedPackage
         PBInstallPhase{runCopy, runRegister} -> do
           noticeProgress ProgressInstalling
 
-          let registerPkg
-                | not (elabRequiresRegistration pkg) =
-                    debug verbosity $
-                      "registerPkg: elab does NOT require registration for "
-                        ++ prettyShow uid
-                | otherwise =
-                    void $ runRegister
-                        (elabRegisterPackageDBStack pkg)
-                        Cabal.defaultRegisterOptions
-                          { Cabal.registerMultiInstance = True
-                          , Cabal.registerSuppressFilesCheck = True
-                          }
+          let storeDirLayout = distStoreDirLayout distDirLayout
+              storeFile = storeDirectory storeDirLayout (elabStage pkg) (elabToolchain pkg)
+              finalEntryDir = storePackageDirectory storeDirLayout (elabStage pkg) (elabToolchain pkg) uid
+              incomingDir = storeIncomingDirectory storeDirLayout (elabStage pkg) (elabToolchain pkg)
 
-          -- Actual installation
-          void $
-            newStoreEntry
-              verbosity
-              storeDirLayout
-              (elabStage pkg)
-              (elabToolchain pkg)
-              uid
-              (copyPkgFiles verbosity pkg runCopy)
-              registerPkg
+          withTempDirectory verbosity incomingDir "new"  $ \incomingTmpDir -> do
+            -- Write all store entry files within the temp dir and return the prefix.
+            (incomingEntryDir, otherFiles) <- copyPkgFiles verbosity pkg runCopy incomingTmpDir
+
+            if elabRequiresRegistration pkg then
+              void $ runRegister
+                  (elabRegisterPackageDBStack pkg)
+                  Cabal.defaultRegisterOptions
+                    { Cabal.registerMultiInstance = True
+                    , Cabal.registerSuppressFilesCheck = True
+                    }
+            else
+              info verbosity $ "registerPkg: elab does NOT require registration for " ++ prettyShow uid
+
+            removeDirectoryRecursive finalEntryDir `catch` \(_ :: IOException) ->
+              return () -- ignore all IO exceptions, likely the dir did not exist
+
+            renameDirectory incomingEntryDir finalEntryDir
+            
+            for_ otherFiles $ \file -> do
+              let finalStoreFile = storeFile </> makeRelative (normalise (incomingTmpDir </> dropDrive storeFile)) file
+              createDirectoryIfMissing True (takeDirectory finalStoreFile)
+              renameFile file finalStoreFile
 
         -- No tests on install
         PBTestPhase{} -> return ()
@@ -830,18 +585,21 @@ copyPkgFiles verbosity pkg runCopy tmpDir = do
   -- https://github.com/haskell/cabal/issues/4130
   createDirectoryIfMissingVerbose verbosity True entryDir
 
-  let hashFileName = entryDir </> "cabal-hash.txt"
-      outPkgHashInputs = renderPackageHashInputs (packageHashInputs pkg)
+  case elabPkgSourceHash pkg of
+    Nothing -> return ()
+    Just srchash -> do
+      let hashFileName = entryDir </> "cabal-hash.txt"
+          outPkgHashInputs = renderPackageHashInputs (packageHashInputs srchash pkg)
 
-  info verbosity $
-    "creating file with the inputs used to compute the package hash: " ++ hashFileName
+      info verbosity $
+        "creating file with the inputs used to compute the package hash: " ++ hashFileName
 
-  LBS.writeFile hashFileName outPkgHashInputs
+      LBS.writeFile hashFileName outPkgHashInputs
 
-  debug verbosity "Package hash inputs:"
-  traverse_
-    (debug verbosity . ("> " ++))
-    (lines $ LBS.Char8.unpack outPkgHashInputs)
+      debug verbosity "Package hash inputs:"
+      traverse_
+        (debug verbosity . ("> " ++))
+        (lines $ LBS.Char8.unpack outPkgHashInputs)
 
   -- Ensure that there are no files in `tmpDir`, that are
   -- not in `entryDir`. While this breaks the

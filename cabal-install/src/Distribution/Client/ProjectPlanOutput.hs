@@ -41,8 +41,7 @@ import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import Distribution.Package
 import qualified Distribution.PackageDescription as PD
 import Distribution.Simple.BuildPaths
-  ( buildInfoPref
-  , dllExtension
+  ( dllExtension
   , exeExtension
   )
 import Distribution.Simple.Compiler
@@ -55,13 +54,6 @@ import Distribution.Simple.GHC
   )
 import Distribution.Simple.Utils
 import Distribution.System
-import Distribution.Types.Version
-  ( mkVersion
-  )
-import Distribution.Utils.Path hiding
-  ( (<.>)
-  , (</>)
-  )
 import Distribution.Verbosity
 
 import Distribution.Client.Compat.Prelude
@@ -103,7 +95,7 @@ writePlanExternalRepresentation
 -- | Renders a subset of the elaborated install plan in a semi-stable JSON
 -- format.
 encodePlanAsJson :: DistDirLayout -> ElaboratedInstallPlan -> ElaboratedSharedConfig -> J.Value
-encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
+encodePlanAsJson _distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
   -- TODO: [nice to have] include all of the sharedPackageConfig and all of
   --      the parts of the elaboratedInstallPlan
   J.object $
@@ -175,7 +167,6 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               [ PD.unFlagName fn J..= v
               | (fn, v) <- PD.unFlagAssignment (elabFlagAssignment elab)
               ]
-        , "style" J..= J.String (style2str (elabLocalToProject elab) (elabBuildStyle elab))
         , "pkg-src" J..= packageLocationToJ (elabPkgSourceLocation elab)
         ]
           ++ [ "pkg-cabal-sha256" J..= J.String (showHashValue hash)
@@ -184,13 +175,6 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
           ++ [ "pkg-src-sha256" J..= J.String (showHashValue hash)
              | Just hash <- [elabPkgSourceHash elab]
              ]
-          ++ ( case elabBuildStyle elab of
-                BuildInplaceOnly{} ->
-                  ["dist-dir" J..= J.String dist_dir] ++ [buildInfoFileLocation]
-                BuildAndInstall ->
-                  -- TODO: install dirs?
-                  []
-             )
           ++ case elabPkgOrComp elab of
             ElabPackage pkg ->
               let components =
@@ -216,21 +200,8 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               ]
                 ++ bin_file (compSolverName comp)
       where
-        Toolchain{toolchainPlatform = plat} = elabToolchain elab
-
-        -- \| Only add build-info file location if the Setup.hs CLI
-        -- is recent enough to be able to generate build info files.
-        -- Otherwise, write 'null'.
-        --
-        -- Consumers of `plan.json` can use the nullability of this file location
-        -- to indicate that the given component uses `build-type: Custom`
-        -- with an old lib:Cabal version.
-        buildInfoFileLocation :: J.Pair
-        buildInfoFileLocation
-          | elabSetupScriptCliVersion elab < mkVersion [3, 7, 0, 0] =
-              "build-info" J..= J.Null
-          | otherwise =
-              "build-info" J..= J.String (getSymbolicPath $ buildInfoPref $ makeSymbolicPath dist_dir)
+        Toolchain{toolchainPlatform = plat} =
+          Stage.getStage toolchains (elabStage elab)
 
         packageLocationToJ :: PackageLocation (Maybe FilePath) -> J.Value
         packageLocationToJ pkgloc =
@@ -291,9 +262,6 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               , "subdir" J..= fmap J.String srpSubdir
               ]
 
-        dist_dir :: FilePath
-        dist_dir = distBuildDirectory distDirLayout (elabDistDirParams elab)
-
         bin_file :: ComponentDeps.Component -> [J.Pair]
         bin_file c = case c of
           ComponentDeps.ComponentExe s -> bin_file' s
@@ -304,28 +272,16 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
         bin_file' s =
           ["bin-file" J..= J.String bin]
           where
-            bin =
-              if isInplaceBuildStyle (elabBuildStyle elab)
-                then dist_dir </> "build" </> prettyShow s </> prettyShow s <.> exeExtension plat
-                else InstallDirs.bindir (elabInstallDirs elab) </> prettyShow s <.> exeExtension plat
+            bin = InstallDirs.bindir (elabInstallDirs elab) </> prettyShow s <.> exeExtension plat
 
         flib_file' :: (Pretty a, Show a) => a -> [J.Pair]
         flib_file' s =
           ["bin-file" J..= J.String bin]
           where
-            bin =
-              if isInplaceBuildStyle (elabBuildStyle elab)
-                then dist_dir </> "build" </> prettyShow s </> ("lib" ++ prettyShow s) <.> dllExtension plat
-                else InstallDirs.bindir (elabInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
+            bin = InstallDirs.bindir (elabInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
 
     comp2str :: ComponentDeps.Component -> String
     comp2str = prettyShow
-
-    style2str :: Bool -> BuildStyle -> String
-    style2str True _ = "local"
-    style2str False (BuildInplaceOnly OnDisk) = "inplace"
-    style2str False (BuildInplaceOnly InMemory) = "interactive"
-    style2str False BuildAndInstall = "global"
 
     jdisplay :: Pretty a => a -> J.Value
     jdisplay = J.String . prettyShow
@@ -519,6 +475,7 @@ data PostBuildProjectStatus = PostBuildProjectStatus
   -- ^ As a convenience for 'Set.intersection' with any of the other
   -- 'PackageIdSet's to select only packages that are being built
   -- in-place within the project (i.e. not destined for the store).
+  -- FIXME: remove the refence to "inplace"
   , packagesAlreadyInStore :: PackageIdSet
   -- ^ As a convenience for 'Set.intersection' or 'Set.difference' with
   -- any of the other 'PackageIdSet's to select only packages that were
@@ -678,7 +635,7 @@ postBuildProjectStatus
           case pkg of
             InstallPlan.PreExisting _ -> False
             InstallPlan.Installed _ -> False
-            InstallPlan.Configured srcpkg -> elabLocalToProject srcpkg
+            InstallPlan.Configured elab -> elabIsSourcePackage elab
 
       packagesBuildInplace :: Set (WithStage UnitId)
       packagesBuildInplace =
@@ -686,7 +643,7 @@ postBuildProjectStatus
           case pkg of
             InstallPlan.PreExisting _ -> False
             InstallPlan.Installed _ -> False
-            InstallPlan.Configured srcpkg -> isInplaceBuildStyle (elabBuildStyle srcpkg)
+            InstallPlan.Configured elab -> elabIsSourcePackageClosure elab
 
       packagesAlreadyInStore :: Set (WithStage UnitId)
       packagesAlreadyInStore =
@@ -1010,11 +967,12 @@ selectGhcEnvironmentFilePackageDbs elaboratedInstallPlan =
     -- this feature, e.g. write out multiple env files, one for each
     -- compiler / project profile.
 
+    -- FIXME
     inplacePackages :: [ElaboratedConfiguredPackage]
     inplacePackages =
       [ srcpkg
       | srcpkg <- sourcePackages
-      , isInplaceBuildStyle (elabBuildStyle srcpkg)
+      , elabIsSourcePackageClosure srcpkg
       ]
 
     sourcePackages :: [ElaboratedConfiguredPackage]
