@@ -10,6 +10,7 @@ module Distribution.Client.Toolchain
   , configToolchains
   , module Distribution.Solver.Types.Stage
   , module Distribution.Solver.Types.Toolchain
+  , configToolchainExSafe
   )
 where
 
@@ -120,3 +121,25 @@ configCompilerExSafe verbosity hcFlavor hcPath hcPkg progdb = do
   -- I think this should be fixed in configCompilerExAux or even configCompilerEx
   progdb'' <- configureAllKnownPrograms verbosity progdb'
   return (compiler, platform, progdb'')
+
+configToolchainExSafe
+  :: Verbosity
+  -> Maybe CompilerFlavor
+  -> Maybe FilePath
+  -> Maybe FilePath
+  -> ProgramDb
+  -> IO Toolchain
+configToolchainExSafe verbosity hcFlavor hcPath hcPkg progdb = do
+  (toolchainCompiler, toolchainPlatform, progdb') <-
+    configCompilerEx
+      hcFlavor
+      hcPath
+      hcPkg
+      progdb
+      verbosity
+
+  -- TODO: Redesign ProgramDB API to prevent such problems as #2241 in the future.
+  -- I think this should be fixed in configCompilerExAux or even configCompilerEx
+  toolchainProgramDb <- configureAllKnownPrograms verbosity progdb'
+  let toolchainPackageDBs = []
+  return Toolchain{..}

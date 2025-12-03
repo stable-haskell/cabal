@@ -253,7 +253,7 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags'} cliTargetStrings globalF
         let Toolchain{..} = getStage toolchains Host
         compilerProg <- requireCompilerProg verbosity toolchainCompiler
         (configuredCompilerProg, _) <- requireProgram verbosity compilerProg toolchainProgramDb
-        pure $ Just $ mkCompilerInfo configuredCompilerProg toolchainCompiler (cabalStoreDirLayout $ cabalDirLayout baseCtx)
+        pure $ Just $ mkCompilerInfo configuredCompilerProg Host (getStage toolchains Host) (cabalStoreDirLayout $ cabalDirLayout baseCtx)
 
   paths <- for (fromFlagOrDefault [] $ pathDirectories pathFlags) $ \p -> do
     t <- getPathLocation verbosity baseCtx p
@@ -328,14 +328,14 @@ data PathCompilerInfo = PathCompilerInfo
   }
   deriving (Show, Eq, Ord)
 
-mkCompilerInfo :: ConfiguredProgram -> Compiler -> StoreDirLayout -> PathCompilerInfo
-mkCompilerInfo compilerProgram compiler storeLayout =
+mkCompilerInfo :: ConfiguredProgram -> Stage -> Toolchain -> StoreDirLayout -> PathCompilerInfo
+mkCompilerInfo compilerProgram stage toolchain@Toolchain{toolchainCompiler = compiler} storeLayout =
   PathCompilerInfo
     { pathCompilerInfoFlavour = compilerFlavor compiler
     , pathCompilerInfoId = compilerId compiler
     , pathCompilerInfoAbiTag = showCompilerIdWithAbi compiler
     , pathCompilerInfoPath = programPath compilerProgram
-    , pathCompilerInfoStorePath = storeDirectory storeLayout compiler
+    , pathCompilerInfoStorePath = storeDirectory storeLayout stage toolchain
     }
 
 -- ----------------------------------------------------------------------------
