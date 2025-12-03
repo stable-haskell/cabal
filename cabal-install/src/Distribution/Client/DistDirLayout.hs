@@ -33,7 +33,7 @@ import Distribution.Client.Config
   ( defaultLogsDir
   , defaultStoreDir
   )
-import Distribution.Client.Toolchain (Stage)
+import Distribution.Client.Toolchain (Stage, Toolchain (..))
 import Distribution.Compiler
 import Distribution.Package
   ( ComponentId
@@ -42,8 +42,7 @@ import Distribution.Package
   , UnitId
   )
 import Distribution.Simple.Compiler
-  ( Compiler (..)
-  , OptimisationLevel (..)
+  ( OptimisationLevel (..)
   , PackageDBCWD
   , PackageDBX (..), showCompilerIdWithAbi
   )
@@ -118,12 +117,12 @@ data DistDirLayout = DistDirLayout
 
 -- | The layout of a cabal nix-style store.
 data StoreDirLayout = StoreDirLayout
-  { storeDirectory :: Compiler -> FilePath
-  , storePackageDirectory :: Compiler -> UnitId -> FilePath
-  , storePackageDBPath :: Compiler -> FilePath
-  , storePackageDB :: Compiler -> PackageDBCWD
-  , storeIncomingDirectory :: Compiler -> FilePath
-  , storeIncomingLock :: Compiler -> UnitId -> FilePath
+  { storeDirectory :: Stage -> Toolchain -> FilePath
+  , storePackageDirectory :: Stage -> Toolchain -> UnitId -> FilePath
+  , storePackageDBPath :: Stage -> Toolchain -> FilePath
+  , storePackageDB :: Stage -> Toolchain -> PackageDBCWD
+  , storeIncomingDirectory :: Stage -> Toolchain -> FilePath
+  , storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
   }
 
 -- TODO: move to another module, e.g. CabalDirLayout?
@@ -248,29 +247,32 @@ defaultStoreDirLayout :: FilePath -> StoreDirLayout
 defaultStoreDirLayout storeRoot =
   StoreDirLayout{..}
   where
-    storeDirectory :: Compiler -> FilePath
-    storeDirectory compiler =
-      storeRoot </> showCompilerIdWithAbi compiler
+    storeDirectory :: Stage -> Toolchain -> FilePath
+    storeDirectory stage toolchain =
+      storeRoot
+        </> prettyShow stage
+        </> prettyShow (toolchainPlatform toolchain)
+        </> showCompilerIdWithAbi (toolchainCompiler toolchain)
 
-    storePackageDirectory :: Compiler -> UnitId -> FilePath
-    storePackageDirectory compiler ipkgid =
-      storeDirectory compiler </> prettyShow ipkgid
+    storePackageDirectory :: Stage -> Toolchain -> UnitId -> FilePath
+    storePackageDirectory stage toolchain ipkgid =
+      storeDirectory stage toolchain </> prettyShow ipkgid
 
-    storePackageDBPath :: Compiler -> FilePath
-    storePackageDBPath compiler =
-      storeDirectory compiler </> "package.conf.d"
+    storePackageDBPath :: Stage -> Toolchain -> FilePath
+    storePackageDBPath stage toolchain =
+      storeDirectory stage toolchain </> "package.conf.d"
 
-    storePackageDB :: Compiler -> PackageDBCWD
-    storePackageDB compiler =
-      SpecificPackageDB (storePackageDBPath compiler)
+    storePackageDB :: Stage -> Toolchain -> PackageDBCWD
+    storePackageDB stage toolchain =
+      SpecificPackageDB (storePackageDBPath stage toolchain)
 
-    storeIncomingDirectory :: Compiler -> FilePath
-    storeIncomingDirectory compiler =
-      storeDirectory compiler </> "incoming"
+    storeIncomingDirectory :: Stage -> Toolchain -> FilePath
+    storeIncomingDirectory stage toolchain =
+      storeDirectory stage toolchain
 
-    storeIncomingLock :: Compiler -> UnitId -> FilePath
-    storeIncomingLock compiler unitid =
-      storeIncomingDirectory compiler </> prettyShow unitid <.> "lock"
+    storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
+    storeIncomingLock stage toolchain unitid =
+      storeIncomingDirectory stage toolchain </> prettyShow unitid <.> "lock"
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

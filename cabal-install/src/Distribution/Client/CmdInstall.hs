@@ -94,6 +94,8 @@ import Distribution.Client.ProjectPlanning
   ( ElaboratedInstallPlan
   , ElaboratedPlanPackage
   , Stage (..)
+  , Toolchain (..)
+  , configToolchainExSafe
   , storePackageInstallDirs'
   )
 import Distribution.Client.RebuildMonad
@@ -139,8 +141,7 @@ import Distribution.Simple.Compiler
   , PackageDBX (..)
   )
 import Distribution.Simple.Configure
-  ( configCompilerEx
-  , interpretPackageDbFlags
+  ( interpretPackageDbFlags
   )
 import Distribution.Simple.Flag
   ( flagElim
@@ -275,8 +276,8 @@ data InstallCfg = InstallCfg
   { verbosity :: Verbosity
   , baseCtx :: ProjectBaseContext
   , buildCtx :: ProjectBuildContext
-  , platform :: Platform
-  , compiler :: Compiler
+  , stage :: Stage
+  , toolchain :: Toolchain
   , installConfigFlags :: ConfigFlags
   , installClientFlags :: ClientInstallFlags
   }
@@ -450,17 +451,15 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
         $ configProgDb
 
   -- progDb is a program database with compiler tools configured properly
-  (compiler@Compiler{compilerId = CompilerId compilerFlavor compilerVersion}, platform, progDb) <-
-    configCompilerEx hcFlavor hcPath hcPkg preProgDb verbosity
+  toolchain@Toolchain{..} <- configToolchainExSafe verbosity hcFlavor hcPath hcPkg preProgDb
+  let Compiler{compilerId = CompilerId compilerFlavor compilerVersion} = toolchainCompiler
+      GhcImplInfo{supportsPkgEnvFiles} = getImplInfo toolchainCompiler
 
-  let
-    GhcImplInfo{supportsPkgEnvFiles} = getImplInfo compiler
-
-  (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags platform compilerVersion
+  (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags toolchainPlatform compilerVersion
   (usedExistingPkgEnvFile, existingEnvEntries) <-
     getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile
-  packageDbs <- getPackageDbStack compiler projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
-  installedIndex <- getInstalledPackages verbosity compiler packageDbs progDb
+  packageDbs <- getPackageDbStack Host toolchain projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
+  installedIndex <- getInstalledPackages verbosity toolchainCompiler packageDbs toolchainProgramDb
 
   let
     (envSpecs, nonGlobalEnvEntries) =
@@ -520,7 +519,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
     buildCtx <- constructProjectBuildContext verbosity (baseCtx{installedPackages = Just installedIndex'}) targetSelectors
 
     printPlan verbosity baseCtx buildCtx
-    let installCfg = InstallCfg verbosity baseCtx buildCtx platform compiler configFlags clientInstallFlags
+    let installCfg = InstallCfg verbosity baseCtx buildCtx Host toolchain configFlags clientInstallFlags
 
     let
       dryRun =
@@ -544,7 +543,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
             verbosity
             buildCtx
             installedIndex
-            compiler
+            toolchainCompiler
             packageDbs
             envFile
             nonGlobalEnvEntries'
@@ -924,7 +923,7 @@ constructProjectBuildContext verbosity baseCtx targetSelectors = do
 -- actually perform its installation.
 prepareExeInstall :: InstallCfg -> IO InstallExe
 prepareExeInstall
-  InstallCfg{verbosity, baseCtx, buildCtx, platform, compiler, installConfigFlags, installClientFlags} = do
+  InstallCfg{verbosity, baseCtx, buildCtx, stage, toolchain, installConfigFlags, installClientFlags} = do
     installPath <- defaultInstallPath
     let storeDirLayout = cabalStoreDirLayout $ cabalDirLayout baseCtx
 
@@ -934,13 +933,13 @@ prepareExeInstall
         mkUnitBinDir :: UnitId -> FilePath
         mkUnitBinDir =
           InstallDirs.bindir
-            . storePackageInstallDirs' storeDirLayout compiler
+            . storePackageInstallDirs' storeDirLayout stage toolchain
 
         mkExeName :: UnqualComponentName -> FilePath
-        mkExeName exe = unUnqualComponentName exe <.> exeExtension platform
+        mkExeName exe = unUnqualComponentName exe <.> exeExtension (toolchainPlatform toolchain)
 
         mkFinalExeName :: UnqualComponentName -> FilePath
-        mkFinalExeName exe = prefix <> unUnqualComponentName exe <> suffix <.> exeExtension platform
+        mkFinalExeName exe = prefix <> unUnqualComponentName exe <> suffix <.> exeExtension (toolchainPlatform toolchain)
         installdirUnknown =
           "installdir is not defined. Set it in your cabal config file "
             ++ "or use --installdir=<path>. Using default installdir: "
@@ -1347,17 +1346,18 @@ getLocalEnv dir platform compilerVersion =
     <> ghcPlatformAndVersionString platform compilerVersion
 
 getPackageDbStack
-  :: Compiler
+  :: Stage
+  -> Toolchain
   -> Flag FilePath
   -> Flag FilePath
   -> [Maybe PackageDBCWD]
   -> IO PackageDBStackCWD
-getPackageDbStack compiler storeDirFlag logsDirFlag packageDbs = do
+getPackageDbStack stage toolchain storeDirFlag logsDirFlag packageDbs = do
   mstoreDir <- traverse makeAbsolute $ flagToMaybe storeDirFlag
   let
     mlogsDir = flagToMaybe logsDirFlag
   cabalLayout <- mkCabalDirLayout mstoreDir mlogsDir
-  let storePackageDBStack = interpretPackageDbFlags False packageDbs ++ [storePackageDB (cabalStoreDirLayout cabalLayout) compiler]
+  let storePackageDBStack = interpretPackageDbFlags False packageDbs ++ [storePackageDB (cabalStoreDirLayout cabalLayout) stage toolchain]
   pure storePackageDBStack
 
 -- | This defines what a 'TargetSelector' means for the @bench@ command.
