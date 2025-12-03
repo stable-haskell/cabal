@@ -36,18 +36,15 @@ import Distribution.Client.Config
 import Distribution.Client.Toolchain (Stage, Toolchain (..))
 import Distribution.Compiler
 import Distribution.Package
-  ( ComponentId
-  , PackageId
+  ( PackageId
   , PackageIdentifier
   , UnitId
   )
 import Distribution.Simple.Compiler
-  ( OptimisationLevel (..)
-  , PackageDBCWD
-  , PackageDBX (..), showCompilerIdWithAbi
+  ( PackageDBCWD
+  , PackageDBX (..)
+  , showCompilerIdWithAbi
   )
-import Distribution.System
-import Distribution.Types.ComponentName
 
 -- | Information which can be used to construct the path to
 -- the build directory of a build.  This is LESS fine-grained
@@ -56,16 +53,8 @@ import Distribution.Types.ComponentName
 -- the user, say, adds a dependency to their project.
 data DistDirParams = DistDirParams
   { distParamStage :: Stage
+  , distParamToolchain :: Toolchain
   , distParamUnitId :: UnitId
-  , distParamPackageId :: PackageId
-  , distParamComponentId :: ComponentId
-  , distParamComponentName :: Maybe ComponentName
-  , distParamCompilerId :: CompilerId
-  , distParamPlatform :: Platform
-  , distParamOptimization :: OptimisationLevel
-  -- TODO (see #3343):
-  --  Flag assignments
-  --  Optimization
   }
 
 -- | The layout of the project state directory. Traditionally this has been
@@ -195,8 +184,8 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
     distBuildDirectory params =
       distBuildRootDirectory
         </> prettyShow (distParamStage params)
-        </> prettyShow (distParamPlatform params)
-        </> prettyShow (distParamCompilerId params)
+        </> prettyShow (toolchainPlatform (distParamToolchain params))
+        </> showCompilerIdWithAbi (toolchainCompiler (distParamToolchain params))
         </> prettyShow (distParamUnitId params)
 
     distUnpackedSrcRootDirectory :: FilePath
