@@ -565,16 +565,9 @@ elabDistDirParams :: ElaboratedConfiguredPackage -> DistDirParams
 elabDistDirParams elab =
   DistDirParams
     { distParamStage = elabStage elab
+    , distParamToolchain = elabToolchain elab
     , distParamUnitId = installedUnitId elab
-    , distParamComponentId = elabComponentId elab
-    , distParamPackageId = elabPkgSourceId elab
-    , distParamComponentName = case elabPkgOrComp elab of
-        ElabComponent comp -> compComponentName comp
-        ElabPackage _ -> Nothing
-    , distParamCompilerId = compilerId (toolchainCompiler (elabToolchain elab))
-    , distParamPlatform =  toolchainPlatform (elabToolchain elab)
-    , distParamOptimization = LBC.withOptimization $ elabBuildOptions elab
-    }  where
+    }
 
 --
 -- Order dependencies
