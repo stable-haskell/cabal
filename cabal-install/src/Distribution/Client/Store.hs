@@ -34,9 +34,6 @@ import Distribution.Simple.Utils
   , info
   , withTempDirectory
   )
-import Distribution.Verbosity
-  ( silent
-  )
 
 import Control.Exception
 import qualified Data.Set as Set
@@ -182,13 +179,14 @@ newStoreEntry
   copyFiles
   register =
     -- See $concurrency above for an explanation of the concurrency protocol
-
-    withTempIncomingDir storeDirLayout compiler $ \incomingTmpDir -> do
+    withTempDirectory verbosity incomingDir "new"  $ \incomingTmpDir -> do
       -- Write all store entry files within the temp dir and return the prefix.
       (incomingEntryDir, otherFiles) <- copyFiles incomingTmpDir
 
       -- Take a lock named after the 'UnitId' in question.
-      withIncomingUnitIdLock verbosity storeDirLayout compiler unitid $ do
+      let lockfile = storeIncomingLock compiler unitid
+          message = "Waiting to acquire the store lock for " ++ show unitid
+      withIncomingUnitIdLock verbosity lockfile message $ do
         -- Check for the existence of the final store entry directory.
         exists <- doesStoreEntryExist storeDirLayout compiler unitid
 
@@ -214,41 +212,32 @@ newStoreEntry
             return UseNewStoreEntry
     where
       finalEntryDir = storePackageDirectory compiler unitid
-
-withTempIncomingDir
-  :: StoreDirLayout
-  -> Compiler
-  -> (FilePath -> IO a)
-  -> IO a
-withTempIncomingDir StoreDirLayout{storeIncomingDirectory} compiler action = do
-  createDirectoryIfMissing True incomingDir
-  withTempDirectory silent incomingDir "new" action
-  where
-    incomingDir = storeIncomingDirectory compiler
+      incomingDir = storeIncomingDirectory compiler
 
 withIncomingUnitIdLock
   :: Verbosity
-  -> StoreDirLayout
-  -> Compiler
-  -> UnitId
+  -> FilePath
+  -> String
   -> IO a
   -> IO a
 withIncomingUnitIdLock
   verbosity
-  StoreDirLayout{storeIncomingLock}
-  compiler
-  unitid
+  lockfile
+  message
   action =
     bracket takeLock releaseLock (\_hnd -> action)
     where
       takeLock = do
-        h <- openFile (storeIncomingLock compiler unitid) ReadWriteMode
+        h <- openFile lockfile ReadWriteMode
         -- First try non-blocking, but if we would have to wait then
         -- log an explanation and do it again in blocking mode.
         gotlock <- hTryLock h ExclusiveLock
         unless gotlock $ do
-          info verbosity $ "Waiting for file lock on store entry " ++ prettyShow unitid
+          info verbosity message
           hLock h ExclusiveLock
         return h
 
-      releaseLock h = hUnlock h >> hClose h
+      releaseLock h = do
+        hUnlock h
+        hClose h
+        removeFile lockfile
