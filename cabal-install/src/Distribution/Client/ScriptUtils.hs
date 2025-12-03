@@ -49,8 +49,7 @@ import Distribution.Client.NixStyleOptions
   ( NixStyleFlags (..)
   )
 import Distribution.Client.ProjectConfig
-  ( PackageConfig (..)
-  , ProjectConfig (..)
+  ( ProjectConfig (..)
   , ProjectConfigShared (..)
   , projectConfigHttpTransport
   , reportParseResult
@@ -112,13 +111,8 @@ import Distribution.Parsec
   ( Position (..)
   )
 import qualified Distribution.SPDX.License as SPDX
-import Distribution.Simple.Compiler
-  ( Compiler (..)
-  , OptimisationLevel (..)
-  )
 import Distribution.Simple.Flag
   ( flagToMaybe
-  , fromFlagOrDefault
   )
 import Distribution.Simple.PackageDescription
   ( parseString
@@ -378,13 +372,13 @@ withContextAndSelectors verbosity noTargets kind flags@NixStyleFlags{..} targetS
           toolchains <-
             runRebuild projectRoot $ configureToolchains verbosity (distDirLayout baseCtx) (fst (ignoreConditions projectCfgSkeleton) <> projectConfig baseCtx)
 
-          let Toolchain{toolchainCompiler, toolchainPlatform = toolchainPlatform@(Platform arch os)} = getStage toolchains Host
+          let toolchain@Toolchain{toolchainCompiler, toolchainPlatform = Platform arch os} = getStage toolchains Host
 
           (projectCfg, _) <- instantiateProjectConfigSkeletonFetchingCompiler (pure (os, arch, toolchainCompiler)) mempty projectCfgSkeleton
 
           let ctx' = baseCtx & lProjectConfig %~ (<> projectCfg)
 
-              build_dir = distBuildDirectory (distDirLayout ctx') $ (scriptDistDirParams script) ctx' toolchainCompiler toolchainPlatform
+              build_dir = distBuildDirectory (distDirLayout ctx') $ scriptDistDirParams script toolchain
               exePath = build_dir </> "bin" </> scriptExeFileName script
               exePathRel = makeRelative (normalise projectRoot) exePath
 
@@ -424,22 +418,16 @@ scriptComponentName scriptPath = fromString cname
 scriptExeFileName :: FilePath -> FilePath
 scriptExeFileName scriptPath = "cabal-script-" ++ takeFileName scriptPath
 
-scriptDistDirParams :: FilePath -> ProjectBaseContext -> Compiler -> Platform -> DistDirParams
-scriptDistDirParams scriptPath ctx compiler platform =
+scriptDistDirParams :: FilePath -> Toolchain -> DistDirParams
+scriptDistDirParams scriptPath toolchain =
   DistDirParams
     { distParamStage = Host
+    , distParamToolchain = toolchain
     , distParamUnitId = newSimpleUnitId cid
-    , distParamPackageId = fakePackageId
-    , distParamComponentId = cid
-    , distParamComponentName = Just $ CExeName cn
-    , distParamCompilerId = compilerId compiler
-    , distParamPlatform = platform
-    , distParamOptimization = fromFlagOrDefault NormalOptimisation optimization
     }
   where
-    cn = scriptComponentName scriptPath
+    cn = scriptComponentName scriptPath :: UnqualComponentName
     cid = mkComponentId $ prettyShow fakePackageId <> "-inplace-" <> prettyShow cn
-    optimization = (packageConfigOptimization . projectConfigLocalPackages . projectConfig) ctx
 
 setExePath :: FilePath -> [String] -> [String]
 setExePath exePath options
