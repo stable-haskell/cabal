@@ -49,7 +49,6 @@ import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectConfig.Types
 import Distribution.Client.ProjectPlanning
-import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.Store
 
 import Distribution.Client.DistDirLayout
@@ -86,7 +85,7 @@ import qualified Data.Set as Set
 
 import qualified Text.PrettyPrint as Disp
 
-import Control.Exception (assert, handle)
+import Control.Exception (handle)
 import System.Directory (doesDirectoryExist, doesFileExist, renameDirectory)
 import System.FilePath (makeRelative, normalise, takeDirectory, (<.>), (</>))
 import System.Semaphore (SemaphoreName (..))
@@ -588,12 +587,7 @@ rebuildTarget
       rebuildPhase :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> IO BuildResult
       rebuildPhase buildStatus srcdir = do
         info verbosity $ "[rebuildPhase] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
-        assert
-          (isInplaceBuildStyle $ elabBuildStyle pkg)
-          buildInplace
-          buildStatus
-          srcdir
-          builddir
+        buildInplace buildStatus srcdir builddir
         where
           distdir = distBuildDirectory (elabDistDirParams sharedPackageConfig pkg)
           builddir =
