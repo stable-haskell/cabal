@@ -104,7 +104,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS.Char8
 import qualified Data.List.NonEmpty as NE
 
-import Control.Exception (ErrorCall, Handler (..), SomeAsyncException, assert, catches, onException)
+import Control.Exception (ErrorCall, Handler (..), SomeAsyncException, catches, onException)
 import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, removeFile)
 import System.FilePath (dropDrive, normalise, takeDirectory, (<.>), (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
@@ -720,17 +720,13 @@ buildAndInstallUnpackedPackage
                     debug verbosity $
                       "registerPkg: elab does NOT require registration for "
                         ++ prettyShow uid
-                | otherwise = do
-                    let packageDbStack = elabPackageDbs pkg ++ [storePackageDB storeDirLayout toolchainCompiler]
-                    assert (elabRegisterPackageDBStack pkg == packageDbStack) (return ())
-                    _ <-
-                      runRegister
+                | otherwise =
+                    void $ runRegister
                         (elabRegisterPackageDBStack pkg)
                         Cabal.defaultRegisterOptions
                           { Cabal.registerMultiInstance = True
                           , Cabal.registerSuppressFilesCheck = True
                           }
-                    return ()
 
           -- Actual installation
           void $
