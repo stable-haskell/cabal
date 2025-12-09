@@ -647,10 +647,8 @@ elabLibDependencies elab =
   -- building.
   map (\(cid, promised) -> (WithStage (elabStage elab) cid, promised)) $
     case elabPkgOrComp elab of
-      ElabPackage pkg ->
-        ordNub $ CD.nonSetupDeps (pkgLibDependencies pkg)
-      ElabComponent comp ->
-        compLibDependencies comp
+      ElabPackage pkg -> ordNub $ CD.nonSetupDeps (pkgLibDependencies pkg)
+      ElabComponent comp -> compLibDependencies comp
 
 -- | The executable dependencies (i.e., the executables we depend on);
 -- these are the executables we must add to the PATH before we invoke
@@ -668,9 +666,10 @@ elabExeDependencies elab =
 -- actually want to build something.)
 elabExeDependencyPaths :: ElaboratedConfiguredPackage -> [FilePath]
 elabExeDependencyPaths elab =
+  map snd $ 
   case elabPkgOrComp elab of
-    ElabPackage pkg -> ordNub $ map snd $ CD.nonSetupDeps (pkgExeDependencyPaths pkg)
-    ElabComponent comp -> map snd (compExeDependencyPaths comp)
+    ElabPackage pkg -> ordNub $ CD.nonSetupDeps (pkgExeDependencyPaths pkg)
+    ElabComponent comp -> compExeDependencyPaths comp
 
 elabPkgConfigDependencies :: ElaboratedConfiguredPackage -> [(PkgconfigName, Maybe PkgconfigVersion)]
 elabPkgConfigDependencies elab =
