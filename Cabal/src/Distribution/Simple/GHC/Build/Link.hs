@@ -496,7 +496,6 @@ linkExecutable linkerOpts (way, buildOpts) targetDir targetName runGhcProg lbi =
               ghcOptLinkNoHsMain = toFlag (ghcOptInputFiles baseOpts == mempty && ghcOptInputScripts baseOpts == mempty)
             }
 
-  -- Work around old GHCs not relinking in this
   -- situation, see #3294
   let target =
         targetDir </> makeRelativePathEx (exeTargetName (hostPlatform lbi) targetName)
