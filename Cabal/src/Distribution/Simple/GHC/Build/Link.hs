@@ -51,8 +51,6 @@ import Distribution.Version
 import System.Directory
   ( createDirectoryIfMissing
   , doesDirectoryExist
-  , doesFileExist
-  , removeFile
   , renameFile
   )
 import System.FilePath
@@ -507,16 +505,9 @@ linkExecutable linkerOpts (way, buildOpts) targetDir targetName runGhcProg lbi =
               -- assume there is a main function in another non-haskell object
               ghcOptLinkNoHsMain = toFlag (ghcOptInputFiles baseOpts == mempty && ghcOptInputScripts baseOpts == mempty)
             }
-      comp = compiler lbi
 
-  -- Work around old GHCs not relinking in this
   -- situation, see #3294
-  let target =
-        targetDir </> makeRelativePathEx (exeTargetName (hostPlatform lbi) targetName)
-  when (compilerVersion comp < mkVersion [7, 7]) $ do
-    let targetPath = interpretSymbolicPathLBI lbi target
-    e <- doesFileExist targetPath
-    when e (removeFile targetPath)
+  let target = targetDir </> makeRelativePathEx (exeTargetName (hostPlatform lbi) targetName)
   runGhcProg linkOpts{ghcOptOutputFile = toFlag target}
 
 -- | Link a foreign library component
