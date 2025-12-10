@@ -413,60 +413,53 @@ linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosi
 
   -- See doc/internal/bytecode-libraries.md for how the chosen companion
   -- way determines which .gbc files get packed into the .bytecodelib.
-  let
-    linkWay = \case
-      ProfWay -> do
-        Ar.createArLibArchive verbosity lbi profileLibFilePath profObjectFiles
-        when (withGHCiLib lbi) $ do
-          (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
-          Ld.combineObjectFiles
-            verbosity
-            lbi
-            ldProg
-            ghciProfLibFilePath
-            profObjectFiles
-      ProfDynWay -> do
-        runGhcProg $ ghcProfSharedLinkArgs profDynamicObjectFiles
-      DynWay -> do
-        runGhcProg $ ghcSharedLinkArgs dynamicObjectFiles
-        -- The .gbc files were built with DynWay if both are enabled.
-        when (withBytecodeLib lbi) $ do
-          bytecodeObjectFiles <- getObjBytecodeWayFiles DynWay
-          runGhcProg $ ghcBytecodeLinkArgs bytecodeObjectFiles
-      StaticWay -> do
-        when (withVanillaLib lbi) $ do
-          Ar.createArLibArchive verbosity lbi vanillaLibFilePath staticObjectFiles
+  -- ROMES: Why exactly branch on staticObjectFiles, rather than any other build
+  -- kind that we might have wanted instead?
+  -- This would be simpler by not adding every object to the invocation, and
+  -- rather using module names.
+  unless (null staticObjectFiles) $ do
+    let opts = ghcOptPackages (Internal.componentGhcOptions verbosity lbi libBi clbi buildTargetDir)
+    for_ (fromNubListR opts) $ \pkgOpts ->
+      info verbosity (show pkgOpts)
+    for_ wantedWays $ \way -> do
+      info verbosity ("Linking " ++ show way ++ " library...")
+      case way of
+        ProfWay -> do
+          Ar.createArLibArchive verbosity lbi profileLibFilePath profObjectFiles
           when (withGHCiLib lbi) $ do
             (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
             Ld.combineObjectFiles
               verbosity
               lbi
               ldProg
-              ghciLibFilePath
-              staticObjectFiles
-        when (withStaticLib lbi) $ do
-          runGhcProg $ ghcStaticLinkArgs staticObjectFiles
-        -- The .gbc files were built with `DynWay` if `DynWay` is enabled. Otherwise (this case),
-        -- the files are produced alongside `StaticWay`.
-        when (withBytecodeLib lbi && (DynWay `notElem` wantedWays)) $ do
-          bytecodeObjectFiles <- getObjBytecodeWayFiles StaticWay
-          runGhcProg $ ghcBytecodeLinkArgs bytecodeObjectFiles
-
-  -- ROMES: Why exactly branch on staticObjectFiles, rather than any other build
-  -- kind that we might have wanted instead?
-  -- This would be simpler by not adding every object to the invocation, and
-  -- rather using module names.
-  unless (null staticObjectFiles) $ do
-    info verbosity $
-      show $
-        ghcOptPackages $
-          Internal.componentGhcOptions
-            (verbosityLevel verbosity)
-            lbi
-            libBi
-            clbi
-            buildTargetDir
-    traverse_ linkWay wantedWays
+              ghciProfLibFilePath
+              profObjectFiles
+        ProfDynWay -> do
+          runGhcProg $ ghcProfSharedLinkArgs profDynamicObjectFiles
+        DynWay -> do
+          runGhcProg $ ghcSharedLinkArgs dynamicObjectFiles
+          -- The .gbc files were built with DynWay if both are enabled.
+          when (withBytecodeLib lbi) $ do
+            bytecodeObjectFiles <- getObjBytecodeWayFiles DynWay
+            runGhcProg $ ghcBytecodeLinkArgs bytecodeObjectFiles
+        StaticWay -> do
+          when (withVanillaLib lbi) $ do
+            Ar.createArLibArchive verbosity lbi vanillaLibFilePath staticObjectFiles
+            when (withGHCiLib lbi) $ do
+              (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
+              Ld.combineObjectFiles
+                verbosity
+                lbi
+                ldProg
+                ghciLibFilePath
+                staticObjectFiles
+          when (withStaticLib lbi) $ do
+            runGhcProg $ ghcStaticLinkArgs staticObjectFiles
+          -- The .gbc files were built with `DynWay` if `DynWay` is enabled. Otherwise (this case),
+          -- the files are produced alongside `StaticWay`.
+          when (withBytecodeLib lbi && (DynWay `notElem` wantedWays)) $ do
+            bytecodeObjectFiles <- getObjBytecodeWayFiles StaticWay
+            runGhcProg $ ghcBytecodeLinkArgs bytecodeObjectFiles
 
 -- | Link the executable resulting from building this component, be it an
 -- executable, test, or benchmark component.
