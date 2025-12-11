@@ -10,9 +10,6 @@ module Distribution.Solver.Modular.Package
   , PN
   , QPV
   , instI
-  , makeIndependent
-  , primaryPP
-  , setupPP
   , showI
   , showPI
   , unPN
@@ -26,6 +23,7 @@ import Distribution.Pretty (prettyShow)
 
 import Distribution.Solver.Modular.Version
 import Distribution.Solver.Types.PackagePath
+import Distribution.Solver.Types.Stage (Stage, showStage)
 
 -- | A package name.
 type PN = PackageName
@@ -48,22 +46,17 @@ type PId = UnitId
 -- package instance via its 'PId'.
 --
 -- TODO: More information is needed about the repo.
-data Loc = Inst PId | InRepo
+data Loc = Inst PId | InRepo PackageName
   deriving (Eq, Ord, Show)
 
 -- | Instance. A version number and a location.
-data I = I Ver Loc
+data I = I Stage Ver Loc
   deriving (Eq, Ord, Show)
 
 -- | String representation of an instance.
 showI :: I -> String
-showI (I v InRepo)   = showVer v
-showI (I v (Inst uid)) = showVer v ++ "/installed" ++ extractPackageAbiHash uid
-  where
-    extractPackageAbiHash xs =
-      case first reverse $ break (=='-') $ reverse (prettyShow xs) of
-        (ys, []) -> ys
-        (ys, _)  -> '-' : ys
+showI (I s v (InRepo pn)) = intercalate ":" [showStage s, "source", prettyShow (PackageIdentifier pn v)]
+showI (I s _v (Inst uid)) = intercalate ":" [showStage s, "installed", prettyShow uid]
 
 -- | Package instance. A package name and an instance.
 data PI qpn = PI qpn I
@@ -74,33 +67,5 @@ showPI :: PI QPN -> String
 showPI (PI qpn i) = showQPN qpn ++ "-" ++ showI i
 
 instI :: I -> Bool
-instI (I _ (Inst _)) = True
+instI (I _ _ (Inst _)) = True
 instI _              = False
-
--- | Is the package in the primary group of packages.  This is used to
--- determine (1) if we should try to establish stanza preferences
--- for this goal, and (2) whether or not a user specified @--constraint@
--- should apply to this dependency (grep 'primaryPP' to see the
--- use sites).  In particular this does not include packages pulled in
--- as setup deps.
---
-primaryPP :: PackagePath -> Bool
-primaryPP (PackagePath _ns q) = go q
-  where
-    go QualToplevel    = True
-    go (QualBase  _)   = True
-    go (QualSetup _)   = False
-    go (QualExe _ _)   = False
-
--- | Is the package a dependency of a setup script.  This is used to
--- establish whether or not certain constraints should apply to this
--- dependency (grep 'setupPP' to see the use sites).
---
-setupPP :: PackagePath -> Bool
-setupPP (PackagePath _ns (QualSetup _)) = True
-setupPP (PackagePath _ns _)         = False
-
--- | Qualify a target package with its own name so that its dependencies are not
--- required to be consistent with other targets.
-makeIndependent :: PN -> QPN
-makeIndependent pn = Q (PackagePath (Independent pn) QualToplevel) pn

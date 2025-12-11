@@ -68,7 +68,8 @@ import Distribution.Client.NixStyleOptions
   , nixStyleOptions
   )
 import Distribution.Client.ProjectConfig
-  ( ProjectPackageLocation (..)
+  ( ProjectConfigToolchain (..)
+  , ProjectPackageLocation (..)
   , fetchAndReadSourcePackages
   , projectConfigWithBuilderRepoContext
   , resolveBuildTimeSettings
@@ -90,10 +91,10 @@ import Distribution.Client.ProjectConfig.Types
   )
 import Distribution.Client.ProjectFlags (ProjectFlags (..))
 import Distribution.Client.ProjectPlanning
-  ( storePackageInstallDirs'
-  )
-import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedInstallPlan
+  , ElaboratedPlanPackage
+  , Stage (..)
+  , storePackageInstallDirs'
   )
 import Distribution.Client.RebuildMonad
   ( runRebuild
@@ -114,6 +115,7 @@ import Distribution.Client.Types
 import Distribution.Client.Types.OverwritePolicy
   ( OverwritePolicy (..)
   )
+import qualified Distribution.Compat.Graph as Graph
 import Distribution.Package
   ( Package (..)
   , PackageName
@@ -138,6 +140,7 @@ import Distribution.Simple.Compiler
   )
 import Distribution.Simple.Configure
   ( configCompilerEx
+  , interpretPackageDbFlags
   )
 import Distribution.Simple.Flag
   ( flagElim
@@ -215,6 +218,9 @@ import Distribution.Types.VersionRange
   )
 import Distribution.Utils.Generic
   ( writeFileAtomic
+  )
+import Distribution.Utils.LogProgress
+  ( runLogProgress
   )
 import Distribution.Verbosity
   ( lessVerbose
@@ -331,7 +337,7 @@ installCommand =
     }
   where
     -- install doesn't take installDirs flags, since it always installs into the store in a fixed way.
-    notInstallDirOpt x = not $ optionName x `elem` installDirOptNames
+    notInstallDirOpt x = notElem (optionName x) installDirOptNames
     installDirOptNames = map optionName installDirsOptions
 
 -- | The @install@ command actually serves four different needs. It installs:
@@ -412,12 +418,15 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
           }
       , projectConfigShared =
         ProjectConfigShared
-          { projectConfigHcFlavor
-          , projectConfigHcPath
-          , projectConfigHcPkg
+          { projectConfigToolchain =
+            ProjectConfigToolchain
+              { projectConfigHcFlavor
+              , projectConfigHcPath
+              , projectConfigHcPkg
+              , projectConfigPackageDBs
+              }
           , projectConfigStoreDir
           , projectConfigProgPathExtra
-          , projectConfigPackageDBs
           }
       , projectConfigLocalPackages =
         PackageConfig
@@ -470,7 +479,6 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
         fetchAndReadSourcePackages
           verbosity
           distDirLayout
-          (Just compiler)
           (projectConfigShared config)
           (projectConfigBuildOnly config)
           [ProjectPackageRemoteTarball uri | uri <- uris]
@@ -561,7 +569,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
     traverseInstall action cfg@InstallCfg{verbosity = v, buildCtx, installClientFlags} = do
       let overwritePolicy = fromFlagOrDefault NeverOverwrite $ cinstOverwritePolicy installClientFlags
       actionOnExe <- action v overwritePolicy <$> prepareExeInstall cfg
-      traverse_ actionOnExe . Map.toList $ targetsMap buildCtx
+      traverse_ actionOnExe . Map.toList $ filterTargetsWithStage Host $ targetsMap buildCtx
 
 withProject
   :: Verbosity
@@ -780,7 +788,7 @@ getSpecsAndTargetSelectors verbosity reducedVerbosity sourcePkgDb targetSelector
 
       localPkgs = sdistize <$> localPackages baseCtx
 
-      gatherTargets :: UnitId -> TargetSelector
+      gatherTargets :: Graph.Key ElaboratedPlanPackage -> TargetSelector
       gatherTargets targetId = TargetPackageNamed pkgName targetFilter
         where
           targetUnit = Map.findWithDefault (error "cannot find target unit") targetId planMap
@@ -825,7 +833,7 @@ partitionToKnownTargetsAndHackagePackages
   -> SourcePackageDb
   -> ElaboratedInstallPlan
   -> [TargetSelector]
-  -> IO (TargetsMap, [PackageName])
+  -> IO (TargetsMapS, [PackageName])
 partitionToKnownTargetsAndHackagePackages verbosity pkgDb elaboratedPlan targetSelectors = do
   let mTargets =
         resolveTargetsFromSolver
@@ -895,15 +903,18 @@ constructProjectBuildContext verbosity baseCtx targetSelectors = do
           Nothing
           targetSelectors
 
-    let prunedToTargetsElaboratedPlan =
-          pruneInstallPlanToTargets TargetActionBuild targets elaboratedPlan
+    prunedToTargetsElaboratedPlan <-
+      runLogProgress verbosity $
+        pruneInstallPlanToTargets TargetActionBuild targets elaboratedPlan
+
     prunedElaboratedPlan <-
       if buildSettingOnlyDeps (buildSettings baseCtx)
-        then
-          either (reportCannotPruneDependencies verbosity) return $
-            pruneInstallPlanToDependencies
-              (Map.keysSet targets)
-              prunedToTargetsElaboratedPlan
+        then do
+          case pruneInstallPlanToDependencies (Map.keysSet targets) prunedToTargetsElaboratedPlan of
+            Left err ->
+              reportCannotPruneDependencies verbosity err
+            Right elaboratedPlan'' ->
+              runLogProgress verbosity $ InstallPlan.new' elaboratedPlan''
         else return prunedToTargetsElaboratedPlan
 
     return (prunedElaboratedPlan, targets)
@@ -1001,7 +1012,7 @@ installLibraries
             ordNub $
               globalEntries
                 ++ envEntries
-                ++ entriesForLibraryComponents (targetsMap buildCtx)
+                ++ entriesForLibraryComponents (filterTargetsWithStage Host $ targetsMap buildCtx)
           contents' = renderGhcEnvironmentFile (baseEntries ++ pkgEntries)
         createDirectoryIfMissing True (takeDirectory envFile)
         writeFileAtomic envFile (BS.pack contents')
@@ -1346,7 +1357,8 @@ getPackageDbStack compiler storeDirFlag logsDirFlag packageDbs = do
   let
     mlogsDir = flagToMaybe logsDirFlag
   cabalLayout <- mkCabalDirLayout mstoreDir mlogsDir
-  pure $ storePackageDBStack (cabalStoreDirLayout cabalLayout) compiler packageDbs
+  let storePackageDBStack = interpretPackageDbFlags False packageDbs ++ [storePackageDB (cabalStoreDirLayout cabalLayout) compiler]
+  pure storePackageDBStack
 
 -- | This defines what a 'TargetSelector' means for the @bench@ command.
 -- It selects the 'AvailableTarget's that the 'TargetSelector' refers to,

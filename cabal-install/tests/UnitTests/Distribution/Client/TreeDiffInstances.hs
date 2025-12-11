@@ -9,6 +9,7 @@ import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PackageConstraint
 import Distribution.Solver.Types.ProjectConfigPath
 import Distribution.Solver.Types.Settings
+import Distribution.Solver.Types.Stage
 
 import Distribution.Client.BuildReports.Types
 import Distribution.Client.CmdInstall.ClientInstallFlags
@@ -45,7 +46,6 @@ instance ToExpr ProjectConfigPath
 instance ToExpr ConstraintSource
 instance ToExpr CountConflicts
 instance ToExpr FineGrainedConflicts
-instance ToExpr IndependentGoals
 instance ToExpr InstallMethod
 instance ToExpr InstallOutcome
 instance ToExpr LocalRepo
@@ -63,6 +63,8 @@ instance ToExpr ProjectConfig
 instance ToExpr ProjectConfigBuildOnly
 instance ToExpr ProjectConfigProvenance
 instance ToExpr ProjectConfigShared
+instance ToExpr ProjectConfigToolchain
+instance ToExpr ProjectFileParser
 instance ToExpr RelaxDepMod
 instance ToExpr RelaxDeps
 instance ToExpr RelaxDepScope
@@ -73,11 +75,13 @@ instance ToExpr ReorderGoals
 instance ToExpr RepoIndexState
 instance ToExpr RepoName
 instance ToExpr ReportLevel
+instance ToExpr Stage
 instance ToExpr StrongFlags
 instance ToExpr Timestamp
 instance ToExpr TotalIndexState
 instance ToExpr UserConstraint
 instance ToExpr UserConstraintScope
+instance ToExpr UserConstraintQualifier
 instance ToExpr UserQualifier
 instance ToExpr WriteGhcEnvironmentFilesPolicy
 

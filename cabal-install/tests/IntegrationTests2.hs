@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
@@ -30,7 +31,7 @@ import Distribution.Client.TargetSelector hiding (DirActions (..))
 import qualified Distribution.Client.TargetSelector as TS (DirActions (..))
 import Distribution.Client.Targets
   ( UserConstraint (..)
-  , UserConstraintScope (UserAnyQualifier)
+  , UserConstraintQualifier (UserAnyQualifier)
   )
 import Distribution.Client.Types
   ( PackageLocation (..)
@@ -71,7 +72,8 @@ import qualified Distribution.Simple.Flag as Flag
 import Distribution.Simple.Setup (CommonSetupFlags (..), HaddockFlags (..), HaddockProjectFlags (..), defaultCommonSetupFlags, defaultHaddockFlags, defaultHaddockProjectFlags, toFlag)
 import Distribution.System
 import Distribution.Text
-import Distribution.Utils.Path (unsafeMakeSymbolicPath)
+import Distribution.Utils.LogProgress
+import Distribution.Utils.Path (FileOrDir (File), Pkg, SymbolicPath, unsafeMakeSymbolicPath)
 import Distribution.Version
 import IntegrationTests2.CPP
 
@@ -685,7 +687,10 @@ testTargetSelectorAmbiguous reportSubCase = do
 
     withCFiles :: Executable -> [FilePath] -> Executable
     withCFiles exe files =
-      exe{buildInfo = (buildInfo exe){cSources = map unsafeMakeSymbolicPath files}}
+      exe{buildInfo = (buildInfo exe){cSources = map (mkExtraSource . unsafeMakeSymbolicPath) files}}
+
+    mkExtraSource :: SymbolicPath Pkg File -> ExtraSource Pkg
+    mkExtraSource x = ExtraSourcePkg x []
 
     withHsSrcDirs :: Executable -> [FilePath] -> Executable
     withHsSrcDirs exe srcDirs =
@@ -955,11 +960,11 @@ testTargetProblemsBuild config reportSubCase = do
       CmdBuild.selectPackageTargets
       CmdBuild.selectComponentTarget
       [mkTargetPackage "p-0.1"]
-      [ ("p-0.1-inplace", (CLibName LMainLibName))
-      , ("p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-      , ("p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
-      , ("p-0.1-inplace-an-exe", CExeName "an-exe")
-      , ("p-0.1-inplace-libp", CFLibName "libp")
+      [ (WithStage Host "p-0.1-inplace", (CLibName LMainLibName))
+      , (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
+      , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
+      , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
+      , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
       ]
 
   reportSubCase "disabled component kinds"
@@ -981,9 +986,9 @@ testTargetProblemsBuild config reportSubCase = do
       CmdBuild.selectPackageTargets
       CmdBuild.selectComponentTarget
       [mkTargetPackage "p-0.1"]
-      [ ("p-0.1-inplace", (CLibName LMainLibName))
-      , ("p-0.1-inplace-an-exe", CExeName "an-exe")
-      , ("p-0.1-inplace-libp", CFLibName "libp")
+      [ (WithStage Host "p-0.1-inplace", (CLibName LMainLibName))
+      , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
+      , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
       ]
 
   reportSubCase "requested component kinds"
@@ -998,8 +1003,8 @@ testTargetProblemsBuild config reportSubCase = do
       [ TargetPackage TargetExplicitNamed ["p-0.1"] (Just TestKind)
       , TargetPackage TargetExplicitNamed ["p-0.1"] (Just BenchKind)
       ]
-      [ ("p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-      , ("p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
+      [ (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
+      , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
       ]
 
 testTargetProblemsRepl :: ProjectConfig -> (String -> IO ()) -> Assertion
@@ -1086,8 +1091,8 @@ testTargetProblemsRepl config reportSubCase = do
       [ mkTargetComponent "p-0.1" (CExeName "p1")
       , mkTargetComponent "p-0.1" (CExeName "p2")
       ]
-      [ ("p-0.1-inplace-p1", CExeName "p1")
-      , ("p-0.1-inplace-p2", CExeName "p2")
+      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
+      , (WithStage Host "p-0.1-inplace-p2", CExeName "p2")
       ]
 
   reportSubCase "libs-disabled"
@@ -1156,7 +1161,7 @@ testTargetProblemsRepl config reportSubCase = do
       (CmdRepl.selectPackageTargets (CmdRepl.MultiReplDecision Nothing False))
       CmdRepl.selectComponentTarget
       [TargetPackage TargetExplicitNamed ["p-0.1"] Nothing]
-      [("p-0.1-inplace", (CLibName LMainLibName))]
+      [(WithStage Host "p-0.1-inplace", (CLibName LMainLibName))]
     -- When we select the package with an explicit filter then we get those
     -- components even though we did not explicitly enable tests/benchmarks
     assertProjectDistinctTargets
@@ -1164,13 +1169,13 @@ testTargetProblemsRepl config reportSubCase = do
       (CmdRepl.selectPackageTargets (CmdRepl.MultiReplDecision Nothing False))
       CmdRepl.selectComponentTarget
       [TargetPackage TargetExplicitNamed ["p-0.1"] (Just TestKind)]
-      [("p-0.1-inplace-a-testsuite", CTestName "a-testsuite")]
+      [(WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")]
     assertProjectDistinctTargets
       elaboratedPlan
       (CmdRepl.selectPackageTargets (CmdRepl.MultiReplDecision Nothing False))
       CmdRepl.selectComponentTarget
       [TargetPackage TargetExplicitNamed ["p-0.1"] (Just BenchKind)]
-      [("p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")]
+      [(WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")]
 
 testTargetProblemsListBin :: ProjectConfig -> (String -> IO ()) -> Assertion
 testTargetProblemsListBin config reportSubCase = do
@@ -1183,7 +1188,7 @@ testTargetProblemsListBin config reportSubCase = do
       CmdListBin.selectComponentTarget
       [ TargetPackage TargetExplicitNamed ["p-0.1"] Nothing
       ]
-      [ ("p-0.1-inplace-p1", CExeName "p1")
+      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
       ]
 
   reportSubCase "multiple-exes"
@@ -1220,8 +1225,8 @@ testTargetProblemsListBin config reportSubCase = do
       [ mkTargetComponent "p-0.1" (CExeName "p1")
       , mkTargetComponent "p-0.1" (CExeName "p2")
       ]
-      [ ("p-0.1-inplace-p1", CExeName "p1")
-      , ("p-0.1-inplace-p2", CExeName "p2")
+      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
+      , (WithStage Host "p-0.1-inplace-p2", CExeName "p2")
       ]
 
   reportSubCase "exes-disabled"
@@ -1268,7 +1273,7 @@ testTargetProblemsRun config reportSubCase = do
       CmdRun.selectComponentTarget
       [ TargetPackage TargetExplicitNamed ["p-0.1"] Nothing
       ]
-      [ ("p-0.1-inplace-p1", CExeName "p1")
+      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
       ]
 
   reportSubCase "multiple-exes"
@@ -1305,8 +1310,8 @@ testTargetProblemsRun config reportSubCase = do
       [ mkTargetComponent "p-0.1" (CExeName "p1")
       , mkTargetComponent "p-0.1" (CExeName "p2")
       ]
-      [ ("p-0.1-inplace-p1", CExeName "p1")
-      , ("p-0.1-inplace-p2", CExeName "p2")
+      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
+      , (WithStage Host "p-0.1-inplace-p2", CExeName "p2")
       ]
 
   reportSubCase "exes-disabled"
@@ -1709,11 +1714,11 @@ testTargetProblemsHaddock config reportSubCase = do
         (CmdHaddock.selectPackageTargets haddockFlags)
         CmdHaddock.selectComponentTarget
         [mkTargetPackage "p-0.1"]
-        [ ("p-0.1-inplace", (CLibName LMainLibName))
-        , ("p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-        , ("p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
-        , ("p-0.1-inplace-an-exe", CExeName "an-exe")
-        , ("p-0.1-inplace-libp", CFLibName "libp")
+        [ (WithStage Host "p-0.1-inplace", (CLibName LMainLibName))
+        , (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
+        , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
+        , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
+        , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
         ]
 
   reportSubCase "disabled component kinds"
@@ -1725,7 +1730,7 @@ testTargetProblemsHaddock config reportSubCase = do
         (CmdHaddock.selectPackageTargets haddockFlags)
         CmdHaddock.selectComponentTarget
         [mkTargetPackage "p-0.1"]
-        [("p-0.1-inplace", (CLibName LMainLibName))]
+        [(WithStage Host "p-0.1-inplace", (CLibName LMainLibName))]
 
   reportSubCase "requested component kinds"
   -- When we selecting the package with an explicit filter then it does not
@@ -1740,10 +1745,10 @@ testTargetProblemsHaddock config reportSubCase = do
         , TargetPackage TargetExplicitNamed ["p-0.1"] (Just TestKind)
         , TargetPackage TargetExplicitNamed ["p-0.1"] (Just BenchKind)
         ]
-        [ ("p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-        , ("p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
-        , ("p-0.1-inplace-an-exe", CExeName "an-exe")
-        , ("p-0.1-inplace-libp", CFLibName "libp")
+        [ (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
+        , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
+        , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
+        , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
         ]
   where
     mkHaddockFlags flib exe test bench =
@@ -1761,7 +1766,7 @@ assertProjectDistinctTargets
   -> (forall k. TargetSelector -> [AvailableTarget k] -> Either (TargetProblem err) [k])
   -> (forall k. SubComponentTarget -> AvailableTarget k -> Either (TargetProblem err) k)
   -> [TargetSelector]
-  -> [(UnitId, ComponentName)]
+  -> [(WithStage UnitId, ComponentName)]
   -> Assertion
 assertProjectDistinctTargets
   elaboratedPlan
@@ -1914,10 +1919,10 @@ testSetupScriptStyles config reportSubCase = do
 
   let isOSX (Platform _ OSX) = True
       isOSX _ = False
-      compilerVer = compilerVersion (pkgConfigCompiler sharedConfig)
+      compilerVer = compilerVersion (toolchainCompiler $ getStage (pkgConfigToolchains sharedConfig) Build)
   -- Skip the Custom tests when the shipped Cabal library is buggy
   unless
-    ( (isOSX (pkgConfigPlatform sharedConfig) && (compilerVer < mkVersion [7, 10]))
+    ( (isOSX (toolchainPlatform $ getStage (pkgConfigToolchains sharedConfig) Build) && (compilerVer < mkVersion [7, 10]))
         -- 9.10 ships Cabal 3.12.0.0 affected by #9940
         || (mkVersion [9, 10] <= compilerVer && compilerVer < mkVersion [9, 11])
     )
@@ -1931,7 +1936,7 @@ testSetupScriptStyles config reportSubCase = do
       removeFile (basedir </> testdir1 </> "marker")
 
       -- implicit deps implies 'Cabal < 2' which conflicts w/ GHC 8.2 or later
-      when (compilerVersion (pkgConfigCompiler sharedConfig) < mkVersion [8, 2]) $ do
+      when (compilerVersion (toolchainCompiler $ getStage (pkgConfigToolchains sharedConfig) Build) < mkVersion [8, 2]) $ do
         reportSubCase (show SetupCustomImplicitDeps)
         (plan2, res2) <- executePlan =<< planProject testdir2 config
         pkg2 <- expectPackageInstalled plan2 res2 pkgidA
@@ -2238,7 +2243,7 @@ executePlan
     , elaboratedPlan
     , elaboratedShared
     ) = do
-    let targets :: Map.Map UnitId [ComponentTarget]
+    let targets :: Map.Map (WithStage UnitId) [ComponentTarget]
         targets =
           Map.fromList
             [ (unitid, [ComponentTarget cname WholeComponent])
@@ -2249,10 +2254,12 @@ executePlan
                 ts
             ]
         elaboratedPlan' =
-          pruneInstallPlanToTargets
-            TargetActionBuild
-            targets
-            elaboratedPlan
+          either (error . show) id $
+            runLogProgress' $
+              pruneInstallPlanToTargets
+                TargetActionBuild
+                targets
+                elaboratedPlan
 
     pkgsBuildStatus <-
       rebuildTargetsDryRun
@@ -2305,7 +2312,8 @@ mkProjectConfig (GhcPath ghcPath) =
   mempty
     { projectConfigShared =
         mempty
-          { projectConfigHcPath = maybeToFlag ghcPath
+          { projectConfigToolchain =
+              mempty{projectConfigHcPath = maybeToFlag ghcPath}
           }
     , projectConfigBuildOnly =
         mempty
@@ -2341,7 +2349,7 @@ expectPackagePreExisting
   :: ElaboratedInstallPlan
   -> BuildOutcomes
   -> PackageId
-  -> IO InstalledPackageInfo
+  -> IO (WithStage InstalledPackageInfo)
 expectPackagePreExisting plan buildOutcomes pkgid = do
   planpkg <- expectPlanPackage plan pkgid
   case (planpkg, InstallPlan.lookupBuildOutcome planpkg buildOutcomes) of
@@ -2797,7 +2805,7 @@ testHaddockProjectDependencies config = do
   (_, _, sharedConfig) <- planProject testdir config
   -- `haddock-project` is only supported by `haddock-2.26.1` and above which is
   -- shipped with `ghc-9.4`
-  when (compilerVersion (pkgConfigCompiler sharedConfig) > mkVersion [9, 4]) $ do
+  when (compilerVersion (toolchainCompiler $ getStage (pkgConfigToolchains sharedConfig) Build) > mkVersion [9, 4]) $ do
     let dir = basedir </> testdir
     cleanHaddockProject testdir
     withCurrentDirectory dir $ do

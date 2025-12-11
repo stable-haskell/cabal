@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -29,8 +30,12 @@ import Distribution.Client.ProjectConfig.Types
   , ProjectConfig (..)
   )
 import Distribution.Client.ProjectOrchestration
-import Distribution.Client.ProjectPlanning
+import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedSharedConfig (..)
+  , Stage (..)
+  , Staged (..)
+  , Toolchain (..)
+  , getStage
   )
 import Distribution.Client.Setup
   ( GlobalFlags
@@ -70,6 +75,7 @@ import Distribution.Verbosity
   )
 
 import Distribution.Client.Errors
+import Distribution.Utils.LogProgress (runLogProgress)
 import qualified System.Exit (exitSuccess)
 
 newtype ClientHaddockFlags = ClientHaddockFlags {openInBrowser :: Flag Bool}
@@ -160,6 +166,7 @@ haddockAction relFlags targetStrings globalFlags = do
             projCtx{buildSettings = (buildSettings projCtx){buildSettingHaddockOpen = True}}
         | otherwise =
             projCtx
+
   absProjectConfig <- mkConfigAbsolute relProjectConfig
   let baseCtx = relBaseCtx{projectConfig = absProjectConfig}
 
@@ -183,15 +190,20 @@ haddockAction relFlags targetStrings globalFlags = do
             Nothing
             targetSelectors
 
-      let elaboratedPlan' =
-            pruneInstallPlanToTargets
-              TargetActionHaddock
-              targets
-              elaboratedPlan
+      elaboratedPlan' <-
+        runLogProgress verbosity $
+          pruneInstallPlanToTargets
+            TargetActionHaddock
+            targets
+            elaboratedPlan
+
       return (elaboratedPlan', targets)
 
   printPlan verbosity baseCtx buildCtx
 
+  let toolchains = pkgConfigToolchains (elaboratedShared buildCtx)
+
+  -- TODO
   progs <-
     reconfigurePrograms
       verbosity
@@ -200,14 +212,19 @@ haddockAction relFlags targetStrings globalFlags = do
       -- we need to insert 'haddockProgram' before we reconfigure it,
       -- otherwise 'set
       . addKnownProgram haddockProgram
-      . pkgConfigCompilerProgs
-      . elaboratedShared
-      $ buildCtx
+      -- TODO
+      . toolchainProgramDb
+      $ getStage toolchains Host
+
+  let toolchains' = Staged $ \case
+        Host -> (getStage toolchains' Host){toolchainProgramDb = progs}
+        Build -> getStage toolchains' Build
+
   let buildCtx' =
         buildCtx
           { elaboratedShared =
               (elaboratedShared buildCtx)
-                { pkgConfigCompilerProgs = progs
+                { pkgConfigToolchains = toolchains'
                 }
           }
 

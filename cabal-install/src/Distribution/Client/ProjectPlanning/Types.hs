@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -14,6 +15,7 @@ module Distribution.Client.ProjectPlanning.Types
     -- * Elaborated install plan types
   , ElaboratedInstallPlan
   , normaliseConfiguredPackage
+  , ElaboratedInstalledPackageInfo
   , ElaboratedConfiguredPackage (..)
   , showElaboratedInstallPlan
   , elabDistDirParams
@@ -22,7 +24,7 @@ module Distribution.Client.ProjectPlanning.Types
   , elabOrderLibDependencies
   , elabExeDependencies
   , elabOrderExeDependencies
-  , elabSetupDependencies
+  , elabSetupLibDependencies
   , elabPkgConfigDependencies
   , elabInplaceDependencyBuildCacheFiles
   , elabRequiresRegistration
@@ -59,6 +61,15 @@ module Distribution.Client.ProjectPlanning.Types
   , componentOptionalStanza
   , componentTargetName
 
+    -- * Toolchain
+  , Toolchain (..)
+  , Toolchains
+  , Stage (..)
+  , Staged (..)
+  , WithStage (..)
+  , withStage
+  , HasStage (..)
+
     -- * Setup script
   , SetupScriptStyle (..)
   ) where
@@ -77,9 +88,11 @@ import Distribution.Client.InstallPlan
   , GenericPlanPackage (..)
   )
 import qualified Distribution.Client.InstallPlan as InstallPlan
+import Distribution.Client.ProjectPlanning.Stage
 import Distribution.Client.SolverInstallPlan
   ( SolverInstallPlan
   )
+import Distribution.Client.Toolchain
 import Distribution.Client.Types
 
 import Distribution.Backpack
@@ -110,7 +123,6 @@ import Distribution.Simple.Utils (ordNub)
 import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.OptionalStanza
-import Distribution.System
 import Distribution.Types.ComponentRequestedSpec
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageDescription (PackageDescription (..))
@@ -122,9 +134,9 @@ import Distribution.Version
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
-import qualified Data.Monoid as Mon
+import qualified Distribution.Compat.Graph as Graph
 import System.FilePath ((</>))
-import Text.PrettyPrint (hsep, parens, text)
+import Text.PrettyPrint (colon, hsep, parens, text)
 
 -- | The combination of an elaborated install plan plus a
 -- 'ElaboratedSharedConfig' contains all the details necessary to be able
@@ -134,13 +146,26 @@ import Text.PrettyPrint (hsep, parens, text)
 -- connections).
 type ElaboratedInstallPlan =
   GenericInstallPlan
-    InstalledPackageInfo
+    ElaboratedInstalledPackageInfo
     ElaboratedConfiguredPackage
 
 type ElaboratedPlanPackage =
   GenericPlanPackage
-    InstalledPackageInfo
+    ElaboratedInstalledPackageInfo
     ElaboratedConfiguredPackage
+
+instance HasStage ElaboratedPlanPackage where
+  stageOf (PreExisting ipkg) = stageOf ipkg
+  stageOf (Configured srcpkg) = stageOf srcpkg
+  stageOf (Installed srcpkg) = stageOf srcpkg
+
+instance HasStage ElaboratedPackage where
+  stageOf = pkgStage
+
+withStage :: HasStage a => a -> WithStage a
+withStage a = WithStage (stageOf a) a
+
+type ElaboratedInstalledPackageInfo = WithStage InstalledPackageInfo
 
 -- | User-friendly display string for an 'ElaboratedPlanPackage'.
 elabPlanPackageName :: Verbosity -> ElaboratedPlanPackage -> String
@@ -155,6 +180,7 @@ elabPlanPackageName verbosity (Installed elab) =
 showElaboratedInstallPlan :: ElaboratedInstallPlan -> String
 showElaboratedInstallPlan = InstallPlan.showInstallPlan_gen showNode
   where
+    showNode :: ElaboratedPlanPackage -> InstallPlan.ShowPlanNode
     showNode pkg =
       InstallPlan.ShowPlanNode
         { InstallPlan.showPlanHerald = herald
@@ -163,7 +189,7 @@ showElaboratedInstallPlan = InstallPlan.showInstallPlan_gen showNode
       where
         herald =
           ( hsep
-              [ text (InstallPlan.showPlanPackageTag pkg)
+              [ InstallPlan.renderPlanPackageTag pkg
               , InstallPlan.foldPlanPackage (const mempty) in_mem pkg
               , pretty (packageId pkg)
               , parens (pretty (nodeKey pkg))
@@ -178,15 +204,16 @@ showElaboratedInstallPlan = InstallPlan.showInstallPlan_gen showNode
 
         installed_deps = map pretty . nodeNeighbors
 
-        local_deps cfg = [(if internal then text "+" else mempty) <> pretty (confInstId uid) | (uid, internal) <- elabLibDependencies cfg]
+        local_deps cfg =
+          [ (if internal then text "+" else mempty) <> pretty s <> colon <> pretty (confInstId uid)
+          | (WithStage s uid, internal) <- elabLibDependencies cfg
+          ]
 
 -- TODO: [code cleanup] decide if we really need this, there's not much in it, and in principle
 --      even platform and compiler could be different if we're building things
 --      like a server + client with ghc + ghcjs
 data ElaboratedSharedConfig = ElaboratedSharedConfig
-  { pkgConfigPlatform :: Platform
-  , pkgConfigCompiler :: Compiler -- TODO: [code cleanup] replace with CompilerInfo
-  , pkgConfigCompilerProgs :: ProgramDb
+  { pkgConfigToolchains :: Toolchains
   -- ^ The programs that the compiler configured (e.g. for GHC, the progs
   -- ghc & ghc-pkg). Once constructed, only the 'configuredPrograms' are
   -- used.
@@ -203,8 +230,6 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   { elabUnitId :: UnitId
   -- ^ The 'UnitId' which uniquely identifies this item in a build plan
   , elabComponentId :: ComponentId
-  , elabInstantiatedWith :: Map ModuleName Module
-  , elabLinkedInstantiatedWith :: Map ModuleName OpenModule
   , elabIsCanonical :: Bool
   -- ^ This is true if this is an indefinite package, or this is a
   -- package with no signatures.  (Notably, it's not true for instantiated
@@ -247,21 +272,21 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   -- to disable. This tells us which ones we build by default, and
   -- helps with error messages when the user asks to build something
   -- they explicitly disabled.
-  --
-  -- TODO: The 'Bool' here should be refined into an ADT with three
-  -- cases: NotRequested, ExplicitlyRequested and
-  -- ImplicitlyRequested.  A stanza is explicitly requested if
-  -- the user asked, for this *specific* package, that the stanza
-  -- be enabled; it's implicitly requested if the user asked for
-  -- all global packages to have this stanza enabled.  The
-  -- difference between an explicit and implicit request is
-  -- error reporting behavior: if a user asks for tests to be
-  -- enabled for a specific package that doesn't have any tests,
-  -- we should warn them about it, but we shouldn't complain
-  -- that a user enabled tests globally, and some local packages
-  -- just happen not to have any tests.  (But perhaps we should
-  -- warn if ALL local packages don't have any tests.)
-  , elabPackageDbs :: [Maybe PackageDBCWD]
+  , elabStage :: Stage
+  , -- TODO: The 'Bool' here should be refined into an ADT with three
+    -- cases: NotRequested, ExplicitlyRequested and
+    -- ImplicitlyRequested.  A stanza is explicitly requested if
+    -- the user asked, for this *specific* package, that the stanza
+    -- be enabled; it's implicitly requested if the user asked for
+    -- all global packages to have this stanza enabled.  The
+    -- difference between an explicit and implicit request is
+    -- error reporting behavior: if a user asks for tests to be
+    -- enabled for a specific package that doesn't have any tests,
+    -- we should warn them about it, but we shouldn't complain
+    -- that a user enabled tests globally, and some local packages
+    -- just happen not to have any tests.  (But perhaps we should
+    -- warn if ALL local packages don't have any tests.)
+    elabPackageDbs :: [PackageDBCWD]
   , elabSetupPackageDBStack :: PackageDBStackCWD
   , elabBuildPackageDBStack :: PackageDBStackCWD
   , elabRegisterPackageDBStack :: PackageDBStackCWD
@@ -344,10 +369,11 @@ normaliseConfiguredPackage
   :: ElaboratedSharedConfig
   -> ElaboratedConfiguredPackage
   -> ElaboratedConfiguredPackage
-normaliseConfiguredPackage ElaboratedSharedConfig{pkgConfigCompilerProgs} pkg =
+normaliseConfiguredPackage shared pkg =
   pkg{elabProgramArgs = Map.mapMaybeWithKey lookupFilter (elabProgramArgs pkg)}
   where
-    knownProgramDb = addKnownPrograms builtinPrograms pkgConfigCompilerProgs
+    Toolchain{toolchainProgramDb} = getStage (pkgConfigToolchains shared) (elabStage pkg)
+    knownProgramDb = addKnownPrograms builtinPrograms toolchainProgramDb
 
     pkgDesc :: PackageDescription
     pkgDesc = elabPkgDescription pkg
@@ -494,9 +520,13 @@ instance HasUnitId ElaboratedConfiguredPackage where
   installedUnitId = elabUnitId
 
 instance IsNode ElaboratedConfiguredPackage where
-  type Key ElaboratedConfiguredPackage = UnitId
-  nodeKey = elabUnitId
+  type Key ElaboratedConfiguredPackage = WithStage UnitId
+  nodeKey elab = WithStage (elabStage elab) (elabUnitId elab)
   nodeNeighbors = elabOrderDependencies
+
+instance HasStage ElaboratedConfiguredPackage where
+  stageOf :: ElaboratedConfiguredPackage -> Stage
+  stageOf = elabStage
 
 instance Binary ElaboratedConfiguredPackage
 instance Structured ElaboratedConfiguredPackage
@@ -527,23 +557,35 @@ elabConfiguredName verbosity elab
               Just (CLibName LMainLibName) -> ""
               Just cname -> prettyShow cname ++ " from "
       )
-        ++ prettyShow (packageId elab)
+        ++ prettyShow (Graph.nodeKey elab)
   | otherwise =
       prettyShow (elabUnitId elab)
 
 elabDistDirParams :: ElaboratedSharedConfig -> ElaboratedConfiguredPackage -> DistDirParams
 elabDistDirParams shared elab =
   DistDirParams
-    { distParamUnitId = installedUnitId elab
+    { distParamStage = elabStage elab
+    , distParamUnitId = installedUnitId elab
     , distParamComponentId = elabComponentId elab
     , distParamPackageId = elabPkgSourceId elab
     , distParamComponentName = case elabPkgOrComp elab of
         ElabComponent comp -> compComponentName comp
         ElabPackage _ -> Nothing
-    , distParamCompilerId = compilerId (pkgConfigCompiler shared)
-    , distParamPlatform = pkgConfigPlatform shared
+    , distParamCompilerId = compilerId toolchainCompiler
+    , distParamPlatform = toolchainPlatform
     , distParamOptimization = LBC.withOptimization $ elabBuildOptions elab
     }
+  where
+    Toolchain{toolchainCompiler, toolchainPlatform} = getStage (pkgConfigToolchains shared) (elabStage elab)
+
+--
+-- Order dependencies
+--
+-- Order dependencies are identified by their 'UnitId' and only used to define the
+-- dependency relationships in the build graph. In particular they do not provide
+-- any other information needed to build the component or package. We can consider
+-- UnitId as a opaque identifier.
+--
 
 -- | The full set of dependencies which dictate what order we
 -- need to build things in the install plan: "order dependencies"
@@ -553,49 +595,81 @@ elabDistDirParams shared elab =
 -- use 'elabLibDependencies'.  This method is the same as
 -- 'nodeNeighbors'.
 --
--- NB: this method DOES include setup deps.
-elabOrderDependencies :: ElaboratedConfiguredPackage -> [UnitId]
+-- Note: this method DOES include setup deps.
+elabOrderDependencies :: ElaboratedConfiguredPackage -> [WithStage UnitId]
 elabOrderDependencies elab =
-  case elabPkgOrComp elab of
-    -- Important not to have duplicates: otherwise InstallPlan gets
-    -- confused.
-    ElabPackage pkg -> ordNub (CD.flatDeps (pkgOrderDependencies pkg))
-    ElabComponent comp -> compOrderDependencies comp
+  elabOrderLibDependencies elab <> elabOrderExeDependencies elab
 
--- | Like 'elabOrderDependencies', but only returns dependencies on
--- libraries.
-elabOrderLibDependencies :: ElaboratedConfiguredPackage -> [UnitId]
+-- | The result includes setup dependencies
+elabOrderLibDependencies :: ElaboratedConfiguredPackage -> [WithStage UnitId]
 elabOrderLibDependencies elab =
   case elabPkgOrComp elab of
     ElabPackage pkg ->
-      map (newSimpleUnitId . confInstId) $
-        ordNub $
-          CD.flatDeps (map fst <$> pkgLibDependencies pkg)
-    ElabComponent comp -> compOrderLibDependencies comp
+      -- Note: flatDeps include the setup dependencies too
+      ordNub $ CD.flatDeps (pkgOrderLibDependencies pkg)
+    ElabComponent comp ->
+      map (WithStage (elabStage elab)) (compOrderLibDependencies comp)
 
--- | The library dependencies (i.e., the libraries we depend on, NOT
--- the dependencies of the library), NOT including setup dependencies.
--- These are passed to the @Setup@ script via @--dependency@ or @--promised-dependency@.
-elabLibDependencies :: ElaboratedConfiguredPackage -> [(ConfiguredId, Bool)]
-elabLibDependencies elab =
+-- | The result includes setup dependencies
+elabOrderExeDependencies :: ElaboratedConfiguredPackage -> [WithStage UnitId]
+elabOrderExeDependencies elab =
   case elabPkgOrComp elab of
-    ElabPackage pkg -> ordNub (CD.nonSetupDeps (pkgLibDependencies pkg))
-    ElabComponent comp -> compLibDependencies comp
+    ElabPackage pkg ->
+      ordNub $ CD.flatDeps (pkgOrderExeDependencies pkg)
+    ElabComponent comp ->
+      map (fmap fromConfiguredId) (compExeDependencies comp)
 
--- | Like 'elabOrderDependencies', but only returns dependencies on
--- executables.  (This coincides with 'elabExeDependencies'.)
-elabOrderExeDependencies :: ElaboratedConfiguredPackage -> [UnitId]
-elabOrderExeDependencies =
-  map newSimpleUnitId . elabExeDependencies
+-- | See 'elabOrderDependencies'.  This gives the unflattened version,
+-- which can be useful in some circumstances.
+pkgOrderDependencies :: ElaboratedPackage -> ComponentDeps [WithStage UnitId]
+pkgOrderDependencies pkg =
+  pkgOrderLibDependencies pkg <> pkgOrderExeDependencies pkg
+
+pkgOrderLibDependencies :: ElaboratedPackage -> ComponentDeps [WithStage UnitId]
+pkgOrderLibDependencies pkg =
+  CD.fromList
+    [ (comp, map (WithStage stage . fromConfiguredId . fst) deps)
+    | (comp, deps) <- CD.toList (pkgLibDependencies pkg)
+    , let stage =
+            if comp == CD.ComponentSetup
+              then prevStage (pkgStage pkg)
+              else pkgStage pkg
+    ]
+
+pkgOrderExeDependencies :: ElaboratedPackage -> ComponentDeps [WithStage UnitId]
+pkgOrderExeDependencies pkg =
+  fmap (map (fmap fromConfiguredId)) $
+    pkgExeDependencies pkg
+
+fromConfiguredId :: ConfiguredId -> UnitId
+fromConfiguredId = newSimpleUnitId . confInstId
+
+--- | Library dependencies.
+---
+--- These are identified by their 'ConfiguredId' and are passed to the @Setup@
+--- script via @--dependency@ or @--promised-dependency@.
+--- Note that setup dependencies (meaning the library dependencies of the setup
+-- script) are not included here, they are handled separately.
+elabLibDependencies :: ElaboratedConfiguredPackage -> [(WithStage ConfiguredId, Bool)]
+elabLibDependencies elab =
+  -- Library dependencies are always in the same stage as the component/package we are
+  -- building.
+  map (\(cid, promised) -> (WithStage (elabStage elab) cid, promised)) $
+    case elabPkgOrComp elab of
+      ElabPackage pkg ->
+        ordNub $ CD.nonSetupDeps (pkgLibDependencies pkg)
+      ElabComponent comp ->
+        compLibDependencies comp
 
 -- | The executable dependencies (i.e., the executables we depend on);
 -- these are the executables we must add to the PATH before we invoke
 -- the setup script.
-elabExeDependencies :: ElaboratedConfiguredPackage -> [ComponentId]
-elabExeDependencies elab = map confInstId $
-  case elabPkgOrComp elab of
-    ElabPackage pkg -> CD.nonSetupDeps (pkgExeDependencies pkg)
-    ElabComponent comp -> compExeDependencies comp
+elabExeDependencies :: ElaboratedConfiguredPackage -> [WithStage ComponentId]
+elabExeDependencies elab =
+  map (fmap confInstId) $
+    case elabPkgOrComp elab of
+      ElabPackage pkg -> ordNub $ CD.nonSetupDeps (pkgExeDependencies pkg)
+      ElabComponent comp -> compExeDependencies comp
 
 -- | This returns the paths of all the executables we depend on; we
 -- must add these paths to PATH before invoking the setup script.
@@ -604,25 +678,33 @@ elabExeDependencies elab = map confInstId $
 elabExeDependencyPaths :: ElaboratedConfiguredPackage -> [FilePath]
 elabExeDependencyPaths elab =
   case elabPkgOrComp elab of
-    ElabPackage pkg -> map snd $ CD.nonSetupDeps (pkgExeDependencyPaths pkg)
+    ElabPackage pkg -> ordNub $ map snd $ CD.nonSetupDeps (pkgExeDependencyPaths pkg)
     ElabComponent comp -> map snd (compExeDependencyPaths comp)
 
--- | The setup dependencies (the library dependencies of the setup executable;
--- note that it is not legal for setup scripts to have executable
--- dependencies at the moment.)
-elabSetupDependencies :: ElaboratedConfiguredPackage -> [(ConfiguredId, Bool)]
-elabSetupDependencies elab =
+elabPkgConfigDependencies :: ElaboratedConfiguredPackage -> [(PkgconfigName, Maybe PkgconfigVersion)]
+elabPkgConfigDependencies elab =
   case elabPkgOrComp elab of
-    ElabPackage pkg -> CD.setupDeps (pkgLibDependencies pkg)
-    -- TODO: Custom setups not supported for components yet.  When
-    -- they are, need to do this differently
+    ElabPackage pkg -> pkgPkgConfigDependencies pkg
+    ElabComponent comp -> compPkgConfigDependencies comp
+
+-- | The setup dependencies (i.e. the library dependencies of the setup executable)
+-- Note that it is not legal for setup scripts to have executable dependencies.
+-- TODO: In that case we should probably not have this function at all, and
+-- only use pkgSetupLibDependencies
+elabSetupLibDependencies :: ElaboratedConfiguredPackage -> [WithStage ConfiguredId]
+elabSetupLibDependencies elab =
+  case elabPkgOrComp elab of
+    ElabPackage pkg -> pkgSetupLibDependencies pkg
+    -- Custom setups not supported for components.
     ElabComponent _ -> []
 
-elabPkgConfigDependencies :: ElaboratedConfiguredPackage -> [(PkgconfigName, Maybe PkgconfigVersion)]
-elabPkgConfigDependencies ElaboratedConfiguredPackage{elabPkgOrComp = ElabPackage pkg} =
-  pkgPkgConfigDependencies pkg
-elabPkgConfigDependencies ElaboratedConfiguredPackage{elabPkgOrComp = ElabComponent comp} =
-  compPkgConfigDependencies comp
+pkgSetupLibDependencies :: ElaboratedPackage -> [WithStage ConfiguredId]
+pkgSetupLibDependencies pkg =
+  map (WithStage stage . fst) $
+    ordNub $
+      CD.setupDeps (pkgLibDependencies pkg)
+  where
+    stage = prevStage (pkgStage pkg)
 
 -- | The cache files of all our inplace dependencies which,
 -- when updated, require us to rebuild.  See #4202 for
@@ -684,18 +766,20 @@ data ElaboratedComponent = ElaboratedComponent
   -- instantiation phase. It's more precise than
   -- 'compLibDependencies', and also stores information about internal
   -- dependencies.
-  , compExeDependencies :: [ConfiguredId]
+  , compInstantiatedWith :: Map ModuleName Module
+  , compLinkedInstantiatedWith :: Map ModuleName OpenModule
+  , compExeDependencies :: [WithStage ConfiguredId]
   -- ^ The executable dependencies of this component (including
   -- internal executables).
   , compPkgConfigDependencies :: [(PkgconfigName, Maybe PkgconfigVersion)]
   -- ^ The @pkg-config@ dependencies of the component
-  , compExeDependencyPaths :: [(ConfiguredId, FilePath)]
+  , compExeDependencyPaths :: [(WithStage ConfiguredId, FilePath)]
   -- ^ The paths all our executable dependencies will be installed
   -- to once they are installed.
   , compOrderLibDependencies :: [UnitId]
   -- ^ The UnitIds of the libraries (identifying elaborated packages/
   -- components) that must be built before this project.  This
-  -- is used purely for ordering purposes.  It can contain both
+  -- is used purely for ordering purposes. It can contain both
   -- references to definite and indefinite packages; an indefinite
   -- UnitId indicates that we must typecheck that indefinite package
   -- before we can build this one.
@@ -705,18 +789,9 @@ data ElaboratedComponent = ElaboratedComponent
 instance Binary ElaboratedComponent
 instance Structured ElaboratedComponent
 
--- | See 'elabOrderDependencies'.
-compOrderDependencies :: ElaboratedComponent -> [UnitId]
-compOrderDependencies comp =
-  compOrderLibDependencies comp
-    ++ compOrderExeDependencies comp
-
--- | See 'elabOrderExeDependencies'.
-compOrderExeDependencies :: ElaboratedComponent -> [UnitId]
-compOrderExeDependencies = map (newSimpleUnitId . confInstId) . compExeDependencies
-
 data ElaboratedPackage = ElaboratedPackage
-  { pkgInstalledId :: InstalledPackageId
+  { pkgStage :: Stage
+  , pkgInstalledId :: InstalledPackageId
   , pkgLibDependencies :: ComponentDeps [(ConfiguredId, Bool)]
   -- ^ The exact dependencies (on other plan packages)
   -- The boolean value indicates whether the dependency is a promised dependency
@@ -726,9 +801,9 @@ data ElaboratedPackage = ElaboratedPackage
   -- defined library.  These are used by 'elabRequiresRegistration',
   -- to determine if a user-requested build is going to need
   -- a library registration
-  , pkgExeDependencies :: ComponentDeps [ConfiguredId]
+  , pkgExeDependencies :: ComponentDeps [WithStage ConfiguredId]
   -- ^ Dependencies on executable packages.
-  , pkgExeDependencyPaths :: ComponentDeps [(ConfiguredId, FilePath)]
+  , pkgExeDependencyPaths :: ComponentDeps [(WithStage ConfiguredId, FilePath)]
   -- ^ Paths where executable dependencies live.
   , pkgPkgConfigDependencies :: [(PkgconfigName, Maybe PkgconfigVersion)]
   -- ^ Dependencies on @pkg-config@ packages.
@@ -786,13 +861,6 @@ whyNotPerComponent = \case
   CuzCabalSpecVersion -> "cabal-version is less than 1.8"
   CuzNoBuildableComponents -> "there are no buildable components"
   CuzDisablePerComponent -> "you passed --disable-per-component"
-
--- | See 'elabOrderDependencies'.  This gives the unflattened version,
--- which can be useful in some circumstances.
-pkgOrderDependencies :: ElaboratedPackage -> ComponentDeps [UnitId]
-pkgOrderDependencies pkg =
-  fmap (map (newSimpleUnitId . confInstId)) (map fst <$> pkgLibDependencies pkg)
-    `Mon.mappend` fmap (map (newSimpleUnitId . confInstId)) (pkgExeDependencies pkg)
 
 -- | This is used in the install plan to indicate how the package will be
 -- built.

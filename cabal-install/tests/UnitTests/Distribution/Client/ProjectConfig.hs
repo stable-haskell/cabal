@@ -600,19 +600,41 @@ instance Arbitrary ProjectConfigBuildOnly where
         preShrink_NumJobs = fmap (fmap Positive)
         postShrink_NumJobs = fmap (fmap getPositive)
 
+instance Arbitrary ProjectConfigToolchain where
+  arbitrary = do
+    projectConfigHcFlavor <- arbitrary
+    projectConfigHcPath <- arbitraryFlag arbitraryShortToken
+    projectConfigHcPkg <- arbitraryFlag arbitraryShortToken
+    projectConfigPackageDBs <- shortListOf 2 arbitrary
+    projectConfigBuildHcFlavor <- arbitrary
+    projectConfigBuildHcPath <- arbitraryFlag arbitraryShortToken
+    projectConfigBuildHcPkg <- arbitraryFlag arbitraryShortToken
+    projectConfigBuildPackageDBs <- shortListOf 2 arbitrary
+    return ProjectConfigToolchain{..}
+
+  shrink ProjectConfigToolchain{..} =
+    runShrinker $
+      pure ProjectConfigToolchain
+        <*> shrinker projectConfigHcFlavor
+        <*> shrinkerAla (fmap NonEmpty) projectConfigHcPath
+        <*> shrinkerAla (fmap NonEmpty) projectConfigHcPkg
+        <*> shrinker projectConfigPackageDBs
+        <*> shrinker projectConfigBuildHcFlavor
+        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPath
+        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPkg
+        <*> shrinker projectConfigBuildPackageDBs
+
 instance Arbitrary ProjectConfigShared where
   arbitrary = do
     projectConfigDistDir <- arbitraryFlag arbitraryShortToken
     projectConfigConfigFile <- arbitraryFlag arbitraryShortToken
     projectConfigProjectDir <- arbitraryFlag arbitraryShortToken
     projectConfigProjectFile <- arbitraryFlag arbitraryShortToken
+    projectConfigProjectFileParser <- arbitraryFlag arbitrary
     projectConfigIgnoreProject <- arbitrary
-    projectConfigHcFlavor <- arbitrary
-    projectConfigHcPath <- arbitraryFlag arbitraryShortToken
-    projectConfigHcPkg <- arbitraryFlag arbitraryShortToken
+    projectConfigToolchain <- arbitrary
     projectConfigHaddockIndex <- arbitrary
     projectConfigInstallDirs <- fixInstallDirs <$> arbitrary
-    projectConfigPackageDBs <- shortListOf 2 arbitrary
     projectConfigRemoteRepos <- arbitrary
     projectConfigLocalNoIndexRepos <- arbitrary
     projectConfigActiveRepos <- arbitrary
@@ -634,7 +656,6 @@ instance Arbitrary ProjectConfigShared where
     projectConfigAllowBootLibInstalls <- arbitrary
     projectConfigOnlyConstrained <- arbitrary
     projectConfigPerComponent <- arbitrary
-    projectConfigIndependentGoals <- arbitrary
     projectConfigPreferOldest <- arbitrary
     projectConfigProgPathExtra <- toNubList <$> listOf arbitraryShortToken
     projectConfigMultiRepl <- arbitrary
@@ -652,13 +673,11 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigConfigFile
         <*> shrinker projectConfigProjectDir
         <*> shrinker projectConfigProjectFile
+        <*> shrinker projectConfigProjectFileParser
         <*> shrinker projectConfigIgnoreProject
-        <*> shrinker projectConfigHcFlavor
-        <*> shrinkerAla (fmap NonEmpty) projectConfigHcPath
-        <*> shrinkerAla (fmap NonEmpty) projectConfigHcPkg
+        <*> shrinker projectConfigToolchain
         <*> shrinker projectConfigHaddockIndex
         <*> shrinker projectConfigInstallDirs
-        <*> shrinker projectConfigPackageDBs
         <*> shrinker projectConfigRemoteRepos
         <*> shrinker projectConfigLocalNoIndexRepos
         <*> shrinker projectConfigActiveRepos
@@ -680,7 +699,6 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigAllowBootLibInstalls
         <*> shrinker projectConfigOnlyConstrained
         <*> shrinker projectConfigPerComponent
-        <*> shrinker projectConfigIndependentGoals
         <*> shrinker projectConfigPreferOldest
         <*> shrinker projectConfigProgPathExtra
         <*> shrinker projectConfigMultiRepl
@@ -690,6 +708,9 @@ instance Arbitrary ProjectConfigShared where
 
 projectConfigConstraintSource :: ConstraintSource
 projectConfigConstraintSource = ConstraintSourceProjectConfig nullProjectConfigPath
+
+instance Arbitrary ProjectFileParser where
+  arbitrary = elements [ParsecParser, LegacyParser, FallbackParser, CompareParser]
 
 instance Arbitrary ProjectConfigProvenance where
   arbitrary = elements [Implicit, Explicit (ProjectConfigPath $ "cabal.project" :| [])]
@@ -1037,9 +1058,6 @@ instance Arbitrary FineGrainedConflicts where
 
 instance Arbitrary MinimizeConflictSet where
   arbitrary = MinimizeConflictSet <$> arbitrary
-
-instance Arbitrary IndependentGoals where
-  arbitrary = IndependentGoals <$> arbitrary
 
 instance Arbitrary PreferOldest where
   arbitrary = PreferOldest <$> arbitrary

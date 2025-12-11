@@ -550,7 +550,7 @@ internalSetupMethod verbosity options bt args = do
     "Using internal setup method with build-type "
       ++ show bt
       ++ " and args:\n  "
-      ++ show args
+      ++ unwords args
   -- NB: we do not set the working directory of the process here, because
   -- we will instead pass the -working-dir flag when invoking the Setup script.
   -- Note that the Setup script is guaranteed to support this flag, because
@@ -623,7 +623,7 @@ selfExecSetupMethod verbosity options bt args0 = do
     "Using self-exec internal setup method with build-type "
       ++ show bt
       ++ " and args:\n  "
-      ++ show args
+      ++ unwords args
   path <- getExecutablePath
   invoke verbosity path args options
 
@@ -821,7 +821,7 @@ getExternalSetupMethod verbosity options pkg bt = do
               , SetupScriptOptions
               )
         installedVersion = do
-          (comp, progdb, options') <- configureCompiler options
+          (comp, progdb, options') <- configureToolchains options
           (version, mipkgid, options'') <-
             installedCabalVersion
               options'
@@ -950,10 +950,10 @@ getExternalSetupMethod verbosity options pkg bt = do
               _ -> False
             latestVersion = version
 
-    configureCompiler
+    configureToolchains
       :: SetupScriptOptions
       -> IO (Compiler, ProgramDb, SetupScriptOptions)
-    configureCompiler options' = do
+    configureToolchains options' = do
       (comp, progdb) <- case useCompiler options' of
         Just comp -> return (comp, useProgramDb options')
         Nothing -> do
@@ -1081,7 +1081,7 @@ getExternalSetupMethod verbosity options pkg bt = do
         let outOfDate = setupHsNewer || cabalVersionNewer
         when (outOfDate || forceCompile) $ do
           debug verbosity "Setup executable needs to be updated, compiling..."
-          (compiler, progdb, options'') <- configureCompiler options'
+          (compiler, progdb, options'') <- configureToolchains options'
           pkgDbs <- traverse (traverse (makeRelativeToDirS mbWorkDir)) (coercePackageDBStack (usePackageDB options''))
           let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion
               (program, extraOpts) =

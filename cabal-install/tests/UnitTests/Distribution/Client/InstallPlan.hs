@@ -1,4 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoMonoLocalBinds #-}
 
@@ -6,7 +8,7 @@ module UnitTests.Distribution.Client.InstallPlan (tests) where
 
 import Distribution.Client.Compat.Prelude
 
-import Distribution.Client.InstallPlan (GenericInstallPlan, IsUnit)
+import Distribution.Client.InstallPlan (GenericInstallPlan)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.JobControl
 import Distribution.Client.Types
@@ -15,7 +17,6 @@ import qualified Distribution.Compat.Graph as Graph
 import Distribution.Package
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.PackageFixedDeps
-import Distribution.Solver.Types.Settings
 import Distribution.Version
 
 import Control.Concurrent (threadDelay)
@@ -29,6 +30,7 @@ import qualified Data.Set as Set
 import System.Random
 import Test.QuickCheck
 
+import Distribution.Utils.LogProgress
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
@@ -224,8 +226,13 @@ arbitraryTestInstallPlan = do
 -- It takes generators for installed and source packages and the chance that
 -- each package is installed (for those packages with no prerequisites).
 arbitraryInstallPlan
-  :: ( IsUnit ipkg
-     , IsUnit srcpkg
+  :: forall ipkg srcpkg key
+   . ( IsNode ipkg
+     , Key ipkg ~ key
+     , IsNode srcpkg
+     , Key srcpkg ~ key
+     , Show key
+     , Pretty key
      )
   => (Vertex -> [Vertex] -> Gen ipkg)
   -> (Vertex -> [Vertex] -> Gen srcpkg)
@@ -249,24 +256,28 @@ arbitraryInstallPlan mkIPkg mkSrcPkg ipkgProportion graph = do
         , let isRoot = n == 0
         ]
 
-  ipkgs <-
-    sequenceA
-      [ mkIPkg pkgv depvs
-      | pkgv <- ipkgvs
-      , let depvs = graph ! pkgv
-      ]
-  srcpkgs <-
-    sequenceA
-      [ mkSrcPkg pkgv depvs
-      | pkgv <- srcpkgvs
-      , let depvs = graph ! pkgv
-      ]
-  let index =
-        Graph.fromDistinctList
-          ( map InstallPlan.PreExisting ipkgs
-              ++ map InstallPlan.Configured srcpkgs
-          )
-  return $ InstallPlan.new (IndependentGoals False) index
+  let gen_plan :: Gen (Either ErrMsg (InstallPlan.GenericInstallPlan ipkg srcpkg))
+      gen_plan = do
+        ipkgs <-
+          sequenceA
+            [ mkIPkg pkgv depvs
+            | pkgv <- ipkgvs
+            , let depvs = graph ! pkgv
+            ]
+        srcpkgs <-
+          sequenceA
+            [ mkSrcPkg pkgv depvs
+            | pkgv <- srcpkgvs
+            , let depvs = graph ! pkgv
+            ]
+        let index =
+              Graph.fromDistinctList
+                ( map InstallPlan.PreExisting ipkgs
+                    ++ map InstallPlan.Configured srcpkgs
+                )
+        return $ runLogProgress' $ InstallPlan.new' index
+
+  gen_plan `suchThatMap` either (const Nothing) Just
 
 -- | Generate a random directed acyclic graph, based on the algorithm presented
 -- here <http://stackoverflow.com/questions/12790337/generating-a-random-dag>

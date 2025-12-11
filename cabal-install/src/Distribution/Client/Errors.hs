@@ -24,6 +24,7 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Char8 as BS8
 import Data.List (groupBy)
 import Distribution.Client.IndexUtils.Timestamp
+import Distribution.Client.ProjectPlanning.Stage (WithStage)
 import qualified Distribution.Client.Types.Repo as Repo
 import qualified Distribution.Client.Types.RepoName as RepoName
 import Distribution.Compat.Prelude
@@ -36,6 +37,8 @@ import Network.URI
 import Text.PrettyPrint hiding (render, (<>))
 import qualified Text.PrettyPrint as PP
 import Text.Regex.Posix.ByteString (WrapError)
+
+import Distribution.Client.Errors.Parser
 
 data CabalInstallException
   = UnpackGet
@@ -61,7 +64,7 @@ data CabalInstallException
   | UnableToPerformInplaceUpdate
   | EmptyValuePagerEnvVariable
   | FileDoesntExist FilePath
-  | ParseError
+  | CabalCheckParseError CabalFileParseError
   | CabalFileNotFound FilePath
   | FindOpenProgramLocationErr String
   | PkgConfParseFailed String
@@ -94,7 +97,7 @@ data CabalInstallException
   | PlanPackages String
   | NoSupportForRunCommand
   | RunPhaseReached
-  | UnknownExecutable String UnitId
+  | UnknownExecutable String (WithStage UnitId)
   | MultipleMatchingExecutables String [String]
   | CmdRunReportTargetProblems String
   | CleanAction [String]
@@ -187,6 +190,9 @@ data CabalInstallException
   | CmdPathAcceptsNoTargets
   | CmdPathCommandDoesn'tSupportDryRun
   | GenBoundsDoesNotSupportScript FilePath
+  | LegacyAndParsecParseResultsDiffer FilePath String String
+  | CabalFileParseFailure CabalFileParseError
+  | ProjectConfigParseFailure ProjectConfigParseError
   deriving (Show)
 
 exceptionCodeCabalInstall :: CabalInstallException -> Int
@@ -214,7 +220,7 @@ exceptionCodeCabalInstall e = case e of
   UnableToPerformInplaceUpdate{} -> 7032
   EmptyValuePagerEnvVariable{} -> 7033
   FileDoesntExist{} -> 7034
-  ParseError{} -> 7035
+  CabalCheckParseError{} -> 7035
   CabalFileNotFound{} -> 7036
   FindOpenProgramLocationErr{} -> 7037
   PkgConfParseFailed{} -> 7038
@@ -340,6 +346,9 @@ exceptionCodeCabalInstall e = case e of
   CmdPathAcceptsNoTargets{} -> 7161
   CmdPathCommandDoesn'tSupportDryRun -> 7163
   GenBoundsDoesNotSupportScript{} -> 7164
+  LegacyAndParsecParseResultsDiffer{} -> 7165
+  CabalFileParseFailure{} -> 7166
+  ProjectConfigParseFailure{} -> 7167
 
 exceptionMessageCabalInstall :: CabalInstallException -> String
 exceptionMessageCabalInstall e = case e of
@@ -378,7 +387,7 @@ exceptionMessageCabalInstall e = case e of
   UnableToPerformInplaceUpdate -> "local project file has conditional and/or import logic, unable to perform and automatic in-place update"
   EmptyValuePagerEnvVariable -> "man: empty value of the PAGER environment variable"
   FileDoesntExist fpath -> "Error Parsing: file \"" ++ fpath ++ "\" doesn't exist. Cannot continue."
-  ParseError -> "parse error"
+  CabalCheckParseError err -> renderCabalFileParseError err
   CabalFileNotFound cabalFile -> "Package .cabal file not found in the tarball: " ++ cabalFile
   FindOpenProgramLocationErr err -> err
   PkgConfParseFailed perror ->
@@ -864,6 +873,19 @@ exceptionMessageCabalInstall e = case e of
     "The 'path' command doesn't support the flag '--dry-run'."
   GenBoundsDoesNotSupportScript{} ->
     "The 'gen-bounds' command does not support script targets."
+  LegacyAndParsecParseResultsDiffer _fp legacyParsec parsec ->
+    unlines
+      [ "The legacy and parsec parsers produced different results for the project file. This is unexpected, please report this as a bug."
+      , "The legacy parser will be removed in the next major version."
+      , "Legacy parse result:"
+      , legacyParsec
+      , "Parsec parse result:"
+      , parsec
+      ]
+  CabalFileParseFailure cbfError ->
+    renderCabalFileParseError cbfError
+  ProjectConfigParseFailure pcfError ->
+    renderProjectConfigParseError pcfError
 
 instance Exception (VerboseException CabalInstallException) where
   displayException :: VerboseException CabalInstallException -> [Char]

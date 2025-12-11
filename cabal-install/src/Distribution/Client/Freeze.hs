@@ -51,7 +51,10 @@ import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.LabeledPackageConstraint
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PkgConfigDb
+import Distribution.Solver.Types.ResolverPackage (solverId)
 import Distribution.Solver.Types.SolverId
+import Distribution.Solver.Types.SolverPackage (SolverPackage (..))
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.Client.Errors
 import Distribution.Package
@@ -212,9 +215,9 @@ planPackages
     installPlan <-
       foldProgress logMsg (dieWithException verbosity . FreezeException) return $
         resolveDependencies
-          platform
-          (compilerInfo comp)
-          pkgConfigDb
+          (Stage.always (compilerInfo comp, platform))
+          (Stage.always pkgConfigDb)
+          (Stage.always installedPkgIndex)
           resolverParams
 
     return $ pruneInstallPlan installPlan pkgSpecifiers
@@ -226,7 +229,6 @@ planPackages
               then Nothing
               else Just maxBackjumps
           )
-          . setIndependentGoals independentGoals
           . setReorderGoals reorderGoals
           . setCountConflicts countConflicts
           . setFineGrainedConflicts fineGrainedConflicts
@@ -245,7 +247,7 @@ planPackages
                in LabeledPackageConstraint pc ConstraintSourceFreeze
             | pkgSpecifier <- pkgSpecifiers
             ]
-          $ standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers
+          $ standardInstallPolicy sourcePkgDb pkgSpecifiers
 
       logMsg message rest = debug verbosity message >> rest
 
@@ -259,7 +261,6 @@ planPackages
       countConflicts = fromFlag (freezeCountConflicts freezeFlags)
       fineGrainedConflicts = fromFlag (freezeFineGrainedConflicts freezeFlags)
       minimizeConflictSet = fromFlag (freezeMinimizeConflictSet freezeFlags)
-      independentGoals = fromFlag (freezeIndependentGoals freezeFlags)
       shadowPkgs = fromFlag (freezeShadowPkgs freezeFlags)
       strongFlags = fromFlag (freezeStrongFlags freezeFlags)
       maxBackjumps = fromFlag (freezeMaxBackjumps freezeFlags)
@@ -286,9 +287,15 @@ pruneInstallPlan installPlan pkgSpecifiers =
   removeSelf pkgIds $
     SolverInstallPlan.dependencyClosure installPlan pkgIds
   where
+    -- Get the source packages from the (specific) package specifiers.
+    srcpkgs :: [UnresolvedSourcePackage]
+    srcpkgs = [pkg | SpecificSourcePackage pkg <- pkgSpecifiers]
+    -- Get the 'SolverId's of the packages we are freezing.
+    pkgIds :: [SolverId]
     pkgIds =
-      [ PlannedId (packageId pkg)
-      | SpecificSourcePackage pkg <- pkgSpecifiers
+      [ solverId (SolverInstallPlan.Configured pkg)
+      | SolverInstallPlan.Configured pkg <- SolverInstallPlan.toList installPlan
+      , solverPkgSource pkg `elem` srcpkgs
       ]
     removeSelf [thisPkg] = filter (\pp -> packageId pp /= packageId thisPkg)
     removeSelf _ =

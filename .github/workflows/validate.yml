@@ -53,13 +53,13 @@ jobs:
       matrix:
         sys:
           - { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
-          - { os: ubuntu-22.04, shell: bash }
+          - { os: ubuntu-latest, shell: bash }
           - { os: macos-latest, shell: bash }
-        # If you remove something from here, then add it to the old-ghcs job.
-        # Also a removed GHC from here means that we are actually dropping
-        # support, so the PR *must* have a changelog entry.
         ghc:
           [
+            # IMPORTANT: If you remove a version from this list, then add it to the old-ghcs job below.
+            # Also a removed GHC from here means that we are actually dropping
+            # support, so the PR *must* have a changelog entry.
             "9.12.2",
             "9.10.2",
             "9.8.4",
@@ -142,6 +142,11 @@ jobs:
             dist-*
           key: ${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
           restore-keys: ${{ runner.os }}-${{ matrix.ghc }}-
+
+      - name: "Work around git problem https://bugs.launchpad.net/ubuntu/+source/git/+bug/1993586 (cabal PR #8546)"
+        # alternatively, use 'continue-on-error: true'
+        if: runner.os != 'Windows'
+        run: git config --global protocol.file.allow always
 
       # The tool is not essential to the rest of the test suite. If
       # hackage-repo-tool is not present, any test that requires it will
@@ -245,14 +250,15 @@ jobs:
 
   validate-old-ghcs:
     name: Validate old ghcs ${{ matrix.extra-ghc }}
+    # latest/latest doesn't have the old packages the old ghcs depend on
     runs-on: ubuntu-22.04
     needs: validate
 
     strategy:
       matrix:
         extra-ghc:
-          ["8.4.4", "8.2.2", "8.0.2"]
-          ## GHC 7.10.3 does not install on ubuntu-22.04 with ghcup.
+          ["8.6.5", "8.4.4", "8.2.2", "8.0.2"]
+          ## GHC 7.10.3 does not install on ubuntu-latest with ghcup.
           ## Older GHCs are not supported by ghcup in the first place.
       fail-fast: false
 
@@ -383,7 +389,7 @@ jobs:
       matrix:
         sys:
           - { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
-          - { os: ubuntu-22.04, shell: bash }
+          - { os: ubuntu-latest, shell: bash }
           - { os: macos-latest, shell: bash }
         # We only use one ghc version the used one for the next release (defined at top of the workflow)
         # We need to build an array dynamically to inject the appropiate env var in a previous job,

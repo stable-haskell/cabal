@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -57,7 +58,6 @@ import Distribution.Client.GlobalFlags (RepoContext)
 import Distribution.Client.InstallPlan
   ( GenericInstallPlan
   , GenericPlanPackage
-  , IsUnit
   )
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.JobControl
@@ -71,7 +71,6 @@ import Distribution.Client.Types hiding
 
 import Distribution.Package
 import Distribution.Simple.Compiler
-import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
 
 import Distribution.Compat.Graph (IsNode (..))
@@ -97,6 +96,7 @@ import Distribution.Simple.Flag (fromFlagOrDefault)
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 import Distribution.Client.ProjectBuilding.UnpackedPackage (annotateFailureNoLog, buildAndInstallUnpackedPackage, buildInplaceUnpackedPackage)
+import qualified Distribution.Compat.Graph as Graph
 
 ------------------------------------------------------------------------------
 
@@ -259,21 +259,26 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
 -- visiting function is passed the results for all the immediate package
 -- dependencies. This can be used to propagate information from dependencies.
 foldMInstallPlanDepOrder
-  :: forall m ipkg srcpkg b
-   . (Monad m, IsUnit ipkg, IsUnit srcpkg)
+  :: forall m ipkg srcpkg b key
+   . ( Monad m
+     , IsNode ipkg
+     , Key ipkg ~ key
+     , IsNode srcpkg
+     , Key srcpkg ~ key
+     )
   => ( GenericPlanPackage ipkg srcpkg
        -> [b]
        -> m b
      )
   -> GenericInstallPlan ipkg srcpkg
-  -> m (Map UnitId b)
+  -> m (Map key b)
 foldMInstallPlanDepOrder visit =
   go Map.empty . InstallPlan.reverseTopologicalOrder
   where
     go
-      :: Map UnitId b
+      :: Map key b
       -> [GenericPlanPackage ipkg srcpkg]
-      -> m (Map UnitId b)
+      -> m (Map key b)
     go !results [] = return results
     go !results (pkg : pkgs) = do
       -- we go in the right order so the results map has entries for all deps
@@ -298,7 +303,7 @@ improveInstallPlanWithUpToDatePackages pkgsBuildStatus =
   where
     canPackageBeImproved :: ElaboratedConfiguredPackage -> Bool
     canPackageBeImproved pkg =
-      case Map.lookup (installedUnitId pkg) pkgsBuildStatus of
+      case Map.lookup (nodeKey pkg) pkgsBuildStatus of
         Just BuildStatusUpToDate{} -> True
         Just _ -> False
         Nothing ->
@@ -336,25 +341,66 @@ rebuildTargets
   -> IO BuildOutcomes
 rebuildTargets
   verbosity
+  projectConfig
+  distDirLayout
+  storeDirLayout
+  installPlan
+  sharedPackageConfig
+  pkgsBuildStatus
+  buildSettings
+    | buildSettingOnlyDownload buildSettings = do
+        rebuildTargets' verbosity projectConfig distDirLayout installPlan sharedPackageConfig pkgsBuildStatus buildSettings $
+          \downloadMap _jobControl pkg pkgBuildStatus ->
+            rebuildTargetOnlyDownload
+              verbosity
+              downloadMap
+              pkg
+              pkgBuildStatus
+    | otherwise = do
+        registerLock <- newLock -- serialise registration
+        cacheLock <- newLock -- serialise access to setup exe cache
+        rebuildTargets' verbosity projectConfig distDirLayout installPlan sharedPackageConfig pkgsBuildStatus buildSettings $
+          \downloadMap jobControl pkg pkgBuildStatus ->
+            rebuildTarget
+              verbosity
+              distDirLayout
+              storeDirLayout
+              (jobControlSemaphore jobControl)
+              buildSettings
+              downloadMap
+              registerLock
+              cacheLock
+              sharedPackageConfig
+              installPlan
+              pkg
+              pkgBuildStatus
+
+rebuildTargets'
+  :: Verbosity
+  -> ProjectConfig
+  -> DistDirLayout
+  -> ElaboratedInstallPlan
+  -> ElaboratedSharedConfig
+  -> BuildStatusMap
+  -> BuildTimeSettings
+  -> (AsyncFetchMap -> JobControl IO (Graph.Key (GenericReadyPackage ElaboratedConfiguredPackage), Either BuildFailure BuildResult) -> GenericReadyPackage ElaboratedConfiguredPackage -> BuildStatus -> IO BuildResult)
+  -> IO BuildOutcomes
+rebuildTargets'
+  verbosity
   ProjectConfig
     { projectConfigBuildOnly = config
     }
-  distDirLayout@DistDirLayout{..}
-  storeDirLayout
+  DistDirLayout{..}
   installPlan
-  sharedPackageConfig@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigCompilerProgs = progdb
-    }
+  sharedPackageConfig
   pkgsBuildStatus
   buildSettings@BuildTimeSettings
     { buildSettingNumJobs
     , buildSettingKeepGoing
     }
+  act
     | fromFlagOrDefault False (projectConfigOfflineMode config) && not (null packagesToDownload) = return offlineError
     | otherwise = do
-        registerLock <- newLock -- serialise registration
-        cacheLock <- newLock -- serialise access to setup exe cache
         -- TODO: [code cleanup] eliminate setup exe cache
         info verbosity $
           "Executing install plan "
@@ -365,11 +411,11 @@ rebuildTargets
 
         createDirectoryIfMissingVerbose verbosity True distBuildRootDirectory
         createDirectoryIfMissingVerbose verbosity True distTempDirectory
-        traverse_ (createPackageDBIfMissing verbosity compiler progdb) packageDBsToUse
+        createPackageDBsIfMissing
 
         -- Concurrency control: create the job controller and concurrency limits
         -- for downloading, building and installing.
-        withJobControl (newJobControlFromParStrat verbosity (Just compiler) buildSettingNumJobs Nothing) $ \jobControl -> do
+        withJobControl (newJobControlFromParStrat verbosity buildSettingNumJobs Nothing) $ \jobControl -> do
           -- Before traversing the install plan, preemptively find all packages that
           -- will need to be downloaded and start downloading them.
           asyncDownloadPackages
@@ -382,56 +428,53 @@ rebuildTargets
               InstallPlan.execute
                 jobControl
                 keepGoing
-                (BuildFailure Nothing . DependentFailed . packageId)
+                (BuildFailure Nothing . DependentFailed . Graph.nodeKey)
                 installPlan
                 $ \pkg ->
                   -- TODO: review exception handling
                   handle (\(e :: BuildFailure) -> return (Left e)) $ fmap Right $ do
-                    let uid = installedUnitId pkg
-                        pkgBuildStatus = Map.findWithDefault (error "rebuildTargets") uid pkgsBuildStatus
-
-                    rebuildTarget
-                      verbosity
-                      distDirLayout
-                      storeDirLayout
-                      (jobControlSemaphore jobControl)
-                      buildSettings
-                      downloadMap
-                      registerLock
-                      cacheLock
-                      sharedPackageConfig
-                      installPlan
-                      pkg
-                      pkgBuildStatus
+                    let pkgBuildStatus = Map.findWithDefault (error "rebuildTargets") (nodeKey pkg) pkgsBuildStatus
+                    act downloadMap jobControl pkg pkgBuildStatus
     where
       keepGoing = buildSettingKeepGoing
       withRepoCtx =
         projectConfigWithBuilderRepoContext
           verbosity
           buildSettings
-      packageDBsToUse =
-        -- all the package dbs we may need to create
-        (Set.toList . Set.fromList)
-          [ pkgdb
-          | InstallPlan.Configured elab <- InstallPlan.toList installPlan
-          , pkgdb <-
-              concat
-                [ elabBuildPackageDBStack elab
-                , elabRegisterPackageDBStack elab
-                , elabSetupPackageDBStack elab
-                ]
-          ]
+
+      createPackageDBsIfMissing :: IO ()
+      createPackageDBsIfMissing =
+        for_ (InstallPlan.toList installPlan) $ \case
+          InstallPlan.Configured elab -> do
+            let pkgdbs =
+                  (Set.toList . Set.fromList) $
+                    concat
+                      [ elabBuildPackageDBStack elab
+                      , elabRegisterPackageDBStack elab
+                      , elabSetupPackageDBStack elab
+                      ]
+            for_ pkgdbs $ \case
+              SpecificPackageDB dbPath -> do
+                exists <- Cabal.doesPackageDBExist dbPath
+                let Toolchain{toolchainCompiler, toolchainProgramDb} =
+                      getStage (pkgConfigToolchains sharedPackageConfig) (elabStage elab)
+                unless exists $ do
+                  createDirectoryIfMissingVerbose verbosity True (takeDirectory dbPath)
+                  Cabal.createPackageDB verbosity toolchainCompiler toolchainProgramDb False dbPath
+              _ -> pure ()
+          _ -> pure ()
 
       offlineError :: BuildOutcomes
       offlineError = Map.fromList . map makeBuildOutcome $ packagesToDownload
         where
-          makeBuildOutcome :: ElaboratedConfiguredPackage -> (UnitId, BuildOutcome)
+          makeBuildOutcome :: ElaboratedConfiguredPackage -> (Graph.Key ElaboratedPlanPackage, BuildOutcome)
           makeBuildOutcome
             ElaboratedConfiguredPackage
               { elabUnitId
+              , elabStage
               , elabPkgSourceId = PackageIdentifier{pkgName, pkgVersion}
               } =
-              ( elabUnitId
+              ( WithStage elabStage elabUnitId
               , Left
                   ( BuildFailure
                       { buildFailureLogFile = Nothing
@@ -456,25 +499,6 @@ rebuildTargets
           isRemote (RepoTarballPackage{}) = True
           isRemote (RemoteSourceRepoPackage _ _) = True
           isRemote _ = False
-
--- | Create a package DB if it does not currently exist. Note that this action
--- is /not/ safe to run concurrently.
-createPackageDBIfMissing
-  :: Verbosity
-  -> Compiler
-  -> ProgramDb
-  -> PackageDBCWD
-  -> IO ()
-createPackageDBIfMissing
-  verbosity
-  compiler
-  progdb
-  (SpecificPackageDB dbPath) = do
-    exists <- Cabal.doesPackageDBExist dbPath
-    unless exists $ do
-      createDirectoryIfMissingVerbose verbosity True (takeDirectory dbPath)
-      Cabal.createPackageDB verbosity compiler progdb False dbPath
-createPackageDBIfMissing _ _ _ _ = return ()
 
 -- | Given all the context and resources, (re)build an individual package.
 rebuildTarget
@@ -518,7 +542,8 @@ rebuildTarget
             void $ waitAsyncPackageDownload verbosity downloadMap pkg
           _ -> return ()
         return $ BuildResult DocsNotTried TestsNotTried Nothing
-    | otherwise =
+    | otherwise = do
+        info verbosity $ "[rebuildTarget] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " with current status " ++ buildStatusToString pkgBuildStatus
         -- We rely on the 'BuildStatus' to decide which phase to start from:
         case pkgBuildStatus of
           BuildStatusDownload -> downloadPhase
@@ -561,7 +586,8 @@ rebuildTarget
       -- would only start from download or unpack phases.
       --
       rebuildPhase :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> IO BuildResult
-      rebuildPhase buildStatus srcdir =
+      rebuildPhase buildStatus srcdir = do
+        info verbosity $ "[rebuildPhase] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
         assert
           (isInplaceBuildStyle $ elabBuildStyle pkg)
           buildInplace
@@ -576,7 +602,8 @@ rebuildTarget
       -- TODO: [nice to have] ^^ do this relative stuff better
 
       buildAndInstall :: SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
-      buildAndInstall srcdir builddir =
+      buildAndInstall srcdir builddir = do
+        info verbosity $ "[buildAndInstall] Building and installing " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
         buildAndInstallUnpackedPackage
           verbosity
           distDirLayout
@@ -592,8 +619,9 @@ rebuildTarget
           builddir
 
       buildInplace :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
-      buildInplace buildStatus srcdir builddir =
+      buildInplace buildStatus srcdir builddir = do
         -- TODO: [nice to have] use a relative build dir rather than absolute
+        info verbosity $ "[buildInplace] Building inplace " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir
         buildInplaceUnpackedPackage
           verbosity
           distDirLayout
@@ -607,6 +635,23 @@ rebuildTarget
           buildStatus
           srcdir
           builddir
+
+rebuildTargetOnlyDownload
+  :: Verbosity
+  -> AsyncFetchMap
+  -> GenericReadyPackage ElaboratedConfiguredPackage
+  -> BuildStatus
+  -> IO BuildResult
+rebuildTargetOnlyDownload
+  verbosity
+  downloadMap
+  (ReadyPackage pkg)
+  pkgBuildStatus = do
+    case pkgBuildStatus of
+      BuildStatusDownload ->
+        void $ waitAsyncPackageDownload verbosity downloadMap pkg
+      _ -> return ()
+    return $ BuildResult DocsNotTried TestsNotTried Nothing
 
 -- TODO: [nice to have] do we need to use a with-style for the temp
 -- files for downloading http packages, or are we going to cache them
@@ -642,8 +687,7 @@ asyncDownloadPackages verbosity withRepoCtx installPlan pkgsBuildStatus body
         [ elabPkgSourceLocation elab
         | InstallPlan.Configured elab <-
             InstallPlan.reverseTopologicalOrder installPlan
-        , let uid = installedUnitId elab
-              pkgBuildStatus = Map.findWithDefault (error "asyncDownloadPackages") uid pkgsBuildStatus
+        , let pkgBuildStatus = Map.findWithDefault (error "asyncDownloadPackages") (Graph.nodeKey elab) pkgsBuildStatus
         , BuildStatusDownload <- [pkgBuildStatus]
         ]
 

@@ -38,6 +38,7 @@ import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb, readPkgConfigDb)
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.Client.Errors
 import Distribution.Package
@@ -174,9 +175,9 @@ planPackages
         installPlan <-
           foldProgress logMsg (dieWithException verbosity . PlanPackages . show) return $
             resolveDependencies
-              platform
-              (compilerInfo comp)
-              pkgConfigDb
+              (Stage.always (compilerInfo comp, platform))
+              (Stage.always pkgConfigDb)
+              (Stage.always installedPkgIndex)
               resolverParams
 
         -- The packages we want to fetch are those packages the 'InstallPlan'
@@ -188,7 +189,7 @@ planPackages
           ]
     | otherwise =
         either (dieWithException verbosity . PlanPackages . unlines . map show) return $
-          resolveWithoutDependencies resolverParams
+          resolveWithoutDependencies resolverParams installedPkgIndex
     where
       resolverParams :: DepResolverParams
       resolverParams =
@@ -197,7 +198,6 @@ planPackages
               then Nothing
               else Just maxBackjumps
           )
-          . setIndependentGoals independentGoals
           . setReorderGoals reorderGoals
           . setCountConflicts countConflicts
           . setFineGrainedConflicts fineGrainedConflicts
@@ -220,7 +220,7 @@ planPackages
           -- already installed. Since we want to get the source packages of
           -- things we might have installed (but not have the sources for).
           . reinstallTargets
-          $ standardInstallPolicy installedPkgIndex sourcePkgDb pkgSpecifiers
+          $ standardInstallPolicy sourcePkgDb pkgSpecifiers
 
       includeDependencies = fromFlag (fetchDeps fetchFlags)
       logMsg message rest = debug verbosity message >> rest
@@ -235,7 +235,6 @@ planPackages
       countConflicts = fromFlag (fetchCountConflicts fetchFlags)
       fineGrainedConflicts = fromFlag (fetchFineGrainedConflicts fetchFlags)
       minimizeConflictSet = fromFlag (fetchMinimizeConflictSet fetchFlags)
-      independentGoals = fromFlag (fetchIndependentGoals fetchFlags)
       shadowPkgs = fromFlag (fetchShadowPkgs fetchFlags)
       strongFlags = fromFlag (fetchStrongFlags fetchFlags)
       maxBackjumps = fromFlag (fetchMaxBackjumps fetchFlags)

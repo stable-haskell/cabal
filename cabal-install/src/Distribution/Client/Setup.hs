@@ -163,7 +163,7 @@ import Distribution.ReadE
   )
 import Distribution.Simple.Command hiding (boolOpt, boolOpt')
 import qualified Distribution.Simple.Command as Command
-import Distribution.Simple.Compiler (Compiler, PackageDB, PackageDBStack)
+import Distribution.Simple.Compiler (Compiler, CompilerFlavor (..), PackageDB, PackageDBStack)
 import Distribution.Simple.Configure
   ( computeEffectiveProfiling
   , configCompilerAuxEx
@@ -923,6 +923,10 @@ data ConfigExFlags = ConfigExFlags
   , configAllowOlder :: Maybe AllowOlder
   , configWriteGhcEnvironmentFilesPolicy
       :: Flag WriteGhcEnvironmentFilesPolicy
+  , configBuildHcFlavor :: Flag CompilerFlavor
+  , configBuildHcPath :: Flag FilePath
+  , configBuildHcPkg :: Flag FilePath
+  , configBuildPackageDBs :: [Maybe PackageDB]
   }
   deriving (Eq, Show, Generic)
 
@@ -1050,6 +1054,20 @@ configureExOptions _showOrParseArgs src =
           writeGhcEnvironmentFilesPolicyParser
           writeGhcEnvironmentFilesPolicyPrinter
       )
+  , option
+      "W"
+      ["with-build-compiler", "with-build-hc"]
+      "give the path to the compiler for the build stage"
+      configBuildHcPath
+      (\v flags -> flags{configBuildHcPath = v})
+      (reqArgFlag "PATH")
+  , option
+      ""
+      ["with-build-hc-pkg"]
+      "give the path to the package tool for the build stage"
+      configBuildHcPkg
+      (\v flags -> flags{configBuildHcPkg = v})
+      (reqArgFlag "PATH")
   ]
 
 writeGhcEnvironmentFilesPolicyParser :: ReadE (Flag WriteGhcEnvironmentFilesPolicy)
@@ -1409,7 +1427,6 @@ data FetchFlags = FetchFlags
   , fetchCountConflicts :: Flag CountConflicts
   , fetchFineGrainedConflicts :: Flag FineGrainedConflicts
   , fetchMinimizeConflictSet :: Flag MinimizeConflictSet
-  , fetchIndependentGoals :: Flag IndependentGoals
   , fetchPreferOldest :: Flag PreferOldest
   , fetchShadowPkgs :: Flag ShadowPkgs
   , fetchStrongFlags :: Flag StrongFlags
@@ -1432,7 +1449,6 @@ defaultFetchFlags =
     , fetchCountConflicts = Flag (CountConflicts True)
     , fetchFineGrainedConflicts = Flag (FineGrainedConflicts True)
     , fetchMinimizeConflictSet = Flag (MinimizeConflictSet False)
-    , fetchIndependentGoals = Flag (IndependentGoals False)
     , fetchPreferOldest = Flag (PreferOldest False)
     , fetchShadowPkgs = Flag (ShadowPkgs False)
     , fetchStrongFlags = Flag (StrongFlags False)
@@ -1514,8 +1530,6 @@ fetchCommand =
             (\v flags -> flags{fetchFineGrainedConflicts = v})
             fetchMinimizeConflictSet
             (\v flags -> flags{fetchMinimizeConflictSet = v})
-            fetchIndependentGoals
-            (\v flags -> flags{fetchIndependentGoals = v})
             fetchPreferOldest
             (\v flags -> flags{fetchPreferOldest = v})
             fetchShadowPkgs
@@ -1544,7 +1558,6 @@ data FreezeFlags = FreezeFlags
   , freezeCountConflicts :: Flag CountConflicts
   , freezeFineGrainedConflicts :: Flag FineGrainedConflicts
   , freezeMinimizeConflictSet :: Flag MinimizeConflictSet
-  , freezeIndependentGoals :: Flag IndependentGoals
   , freezePreferOldest :: Flag PreferOldest
   , freezeShadowPkgs :: Flag ShadowPkgs
   , freezeStrongFlags :: Flag StrongFlags
@@ -1565,7 +1578,6 @@ defaultFreezeFlags =
     , freezeCountConflicts = Flag (CountConflicts True)
     , freezeFineGrainedConflicts = Flag (FineGrainedConflicts True)
     , freezeMinimizeConflictSet = Flag (MinimizeConflictSet False)
-    , freezeIndependentGoals = Flag (IndependentGoals False)
     , freezePreferOldest = Flag (PreferOldest False)
     , freezeShadowPkgs = Flag (ShadowPkgs False)
     , freezeStrongFlags = Flag (StrongFlags False)
@@ -1636,8 +1648,6 @@ freezeCommand =
             (\v flags -> flags{freezeFineGrainedConflicts = v})
             freezeMinimizeConflictSet
             (\v flags -> flags{freezeMinimizeConflictSet = v})
-            freezeIndependentGoals
-            (\v flags -> flags{freezeIndependentGoals = v})
             freezePreferOldest
             (\v flags -> flags{freezePreferOldest = v})
             freezeShadowPkgs
@@ -2240,7 +2250,6 @@ data InstallFlags = InstallFlags
   , installCountConflicts :: Flag CountConflicts
   , installFineGrainedConflicts :: Flag FineGrainedConflicts
   , installMinimizeConflictSet :: Flag MinimizeConflictSet
-  , installIndependentGoals :: Flag IndependentGoals
   , installPreferOldest :: Flag PreferOldest
   , installShadowPkgs :: Flag ShadowPkgs
   , installStrongFlags :: Flag StrongFlags
@@ -2285,7 +2294,6 @@ defaultInstallFlags =
     , installCountConflicts = Flag (CountConflicts True)
     , installFineGrainedConflicts = Flag (FineGrainedConflicts True)
     , installMinimizeConflictSet = Flag (MinimizeConflictSet False)
-    , installIndependentGoals = Flag (IndependentGoals False)
     , installPreferOldest = Flag (PreferOldest False)
     , installShadowPkgs = Flag (ShadowPkgs False)
     , installStrongFlags = Flag (StrongFlags False)
@@ -2644,8 +2652,6 @@ installOptions showOrParseArgs =
       (\v flags -> flags{installFineGrainedConflicts = v})
       installMinimizeConflictSet
       (\v flags -> flags{installMinimizeConflictSet = v})
-      installIndependentGoals
-      (\v flags -> flags{installIndependentGoals = v})
       installPreferOldest
       (\v flags -> flags{installPreferOldest = v})
       installShadowPkgs
@@ -3597,8 +3603,6 @@ optionSolverFlags
   -> (Flag FineGrainedConflicts -> flags -> flags)
   -> (flags -> Flag MinimizeConflictSet)
   -> (Flag MinimizeConflictSet -> flags -> flags)
-  -> (flags -> Flag IndependentGoals)
-  -> (Flag IndependentGoals -> flags -> flags)
   -> (flags -> Flag PreferOldest)
   -> (Flag PreferOldest -> flags -> flags)
   -> (flags -> Flag ShadowPkgs)
@@ -3622,8 +3626,6 @@ optionSolverFlags
   setfgc
   getmc
   setmc
-  getig
-  setig
   getpo
   setpo
   getsip
@@ -3675,13 +3677,6 @@ optionSolverFlags
         )
         (fmap asBool . getmc)
         (setmc . fmap MinimizeConflictSet)
-        (yesNoOpt showOrParseArgs)
-    , option
-        []
-        ["independent-goals"]
-        "Treat several goals on the command line as independent. If several goals depend on the same package, different versions can be chosen."
-        (fmap asBool . getig)
-        (setig . fmap IndependentGoals)
         (yesNoOpt showOrParseArgs)
     , option
         []

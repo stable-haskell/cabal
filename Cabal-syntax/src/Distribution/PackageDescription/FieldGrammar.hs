@@ -174,6 +174,8 @@ libraryFieldGrammar
      , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
      , c (List CommaVCat (Identity Dependency) Dependency)
      , c (List CommaVCat (Identity Mixin) Mixin)
+     , c (List VCat (Identity (ExtraSource Pkg)) (ExtraSource Pkg))
+     , c (List VCat (Identity (ExtraSource Build)) (ExtraSource Build))
      , c (List CommaVCat (Identity ModuleReexport) ModuleReexport)
      , c (List FSep (MQuoted Extension) Extension)
      , c (List FSep (MQuoted Language) Language)
@@ -224,6 +226,8 @@ foreignLibFieldGrammar
      , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
      , c (List CommaVCat (Identity Dependency) Dependency)
      , c (List CommaVCat (Identity Mixin) Mixin)
+     , c (List VCat (Identity (ExtraSource Pkg)) (ExtraSource Pkg))
+     , c (List VCat (Identity (ExtraSource Build)) (ExtraSource Build))
      , c (List FSep (Identity ForeignLibOption) ForeignLibOption)
      , c (List FSep (MQuoted Extension) Extension)
      , c (List FSep (MQuoted Language) Language)
@@ -263,6 +267,8 @@ executableFieldGrammar
      , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
      , c (List CommaVCat (Identity Dependency) Dependency)
      , c (List CommaVCat (Identity Mixin) Mixin)
+     , c (List VCat (Identity (ExtraSource Pkg)) (ExtraSource Pkg))
+     , c (List VCat (Identity (ExtraSource Build)) (ExtraSource Build))
      , c (List FSep (MQuoted Extension) Extension)
      , c (List FSep (MQuoted Language) Language)
      , c (List FSep Token String)
@@ -339,6 +345,8 @@ testSuiteFieldGrammar
      , c (List CommaFSep Token String)
      , c (List CommaVCat (Identity Dependency) Dependency)
      , c (List CommaVCat (Identity Mixin) Mixin)
+     , c (List VCat (Identity (ExtraSource Pkg)) (ExtraSource Pkg))
+     , c (List VCat (Identity (ExtraSource Build)) (ExtraSource Build))
      , c (List FSep (MQuoted Extension) Extension)
      , c (List FSep (MQuoted Language) Language)
      , c (List FSep Token String)
@@ -361,7 +369,7 @@ testSuiteFieldGrammar =
     <*> monoidalFieldAla "code-generators" (alaList' CommaFSep Token) testStanzaCodeGenerators
       ^^^ availableSince CabalSpecV3_8 []
 
-validateTestSuite :: CabalSpecVersion -> Position -> TestSuiteStanza -> ParseResult TestSuite
+validateTestSuite :: CabalSpecVersion -> Position -> TestSuiteStanza -> ParseResult src TestSuite
 validateTestSuite cabalSpecVersion pos stanza = case testSuiteType of
   Nothing -> pure basicTestSuite
   Just tt@(TestTypeUnknown _ _) ->
@@ -483,6 +491,8 @@ benchmarkFieldGrammar
      , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
      , c (List CommaVCat (Identity Dependency) Dependency)
      , c (List CommaVCat (Identity Mixin) Mixin)
+     , c (List VCat (Identity (ExtraSource Pkg)) (ExtraSource Pkg))
+     , c (List VCat (Identity (ExtraSource Build)) (ExtraSource Build))
      , c (List FSep (MQuoted Extension) Extension)
      , c (List FSep (MQuoted Language) Language)
      , c (List FSep Token String)
@@ -503,7 +513,7 @@ benchmarkFieldGrammar =
     <*> optionalField "benchmark-module" benchmarkStanzaBenchmarkModule
     <*> blurFieldGrammar benchmarkStanzaBuildInfo buildInfoFieldGrammar
 
-validateBenchmark :: CabalSpecVersion -> Position -> BenchmarkStanza -> ParseResult Benchmark
+validateBenchmark :: CabalSpecVersion -> Position -> BenchmarkStanza -> ParseResult src Benchmark
 validateBenchmark cabalSpecVersion pos stanza = case benchmarkStanzaType of
   Nothing ->
     pure
@@ -585,6 +595,8 @@ buildInfoFieldGrammar
      , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
      , c (List CommaVCat (Identity Dependency) Dependency)
      , c (List CommaVCat (Identity Mixin) Mixin)
+     , c (List VCat (Identity (ExtraSource Pkg)) (ExtraSource Pkg))
+     , c (List VCat (Identity (ExtraSource Build)) (ExtraSource Build))
      , c (List FSep (MQuoted Extension) Extension)
      , c (List FSep (MQuoted Language) Language)
      , c (List FSep Token String)
@@ -629,14 +641,16 @@ buildInfoFieldGrammar =
     <*> monoidalFieldAla "pkgconfig-depends" (alaList CommaFSep) L.pkgconfigDepends
     <*> monoidalFieldAla "frameworks" (alaList' FSep RelativePathNT) L.frameworks
     <*> monoidalFieldAla "extra-framework-dirs" (alaList' FSep SymbolicPathNT) L.extraFrameworkDirs
-    <*> monoidalFieldAla "asm-sources" (alaList' VCat SymbolicPathNT) L.asmSources
+    <*> monoidalFieldAla "asm-sources" formatExtraSources L.asmSources
       ^^^ availableSince CabalSpecV3_0 []
-    <*> monoidalFieldAla "cmm-sources" (alaList' VCat SymbolicPathNT) L.cmmSources
+    <*> monoidalFieldAla "cmm-sources" formatExtraSources L.cmmSources
       ^^^ availableSince CabalSpecV3_0 []
-    <*> monoidalFieldAla "c-sources" (alaList' VCat SymbolicPathNT) L.cSources
-    <*> monoidalFieldAla "cxx-sources" (alaList' VCat SymbolicPathNT) L.cxxSources
+    <*> monoidalFieldAla "autogen-cmm-sources" formatExtraSources L.autogenCmmSources
+    -- FIXME ^^^ availableSince CabalSpecV3_0 []
+    <*> monoidalFieldAla "c-sources" formatExtraSources L.cSources
+    <*> monoidalFieldAla "cxx-sources" formatExtraSources L.cxxSources
       ^^^ availableSince CabalSpecV2_2 []
-    <*> monoidalFieldAla "js-sources" (alaList' VCat SymbolicPathNT) L.jsSources
+    <*> monoidalFieldAla "js-sources" formatExtraSources L.jsSources
     <*> hsSourceDirsGrammar
     <*> monoidalFieldAla "other-modules" formatOtherModules L.otherModules
     <*> monoidalFieldAla "virtual-modules" (alaList' VCat MQuoted) L.virtualModules
@@ -835,6 +849,9 @@ formatOtherExtensions = alaList' FSep MQuoted
 
 formatOtherModules :: [ModuleName] -> List VCat (MQuoted ModuleName) ModuleName
 formatOtherModules = alaList' VCat MQuoted
+
+formatExtraSources :: [ExtraSource pkg] -> List VCat (Identity (ExtraSource pkg)) (ExtraSource pkg)
+formatExtraSources = alaList' VCat Identity
 
 -------------------------------------------------------------------------------
 -- newtypes

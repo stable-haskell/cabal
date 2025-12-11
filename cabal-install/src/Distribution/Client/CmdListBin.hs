@@ -48,7 +48,6 @@ import Distribution.Client.TargetProblem (TargetProblem (..))
 import Distribution.Simple.BuildPaths (dllExtension, exeExtension)
 import Distribution.Simple.Command (CommandUI (..))
 import Distribution.Simple.Utils (dieWithException, withOutputMarker, wrapText)
-import Distribution.System (Platform)
 import Distribution.Types.ComponentName (showComponentName)
 import Distribution.Types.UnitId (UnitId)
 import Distribution.Types.UnqualComponentName (UnqualComponentName)
@@ -61,6 +60,7 @@ import Distribution.Client.Errors
 import qualified Distribution.Client.InstallPlan as IP
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Solver.Types.ComponentDeps as CD
+import Distribution.Utils.LogProgress (runLogProgress)
 
 -------------------------------------------------------------------------------
 -- Command
@@ -128,11 +128,13 @@ listbinAction flags args globalFlags = do
             )
             targets
 
-        let elaboratedPlan' =
-              pruneInstallPlanToTargets
-                TargetActionBuild
-                targets
-                elaboratedPlan
+        elaboratedPlan' <-
+          runLogProgress verbosity $
+            pruneInstallPlanToTargets
+              TargetActionBuild
+              targets
+              elaboratedPlan
+
         return (elaboratedPlan', targets)
 
     (selectedUnitId, selectedComponent) <-
@@ -204,8 +206,8 @@ listbinAction flags args globalFlags = do
             | s == selectedComponent -> [flib_file' s]
           _ -> []
 
-        plat :: Platform
-        plat = pkgConfigPlatform elaboratedSharedConfig
+        Toolchain{toolchainPlatform = plat} =
+          getStage (pkgConfigToolchains elaboratedSharedConfig) (elabStage elab)
 
         -- here and in PlanOutput,
         -- use binDirectoryFor?
@@ -225,7 +227,7 @@ listbinAction flags args globalFlags = do
 -- Target Problem: the very similar to CmdRun
 -------------------------------------------------------------------------------
 
-singleComponentOrElse :: IO (UnitId, UnqualComponentName) -> TargetsMap -> IO (UnitId, UnqualComponentName)
+singleComponentOrElse :: IO (WithStage UnitId, UnqualComponentName) -> TargetsMapS -> IO (WithStage UnitId, UnqualComponentName)
 singleComponentOrElse action targetsMap =
   case Set.toList . distinctTargetComponents $ targetsMap of
     [(unitId, CExeName component)] -> return (unitId, component)
@@ -317,7 +319,7 @@ data ListBinProblem
   | -- | A single 'TargetSelector' matches multiple targets
     TargetProblemMatchesMultiple TargetSelector [AvailableTarget ()]
   | -- | Multiple 'TargetSelector's match multiple targets
-    TargetProblemMultipleTargets TargetsMap
+    TargetProblemMultipleTargets TargetsMapS
   | -- | The 'TargetSelector' refers to a component that is not an executable
     TargetProblemComponentNotRightKind PackageId ComponentName
   | -- | Asking to run an individual file or module is not supported
@@ -334,7 +336,7 @@ matchesMultipleProblem selector targets =
   CustomTargetProblem $
     TargetProblemMatchesMultiple selector targets
 
-multipleTargetsProblem :: TargetsMap -> TargetProblem ListBinProblem
+multipleTargetsProblem :: TargetsMapS -> TargetProblem ListBinProblem
 multipleTargetsProblem = CustomTargetProblem . TargetProblemMultipleTargets
 
 componentNotRightKindProblem :: PackageId -> ComponentName -> TargetProblem ListBinProblem

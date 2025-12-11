@@ -35,15 +35,15 @@ tests =
       \p (Blind f) ->
         toProgress (retry (fromProgress p) (fromProgress . f))
           === (foldProgress Step f Done (p :: Log Int) :: Log Int)
-  , testProperty "failWith" $ \step failure ->
-      toProgress (failWith step failure)
-        === (Step step (Fail failure) :: Log Int)
-  , testProperty "succeedWith" $ \step success ->
-      toProgress (succeedWith step success)
-        === (Step step (Done success) :: Log Int)
-  , testProperty "continueWith" $ \step p ->
-      toProgress (continueWith step (fromProgress p))
-        === (Step step p :: Log Int)
+  , testProperty "failWith" $ \step' failure ->
+      toProgress (failWith step' failure)
+        === (Step step' (Fail failure) :: Log Int)
+  , testProperty "succeedWith" $ \step' success ->
+      toProgress (succeedWith step' success)
+        === (Step step' (Done success) :: Log Int)
+  , testProperty "continueWith" $ \step' p ->
+      toProgress (continueWith step' (fromProgress p))
+        === (Step step' p :: Log Int)
   , testCase "tryWith with failure" $
       let failure = Fail "Error"
           s = Step Success
@@ -66,10 +66,6 @@ instance
     return $ foldr Step end steps
 
 deriving instance (Eq step, Eq fail, Eq done) => Eq (Progress step fail done)
-
-deriving instance
-  (Show step, Show fail, Show done)
-  => Show (Progress step fail done)
 
 deriving instance Eq Message
 deriving instance Show Message

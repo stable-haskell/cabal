@@ -88,11 +88,11 @@ import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
 import qualified Distribution.Simple.Setup as Cabal
+
 import Distribution.Types.BuildType
 import Distribution.Types.PackageDescription.Lens (componentModules)
 
 import Distribution.Simple.Utils
-import Distribution.System (Platform (..))
 import Distribution.Utils.Path hiding
   ( (<.>)
   , (</>)
@@ -116,6 +116,8 @@ import Distribution.Client.Errors
 import Distribution.Compat.Directory (listDirectory)
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
+import qualified Distribution.Compat.Graph as Graph
+import Distribution.System (Platform (..))
 
 -- | Each unpacked package is processed in the following phases:
 --
@@ -176,26 +178,26 @@ buildAndRegisterUnpackedPackage
   buildTimeSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingKeepTempFiles}
   registerLock
   cacheLock
-  pkgshared@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigCompilerProgs = progdb
-    }
+  pkgshared
   plan
   rpkg@(ReadyPackage pkg)
   srcdir
   builddir
   mlogFile
   delegate = do
+    info verbosity $ "\n\nbuildAndRegisterUnpackedPackage: " ++ prettyShow (Graph.nodeKey pkg)
     -- Configure phase
     delegate $
       PBConfigurePhase $
-        annotateFailure mlogFile ConfigureFailed $
+        annotateFailure mlogFile ConfigureFailed $ do
+          info verbosity $ "--- Configure phase " ++ prettyShow (Graph.nodeKey pkg)
           setup configureCommand Cabal.configCommonFlags configureFlags configureArgs
 
     -- Build phase
     delegate $
       PBBuildPhase $
         annotateFailure mlogFile BuildFailed $ do
+          info verbosity $ "--- Build phase " ++ prettyShow (Graph.nodeKey pkg)
           setup buildCommand Cabal.buildCommonFlags (return . buildFlags) buildArgs
 
     -- Haddock phase
@@ -203,16 +205,19 @@ buildAndRegisterUnpackedPackage
       delegate $
         PBHaddockPhase $
           annotateFailure mlogFile HaddocksFailed $ do
+            info verbosity $ "--- Haddock phase " ++ prettyShow (Graph.nodeKey pkg)
             setup haddockCommand Cabal.haddockCommonFlags (return . haddockFlags) haddockArgs
 
     -- Install phase
     delegate $
       PBInstallPhase
         { runCopy = \destdir ->
-            annotateFailure mlogFile InstallFailed $
+            annotateFailure mlogFile InstallFailed $ do
+              info verbosity $ "--- Install phase, copy " ++ prettyShow (Graph.nodeKey pkg)
               setup Cabal.copyCommand Cabal.copyCommonFlags (return . copyFlags destdir) copyArgs
         , runRegister = \pkgDBStack registerOpts ->
             annotateFailure mlogFile InstallFailed $ do
+              info verbosity $ "--- Install phase, register " ++ prettyShow (Graph.nodeKey pkg)
               -- We register ourselves rather than via Setup.hs. We need to
               -- grab and modify the InstalledPackageInfo. We decide what
               -- the installed package id is, not the build system.
@@ -221,8 +226,8 @@ buildAndRegisterUnpackedPackage
               criticalSection registerLock $
                 Cabal.registerPackage
                   verbosity
-                  compiler
-                  progdb
+                  toolchainCompiler
+                  toolchainProgramDb
                   Nothing
                   (coercePackageDBStack pkgDBStack)
                   ipkg
@@ -234,26 +239,32 @@ buildAndRegisterUnpackedPackage
     whenTest $
       delegate $
         PBTestPhase $
-          annotateFailure mlogFile TestsFailed $
+          annotateFailure mlogFile TestsFailed $ do
+            info verbosity $ "--- Test phase " ++ prettyShow (Graph.nodeKey pkg)
             setup testCommand Cabal.testCommonFlags (return . testFlags) testArgs
 
     -- Bench phase
     whenBench $
       delegate $
         PBBenchPhase $
-          annotateFailure mlogFile BenchFailed $
+          annotateFailure mlogFile BenchFailed $ do
+            info verbosity $ "--- Benchmark phase " ++ prettyShow (Graph.nodeKey pkg)
             setup benchCommand Cabal.benchmarkCommonFlags (return . benchFlags) benchArgs
 
     -- Repl phase
     whenRepl $
       delegate $
         PBReplPhase $
-          annotateFailure mlogFile ReplFailed $
+          annotateFailure mlogFile ReplFailed $ do
+            info verbosity $ "--- Repl phase " ++ prettyShow (Graph.nodeKey pkg)
             setupInteractive replCommand Cabal.replCommonFlags replFlags replArgs
 
     return ()
     where
       uid = installedUnitId rpkg
+
+      Toolchain{toolchainCompiler, toolchainProgramDb} =
+        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
 
       comp_par_strat = case maybe_semaphore of
         Just sem_name -> Cabal.toFlag (getSemaphoreName sem_name)
@@ -450,7 +461,7 @@ buildInplaceUnpackedPackage
   buildSettings@BuildTimeSettings{buildSettingHaddockOpen}
   registerLock
   cacheLock
-  pkgshared@ElaboratedSharedConfig{pkgConfigPlatform = Platform _ os}
+  pkgshared
   plan
   rpkg@(ReadyPackage pkg)
   buildStatus
@@ -597,6 +608,9 @@ buildInplaceUnpackedPackage
     where
       dparams = elabDistDirParams pkgshared pkg
 
+      Toolchain{toolchainPlatform = Platform _ os} =
+        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
+
       packageFileMonitor = newPackageFileMonitor pkgshared distDirLayout dparams
 
       whenReConfigure action = case buildStatus of
@@ -617,9 +631,11 @@ buildInplaceUnpackedPackage
           BuildStatusBuild (Just _) _ ->
             info verbosity "whenReRegister: previously registered"
           -- There is nothing to register
-          _
+          BuildStatusBuild Nothing _ ->
+            info verbosity "whenReRegister: nothing to register, we know it!"
+          BuildStatusConfigure _reason
             | null (elabBuildTargets pkg) ->
-                info verbosity "whenReRegister: nothing to register"
+                info verbosity "whenReRegister: nothing to register, it seems ..."
             | otherwise -> action
 
 --------------------------------------------------------------------------------
@@ -648,17 +664,12 @@ buildAndInstallUnpackedPackage
 buildAndInstallUnpackedPackage
   verbosity
   distDirLayout
-  storeDirLayout@StoreDirLayout
-    { storePackageDBStack
-    }
+  storeDirLayout
   maybe_semaphore
   buildSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingLogFile}
   registerLock
   cacheLock
-  pkgshared@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigPlatform = platform
-    }
+  pkgshared
   plan
   rpkg@(ReadyPackage pkg)
   srcdir
@@ -710,11 +721,8 @@ buildAndInstallUnpackedPackage
                       "registerPkg: elab does NOT require registration for "
                         ++ prettyShow uid
                 | otherwise = do
-                    assert
-                      ( elabRegisterPackageDBStack pkg
-                          == storePackageDBStack compiler (elabPackageDbs pkg)
-                      )
-                      (return ())
+                    let packageDbStack = elabPackageDbs pkg ++ [storePackageDB storeDirLayout toolchainCompiler]
+                    assert (elabRegisterPackageDBStack pkg == packageDbStack) (return ())
                     _ <-
                       runRegister
                         (elabRegisterPackageDBStack pkg)
@@ -729,7 +737,7 @@ buildAndInstallUnpackedPackage
             newStoreEntry
               verbosity
               storeDirLayout
-              compiler
+              toolchainCompiler
               uid
               (copyPkgFiles verbosity pkgshared pkg runCopy)
               registerPkg
@@ -767,6 +775,9 @@ buildAndInstallUnpackedPackage
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
 
+      Toolchain{toolchainCompiler, toolchainPlatform} =
+        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
+
       dispname :: String
       dispname = case elabPkgOrComp pkg of
         -- Packages built altogether, instead of per component
@@ -791,7 +802,7 @@ buildAndInstallUnpackedPackage
       mlogFile =
         case buildSettingLogFile of
           Nothing -> Nothing
-          Just mkLogFile -> Just (mkLogFile compiler platform pkgid uid)
+          Just mkLogFile -> Just (mkLogFile toolchainCompiler toolchainPlatform pkgid uid)
 
       initLogFile :: IO ()
       initLogFile =

@@ -79,7 +79,6 @@ import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.PackageDescription.Check hiding (doesFileExist)
 import Distribution.PackageDescription.Configuration
-import Distribution.PackageDescription.PrettyPrint
 import Distribution.Simple.BuildTarget
 import Distribution.Simple.BuildToolDepends
 import Distribution.Simple.BuildWay
@@ -183,6 +182,7 @@ import Text.PrettyPrint
 import qualified Data.Maybe as M
 import qualified Data.Set as Set
 import qualified Distribution.Compat.NonEmptySet as NES
+import GHC.Stack (HasCallStack)
 
 type UseExternalInternalDeps = Bool
 
@@ -711,7 +711,7 @@ computeLocalBuildConfig cfg comp programDb = do
             -- rely on them. By the time that bug was fixed, ghci had
             -- been changed to read shared libraries instead of archive
             -- files (see next code block).
-            not (GHC.compilerBuildWay comp `elem` [DynWay, ProfDynWay])
+            notElem (GHC.compilerBuildWay comp) [DynWay, ProfDynWay]
           CompilerId GHCJS _ ->
             not (GHCJS.isDynamic comp)
           _ -> False
@@ -883,7 +883,7 @@ configurePackage cfg lbc0 pkg_descr00 flags enabled comp platform programDb0 pac
             let unknownBuildTools =
                   [ buildTool
                   | buildTool <- buildTools bi
-                  , Nothing == desugarBuildTool pkg_descr0 buildTool
+                  , isNothing (desugarBuildTool pkg_descr0 buildTool)
                   ]
             externBuildToolDeps ++ unknownBuildTools
 
@@ -930,9 +930,10 @@ configurePackage cfg lbc0 pkg_descr00 flags enabled comp platform programDb0 pac
         , extraCoverageFor = []
         }
 
-  debug verbosity $
-    "Finalized package description:\n"
-      ++ showPackageDescription pkg_descr2
+  -- FIXME: Printing the package description loops indefinitely.
+  -- debug verbosity $
+  --   "Finalized package description:\n"
+  --     ++ showPackageDescription pkg_descr2
 
   return (lbc, pbd)
 
@@ -1208,7 +1209,8 @@ finalCheckPackage
         enabled
 
 configureComponents
-  :: LBC.LocalBuildConfig
+  :: HasCallStack
+  => LBC.LocalBuildConfig
   -> LBC.PackageBuildDescr
   -> PackageInfo
   -> ([PreExistingComponent], [ConfiguredPromisedComponent])
@@ -2766,7 +2768,7 @@ checkPackageProblems verbosity dir gpkg pkg = do
       (errors, warnings) =
         partitionEithers (M.mapMaybe classEW $ pureChecks ++ ioChecks)
   if null errors
-    then traverse_ (warn verbosity) (map ppPackageCheck warnings)
+    then traverse_ (warn verbosity . ppPackageCheck) warnings
     else dieWithException verbosity $ CheckPackageProblems (map ppPackageCheck errors)
   where
     -- Classify error/warnings. Left: error, Right: warning.
@@ -2836,22 +2838,19 @@ checkRelocatable verbosity pkg lbi =
         p = prefix installDirs
         relativeInstallDirs (InstallDirs{..}) =
           all
-            isJust
-            ( fmap
-                (stripPrefix p)
-                [ bindir
-                , libdir
-                , dynlibdir
-                , libexecdir
-                , includedir
-                , datadir
-                , docdir
-                , mandir
-                , htmldir
-                , haddockdir
-                , sysconfdir
-                ]
-            )
+            (isJust . stripPrefix p)
+            [ bindir
+            , libdir
+            , dynlibdir
+            , libexecdir
+            , includedir
+            , datadir
+            , docdir
+            , mandir
+            , htmldir
+            , haddockdir
+            , sysconfdir
+            ]
 
     -- Check if the library dirs of the dependencies that are in the package
     -- database to which the package is installed are relative to the

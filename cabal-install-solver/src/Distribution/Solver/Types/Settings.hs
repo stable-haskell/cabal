@@ -2,7 +2,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Distribution.Solver.Types.Settings
     ( ReorderGoals(..)
-    , IndependentGoals(..)
     , PreferOldest(..)
     , MinimizeConflictSet(..)
     , AvoidReinstalls(..)
@@ -38,9 +37,6 @@ newtype FineGrainedConflicts = FineGrainedConflicts Bool
 newtype MinimizeConflictSet = MinimizeConflictSet Bool
   deriving (BooleanFlag, Eq, Generic, Show)
 
-newtype IndependentGoals = IndependentGoals Bool
-  deriving (BooleanFlag, Eq, Generic, Show)
-
 newtype PreferOldest = PreferOldest Bool
   deriving (BooleanFlag, Eq, Generic, Show)
 
@@ -72,7 +68,6 @@ newtype SolveExecutables = SolveExecutables Bool
 instance Binary ReorderGoals
 instance Binary CountConflicts
 instance Binary FineGrainedConflicts
-instance Binary IndependentGoals
 instance Binary PreferOldest
 instance Binary MinimizeConflictSet
 instance Binary AvoidReinstalls
@@ -85,7 +80,6 @@ instance Binary SolveExecutables
 instance Structured ReorderGoals
 instance Structured CountConflicts
 instance Structured FineGrainedConflicts
-instance Structured IndependentGoals
 instance Structured PreferOldest
 instance Structured MinimizeConflictSet
 instance Structured AvoidReinstalls
@@ -105,3 +99,23 @@ instance Parsec OnlyConstrained where
     , P.string "none" >> return OnlyConstrainedNone
     ]
 
+instance Parsec ReorderGoals where
+  parsec = ReorderGoals <$> parsec
+
+instance Parsec CountConflicts where
+  parsec = CountConflicts <$> parsec
+
+instance Parsec FineGrainedConflicts where
+  parsec = FineGrainedConflicts <$> parsec
+
+instance Parsec MinimizeConflictSet where
+  parsec = MinimizeConflictSet <$> parsec
+
+instance Parsec StrongFlags where
+  parsec = StrongFlags <$> parsec
+
+instance Parsec AllowBootLibInstalls where
+  parsec = AllowBootLibInstalls <$> parsec
+
+instance Parsec PreferOldest where
+  parsec = PreferOldest <$> parsec

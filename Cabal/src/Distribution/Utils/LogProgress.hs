@@ -4,10 +4,13 @@
 module Distribution.Utils.LogProgress
   ( LogProgress
   , runLogProgress
+  , runLogProgress'
   , warnProgress
   , infoProgress
   , dieProgress
   , addProgressCtx
+  , eitherToLogProgress
+  , ErrMsg
   ) where
 
 import Distribution.Compat.Prelude
@@ -16,6 +19,7 @@ import Prelude ()
 import Distribution.Simple.Utils
 import Distribution.Utils.Progress
 import Distribution.Verbosity
+import GHC.Stack (HasCallStack, callStack, prettyCallStack)
 import Text.PrettyPrint
 
 type CtxMsg = Doc
@@ -61,6 +65,16 @@ runLogProgress verbosity (LogProgress m) =
     fail_fn doc = do
       dieNoWrap verbosity (render doc)
 
+-- | Run 'LogProgress' ignoring all traces.
+runLogProgress' :: LogProgress a -> Either ErrMsg a
+runLogProgress' (LogProgress m) = foldProgress (\_ x -> x) Left Right (m env)
+  where
+    env =
+      LogEnv
+        { le_verbosity = silent
+        , le_context = []
+        }
+
 -- | Output a warning trace message in 'LogProgress'.
 warnProgress :: Doc -> LogProgress ()
 warnProgress s = LogProgress $ \env ->
@@ -75,10 +89,14 @@ infoProgress s = LogProgress $ \env ->
     stepProgress s
 
 -- | Fail the computation with an error message.
-dieProgress :: Doc -> LogProgress a
+dieProgress :: HasCallStack => Doc -> LogProgress a
 dieProgress s = LogProgress $ \env ->
   failProgress $
-    hang (text "Error:") 4 (formatMsg (le_context env) s)
+    hang (text "Error:") 4 $
+      vcat
+        [ formatMsg (le_context env) s
+        , text (prettyCallStack callStack)
+        ]
 
 -- | Format a message with context. (Something simple for now.)
 formatMsg :: [CtxMsg] -> Doc -> Doc
@@ -88,3 +106,7 @@ formatMsg ctx doc = doc $$ vcat ctx
 addProgressCtx :: CtxMsg -> LogProgress a -> LogProgress a
 addProgressCtx s (LogProgress m) = LogProgress $ \env ->
   m env{le_context = s : le_context env}
+
+eitherToLogProgress :: Either Doc a -> LogProgress a
+eitherToLogProgress (Left err) = dieProgress err
+eitherToLogProgress (Right a) = return a

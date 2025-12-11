@@ -126,6 +126,7 @@ import Distribution.Client.Tar (extractTarGzFile)
 import Distribution.Client.Targets
 import Distribution.Client.Types as Source
 import Distribution.Client.Types.OverwritePolicy (OverwritePolicy (..))
+import Distribution.Client.Types.ReadyPackage (ReadyPackage)
 import qualified Distribution.Client.Win32SelfUpgrade as Win32SelfUpgrade
 import qualified Distribution.InstalledPackageInfo as Installed
 import Distribution.Solver.Types.PackageFixedDeps
@@ -141,6 +142,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage as SourcePackage
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.Client.ProjectConfig
 import Distribution.Client.Utils
@@ -585,9 +587,9 @@ planPackages
   pkgConfigDb
   pkgSpecifiers =
     resolveDependencies
-      platform
-      (compilerInfo comp)
-      pkgConfigDb
+      (Stage.always (compilerInfo comp, platform))
+      (Stage.always pkgConfigDb)
+      (Stage.always installedPkgIndex)
       resolverParams
       >>= if onlyDeps then pruneInstallPlan pkgSpecifiers else return
     where
@@ -597,7 +599,6 @@ planPackages
               then Nothing
               else Just maxBackjumps
           )
-          . setIndependentGoals independentGoals
           . setReorderGoals reorderGoals
           . setCountConflicts countConflicts
           . setFineGrainedConflicts fineGrainedConflicts
@@ -650,7 +651,6 @@ planPackages
           -- doesn't understand how to install them
           . setSolveExecutables (SolveExecutables False)
           $ standardInstallPolicy
-            installedPkgIndex
             sourcePkgDb
             pkgSpecifiers
 
@@ -667,7 +667,6 @@ planPackages
       countConflicts = fromFlag (installCountConflicts installFlags)
       fineGrainedConflicts = fromFlag (installFineGrainedConflicts installFlags)
       minimizeConflictSet = fromFlag (installMinimizeConflictSet installFlags)
-      independentGoals = fromFlag (installIndependentGoals installFlags)
       avoidReinstalls = fromFlag (installAvoidReinstalls installFlags)
       shadowPkgs = fromFlag (installShadowPkgs installFlags)
       strongFlags = fromFlag (installStrongFlags installFlags)
@@ -716,7 +715,7 @@ pruneInstallPlan pkgSpecifiers =
           nub
             [ depid
             | SolverInstallPlan.PackageMissingDeps _ depids <- problems
-            , depid <- depids
+            , depid <- toList depids
             , packageName depid `elem` targetnames
             ]
 
@@ -782,7 +781,7 @@ checkPrintPlan
     -- likely to be broken. We exclude packages that are already broken.
     let newBrokenPkgs =
           filter
-            (\p -> not (Installed.installedUnitId p `elem` excluded))
+            (\p -> notElem (Installed.installedUnitId p) excluded)
             (PackageIndex.reverseDependencyClosure installed reinstalledPkgs)
     let containsReinstalls = not (null reinstalledPkgs)
     let breaksPkgs = not (null newBrokenPkgs)

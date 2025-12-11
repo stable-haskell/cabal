@@ -22,7 +22,7 @@ import Distribution.Compat.Graph
 import Distribution.Compiler
          ( CompilerInfo )
 import Distribution.Solver.Modular.Assignment
-         ( Assignment, toCPs )
+         ( Assignment(..), toCPs )
 import Distribution.Solver.Modular.ConfiguredConversion
          ( convCP )
 import qualified Distribution.Solver.Modular.ConflictSet as CS
@@ -39,6 +39,8 @@ import Distribution.Solver.Modular.IndexConversion
          ( convPIs )
 import Distribution.Solver.Modular.Log
          ( SolverFailure(..), displayLogMessages )
+import Distribution.Solver.Modular.Message
+         ( renderSummarizedMessage )
 import Distribution.Solver.Modular.Package
          ( PN )
 import Distribution.Solver.Modular.RetryLog
@@ -65,35 +67,35 @@ import Distribution.Solver.Types.Progress
     ( Progress(..), foldProgress )
 import Distribution.Solver.Types.SummarizedMessage
     ( SummarizedMessage(StringMsg) )
-import Distribution.Solver.Types.Variable ( Variable(..) )
-import Distribution.System
-         ( Platform(..) )
+import Distribution.Solver.Types.Variable
+    ( Variable(..) )
+import Distribution.Solver.Types.Toolchain
+
 import Distribution.Simple.Setup
          ( BooleanFlag(..) )
 import Distribution.Simple.Utils
     ( ordNubBy )
 import Distribution.Verbosity ( normal, verbose )
-import Distribution.Solver.Modular.Message ( renderSummarizedMessage )
 
 -- | Ties the two worlds together: classic cabal-install vs. the modular
 -- solver. Performs the necessary translations before and after.
 modularResolver :: SolverConfig -> DependencyResolver loc
-modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns =
-  uncurry postprocess <$> -- convert install plan
-  solve' sc cinfo idx pkgConfigDB pprefs gcs pns
-    where
+modularResolver sc toolchains pkgConfigDbs iidx sidx pprefs pcs pns = do
+    (assignment, revdepmap) <- solve' sc cinfo pkgConfigDbs idx pprefs gcs pns
+
+    -- Results have to be converted into an install plan. 'convCP' removes
+    -- package qualifiers, which means that linked packages become duplicates
+    -- and can be removed.
+    return $ ordNubBy nodeKey $ map (convCP iidx sidx) (toCPs assignment revdepmap)
+  where
+      cinfo = fst <$> toolchains
+
       -- Indices have to be converted into solver-specific uniform index.
-      idx    = convPIs os arch cinfo gcs (shadowPkgs sc) (strongFlags sc) (solveExecutables sc) iidx sidx
+      idx    = convPIs toolchains gcs (shadowPkgs sc) (strongFlags sc) (solveExecutables sc) iidx sidx
       -- Constraints have to be converted into a finite map indexed by PN.
       gcs    = M.fromListWith (++) (map pair pcs)
         where
           pair lpc = (pcName $ unlabelPackageConstraint lpc, [lpc])
-
-      -- Results have to be converted into an install plan. 'convCP' removes
-      -- package qualifiers, which means that linked packages become duplicates
-      -- and can be removed.
-      postprocess a rdm = ordNubBy nodeKey $
-                          map (convCP iidx sidx) (toCPs a rdm)
 
       -- Helper function to extract the PN from a constraint.
       pcName :: PackageConstraint -> PN
@@ -133,21 +135,21 @@ modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns
 -- complete, i.e., it shows the whole chain of dependencies from the user
 -- targets to the conflicting packages.
 solve' :: SolverConfig
-       -> CompilerInfo
+       -> Staged CompilerInfo
+       -> Staged (Maybe PkgConfigDb)
        -> Index
-       -> Maybe PkgConfigDb
        -> (PN -> PackagePreferences)
        -> Map PN [LabeledPackageConstraint]
        -> Set PN
        -> Progress SummarizedMessage String (Assignment, RevDepMap)
-solve' sc cinfo idx pkgConfigDB pprefs gcs pns =
+solve' sc cinfo pkgConfigDb idx pprefs gcs pns =
     toProgress $ retry (runSolver printFullLog sc) createErrorMsg
   where
     runSolver :: Bool -> SolverConfig
               -> RetryLog SummarizedMessage SolverFailure (Assignment, RevDepMap)
     runSolver keepLog sc' =
         displayLogMessages keepLog $
-        solve sc' cinfo idx pkgConfigDB pprefs gcs pns
+        solve sc' cinfo pkgConfigDb idx pprefs gcs pns
 
     createErrorMsg :: SolverFailure
                    -> RetryLog SummarizedMessage String (Assignment, RevDepMap)
