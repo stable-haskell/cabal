@@ -44,10 +44,10 @@ import Distribution.Simple.Compiler
   ( PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
-  
-  , showCompilerIdWithAbi
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
+import Distribution.Simple.Compiler (Compiler (..))
+import qualified Data.Map as Map
 
 -- | Information which can be used to construct the path to
 -- the build directory of a build.  This is LESS fine-grained
@@ -189,8 +189,7 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
     distBuildDirectory params =
       distBuildRootDirectory
         </> prettyShow (distParamStage params)
-        </> prettyShow (toolchainPlatform (distParamToolchain params))
-        </> showCompilerIdWithAbi (toolchainCompiler (distParamToolchain params))
+        </> betterPlatform (distParamToolchain params)
         </> prettyShow (distParamUnitId params)
 
     distUnpackedSrcRootDirectory :: FilePath
@@ -200,6 +199,7 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
     distUnpackedSrcDirectory pkgid =
       distUnpackedSrcRootDirectory
         </> prettyShow pkgid
+
     -- we shouldn't get name clashes so this should be fine:
     distDownloadSrcDirectory :: FilePath
     distDownloadSrcDirectory = distUnpackedSrcRootDirectory
@@ -240,10 +240,7 @@ defaultStoreDirLayout storeRoot =
   where
     storeDirectory :: Stage -> Toolchain -> FilePath
     storeDirectory stage toolchain =
-      storeRoot
-        </> prettyShow stage
-        </> prettyShow (toolchainPlatform toolchain)
-        </> showCompilerIdWithAbi (toolchainCompiler toolchain)
+      storeRoot </> prettyShow stage </> betterPlatform toolchain
 
     storePackageDirectory :: Stage -> Toolchain -> UnitId -> FilePath
     storePackageDirectory stage toolchain ipkgid =
@@ -269,6 +266,14 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
     storeIncomingLock stage toolchain unitid =
       storeIncomingDirectory stage toolchain </> prettyShow unitid <.> "lock"
+
+-- | This returns the platform triple in the same string representation used by the compiler e.g. x86_64-unknown-linux.
+-- If the compiler does not have a "Target platform" property, it falls back to pretty printing the Platform value in
+-- the toolchain.
+betterPlatform :: Toolchain -> String
+betterPlatform toolchain =
+  fromMaybe (prettyShow (toolchainPlatform toolchain))
+    $ Map.lookup "Target platform" (compilerProperties (toolchainCompiler toolchain))
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =
