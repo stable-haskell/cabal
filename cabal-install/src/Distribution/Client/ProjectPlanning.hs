@@ -222,7 +222,6 @@ import qualified Distribution.PackageDescription as PD
 import qualified Distribution.PackageDescription.Configuration as PD
 import qualified Distribution.Simple.Configure as Cabal
 import qualified Distribution.Simple.GHC as GHC
-import qualified Distribution.Simple.GHCJS as GHCJS
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Simple.LocalBuildInfo as Cabal
 import qualified Distribution.Simple.Setup as Cabal
@@ -2625,7 +2624,6 @@ elaborateInstallPlan
           compilerShouldUseSharedLibByDefault =
             case compilerFlavor compiler of
               GHC -> GHC.compilerBuildWay compiler == DynWay && canBuildSharedLibs
-              GHCJS -> GHCJS.isDynamic compiler
               _ -> False
 
           canBuildWayLibs predicate = case predicate compiler of

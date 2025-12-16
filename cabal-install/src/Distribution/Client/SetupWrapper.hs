@@ -78,6 +78,13 @@ import Distribution.Simple.PreProcess
   , runSimplePreProcessor
   )
 import Distribution.Simple.Program
+  ( ProgramDb
+  , emptyProgramDb
+  , getDbProgramOutputCwd
+  , getProgramSearchPath
+  , ghcProgram
+  , runDbProgramCwd
+  )
 import Distribution.Simple.Program.Db
 import Distribution.Simple.Program.Find
   ( programSearchPathAsPATHVar
@@ -1166,24 +1173,23 @@ getCachedSetupExecutable
                 True
             createDirectoryIfMissingVerbose verbosity True setupCacheDir
             installExecutableFile verbosity src cachedSetupProgFile
-            when (maybe True ((/= GHCJS) . compilerFlavor) $ useCompiler options') $ do
+            setupProgDb
+              <- prependProgramSearchPath verbosity
+                    (useExtraPathEnv options')
+                    (useExtraEnvOverrides options')
+                    (useProgramDb options')
+                   >>= configureAllKnownPrograms verbosity
+            Strip.stripExe
+              verbosity
+              platform
               setupProgDb
-                <- prependProgramSearchPath verbosity
-                      (useExtraPathEnv options')
-                      (useExtraEnvOverrides options')
-                      (useProgramDb options')
-                     >>= configureAllKnownPrograms verbosity
-              Strip.stripExe
-                verbosity
-                platform
-                setupProgDb
-                cachedSetupProgFile
+              cachedSetupProgFile
     return cachedSetupProgFile
     where
       criticalSection' = maybe id criticalSection $ setupCacheLock options'
 
 -- | If the Setup.hs is out of date wrt the executable then recompile it.
--- Currently this is GHC/GHCJS only. It should really be generalised.
+-- Currently this is GHC only. It should really be generalised.
 compileExe
   :: Verbosity
   -> Platform
@@ -1277,10 +1283,7 @@ compileSetupX
       (compiler, progdb, options'') <- configureCompiler verbosity options'
       pkgDbs <- traverse (traverse (makeRelativeToDirS mbWorkDir)) (coercePackageDBStack (usePackageDB options''))
       let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion
-          (program, extraOpts) =
-            case compilerFlavor compiler of
-              GHCJS -> (ghcjsProgram, ["-build-runner"])
-              _ -> (ghcProgram, ["-threaded"])
+          (program, extraOpts) = (ghcProgram, ["-threaded"])
           cabalDep =
             maybe
               []
