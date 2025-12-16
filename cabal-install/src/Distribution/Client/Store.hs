@@ -138,7 +138,7 @@ getStoreEntries StoreDirLayout{storeDirectory} compiler = do
   return $! mkEntries paths
   where
     mkEntries =
-      Set.delete (mkUnitId "package.db")
+      Set.delete (mkUnitId "package.conf.d")
         . Set.delete (mkUnitId "incoming")
         . Set.fromList
         . map mkUnitId

@@ -20,7 +20,6 @@ module Distribution.Simple.Program.Builtin
   , runghcProgram
   , ghcjsProgram
   , ghcjsPkgProgram
-  , jhcProgram
   , gccProgram
   , gppProgram
   , arProgram
@@ -70,7 +69,6 @@ builtinPrograms =
   , ghcPkgProgram
   , ghcjsProgram
   , ghcjsPkgProgram
-  , jhcProgram
   , hpcProgram
   , -- preprocessors
     hscolourProgram
@@ -170,18 +168,6 @@ ghcjsPkgProgram =
         -- "GHCJS package manager version 6.4.1"
         case words str of
           (_ : _ : _ : _ : ver : _) -> ver
-          _ -> ""
-    }
-
-jhcProgram :: Program
-jhcProgram =
-  (simpleProgram "jhc")
-    { programFindVersion = findProgramVersion "--version" $ \str ->
-        -- invoking "jhc --version" gives a string like
-        -- "jhc 0.3.20080208 (wubgipkamcep-2)
-        -- compiled by ghc-6.8 on a x86_64 running linux"
-        case words str of
-          (_ : ver : _) -> ver
           _ -> ""
     }
 

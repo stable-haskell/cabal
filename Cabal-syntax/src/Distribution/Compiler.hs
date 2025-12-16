@@ -34,10 +34,6 @@ module Distribution.Compiler
   , classifyCompilerFlavor
   , knownCompilerFlavors
 
-    -- * Per compiler flavor
-  , PerCompilerFlavor (..)
-  , perCompilerFlavorToList
-
     -- * Compiler id
   , CompilerId (..)
 
@@ -63,14 +59,6 @@ import qualified Text.PrettyPrint as Disp
 
 data CompilerFlavor
   = GHC
-  | GHCJS
-  | NHC
-  | YHC
-  | Hugs
-  | HBC
-  | Helium
-  | JHC
-  | Eta
   | -- | @since 3.12.1.0
     -- MicroHS, see https://github.com/augustss/MicroHs
     MHS
@@ -83,11 +71,10 @@ instance NFData CompilerFlavor where rnf = genericRnf
 
 knownCompilerFlavors :: [CompilerFlavor]
 knownCompilerFlavors =
-  [GHC, GHCJS, NHC, YHC, Hugs, HBC, Helium, JHC, Eta, MHS]
+  [GHC, MHS]
 
 instance Pretty CompilerFlavor where
   pretty (OtherCompiler name) = Disp.text name
-  pretty NHC = Disp.text "nhc98"
   pretty other = Disp.text (lowercase (show other))
 
 instance Parsec CompilerFlavor where
@@ -125,48 +112,9 @@ defaultCompilerFlavor = case buildCompilerFlavor of
   OtherCompiler _ -> Nothing
   _ -> Just buildCompilerFlavor
 
--------------------------------------------------------------------------------
--- Per compiler data
--------------------------------------------------------------------------------
-
--- | 'PerCompilerFlavor' carries only info per GHC and GHCJS
---
--- Cabal parses only @ghc-options@ and @ghcjs-options@, others are omitted.
-data PerCompilerFlavor v = PerCompilerFlavor v v
-  deriving
-    ( Generic
-    , Show
-    , Read
-    , Eq
-    , Ord
-    , Data
-    , Functor
-    , Foldable
-    , Traversable
-    )
-
-instance Binary a => Binary (PerCompilerFlavor a)
-instance Structured a => Structured (PerCompilerFlavor a)
-instance NFData a => NFData (PerCompilerFlavor a)
-
-perCompilerFlavorToList :: PerCompilerFlavor v -> [(CompilerFlavor, v)]
-perCompilerFlavorToList (PerCompilerFlavor a b) = [(GHC, a), (GHCJS, b)]
-
-instance Semigroup a => Semigroup (PerCompilerFlavor a) where
-  PerCompilerFlavor a b <> PerCompilerFlavor a' b' =
-    PerCompilerFlavor
-      (a <> a')
-      (b <> b')
-
-instance (Semigroup a, Monoid a) => Monoid (PerCompilerFlavor a) where
-  mempty = PerCompilerFlavor mempty mempty
-  mappend = (<>)
-
--- ------------------------------------------------------------
-
+--------------------------------------------------------------
 -- * Compiler Id
-
--- ------------------------------------------------------------
+--------------------------------------------------------------
 
 data CompilerId = CompilerId CompilerFlavor Version
   deriving (Eq, Generic, Ord, Read, Show)

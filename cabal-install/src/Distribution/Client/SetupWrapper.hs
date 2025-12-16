@@ -78,7 +78,6 @@ import Distribution.Simple.Program
   , getDbProgramOutputCwd
   , getProgramSearchPath
   , ghcProgram
-  , ghcjsProgram
   , runDbProgramCwd
   )
 import Distribution.Simple.Program.Db
@@ -1044,21 +1043,20 @@ getExternalSetupMethod verbosity options pkg bt = do
                     True
                 createDirectoryIfMissingVerbose verbosity True setupCacheDir
                 installExecutableFile verbosity src cachedSetupProgFile
-                -- Do not strip if we're using GHCJS, since the result may be a script
-                when (maybe True ((/= GHCJS) . compilerFlavor) $ useCompiler options') $ do
-                  -- Add the relevant PATH overrides for the package to the
-                  -- program database.
+                
+                -- Add the relevant PATH overrides for the package to the
+                -- program database.
+                setupProgDb
+                  <- prependProgramSearchPath verbosity
+                        (useExtraPathEnv options)
+                        (useExtraEnvOverrides options)
+                        (useProgramDb options')
+                        >>= configureAllKnownPrograms verbosity
+                Strip.stripExe
+                  verbosity
+                  platform
                   setupProgDb
-                    <- prependProgramSearchPath verbosity
-                          (useExtraPathEnv options)
-                          (useExtraEnvOverrides options)
-                          (useProgramDb options')
-                         >>= configureAllKnownPrograms verbosity
-                  Strip.stripExe
-                    verbosity
-                    platform
-                    setupProgDb
-                    cachedSetupProgFile
+                  cachedSetupProgFile
         return cachedSetupProgFile
         where
           criticalSection' = maybe id criticalSection $ setupCacheLock options'
@@ -1086,7 +1084,6 @@ getExternalSetupMethod verbosity options pkg bt = do
           let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion
               (program, extraOpts) =
                 case compilerFlavor compiler of
-                  GHCJS -> (ghcjsProgram, ["-build-runner"])
                   _ -> (ghcProgram, ["-threaded"])
               cabalDep =
                 maybe

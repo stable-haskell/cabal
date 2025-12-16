@@ -139,11 +139,11 @@ data BuildInfo = BuildInfo
   -- ^ The .h files to be generated (e.g. by @autoconf@)
   , installIncludes :: [RelativePath Include File]
   -- ^ .h files to install with the package
-  , options :: PerCompilerFlavor [String]
-  , profOptions :: PerCompilerFlavor [String]
-  , sharedOptions :: PerCompilerFlavor [String]
-  , profSharedOptions :: PerCompilerFlavor [String]
-  , staticOptions :: PerCompilerFlavor [String]
+  , options :: [String]
+  , profOptions :: [String]
+  , sharedOptions :: [String]
+  , profSharedOptions :: [String]
+  , staticOptions :: [String]
   , customFieldsBI :: [(String, String)]
   -- ^ Custom fields starting
   --  with x-, stored in a
@@ -318,12 +318,8 @@ hcStaticOptions :: CompilerFlavor -> BuildInfo -> [String]
 hcStaticOptions = lookupHcOptions staticOptions
 
 lookupHcOptions
-  :: (BuildInfo -> PerCompilerFlavor [String])
+  :: (BuildInfo -> [String])
   -> CompilerFlavor
   -> BuildInfo
   -> [String]
-lookupHcOptions f hc bi = case f bi of
-  PerCompilerFlavor ghc ghcjs
-    | hc == GHC -> ghc
-    | hc == GHCJS -> ghcjs
-    | otherwise -> mempty
+lookupHcOptions f _hc bi  = f bi

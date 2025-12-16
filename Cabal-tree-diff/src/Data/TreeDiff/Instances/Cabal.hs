@@ -13,7 +13,7 @@ import Data.TreeDiff.Instances.CabalVersion ()
 
 import Distribution.Backpack                       (OpenModule, OpenUnitId)
 import Distribution.CabalSpecVersion               (CabalSpecVersion)
-import Distribution.Compiler                       (CompilerFlavor, CompilerId, PerCompilerFlavor)
+import Distribution.Compiler                       (CompilerFlavor, CompilerId)
 import Distribution.InstalledPackageInfo           (AbiDependency, ExposedModule, InstalledPackageInfo)
 import Distribution.ModuleName                     (ModuleName)
 import Distribution.PackageDescription
@@ -45,8 +45,6 @@ instance (Show a, ToExpr b, ToExpr c, Show b, Show c, Eq a, Eq c, Eq b) => ToExp
 instance (ToExpr a) => ToExpr (NubList a)
 instance ToExpr a => ToExpr (NES.NonEmptySet a) where
     toExpr xs = App "NonEmptySet.fromNonEmpty" [toExpr $ NES.toNonEmpty xs]
-
-instance ToExpr a => ToExpr (PerCompilerFlavor a)
 
 instance ToExpr Dependency where
     toExpr d@(Dependency pn vr cs)
