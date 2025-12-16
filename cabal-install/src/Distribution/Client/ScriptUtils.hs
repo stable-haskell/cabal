@@ -90,10 +90,6 @@ import Distribution.Client.Types
   , PackageSpecifier (..)
   , UnresolvedSourcePackage
   )
-import Distribution.Compiler
-  ( CompilerId (..)
-  , perCompilerFlavorToList
-  )
 import Distribution.FieldGrammar
   ( parseFieldGrammar
   , takeFields
@@ -395,7 +391,7 @@ withContextAndSelectors verbosity noTargets kind flags@NixStyleFlags{..} targetS
               executable' =
                 executable
                   & L.buildInfo . L.defaultLanguage %~ maybe (Just Haskell2010) Just
-                  & L.buildInfo . L.options %~ fmap (setExePath exePathRel)
+                  & L.buildInfo . L.options %~ setExePath exePathRel
 
           createDirectoryIfMissingVerbose verbosity True (takeDirectory exePath)
 
@@ -590,14 +586,11 @@ fakeProjectSourcePackage projectRoot = sourcePackage
 
 -- | Find the path of an exe that has been relocated with a "-o" option
 movedExePath :: UnqualComponentName -> DistDirLayout -> ElaboratedSharedConfig -> ElaboratedConfiguredPackage -> Maybe FilePath
-movedExePath selectedComponent distDirLayout elabShared elabConfigured = do
+movedExePath selectedComponent distDirLayout _1elabShared elabConfigured = do
   exe <- find ((== selectedComponent) . exeName) . executables $ elabPkgDescription elabConfigured
-  let CompilerId flavor _ = compilerId toolchainCompiler
-  opts <- lookup flavor (perCompilerFlavorToList . options $ buildInfo exe)
+  opts <- Just (options $ buildInfo exe)
   let projectRoot = distProjectRootDirectory distDirLayout
   fmap (projectRoot </>) . lookup "-o" $ reverse (zip opts (drop 1 opts))
-  where
-    Toolchain{..} = getStage (pkgConfigToolchains elabShared) (elabStage elabConfigured)
 
 -- Lenses
 

@@ -913,8 +913,7 @@ argsEquivalentOfGhcEnvironmentFile
 argsEquivalentOfGhcEnvironmentFile compiler =
   case compilerId compiler of
     CompilerId GHC _ -> argsEquivalentOfGhcEnvironmentFileGhc
-    CompilerId GHCJS _ -> argsEquivalentOfGhcEnvironmentFileGhc
-    CompilerId _ _ -> error "Only GHC and GHCJS are supported"
+    CompilerId _ _ -> error "Only GHC is supported"
 
 -- TODO remove this when we drop support for non-.ghc.env ghc
 argsEquivalentOfGhcEnvironmentFileGhc
