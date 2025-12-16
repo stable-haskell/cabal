@@ -70,13 +70,6 @@ getImplInfo :: Compiler -> GhcImplInfo
 getImplInfo comp =
   case compilerFlavor comp of
     GHC -> ghcVersionImplInfo (compilerVersion comp)
-    GHCJS -> case compilerCompatVersion GHC comp of
-      Just ghcVer -> ghcjsVersionImplInfo (compilerVersion comp) ghcVer
-      _ ->
-        error
-          ( "Distribution.Simple.GHC.Props.getImplProps: "
-              ++ "could not find GHC version for GHCJS compiler"
-          )
     x ->
       error
         ( "Distribution.Simple.GHC.Props.getImplProps only works"
