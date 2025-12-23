@@ -216,6 +216,7 @@ import Distribution.Backpack.LinkedComponent
 import Distribution.Backpack.ModuleShape
 
 import Distribution.Simple.Utils
+import Distribution.Utils.Path
 import Distribution.Verbosity
 import Distribution.Version
 
@@ -245,7 +246,7 @@ import Distribution.Solver.Types.ResolverPackage (solverId)
 import qualified Distribution.Solver.Types.ResolverPackage as ResolverPackage
 import GHC.Stack (HasCallStack)
 import System.Directory (getCurrentDirectory)
-import System.FilePath
+import System.FilePath (takeDirectory)
 import qualified Text.PrettyPrint as Disp
 
 -- $readingTheProjectConfiguration
@@ -3868,34 +3869,72 @@ setupHsScriptOptions
         -- TODO: It is disappointing that we have to change the stage here
         getStage pkgConfigToolchains (prevStage elabStage)
 
+-- lib/package.conf.d/array-0.5.8.0-78fc.conf
+-- ^^^ this needs to be platform specific
+-- lib/x86_64-linux-ghc-9.12.2-5a14/libHSarray-0.5.8.0-78fc-ghc9.12.2.so
+-- lib/x86_64-linux-ghc-9.12.2-5a14/array-0.5.8.0-78fc/Data/
+-- lib/x86_64-linux-ghc-9.12.2-5a14/array-0.5.8.0-78fc/libHSarray-0.5.8.0-78fc.a
+
+-- what I have now
+
+-- _build/stage1/store/build/x86_64-unknown-linux/lib/alex-3.5.4.0-alex/share/AlexTemplate.hs
+-- _build/stage1/store/build/x86_64-unknown-linux/package.conf.d/bin/alex
+
+-- _build/stage1/store/build/x86_64-unknown-linux/lib/directory-1.3.10.0/libHSdirectory-1.3.10.0.a
+-- _build/stage1/store/build/x86_64-unknown-linux/lib/directory-1.3.10.0/share/doc/LICENSE
+-- _build/stage1/store/build/x86_64-unknown-linux/lib/directory-1.3.10.0/System/Directory.hi
+-- _build/stage1/store/build/x86_64-unknown-linux/package.conf.d/array-0.5.8.0.conf
+
+
+
+-- build for x86_64-unknown-linux:
+
+-- bin/ghc
+-- bin/x86_64-unknown-linux-ghc (symlink to lib/x86_64-unknown-linux/bin/ghc)
+-- lib/settings
+-- lib/x86_64-unknown-linux/target (new target file)
+-- lib/x86_64-unknown-linux/bin/ghc
+-- lib/x86_64-unknown-linux/lib/array-0.5.8.0/libHSarray-0.5.8.0.a
+-- lib/x86_64-unknown-linux/lib/libHSarray-0.5.8.0-ghcX.Y.Z.so
+-- lib/x86_64-unknown-linux/lib/package.conf.d/array-0.5.8.0.conf
+--
+-- TODO:
+--  - test bindist with _build/stage2/{bin,lib}
+--  - make package.conf entries relative
+--  - use platform string from ghc --info rather than cabal's own version
+
 simplePackageInstallDirs
   :: FilePath
+  -> UnitId
   -> InstallDirs.InstallDirTemplates
-simplePackageInstallDirs prefix =
+simplePackageInstallDirs pkgroot libname =
   InstallDirs.toPathTemplate <$> InstallDirs.InstallDirs{..}
     where
-    bindir = prefix </> "bin"
-    libdir = prefix </> "lib"
-    libsubdir = ""
-    dynlibdir = libdir
-    flibdir = libdir
-    libexecdir = prefix </> "libexec"
-    libexecsubdir = ""
-    includedir = libdir </> "include"
-    datadir = prefix </> "share"
-    datasubdir = ""
-    docdir = datadir </> "doc"
-    mandir = datadir </> "man"
-    htmldir = docdir </> "html"
-    haddockdir = htmldir
-    sysconfdir = prefix </> "etc"
+      prefix = pkgroot
+      bindir = pkgroot </> "bin"
+      libdir = pkgroot </> "lib" </> prettyShow libname
+      libsubdir = ""
+      dynlibdir = pkgroot </> "lib"
+      flibdir = pkgroot </> "lib"
+      libexecdir = pkgroot </> "lib" </> prettyShow libname </> "libexec"
+      libexecsubdir = ""
+      includedir = pkgroot </> "lib" </> prettyShow libname </> "include"
+      datadir = pkgroot </> "lib" </> prettyShow libname </> "share"
+      datasubdir = ""
+      docdir = pkgroot </> "lib" </> prettyShow libname </> "share/doc"
+      mandir = pkgroot </> "lib" </> prettyShow libname </> "share/man"
+      htmldir = pkgroot </> "lib" </> prettyShow libname </> "share/doc/html"
+      haddockdir = pkgroot </> "lib" </> prettyShow libname </> "share/doc/html"
+      sysconfdir = pkgroot </> "etc"
 
 computeInstallDirs
   :: StoreDirLayout
   -> ElaboratedConfiguredPackage
   -> InstallDirs.InstallDirTemplates
 computeInstallDirs storeDirLayout elab =
-  simplePackageInstallDirs $ storePackageDirectory storeDirLayout (elabStage elab) (elabToolchain elab) (elabUnitId elab)
+  simplePackageInstallDirs pkgroot (elabUnitId elab)
+  where
+    pkgroot = takeDirectory (storePackageDBPath storeDirLayout (elabStage elab) (elabToolchain elab))
 
 -- TODO: [code cleanup] perhaps reorder this code
 -- based on the ElaboratedInstallPlan + ElaboratedSharedConfig,
@@ -3925,11 +3964,9 @@ setupHsConfigureFlags
         , configDynExe
         , configFullyStaticExe
         , configGHCiLib
-        , -- , configProfExe -- overridden
-        configProfLib
+        , configProfLib
         , configProfShared
-        , -- , configProf -- overridden
-        configProfDetail
+        , configProfDetail
         , configProfLibDetail
         , configCoverage
         , configLibCoverage
@@ -4176,12 +4213,12 @@ setupHsCopyFlags
   :: ElaboratedConfiguredPackage
   -> ElaboratedSharedConfig
   -> Cabal.CommonSetupFlags
-  -> FilePath
+  -> Cabal.CopyDest
   -> Cabal.CopyFlags
-setupHsCopyFlags _ _ common destdir =
+setupHsCopyFlags _ _ common dest =
   Cabal.CopyFlags
     { copyCommonFlags = common
-    , copyDest = toFlag (InstallDirs.CopyTo destdir)
+    , copyDest = toFlag dest
     }
 
 setupHsRegisterFlags
