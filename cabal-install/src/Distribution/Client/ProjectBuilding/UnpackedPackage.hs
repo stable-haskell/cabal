@@ -18,13 +18,11 @@ module Distribution.Client.ProjectBuilding.UnpackedPackage
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import Distribution.Client.PackageHash (renderPackageHashInputs)
 import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectConfig.Types
 import Distribution.Client.ProjectPlanning
 import Distribution.Client.ProjectPlanning.Types
-import Distribution.Client.Store
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.JobControl
@@ -61,7 +59,6 @@ import Distribution.Simple.Compiler
   ( PackageDBStackCWD
   , coercePackageDBStack
   )
-import qualified Distribution.Simple.InstallDirs as InstallDirs
 import Distribution.Simple.LocalBuildInfo
   ( ComponentName (..)
   , LibraryName (..)
@@ -80,19 +77,16 @@ import Distribution.Utils.Path hiding
 import Distribution.Version
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Lazy.Char8 as LBS.Char8
 import qualified Data.List.NonEmpty as NE
 
 import Control.Exception (Handler (..), SomeAsyncException, catches)
-import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, removeFile, removeDirectoryRecursive, renameDirectory, renameFile)
-import System.FilePath (dropDrive, normalise, takeDirectory, (</>), makeRelative)
+import System.Directory (canonicalizePath, createDirectoryIfMissing, doesFileExist, removeFile)
+import System.FilePath (takeDirectory, (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
 import System.Semaphore (SemaphoreName (..))
 
 
 import Distribution.Client.Errors
-import Distribution.Compat.Directory (listDirectory)
 
 import qualified Distribution.Compat.Graph as Graph
 
@@ -115,7 +109,7 @@ data PackageBuildingPhase
   | PBBuildPhase {runBuild :: IO ()}
   | PBHaddockPhase {runHaddock :: IO ()}
   | PBInstallPhase
-      { runCopy :: FilePath -> IO ()
+      { runCopy :: Cabal.CopyDest -> IO ()
       , runRegister
           :: PackageDBStackCWD
           -> Cabal.RegisterOptions
@@ -346,10 +340,17 @@ buildAndRegisterUnpackedPackage
         -> (Version -> [String])
         -> IO ()
       setup cmd getCommonFlags flags args =
-        withLogging $ \mLogFileHandle ->
+        withLogging $ \mLogFileHandle -> do
+          let opts = scriptOptions { useLoggingHandle = mLogFileHandle }
+          info verbosity $
+            "Running setup command: "
+              ++ unwords
+                ( "useExtraPathEnv"
+                    : useExtraPathEnv opts
+                ) 
           setupWrapper
             verbosity
-            scriptOptions { useLoggingHandle = mLogFileHandle }
+            opts
             (Just (elabPkgDescription pkg))
             cmd
             getCommonFlags
@@ -460,34 +461,17 @@ buildAndInstallUnpackedPackage
         PBInstallPhase{runCopy, runRegister} -> do
           noticeProgress ProgressInstalling
 
-          let storeDirLayout = distStoreDirLayout distDirLayout
-              storeFile = storeDirectory storeDirLayout (elabStage pkg) (elabToolchain pkg)
-              finalEntryDir = storePackageDirectory storeDirLayout (elabStage pkg) (elabToolchain pkg) uid
-              incomingDir = storeIncomingDirectory storeDirLayout (elabStage pkg) (elabToolchain pkg)
+          runCopy (Cabal.CopyToDb (elabRegistrationPackageDb pkg))
 
-          withTempDirectory verbosity incomingDir "new"  $ \incomingTmpDir -> do
-            -- Write all store entry files within the temp dir and return the prefix.
-            (incomingEntryDir, otherFiles) <- copyPkgFiles verbosity pkg runCopy incomingTmpDir
-
-            if elabRequiresRegistration pkg then
-              void $ runRegister
-                  (elabRegisterPackageDBStack pkg)
-                  Cabal.defaultRegisterOptions
-                    { Cabal.registerMultiInstance = True
-                    , Cabal.registerSuppressFilesCheck = True
-                    }
-            else
-              info verbosity $ "registerPkg: elab does NOT require registration for " ++ prettyShow uid
-
-            removeDirectoryRecursive finalEntryDir `catch` \(_ :: IOException) ->
-              return () -- ignore all IO exceptions, likely the dir did not exist
-
-            renameDirectory incomingEntryDir finalEntryDir
-            
-            for_ otherFiles $ \file -> do
-              let finalStoreFile = storeFile </> makeRelative (normalise (incomingTmpDir </> dropDrive storeFile)) file
-              createDirectoryIfMissing True (takeDirectory finalStoreFile)
-              renameFile file finalStoreFile
+          if elabRequiresRegistration pkg then
+            void $ runRegister
+                (elabRegisterPackageDBStack pkg)
+                Cabal.defaultRegisterOptions
+                  { Cabal.registerMultiInstance = True
+                  , Cabal.registerSuppressFilesCheck = True
+                  }
+          else
+            info verbosity $ "registerPkg: elab does NOT require registration for " ++ prettyShow uid
 
         -- No tests on install
         PBTestPhase{} -> return ()
@@ -559,80 +543,9 @@ buildAndInstallUnpackedPackage
             exists <- doesFileExist logFile
             when exists $ removeFile logFile
 
--- | The copy part of the installation phase when doing build-and-install
-copyPkgFiles
-  :: Verbosity
-  -> ElaboratedConfiguredPackage
-  -> (FilePath -> IO ())
-  -- ^ The 'runCopy' function which invokes ./Setup copy for the
-  -- given filepath
-  -> FilePath
-  -- ^ The temporary dir file path
-  -> IO (FilePath, [FilePath])
-copyPkgFiles verbosity pkg runCopy tmpDir = do
-  let tmpDirNormalised = normalise tmpDir
-  runCopy tmpDirNormalised
-  -- Note that the copy command has put the files into
-  -- @$tmpDir/$prefix@ so we need to return this dir so
-  -- the store knows which dir will be the final store entry.
-  let prefix =
-        normalise $
-          dropDrive (InstallDirs.prefix (elabAbsoluteInstallDirs pkg))
-      entryDir = tmpDirNormalised </> prefix
-
-  -- if there weren't anything to build, it might be that directory is not created
-  -- the @setup Cabal.copyCommand@ above might do nothing.
-  -- https://github.com/haskell/cabal/issues/4130
-  createDirectoryIfMissingVerbose verbosity True entryDir
-
-  case elabPkgSourceHash pkg of
-    Nothing -> return ()
-    Just srchash -> do
-      let hashFileName = entryDir </> "cabal-hash.txt"
-          outPkgHashInputs = renderPackageHashInputs (packageHashInputs srchash pkg)
-
-      info verbosity $
-        "creating file with the inputs used to compute the package hash: " ++ hashFileName
-
-      LBS.writeFile hashFileName outPkgHashInputs
-
-      debug verbosity "Package hash inputs:"
-      traverse_
-        (debug verbosity . ("> " ++))
-        (lines $ LBS.Char8.unpack outPkgHashInputs)
-
-  -- Ensure that there are no files in `tmpDir`, that are
-  -- not in `entryDir`. While this breaks the
-  -- prefix-relocatable property of the libraries, it is
-  -- necessary on macOS to stay under the load command limit
-  -- of the macOS mach-o linker. See also
-  -- @PackageHash.hashedInstalledPackageIdVeryShort@.
-  --
-  -- We also normalise paths to ensure that there are no
-  -- different representations for the same path. Like / and
-  -- \\ on windows under msys.
-  otherFiles <-
-    filter (not . isPrefixOf entryDir)
-      <$> listFilesRecursive tmpDirNormalised
-  -- Here's where we could keep track of the installed files
-  -- ourselves if we wanted to by making a manifest of the
-  -- files in the tmp dir.
-  return (entryDir, otherFiles)
-  where
-    listFilesRecursive :: FilePath -> IO [FilePath]
-    listFilesRecursive path = do
-      files <- fmap (path </>) <$> (listDirectory path)
-      allFiles <- for files $ \file -> do
-        isDir <- doesDirectoryExist file
-        if isDir
-          then listFilesRecursive file
-          else return [file]
-      return (concat allFiles)
 
 --------------------------------------------------------------------------------
-
 -- * Exported Utils
-
 --------------------------------------------------------------------------------
 
 {- FOURMOLU_DISABLE -}
