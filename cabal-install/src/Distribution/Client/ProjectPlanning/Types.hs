@@ -68,6 +68,10 @@ module Distribution.Client.ProjectPlanning.Types
 
     -- * Setup script
   , SetupScriptStyle (..)
+  , elabRegistrationPackageDb
+  , elabAbsoluteInstallDirs
+  , elabExePath
+  , elabBinDir
   ) where
 
 import Distribution.Client.Compat.Prelude
@@ -124,6 +128,7 @@ import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Types.PkgconfigVersion
 import Distribution.Verbosity (normal)
 import Distribution.Version
+import Distribution.Utils.Path ((</>))
 
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List.NonEmpty as NE
@@ -131,6 +136,7 @@ import qualified Data.Map as Map
 import qualified Distribution.Compat.Graph as Graph
 import Text.PrettyPrint (colon, hsep, parens, text)
 import qualified Distribution.PackageDescription as PD
+import GHC.Stack (HasCallStack)
 
 -- | The combination of an elaborated install plan plus a
 -- 'ElaboratedSharedConfig' contains all the details necessary to be able
@@ -297,7 +303,7 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   , elabExtraIncludeDirs :: [FilePath]
   , elabProgPrefix :: Maybe PathTemplate
   , elabProgSuffix :: Maybe PathTemplate
-  , elabInstallDirs :: InstallDirs.InstallDirs FilePath
+  , elabInstallDirs :: InstallDirs.InstallDirTemplates
   , elabHaddockHoogle :: Bool
   , elabHaddockHtml :: Bool
   , elabHaddockHtmlLocation :: Maybe String
@@ -486,6 +492,21 @@ elabExeName elab =
         Just (CExeName name) -> [PD.unUnqualComponentName name]
         _ -> []
 
+elabBinDir :: ElaboratedConfiguredPackage -> FilePath
+elabBinDir = InstallDirs.bindir . elabAbsoluteInstallDirs
+
+-- | The path to the executable for this package/component.
+-- FIXME: it does not include configProgPrefix/configProgSuffix
+elabExePath :: ElaboratedConfiguredPackage -> FilePath
+elabExePath elab =
+  elabBinDir elab </> exeName
+  where
+    exeNames = elabExeName elab
+    exeName =
+      case exeNames of
+        [name] -> name
+        _ -> error $ "elabExePath: expected exactly one executable name, got: " ++ show exeNames
+
 -- | A user-friendly descriptor for an 'ElaboratedConfiguredPackage'.
 elabConfiguredName :: Verbosity -> ElaboratedConfiguredPackage -> String
 elabConfiguredName verbosity elab
@@ -628,6 +649,35 @@ elabSetupLibDependencies elab =
     ElabPackage pkg -> pkgSetupLibDependencies pkg
     -- Custom setups not supported for components.
     ElabComponent _ -> []
+
+elabRegistrationPackageDb
+  :: HasCallStack
+  => ElaboratedConfiguredPackage
+  -> FilePath
+elabRegistrationPackageDb elab =
+  case registrationPackageDB (elabRegisterPackageDBStack elab) of
+    SpecificPackageDB db -> db
+    _ -> error "elabRegistrationPackageDb: elabRegisterPackageDB is not a SpecificPackageDB"
+
+-- | The absolute install dirs for this package/component.
+-- NOTE: to be entirely honest, we do not really know these paths. This is because the copy
+-- is done by Cabal and we do not have a way to obtain the final paths other than
+-- computing them ourselves here. We could hijack the copy process just like we do for 
+-- register; that would make these paths the source of truth.
+elabAbsoluteInstallDirs
+  :: HasCallStack
+  => ElaboratedConfiguredPackage
+  -> InstallDirs.InstallDirs FilePath
+elabAbsoluteInstallDirs elab =
+  InstallDirs.absoluteInstallDirs
+    (elabPkgSourceId elab)
+    (elabUnitId elab)
+    (compilerInfo toolchainCompiler)
+    (InstallDirs.CopyToDb (elabRegistrationPackageDb elab))
+    toolchainPlatform
+    (elabInstallDirs elab)
+  where
+    Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain elab
 
 pkgSetupLibDependencies :: ElaboratedPackage -> [WithStage ConfiguredId]
 pkgSetupLibDependencies pkg =

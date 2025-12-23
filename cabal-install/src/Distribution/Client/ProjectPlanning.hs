@@ -38,6 +38,7 @@ module Distribution.Client.ProjectPlanning
     ElaboratedInstallPlan
   , ElaboratedInstalledPackageInfo
   , ElaboratedConfiguredPackage (..)
+  , ElaboratedPackageOrComponent (..)
   , ElaboratedPlanPackage
   , ElaboratedSharedConfig (..)
   , ElaboratedReadyPackage
@@ -50,6 +51,7 @@ module Distribution.Client.ProjectPlanning
   , elabOrderExeDependencies
   , elabLibDependencies
   , elabExeDependencies
+  , elabExeDependencyPaths
 
     -- * Reading the project configuration
     -- $readingTheProjectConfiguration
@@ -99,11 +101,11 @@ module Distribution.Client.ProjectPlanning
   , packageHashInputs
 
     -- * Path construction
-  , installedBinDirectory
   , binDirectories
-  , storePackageInstallDirs
-  , storePackageInstallDirs'
+  , elabBinDir
   , elabDistDirParams
+  , elabExePath
+  , elabAbsoluteInstallDirs
 
    -- * Toolchain
   , configToolchainExSafe
@@ -1955,7 +1957,7 @@ elaborateInstallPlan
                   -- 6. Construct the updated local maps
                   let cc_map' = extendConfiguredComponentMap cc cc_map
                       lc_map' = extendLinkedComponentMap lc lc_map
-                      exe_map' = Map.insert cid (installedBinDirectory elab) exe_map
+                      exe_map' = Map.insert cid (elabBinDir elab) exe_map
 
                   return ((cc_map', lc_map', exe_map'), elab)
               where
@@ -2018,7 +2020,7 @@ elaborateInstallPlan
       planPackageExePaths =
         -- Note: the packagedb only include libraries, so pre-installed packages cannot have executables to depend on.
         InstallPlan.foldPlanPackage (const []) $ \elab ->
-          [ installedBinDirectory elab  ]
+          [ elabBinDir elab  ]
 
       elaborateSolverToPackage
         :: NE.NonEmpty NotPerComponentReason
@@ -2666,7 +2668,7 @@ binDirectories
 binDirectories package =
   -- quick sanity check: no sense returning a bin directory if we're not going
   -- to put any executables in it, that will just clog up the PATH
-  if noExecutables then [] else [installedBinDirectory package]
+  if noExecutables then [] else [elabBinDir package]
   where
     noExecutables = null . PD.executables . elabPkgDescription $ package
 
@@ -3866,29 +3868,11 @@ setupHsScriptOptions
         -- TODO: It is disappointing that we have to change the stage here
         getStage pkgConfigToolchains (prevStage elabStage)
 
-storePackageInstallDirs
-  :: StoreDirLayout
-  -> Stage
-  -> Toolchain
-  -> InstalledPackageId
-  -> InstallDirs.InstallDirs FilePath
-storePackageInstallDirs storeDirLayout stage toolchain ipkgid =
-  storePackageInstallDirs' storeDirLayout stage toolchain $ newSimpleUnitId ipkgid
-
-storePackageInstallDirs'
-  :: StoreDirLayout
-  -> Stage
-  -> Toolchain
-  -> UnitId
-  -> InstallDirs.InstallDirs FilePath
-storePackageInstallDirs' storeDirLayout stage toolchain unitid =
-  simplePackageInstallDirs $ storePackageDirectory storeDirLayout stage toolchain unitid
-
 simplePackageInstallDirs
   :: FilePath
-  -> InstallDirs.InstallDirs FilePath
+  -> InstallDirs.InstallDirTemplates
 simplePackageInstallDirs prefix =
-  InstallDirs.InstallDirs{..}
+  InstallDirs.toPathTemplate <$> InstallDirs.InstallDirs{..}
     where
     bindir = prefix </> "bin"
     libdir = prefix </> "lib"
@@ -3909,7 +3893,7 @@ simplePackageInstallDirs prefix =
 computeInstallDirs
   :: StoreDirLayout
   -> ElaboratedConfiguredPackage
-  -> InstallDirs.InstallDirs FilePath
+  -> InstallDirs.InstallDirTemplates
 computeInstallDirs storeDirLayout elab =
   simplePackageInstallDirs $ storePackageDirectory storeDirLayout (elabStage elab) (elabToolchain elab) (elabUnitId elab)
 
@@ -3934,8 +3918,6 @@ setupHsConfigureFlags
     configPackageDBs <- (traverse . traverse . traverse) mkSymbolicPath (Nothing : map Just elabBuildPackageDBStack)
     return Cabal.ConfigFlags{..}
     where
-      Toolchain{toolchainCompiler} = elabToolchain
-
       Cabal.ConfigFlags
         { configVanillaLib
         , configSharedLib
@@ -3997,7 +3979,7 @@ setupHsConfigureFlags
                 ["-hide-all-packages"]
                 elabProgramArgs
       configProgramPathExtra = toNubList elabProgramPathExtra
-      configHcFlavor = toFlag (compilerFlavor toolchainCompiler)
+      configHcFlavor = toFlag (compilerFlavor (toolchainCompiler elabToolchain))
       configHcPath = mempty -- we use configProgramPaths instead
       configHcPkg = mempty -- we use configProgramPaths instead
       configDumpBuildInfo = toFlag elabDumpBuildInfo
@@ -4011,10 +3993,7 @@ setupHsConfigureFlags
       configProgPrefix = maybe mempty toFlag elabProgPrefix
       configProgSuffix = maybe mempty toFlag elabProgSuffix
 
-      configInstallDirs =
-        fmap
-          (toFlag . InstallDirs.toPathTemplate)
-          elabInstallDirs
+      configInstallDirs = toFlag <$> elabInstallDirs
 
       -- we only use configDependencies, unless we're talking to an old Cabal
       -- in which case we use configConstraints
@@ -4058,7 +4037,7 @@ setupHsConfigureFlags
       configUserInstall = mempty -- don't rely on defaults
       configPrograms_ = mempty -- never use, shouldn't exist
       configUseResponseFiles = mempty
-      configAllowDependingOnPrivateLibs = Flag $ not $ libraryVisibilitySupported toolchainCompiler
+      configAllowDependingOnPrivateLibs = Flag $ not $ libraryVisibilitySupported (toolchainCompiler elabToolchain)
       configIgnoreBuildTools = mempty
 
       cidToGivenComponent :: ConfiguredId -> GivenComponent
@@ -4426,10 +4405,6 @@ packageHashConfigInputs pkg =
     Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain
     ElaboratedConfiguredPackage{..} = normaliseConfiguredPackage pkg
     LBC.BuildOptions{..} = elabBuildOptions
-
--- Where executables have been installed for this package
-installedBinDirectory :: ElaboratedConfiguredPackage -> FilePath
-installedBinDirectory = InstallDirs.bindir . elabInstallDirs
 
 -- FIXME: whathever
 -- --------------------------------------------------------------------------------
