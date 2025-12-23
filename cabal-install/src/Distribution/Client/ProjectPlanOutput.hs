@@ -272,13 +272,13 @@ encodePlanAsJson _distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
         bin_file' s =
           ["bin-file" J..= J.String bin]
           where
-            bin = InstallDirs.bindir (elabInstallDirs elab) </> prettyShow s <.> exeExtension plat
+            bin = elabBinDir elab </> prettyShow s <.> exeExtension plat
 
         flib_file' :: (Pretty a, Show a) => a -> [J.Pair]
         flib_file' s =
           ["bin-file" J..= J.String bin]
           where
-            bin = InstallDirs.bindir (elabInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
+            bin = InstallDirs.flibdir (elabAbsoluteInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
 
     comp2str :: ComponentDeps.Component -> String
     comp2str = prettyShow

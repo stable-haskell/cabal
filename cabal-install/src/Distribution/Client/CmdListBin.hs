@@ -58,7 +58,6 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Distribution.Client.Errors
 import qualified Distribution.Client.InstallPlan as IP
-import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Utils.LogProgress (runLogProgress)
 
@@ -207,10 +206,8 @@ listbinAction flags args globalFlags = do
         Toolchain{toolchainPlatform = plat} = elabToolchain elab
 
         -- here and in PlanOutput,
-        -- use binDirectoryFor?
-        bin_file' s = InstallDirs.bindir (elabInstallDirs elab) </> prettyShow s <.> exeExtension plat
-
-        flib_file' s = InstallDirs.bindir (elabInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
+        bin_file' s = elabBinDir elab </> prettyShow s <.> exeExtension plat
+        flib_file' s = elabBinDir elab </> ("lib" ++ prettyShow s) <.> dllExtension plat
 
         moved_bin_file s = fromMaybe (bin_file' s) (movedExePath selectedComponent distDirLayout elaboratedSharedConfig elab)
 
