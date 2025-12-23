@@ -55,14 +55,11 @@ import qualified Distribution.Client.ProjectOrchestration as Orchestration (targ
 import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
+  , ElaboratedPackageOrComponent (..)
   , WithStage (..)
-  , installedBinDirectory
-  )
-import Distribution.Client.ProjectPlanning.Types
-  ( ElaboratedPackageOrComponent (..)
+  , elabBinDir
   , elabExeDependencyPaths
   )
-
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
   , TargetContext (..)
@@ -301,7 +298,7 @@ runAction flags targetAndArgs globalFlags =
         dieWithException verbosity $
           MultipleMatchingExecutables exeName (fmap (\p -> " - in package " ++ prettyShow (elabUnitId p)) elabPkgs)
 
-    let defaultExePath = installedBinDirectory pkg </> exeName
+    let defaultExePath = elabBinDir pkg </> exeName
         exePath = fromMaybe defaultExePath (movedExePath selectedComponent (distDirLayout baseCtx) (elaboratedShared buildCtx) pkg)
 
     let dryRun =
@@ -319,7 +316,7 @@ runAction flags targetAndArgs globalFlags =
         , let pkg_descr = elabPkgDescription pkg
         , thisExe : _ <- filter ((== exeName) . unUnqualComponentName . PD.exeName) $ PD.executables pkg_descr
         , let thisExeBI = PD.buildInfo thisExe =
-            [ installedBinDirectory pkg </> depExeNm
+            [ elabBinDir pkg </> depExeNm
             | depExe <- getAllInternalToolDependencies pkg_descr thisExeBI
             , let depExeNm = unUnqualComponentName depExe
             ]

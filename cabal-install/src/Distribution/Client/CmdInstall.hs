@@ -95,8 +95,8 @@ import Distribution.Client.ProjectPlanning
   , ElaboratedPlanPackage
   , Stage (..)
   , Toolchain (..)
+  , WithStage (..)
   , configToolchainExSafe
-  , storePackageInstallDirs'
   )
 import Distribution.Client.RebuildMonad
   ( runRebuild
@@ -256,6 +256,7 @@ import System.FilePath
   , (<.>)
   , (</>)
   )
+import Distribution.Client.ProjectPlanning.Types (elabBinDir)
 
 -- | Check or check then install an exe. The check is to see if the overwrite
 -- policy allows installation.
@@ -274,7 +275,6 @@ type InstallAction =
 
 data InstallCfg = InstallCfg
   { verbosity :: Verbosity
-  , baseCtx :: ProjectBaseContext
   , buildCtx :: ProjectBuildContext
   , stage :: Stage
   , toolchain :: Toolchain
@@ -519,7 +519,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
     buildCtx <- constructProjectBuildContext verbosity (baseCtx{installedPackages = Just installedIndex'}) targetSelectors
 
     printPlan verbosity baseCtx buildCtx
-    let installCfg = InstallCfg verbosity baseCtx buildCtx Host toolchain configFlags clientInstallFlags
+    let installCfg = InstallCfg verbosity buildCtx Host toolchain configFlags clientInstallFlags
 
     let
       dryRun =
@@ -923,17 +923,18 @@ constructProjectBuildContext verbosity baseCtx targetSelectors = do
 -- actually perform its installation.
 prepareExeInstall :: InstallCfg -> IO InstallExe
 prepareExeInstall
-  InstallCfg{verbosity, baseCtx, buildCtx, stage, toolchain, installConfigFlags, installClientFlags} = do
+  InstallCfg{verbosity, buildCtx, stage, toolchain, installConfigFlags, installClientFlags} = do
     installPath <- defaultInstallPath
-    let storeDirLayout = cabalStoreDirLayout $ cabalDirLayout baseCtx
-
+    let plan = elaboratedPlanToExecute buildCtx
         prefix = fromFlagOrDefault "" (fmap InstallDirs.fromPathTemplate (configProgPrefix installConfigFlags))
         suffix = fromFlagOrDefault "" (fmap InstallDirs.fromPathTemplate (configProgSuffix installConfigFlags))
 
         mkUnitBinDir :: UnitId -> FilePath
-        mkUnitBinDir =
-          InstallDirs.bindir
-            . storePackageInstallDirs' storeDirLayout stage toolchain
+        mkUnitBinDir unitId =
+          case InstallPlan.lookup plan (WithStage stage unitId) of
+            Just (InstallPlan.Configured elab) -> elabBinDir elab
+            Just _ -> error "Expected an ElaboratedConfiguredPackage!"
+            Nothing -> error "UnitId not found in plan!"
 
         mkExeName :: UnqualComponentName -> FilePath
         mkExeName exe = unUnqualComponentName exe <.> exeExtension (toolchainPlatform toolchain)
