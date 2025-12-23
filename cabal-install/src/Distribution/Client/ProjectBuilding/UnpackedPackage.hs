@@ -577,7 +577,7 @@ copyPkgFiles verbosity pkg runCopy tmpDir = do
   -- the store knows which dir will be the final store entry.
   let prefix =
         normalise $
-          dropDrive (InstallDirs.prefix (elabInstallDirs pkg))
+          dropDrive (InstallDirs.prefix (elabAbsoluteInstallDirs pkg))
       entryDir = tmpDirNormalised </> prefix
 
   -- if there weren't anything to build, it might be that directory is not created

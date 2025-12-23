@@ -71,6 +71,7 @@ import System.FilePath
   , takeDirectory
   , (</>)
   )
+import GHC.Stack (HasCallStack)
 
 #ifdef mingw32_HOST_OS
 import qualified Prelude
@@ -143,7 +144,7 @@ combineInstallDirs combine a b =
     , sysconfdir = sysconfdir a `combine` sysconfdir b
     }
 
-appendSubdirs :: (a -> a -> a) -> InstallDirs a -> InstallDirs a
+appendSubdirs :: HasCallStack => (a -> a -> a) -> InstallDirs a -> InstallDirs a
 appendSubdirs append dirs =
   dirs
     { libdir = libdir dirs `append` libsubdir dirs
@@ -312,7 +313,8 @@ substituteInstallDirTemplates env dirs = dirs'
 -- substituting for all the variables in the abstract paths, to get real
 -- absolute path.
 absoluteInstallDirs
-  :: PackageIdentifier
+  :: HasCallStack
+  => PackageIdentifier
   -> UnitId
   -> CompilerInfo
   -> CopyDest
