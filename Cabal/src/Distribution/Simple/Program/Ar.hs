@@ -28,12 +28,8 @@ import Distribution.Compat.CopyFile (filesEqual)
 import Distribution.Simple.Compiler (arDashLSupported, arResponseFilesSupported)
 import Distribution.Simple.LocalBuildInfo (LocalBuildInfo (..), mbWorkDirLBI)
 import Distribution.Simple.Program
-  ( ProgramInvocation
-  , arProgram
-  , requireProgram
-  )
-import Distribution.Simple.Program.ResponseFile
-  ( withResponseFile
+  ( arProgram
+  , requireProgram, runProgramCwdWithResponseFile
   )
 import Distribution.Simple.Program.Run
   ( multiStageProgramInvocation
@@ -45,8 +41,7 @@ import Distribution.Simple.Setup.Config
   ( configUseResponseFiles
   )
 import Distribution.Simple.Utils
-  ( defaultTempFileOptions
-  , dieWithLocation'
+  ( dieWithLocation'
   , withTempDirectoryCwd
   )
 import Distribution.System
@@ -140,10 +135,6 @@ createArLibArchive verbosity lbi targetPath files = do
         dashLSupported =
           arDashLSupported (compiler lbi)
 
-        invokeWithResponseFile :: FilePath -> ProgramInvocation
-        invokeWithResponseFile atFile =
-          (ar $ simpleArgs ++ extraArgs ++ ['@' : atFile])
-
     if oldVersionManualOverride || responseArgumentsNotSupported
       then
         sequence_
@@ -154,8 +145,8 @@ createArLibArchive verbosity lbi targetPath files = do
                 (initial, middle, final)
                 (map getSymbolicPath files)
           ]
-      else withResponseFile verbosity defaultTempFileOptions "ar.rsp" Nothing (map getSymbolicPath files) $
-        \path -> runProgramInvocation verbosity $ invokeWithResponseFile path
+      else
+        runProgramCwdWithResponseFile verbosity mbWorkDir arProg (simpleArgs ++ extraArgs) (map getSymbolicPath files)
 
     unless
       ( hostArch == Arm -- See #1537
