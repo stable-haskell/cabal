@@ -71,7 +71,7 @@ import Distribution.Client.Errors
 import Distribution.Compat.Environment
 import Distribution.Compat.Time (getModTime)
 import Distribution.Simple.Setup (Flag, pattern Flag, pattern NoFlag)
-import Distribution.Simple.Utils (dieWithException, findPackageDesc, noticeNoWrap)
+import Distribution.Simple.Utils (dieWithException, findPackageDesc, noticeNoWrap, info)
 import Distribution.Utils.Path
   ( CWD
   , FileOrDir (..)
@@ -124,6 +124,12 @@ import qualified System.IO.Error as IOError
 import qualified Data.Set as Set
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription)
+import Distribution.Simple.Program.Find (logExtraProgramSearchPath, logExtraProgramOverrideEnv)
+import Distribution.Utils
+  ( withEnv
+  , withEnvOverrides
+  , withExtraPathEnv
+  )
 
 -- | Generic merging utility. For sorted input lists this is a full outer join.
 mergeBy :: forall a b. (a -> b -> Ordering) -> [a] -> [b] -> [MergeResult a b]
@@ -174,58 +180,6 @@ withTempFileName tmpDir template action =
     (openTempFile tmpDir template)
     (\(name, _) -> removeExistingFile name)
     (\(name, h) -> hClose h >> action name)
-
--- | Executes the action with an environment variable set to some
--- value.
---
--- Warning: This operation is NOT thread-safe, because current
--- environment is a process-global concept.
-withEnv :: String -> String -> IO a -> IO a
-withEnv k v m = do
-  mb_old <- lookupEnv k
-  setEnv k v
-  m `Exception.finally` setOrUnsetEnv k mb_old
-
--- | Executes the action with a list of environment variables and
--- corresponding overrides, where
---
--- * @'Just' v@ means \"set the environment variable's value to @v@\".
--- * 'Nothing' means \"unset the environment variable\".
---
--- Warning: This operation is NOT thread-safe, because current
--- environment is a process-global concept.
-withEnvOverrides :: [(String, Maybe FilePath)] -> IO a -> IO a
-withEnvOverrides overrides m = do
-  mb_olds <- traverse lookupEnv envVars
-  traverse_ (uncurry setOrUnsetEnv) overrides
-  m `Exception.finally` zipWithM_ setOrUnsetEnv envVars mb_olds
-  where
-    envVars :: [String]
-    envVars = map fst overrides
-
-setOrUnsetEnv :: String -> Maybe String -> IO ()
-setOrUnsetEnv var Nothing = unsetEnv var
-setOrUnsetEnv var (Just val) = setEnv var val
-
--- | Executes the action, increasing the PATH environment
--- in some way
---
--- Warning: This operation is NOT thread-safe, because the
--- environment variables are a process-global concept.
-withExtraPathEnv :: [FilePath] -> IO a -> IO a
-withExtraPathEnv paths m = do
-  oldPathSplit <- getSearchPath
-  let newPath :: String
-      newPath = mungePath $ intercalate [searchPathSeparator] (paths ++ oldPathSplit)
-      oldPath :: String
-      oldPath = mungePath $ intercalate [searchPathSeparator] oldPathSplit
-      -- TODO: This is a horrible hack to work around the fact that
-      -- setEnv can't take empty values as an argument
-      mungePath p
-        | p == "" = "/dev/null"
-        | otherwise = p
-  setEnv "PATH" newPath
-  m `Exception.finally` setEnv "PATH" oldPath
 
 -- | Log directory change in 'make' compatible syntax
 logDirChange :: (String -> IO ()) -> Maybe FilePath -> IO a -> IO a
