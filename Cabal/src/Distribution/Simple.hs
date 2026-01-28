@@ -939,7 +939,6 @@ autoconfUserHooks =
         runConfigureScript
           flags
           (flagAssignment lbi)
-          (withPrograms lbi)
           (hostPlatform lbi)
         pbi <- getHookedBuildInfo verbosity mbWorkDir (buildDir lbi)
         sanityCheckHookedBuildInfo verbosity pkg_descr pbi
@@ -1002,16 +1001,14 @@ autoconfSetupHooks =
       -> IO ()
     post_conf_pkg
       ( SetupHooks.PostConfPackageInputs
-          { SetupHooks.localBuildConfig =
-            LBC.LocalBuildConfig{LBC.withPrograms = progs}
-          , SetupHooks.packageBuildDescr =
+          { SetupHooks.packageBuildDescr =
             LBC.PackageBuildDescr
               { LBC.configFlags = cfg
               , LBC.flagAssignment = flags
               , LBC.hostPlatform = plat
               }
           }
-        ) = runConfigureScript cfg flags progs plat
+        ) = runConfigureScript cfg flags plat
 
     pre_conf_comp
       :: SetupHooks.PreConfComponentInputs
