@@ -1362,8 +1362,7 @@ finalCheckPackage
       -- Check languages and extensions
       -- TODO: Move this into a helper function.
       let langlist =
-            nub $
-              mapMaybe defaultLanguage (enabledBuildInfos pkg_descr enabled)
+            nub $ mapMaybe defaultLanguage (enabledBuildInfos pkg_descr enabled)
       let langs = unsupportedLanguages comp langlist
       unless (null langs) $
         dieWithException verbosity $
@@ -1725,7 +1724,7 @@ dependencySatisfiable
               else Satisfied
 
       internalDepSatisfiable =
-        let missingLibraries = (NES.toSet sublibs) `Set.difference` packageLibraries
+        let missingLibraries = NES.toSet sublibs `Set.difference` packageLibraries
          in case nonEmpty $ Set.toList missingLibraries of
               Nothing -> Satisfied
               Just missingLibraries' -> Unsatisfied $ MissingLibrary missingLibraries'
@@ -3011,7 +3010,7 @@ checkRelocatable verbosity pkg lbi =
       traverse_ (doCheck $ getSymbolicPath pkgr) ipkgs
       where
         doCheck pkgr ipkg
-          | Just pkgr == IPI.pkgRoot ipkg =
+          | (Just pkgr ==) (IPI.pkgRoot ipkg) =
               for_ (IPI.libraryDirs ipkg) $ \libdir -> do
                 -- When @prefix@ is not under @pkgroot@,
                 -- @shortRelativePath prefix pkgroot@ will return a path with
