@@ -360,13 +360,7 @@ buildAndRegisterUnpackedPackage
         -> IO (SetupRunnerRes setupSpec)
       setup cmd getCommonFlags flags args wrapperArgs =
         withLogging $ \mLogFileHandle -> do
-          let opts = scriptOptions { useLoggingHandle = mLogFileHandle }
-          info verbosity $
-            "Running setup command: "
-              ++ unwords
-                ( "useExtraPathEnv"
-                    : useExtraPathEnv opts
-                )
+          let opts = scriptOptions{useLoggingHandle = mLogFileHandle}
           setupWrapper
             (setVerbosityHandles mLogFileHandle verbosity)
             opts
@@ -531,8 +525,6 @@ buildAndInstallUnpackedPackage
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
 
-      Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain pkg
-
       dispname :: String
       dispname = case elabPkgOrComp pkg of
         -- Packages built altogether, instead of per component
@@ -557,7 +549,25 @@ buildAndInstallUnpackedPackage
       mlogFile =
         case buildSettingLogFile of
           Nothing -> Nothing
-          Just mkLogFile -> Just (mkLogFile toolchainCompiler toolchainPlatform pkgid uid)
+          -- TODO: we ignore mkLogFile, because that would require us to fix the templating
+          -- and add support for '$stage'. Part of the templating is in Cabal (the library),
+          -- so doing that properly might require some refactoring and careful thought.
+          --
+          -- It also means we introduce a regression here and the user can't really overwrite
+          -- the log destination anymore.
+          --
+          -- Last but not least, removing the @Nothing -> Nothing@ case would trigger a bug on
+          -- FreeBSD, because 'getSetupMethod' would always pick the 'SelfExecMethod', which
+          -- then on FreeBSD would try to execute @_build/cabal/bin/cabal@ and fail, because
+          -- it just changed the CWD to a source directory. This needs further investigation.
+          --
+          -- An alternative patch was constructed here: https://github.com/stable-haskell/cabal/commit/604cab98c9a599953c7d95e4f37af449d5357577
+          Just _ -> Just
+            $ distDirectory distDirLayout
+            </> "logs"
+            </> prettyShow (elabStage pkg)
+            </> betterPlatform (elabToolchain pkg)
+            </> prettyShow (elabUnitId pkg)
 
       initLogFile :: IO ()
       initLogFile =
