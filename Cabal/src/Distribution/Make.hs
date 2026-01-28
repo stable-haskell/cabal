@@ -131,10 +131,7 @@ configureAction flags args = do
   let verbosity = fromFlag $ configVerbosity flags
       mbWorkDir = flagToMaybe $ configWorkingDir flags
   rawSystemExit verbosity mbWorkDir "sh" $
-    "configure"
-      : configureArgs backwardsCompatHack flags
-  where
-    backwardsCompatHack = True
+    "configure" : configureArgs flags
 
 copyAction :: CopyFlags -> [String] -> IO ()
 copyAction flags args = do

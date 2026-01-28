@@ -125,7 +125,7 @@ import qualified Data.Set as Set
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription)
 import Distribution.Simple.Program.Find (logExtraProgramSearchPath, logExtraProgramOverrideEnv)
-import Distribution.Utils
+import Distribution.Simple.Utils
   ( withEnv
   , withEnvOverrides
   , withExtraPathEnv
