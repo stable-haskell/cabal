@@ -136,6 +136,9 @@ module Distribution.Simple.Utils
     -- * environment variables
   , isInSearchPath
   , addLibraryPath
+  , withEnv
+  , withEnvOverrides
+  , withExtraPathEnv
 
     -- * modification time
   , moreRecentFile
@@ -209,6 +212,7 @@ module Distribution.Simple.Utils
 
 import Distribution.Compat.Async (waitCatch, withAsyncNF)
 import Distribution.Compat.CopyFile
+import Distribution.Compat.Environment
 import Distribution.Compat.FilePath as FilePath
 import Distribution.Compat.Internal.TempFile
 import Distribution.Compat.Lens (Lens', over)
@@ -304,6 +308,7 @@ import GitHash
   , tGitInfoCwdTry
   )
 #endif
+import Control.Monad (zipWithM_)
 
 #if MIN_VERSION_base(4,21,0)
 import Control.Exception.Context
@@ -913,23 +918,6 @@ maybeExit cmd = do
   exitcode <- cmd
   unless (exitcode == ExitSuccess) $ exitWith exitcode
 
--- | Log a command execution (that's typically about to happen)
--- at info level, and log working directory and environment overrides
--- at debug level if specified.
-logCommand :: Verbosity -> Process.CreateProcess -> IO ()
-logCommand verbosity cp = do
-  infoNoWrap verbosity $
-    "Running: " <> case Process.cmdspec cp of
-      Process.ShellCommand sh -> sh
-      Process.RawCommand path args -> Process.showCommandForUser path args
-  case Process.env cp of
-    Just env -> debugNoWrap verbosity $ "with environment: " ++ show env
-    Nothing -> return ()
-  case Process.cwd cp of
-    Just cwd -> debugNoWrap verbosity $ "with working directory: " ++ show cwd
-    Nothing -> return ()
-  hFlush stdout
-
 -- | Execute the given command with the given arguments, exiting
 -- with the same exit code if the command fails.
 rawSystemExit :: Verbosity -> Maybe (SymbolicPath CWD (Dir Pkg)) -> FilePath -> [String] -> IO ()
@@ -980,7 +968,6 @@ rawSystemProcAction
   -> (Maybe Handle -> Maybe Handle -> Maybe Handle -> IO a)
   -> IO (ExitCode, a)
 rawSystemProcAction verbosity cp action = withFrozenCallStack $ do
-  logCommand verbosity cp
   (exitcode, a) <- Process.withCreateProcess cp $ \mStdin mStdout mStderr p -> do
     a <- action mStdin mStdout mStderr
     exitcode <- Process.waitForProcess p
@@ -2072,3 +2059,80 @@ stripCommonPrefix (x : xs) (y : ys)
   | x == y = stripCommonPrefix xs ys
   | otherwise = y : ys
 stripCommonPrefix _ ys = ys
+
+-- | Executes the action with an environment variable set to some
+-- value.
+--
+-- Warning: This operation is NOT thread-safe, because current
+-- environment is a process-global concept.
+withEnv :: Verbosity -> String -> String -> IO a -> IO a
+withEnv verbosity k v m = do
+  info verbosity $ "Setting environment variable: " ++ k ++ "=" ++ v
+  mb_old <- lookupEnv k
+  setEnv k v
+  m `Exception.finally` setOrUnsetEnv k mb_old
+
+-- | Executes the action with a list of environment variables and
+-- corresponding overrides, where
+--
+-- * @'Just' v@ means \"set the environment variable's value to @v@\".
+-- * 'Nothing' means \"unset the environment variable\".
+--
+-- Warning: This operation is NOT thread-safe, because current
+-- environment is a process-global concept.
+withEnvOverrides :: Verbosity -> [(String, Maybe FilePath)] -> IO a -> IO a
+withEnvOverrides verbosity overrides m = do
+  logExtraProgramOverrideEnv verbosity overrides
+  mb_olds <- traverse lookupEnv envVars
+  traverse_ (uncurry setOrUnsetEnv) overrides
+  m `Exception.finally` zipWithM_ setOrUnsetEnv envVars mb_olds
+  where
+    envVars :: [String]
+    envVars = map fst overrides
+
+setOrUnsetEnv :: String -> Maybe String -> IO ()
+setOrUnsetEnv var Nothing = unsetEnv var
+setOrUnsetEnv var (Just val) = setEnv var val
+
+-- | Executes the action, increasing the PATH environment
+-- in some way
+--
+-- Warning: This operation is NOT thread-safe, because the
+-- environment variables are a process-global concept.
+withExtraPathEnv :: Verbosity -> [FilePath] -> IO a -> IO a
+withExtraPathEnv verbosity paths m = do
+  logExtraProgramSearchPath verbosity paths
+  oldPathSplit <- getSearchPath
+  let newPath :: String
+      newPath = mungePath $ intercalate [searchPathSeparator] (paths ++ oldPathSplit)
+      oldPath :: String
+      oldPath = mungePath $ intercalate [searchPathSeparator] oldPathSplit
+      -- TODO: This is a horrible hack to work around the fact that
+      -- setEnv can't take empty values as an argument
+      mungePath p
+        | p == "" = "/dev/null"
+        | otherwise = p
+  setEnv "PATH" newPath
+  m `Exception.finally` setEnv "PATH" oldPath
+
+logExtraProgramSearchPath
+  :: Verbosity
+  -> [FilePath]
+  -> IO ()
+logExtraProgramSearchPath verbosity extraPaths =
+  info verbosity . unlines $
+    "Including the following directories in PATH:"
+      : map ("- " ++) extraPaths
+
+logExtraProgramOverrideEnv
+  :: Verbosity
+  -> [(String, Maybe String)]
+  -> IO ()
+logExtraProgramOverrideEnv verbosity extraEnv =
+  info verbosity . unlines $
+    "Including the following environment variable overrides:"
+      : [ "- " ++ case mbVal of
+          Nothing -> "unset " ++ var
+          Just val -> var ++ "=" ++ val
+        | (var, mbVal) <- extraEnv
+        ]
