@@ -422,7 +422,7 @@ findDistPref
   -- ^ override \"dist\" prefix
   -> IO (SymbolicPath Pkg (Dir Dist))
 findDistPref defDistPref overrideDistPref = do
-  envDistPref <- liftM parseEnvDistPref (lookupEnv "CABAL_BUILDDIR")
+  envDistPref <- parseEnvDistPref <$> lookupEnv "CABAL_BUILDDIR"
   return $ fromFlagOrDefault defDistPref (mappend envDistPref overrideDistPref)
   where
     parseEnvDistPref env =
@@ -705,7 +705,7 @@ computeLocalBuildConfig cfg comp programDb = do
             -- rely on them. By the time that bug was fixed, ghci had
             -- been changed to read shared libraries instead of archive
             -- files (see next code block).
-            notElem (GHC.compilerBuildWay comp) [DynWay, ProfDynWay]
+            GHC.compilerBuildWay comp `notElem` [DynWay, ProfDynWay]
           _ -> False
 
   withGHCiLib_ <-
@@ -1141,13 +1141,9 @@ finalCheckPackage
       -- Check languages and extensions
       -- TODO: Move this into a helper function.
       let langlist =
-            nub $
-              catMaybes $
-                map
-                  defaultLanguage
-                  (enabledBuildInfos pkg_descr enabled)
+            nub $ mapMaybe defaultLanguage (enabledBuildInfos pkg_descr enabled)
       let langs = unsupportedLanguages comp langlist
-      when (not (null langs)) $
+      unless (null langs) $
         dieWithException verbosity $
           UnsupportedLanguages (packageId g_pkg_descr) (compilerId comp) (map prettyShow langs)
       let extlist =
@@ -1156,14 +1152,14 @@ finalCheckPackage
                 allExtensions
                 (enabledBuildInfos pkg_descr enabled)
       let exts = unsupportedExtensions comp extlist
-      when (not (null exts)) $
+      unless (null exts) $
         dieWithException verbosity $
           UnsupportedLanguageExtension (packageId g_pkg_descr) (compilerId comp) (map prettyShow exts)
 
       -- Check foreign library build requirements
       let flibs = [flib | CFLib flib <- enabledComponents pkg_descr enabled]
       let unsupportedFLibs = unsupportedForeignLibs comp compPlatform flibs
-      when (not (null unsupportedFLibs)) $
+      unless (null unsupportedFLibs) $
         dieWithException verbosity $
           CantFindForeignLibraries unsupportedFLibs
 
@@ -1536,7 +1532,7 @@ dependencySatisfiable
               else Satisfied
 
       internalDepSatisfiable =
-        let missingLibraries = (NES.toSet sublibs) `Set.difference` packageLibraries
+        let missingLibraries = NES.toSet sublibs `Set.difference` packageLibraries
          in case nonEmpty $ Set.toList missingLibraries of
               Nothing -> Satisfied
               Just missingLibraries' -> Unsatisfied $ MissingLibrary missingLibraries'
@@ -2842,7 +2838,7 @@ checkRelocatable verbosity pkg lbi =
       traverse_ (doCheck $ getSymbolicPath pkgr) ipkgs
       where
         doCheck pkgr ipkg
-          | maybe False (== pkgr) (IPI.pkgRoot ipkg) =
+          | (Just pkgr ==) (IPI.pkgRoot ipkg) =
               for_ (IPI.libraryDirs ipkg) $ \libdir -> do
                 -- When @prefix@ is not under @pkgroot@,
                 -- @shortRelativePath prefix pkgroot@ will return a path with
