@@ -287,6 +287,7 @@ initSecureRepo
   -- ^ Callback
   -> IO a
 initSecureRepo verbosity httpLib RemoteRepo{..} cachePath = \callback -> do
+  putStrLn $ "**initSecureRepo** cabalPath = " ++ show cachePath
   requiresBootstrap <- withRepo [] Sec.requiresBootstrap
 
   mirrors <-
