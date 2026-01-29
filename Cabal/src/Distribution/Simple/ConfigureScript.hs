@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -----------------------------------------------------------------------------
@@ -37,11 +36,11 @@ import Distribution.Utils.Path
 
 -- Base
 import System.Directory (createDirectoryIfMissing, doesFileExist)
-import qualified System.FilePath as FilePath
 #ifdef mingw32_HOST_OS
 import System.FilePath    (normalise, splitDrive)
 #endif
 import Distribution.Compat.Directory (makeAbsolute)
+import qualified System.FilePath as FilePath
 
 runConfigureScript
   :: ConfigFlags
@@ -59,29 +58,31 @@ runConfigureScript cfg flags hp = do
       mbWorkDir = flagToMaybe $ setupWorkingDir commonCfg
       build_in = interpretSymbolicPath mbWorkDir build_dir
 
+  putStrLn $ "[runConfigureScript] commonCfg= " ++ show commonCfg
   let configureScriptPath = packageRoot commonCfg </> "configure"
+
+  putStrLn $ "[runConfigureScript] configureScriptPath = " ++ configureScriptPath
+
   confExists <- doesFileExist configureScriptPath
   unless confExists $
     dieWithException verbosity (ConfigureScriptNotFound configureScriptPath)
+
   configureFile <- toUnix <$> makeAbsolute configureScriptPath
+  putStrLn $ "[runConfigureScript] configureFile = " ++ configureFile
+  putStrLn $ "[runConfigureScript] arg = " ++ unwords args
 
   createDirectoryIfMissing True build_in
   withExtraPathEnv verbosity extraPath $
     withEnvOverrides verbosity envOverrides $ do
       logInvoke verbosity configureFile args
       runProgramInvocation verbosity $
-        (simpleProgramInvocation configureFile args)
+        -- We call `sh configure` rather than `configure` because on Windows you
+        -- cannot run a shell script (there is no such thing as she-bang)
+        (simpleProgramInvocation "sh" (configureFile : args))
           { progInvokeCwd = Just build_in
           }
 
   where
-      cc = foldMap ("CC=" <>) $ lookup "gcc" (configProgramPaths cfg)
-      cc_flags = foldMap (("CC_FLAGS=" <>) . unwords) $ lookup "gcc" (configProgramArgs cfg)
-      cxx = foldMap ("CXX=" <>) $ lookup "gpp" (configProgramPaths cfg)
-      cxx_flags = foldMap (("CXX_FLAGS=" <>) . unwords) $ lookup "gpp" (configProgramArgs cfg)
-      ghc = foldMap ("GHC=" <>) $ lookup "ghc" (configProgramPaths cfg)
-      ghc_pkg = foldMap ("GHC_PKG=" <>) $ lookup "ghc-pkg" (configProgramPaths cfg)
-
       -- Convert a flag name to name of environment variable to represent its
       -- value for the configure script.
       flagEnvVar :: FlagName -> String
@@ -103,12 +104,28 @@ runConfigureScript cfg flags hp = do
            , Just $ unwords [showFlagValue fv | fv <- unFlagAssignment flags]
            )]
 
+      progEnv =
+          [( "CC"
+            , canonicalisePathSeparator <$> lookup "gcc" (configProgramPaths cfg)
+           ),
+           ( "CXX"
+           , canonicalisePathSeparator <$> lookup "gpp" (configProgramPaths cfg)
+           ),
+           ( "GHC"
+           , canonicalisePathSeparator <$> lookup "ghc" (configProgramPaths cfg)
+           ),
+           ( "GHC_PKG"
+           , canonicalisePathSeparator <$> lookup "ghc-pkg" (configProgramPaths cfg)
+           )
+          ]
+
       extraPath = fromNubList $ configProgramPathExtra cfg
-      envOverrides = cabalFlagMap ++ cabalFlagEnv
-      maybeHostFlag = ["--host=" ++ show (pretty hp) | hp /= buildPlatform]
-      args = configureArgs cfg ++ [cc, cc_flags, cxx, cxx_flags, ghc, ghc_pkg] ++ maybeHostFlag
+      envOverrides = cabalFlagMap ++ cabalFlagEnv ++ progEnv
+      args =
+        configureArgs cfg ++ ["--host=" <> prettyShow hp, "--build=" <> prettyShow buildPlatform]
 
 -- | Convert Windows path to Unix ones
+-- Julian: it is incomplete
 toUnix :: String -> String
 #ifdef mingw32_HOST_OS
 toUnix s = let tmp = normalise s
@@ -118,5 +135,5 @@ toUnix s = let tmp = normalise s
                parts = FilePath.splitDirectories rest
            in  l ++ intercalate "/" parts
 #else
-toUnix s = intercalate "/" $ FilePath.splitDirectories s
+toUnix s = s
 #endif

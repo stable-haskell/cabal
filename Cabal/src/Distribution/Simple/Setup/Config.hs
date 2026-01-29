@@ -40,6 +40,7 @@ module Distribution.Simple.Setup.Config
   , configureArgs
   , configureOptions
   , installDirsOptions
+  , canonicalisePathSeparator
   ) where
 
 import Distribution.Compat.Prelude hiding (get)
@@ -72,6 +73,8 @@ import Distribution.Utils.Path
 import Distribution.Verbosity
 
 import qualified Text.PrettyPrint as Disp
+import qualified System.FilePath as FP.Native
+import qualified System.FilePath.Posix as FP.Posix
 
 -- ------------------------------------------------------------
 
@@ -1075,7 +1078,7 @@ configureArgs flags =
     ++ configConfigureArgs flags
   where
     optFlag name config_field = case config_field flags of
-      Flag p -> ["--" ++ name ++ "=" ++ p]
+      Flag p -> ["--" ++ name ++ "=" ++ canonicalisePathSeparator p]
       NoFlag -> []
     optFlag' name config_field =
       optFlag
@@ -1084,3 +1087,10 @@ configureArgs flags =
             . config_field
             . configInstallDirs
         )
+
+canonicalisePathSeparator :: FilePath -> FilePath
+canonicalisePathSeparator = map replaceSeparator
+  where
+    replaceSeparator c
+      | FP.Native.isPathSeparator c = FP.Posix.pathSeparator
+      | otherwise = c
