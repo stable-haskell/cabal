@@ -30,7 +30,7 @@ import Distribution.Simple.Program
 import Distribution.Simple.Setup.Common
 import Distribution.Simple.Setup.Config
 import Distribution.Simple.Utils
-import Distribution.System (Platform, buildPlatform)
+import Distribution.System (Platform(..), OS(..), buildPlatform)
 import Distribution.Utils.NubList
 import Distribution.Utils.Path
 
@@ -40,7 +40,6 @@ import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath    (normalise, splitDrive)
 #endif
 import Distribution.Compat.Directory (makeAbsolute)
-import qualified System.FilePath as FilePath
 
 runConfigureScript
   :: ConfigFlags
@@ -122,7 +121,31 @@ runConfigureScript cfg flags hp = do
       extraPath = fromNubList $ configProgramPathExtra cfg
       envOverrides = cabalFlagMap ++ cabalFlagEnv ++ progEnv
       args =
-        configureArgs cfg ++ ["--host=" <> prettyShow hp, "--build=" <> prettyShow buildPlatform]
+        configureArgs cfg ++ ["--host=" <> platformToTriple hp, "--build=" <> platformToTriple buildPlatform]
+
+
+platformToTriple :: Platform -> String
+platformToTriple (Platform arch os) = prettyShow arch <> "-" <> fromOS os
+  where
+    fromOS Linux = "unknown-linux"
+    fromOS Windows = "unknown-mingw32"
+    fromOS OSX = "apple-darwin"
+    fromOS FreeBSD = "unknown-freebsd"
+    fromOS OpenBSD = "unknown-openbsd"
+    fromOS NetBSD = "unknown-netbsd"
+    fromOS DragonFly = "unknown-dragonflybsd"
+    fromOS Solaris = "sun-solaris"
+    fromOS AIX = "ibm-aix"
+    fromOS HPUX = "hp-hpux"
+    fromOS IRIX = "sgi-irix"
+    fromOS HaLVM = "unknown-halvm"
+    fromOS Hurd = "unknown-gnu"
+    fromOS IOS = "apple-ios"
+    fromOS Android = "unknown-linux-android"
+    fromOS Ghcjs = "javascript-unknown-ghcjs"
+    fromOS Wasi = "wasm32-unknown-wasi"
+    fromOS Haiku = "unknown-haiku"
+    fromOS (OtherOS otheros) = "unknown-" <> otheros
 
 -- | Convert Windows path to Unix ones
 -- Julian: it is incomplete
