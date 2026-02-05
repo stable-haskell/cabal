@@ -73,7 +73,6 @@ runConfigureScript cfg flags hp = do
   createDirectoryIfMissing True build_in
   withExtraPathEnv verbosity extraPath $
     withEnvOverrides verbosity envOverrides $ do
-      logInvoke verbosity configureFile args
       runProgramInvocation verbosity $
         -- We call `sh configure` rather than `configure` because on Windows you
         -- cannot run a shell script (there is no such thing as she-bang)
