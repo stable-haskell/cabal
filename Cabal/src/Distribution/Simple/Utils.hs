@@ -205,6 +205,10 @@ module Distribution.Simple.Utils
   , isAbsoluteOnAnyPlatform
   , isRelativeOnAnyPlatform
   , exceptionWithCallStackPrefix
+
+  , withEnv
+  , withEnvOverrides
+  , withExtraPathEnv
   ) where
 
 import Distribution.Compat.Async (waitCatch, withAsyncNF)
@@ -237,6 +241,8 @@ import qualified Paths_Cabal (version)
 
 import Distribution.Parsec
 import Distribution.Pretty
+import Distribution.Compat.Environment
+import Control.Monad (zipWithM_)
 
 import qualified Data.ByteString.Lazy as BS
 import Data.Typeable
@@ -2072,3 +2078,80 @@ stripCommonPrefix (x : xs) (y : ys)
   | x == y = stripCommonPrefix xs ys
   | otherwise = y : ys
 stripCommonPrefix _ ys = ys
+
+-- | Executes the action with an environment variable set to some
+-- value.
+--
+-- Warning: This operation is NOT thread-safe, because current
+-- environment is a process-global concept.
+withEnv :: Verbosity -> String -> String -> IO a -> IO a
+withEnv verbosity k v m = do
+  info verbosity $ "Setting environment variable: " ++ k ++ "=" ++ v
+  mb_old <- lookupEnv k
+  setEnv k v
+  m `Exception.finally` setOrUnsetEnv k mb_old
+
+-- | Executes the action with a list of environment variables and
+-- corresponding overrides, where
+--
+-- * @'Just' v@ means \"set the environment variable's value to @v@\".
+-- * 'Nothing' means \"unset the environment variable\".
+--
+-- Warning: This operation is NOT thread-safe, because current
+-- environment is a process-global concept.
+withEnvOverrides :: Verbosity -> [(String, Maybe FilePath)] -> IO a -> IO a
+withEnvOverrides verbosity overrides m = do
+  logExtraProgramOverrideEnv verbosity overrides
+  mb_olds <- traverse lookupEnv envVars
+  traverse_ (uncurry setOrUnsetEnv) overrides
+  m `Exception.finally` zipWithM_ setOrUnsetEnv envVars mb_olds
+  where
+    envVars :: [String]
+    envVars = map fst overrides
+
+setOrUnsetEnv :: String -> Maybe String -> IO ()
+setOrUnsetEnv var Nothing = unsetEnv var
+setOrUnsetEnv var (Just val) = setEnv var val
+
+-- | Executes the action, increasing the PATH environment
+-- in some way
+--
+-- Warning: This operation is NOT thread-safe, because the
+-- environment variables are a process-global concept.
+withExtraPathEnv :: Verbosity -> [FilePath] -> IO a -> IO a
+withExtraPathEnv verbosity paths m = do
+  logExtraProgramSearchPath verbosity paths
+  oldPathSplit <- getSearchPath
+  let newPath :: String
+      newPath = mungePath $ intercalate [searchPathSeparator] (paths ++ oldPathSplit)
+      oldPath :: String
+      oldPath = mungePath $ intercalate [searchPathSeparator] oldPathSplit
+      -- TODO: This is a horrible hack to work around the fact that
+      -- setEnv can't take empty values as an argument
+      mungePath p
+        | p == "" = "/dev/null"
+        | otherwise = p
+  setEnv "PATH" newPath
+  m `Exception.finally` setEnv "PATH" oldPath
+
+logExtraProgramSearchPath
+  :: Verbosity
+  -> [FilePath]
+  -> IO ()
+logExtraProgramSearchPath verbosity extraPaths =
+  info verbosity . unlines $
+    "Including the following directories in PATH:"
+      : map ("- " ++) extraPaths
+
+logExtraProgramOverrideEnv
+  :: Verbosity
+  -> [(String, Maybe String)]
+  -> IO ()
+logExtraProgramOverrideEnv verbosity extraEnv =
+  info verbosity . unlines $
+    "Including the following environment variable overrides:"
+      : [ "- " ++ case mbVal of
+          Nothing -> "unset " ++ var
+          Just val -> var ++ "=" ++ val
+        | (var, mbVal) <- extraEnv
+        ]
