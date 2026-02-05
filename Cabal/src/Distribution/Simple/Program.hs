@@ -128,8 +128,6 @@ module Distribution.Simple.Program
   , cppProgram
   , pkgConfigProgram
   , hpcProgram
-  , runProgramWithResponseFile
-  , runProgramCwdWithResponseFile
   ) where
 
 import Distribution.Compat.Prelude
@@ -144,7 +142,6 @@ import Distribution.Simple.Program.Types
 import Distribution.Simple.Utils
 import Distribution.Utils.Path
 import Distribution.Verbosity
-import Distribution.Simple.Program.ResponseFile (withResponseFile)
 
 -- | Runs the given configured program.
 runProgram
@@ -250,19 +247,3 @@ getDbProgramOutputCwd verbosity mbWorkDir prog programDb args =
     Just configuredProg ->
       getProgramInvocationOutput verbosity $
         programInvocationCwd mbWorkDir configuredProg args
-
-runProgramWithResponseFile :: Verbosity -> ConfiguredProgram -> [ProgArg] -> [String] -> IO ()
-runProgramWithResponseFile verbosity prog args1 args2 = do
-  infoNoWrap verbosity $ unwords $ ["Running:", programPath prog] ++ args1 ++ args2
-  withResponseFile verbosity defaultTempFileOptions rfName Nothing args2 $ \path ->
-    runProgram verbosity prog $ args1 ++ ['@' : path]
-  where
-    rfName = programId prog ++ ".rsp"
-
-runProgramCwdWithResponseFile :: Verbosity -> Maybe (SymbolicPath CWD (Dir to)) -> ConfiguredProgram -> [ProgArg] -> [String] -> IO ()
-runProgramCwdWithResponseFile verbosity mbWorkDir prog args1 args2 = do
-  infoNoWrap verbosity $ unwords $ ["Running:", programPath prog] ++ args1 ++ args2
-  withResponseFile verbosity defaultTempFileOptions rfName Nothing args2 $ \path ->
-    runProgramCwd verbosity mbWorkDir prog $ args1 ++ ['@' : path]
-  where
-    rfName = programId prog ++ ".rsp"

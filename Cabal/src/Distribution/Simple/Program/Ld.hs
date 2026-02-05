@@ -24,6 +24,9 @@ import Distribution.Simple.Flag
   ( fromFlagOrDefault
   )
 import Distribution.Simple.LocalBuildInfo (LocalBuildInfo (..), mbWorkDirLBI)
+import Distribution.Simple.Program.ResponseFile
+  ( withResponseFile
+  )
 import Distribution.Simple.Program.Run
   ( ProgramInvocation
   , multiStageProgramInvocation
@@ -36,6 +39,9 @@ import Distribution.Simple.Program.Types
 import Distribution.Simple.Setup.Config
   ( configUseResponseFiles
   )
+import Distribution.Simple.Utils
+  ( defaultTempFileOptions
+  )
 import Distribution.Utils.Path
 import Distribution.Verbosity
   ( Verbosity
@@ -44,7 +50,6 @@ import Distribution.Verbosity
 import System.Directory
   ( renameFile
   )
-import Distribution.Simple.Program (runProgramCwdWithResponseFile)
 
 -- | Call @ld -r@ to link a bunch of object files together.
 combineObjectFiles
@@ -78,6 +83,10 @@ combineObjectFiles verbosity lbi ldProg target files = do
     middle = ld middleArgs
     final = ld finalArgs
 
+    invokeWithResponseFile :: FilePath -> ProgramInvocation
+    invokeWithResponseFile atFile =
+      ld $ simpleArgs ++ ['@' : atFile]
+
     oldVersionManualOverride =
       fromFlagOrDefault False $ configUseResponseFiles $ configFlags lbi
     -- Whether ghc's ar supports response files is a good proxy for
@@ -95,6 +104,7 @@ combineObjectFiles verbosity lbi ldProg target files = do
 
   if oldVersionManualOverride || responseArgumentsNotSupported
     then run $ multiStageProgramInvocation simple (initial, middle, final) (map getSymbolicPath files)
-    else runProgramCwdWithResponseFile verbosity (mbWorkDirLBI lbi) ldProg simpleArgs (map getSymbolicPath files)
+    else withResponseFile verbosity defaultTempFileOptions "ld.rsp" Nothing (map getSymbolicPath files) $
+      \path -> runProgramInvocation verbosity $ invokeWithResponseFile path
   where
     tmpfile = target <.> "tmp" -- perhaps should use a proper temp file
