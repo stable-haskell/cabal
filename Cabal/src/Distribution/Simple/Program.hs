@@ -130,7 +130,6 @@ module Distribution.Simple.Program
   , hpcProgram
   , runProgramWithResponseFile
   , runProgramCwdWithResponseFile
-  , logInvoke
   ) where
 
 import Distribution.Compat.Prelude
@@ -254,7 +253,7 @@ getDbProgramOutputCwd verbosity mbWorkDir prog programDb args =
 
 runProgramWithResponseFile :: Verbosity -> ConfiguredProgram -> [ProgArg] -> [String] -> IO ()
 runProgramWithResponseFile verbosity prog args1 args2 = do
-  logInvoke verbosity (programPath prog) (args1 ++ args2)
+  infoNoWrap verbosity $ unwords $ ["Running:", programPath prog] ++ args1 ++ args2
   withResponseFile verbosity defaultTempFileOptions rfName Nothing args2 $ \path ->
     runProgram verbosity prog $ args1 ++ ['@' : path]
   where
@@ -262,15 +261,8 @@ runProgramWithResponseFile verbosity prog args1 args2 = do
 
 runProgramCwdWithResponseFile :: Verbosity -> Maybe (SymbolicPath CWD (Dir to)) -> ConfiguredProgram -> [ProgArg] -> [String] -> IO ()
 runProgramCwdWithResponseFile verbosity mbWorkDir prog args1 args2 = do
-  logInvoke verbosity (programPath prog) (args1 ++ args2)
+  infoNoWrap verbosity $ unwords $ ["Running:", programPath prog] ++ args1 ++ args2
   withResponseFile verbosity defaultTempFileOptions rfName Nothing args2 $ \path ->
     runProgramCwd verbosity mbWorkDir prog $ args1 ++ ['@' : path]
   where
     rfName = programId prog ++ ".rsp"
-
--- | Log the invocation of a program
--- This is defined here to provide a common styling for all invocations
--- throughout Cabal.
-logInvoke :: Verbosity -> FilePath -> [String] -> IO ()
-logInvoke verbosity path args =
-  infoNoWrap verbosity $ unwords ("Running:" : path : args)
