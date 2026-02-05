@@ -22,7 +22,6 @@ module Distribution.Client.DistDirLayout
   , CabalDirLayout (..)
   , mkCabalDirLayout
   , defaultCabalDirLayout
-  , betterPlatform
   ) where
 
 import Distribution.Client.Compat.Prelude
@@ -41,10 +40,10 @@ import Distribution.Package
   , UnitId
   )
 import Distribution.Simple.Compiler
-  ( Compiler(..)
-  , PackageDBCWD
+  ( PackageDBCWD
   , PackageDBX (..)
   )
+import Distribution.Simple.Compiler (Compiler(..))
 import qualified Data.Map as Map
 
 -- | Information which can be used to construct the path to

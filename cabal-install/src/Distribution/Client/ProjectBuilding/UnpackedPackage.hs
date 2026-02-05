@@ -341,7 +341,13 @@ buildAndRegisterUnpackedPackage
         -> IO ()
       setup cmd getCommonFlags flags args =
         withLogging $ \mLogFileHandle -> do
-          let opts = scriptOptions{useLoggingHandle = mLogFileHandle}
+          let opts = scriptOptions { useLoggingHandle = mLogFileHandle }
+          info verbosity $
+            "Running setup command: "
+              ++ unwords
+                ( "useExtraPathEnv"
+                    : useExtraPathEnv opts
+                ) 
           setupWrapper
             verbosity
             opts
@@ -408,7 +414,7 @@ buildAndInstallUnpackedPackage
   verbosity
   distDirLayout
   maybe_semaphore
-  buildSettings@BuildTimeSettings{buildSettingNumJobs}
+  buildSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingLogFile}
   registerLock
   cacheLock
   pkgshared
@@ -500,6 +506,8 @@ buildAndInstallUnpackedPackage
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
 
+      Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain pkg
+
       dispname :: String
       dispname = case elabPkgOrComp pkg of
         -- Packages built altogether, instead of per component
@@ -522,12 +530,9 @@ buildAndInstallUnpackedPackage
 
       mlogFile :: Maybe FilePath
       mlogFile =
-        Just
-          $ distDirectory distDirLayout
-          </> "logs"
-          </> prettyShow (elabStage pkg)
-          </> betterPlatform (elabToolchain pkg)
-          </> prettyShow (elabUnitId pkg)
+        case buildSettingLogFile of
+          Nothing -> Nothing
+          Just mkLogFile -> Just (mkLogFile toolchainCompiler toolchainPlatform pkgid uid)
 
       initLogFile :: IO ()
       initLogFile =
