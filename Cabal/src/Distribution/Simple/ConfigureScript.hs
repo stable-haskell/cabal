@@ -142,8 +142,8 @@ platformToTriple (Platform arch os) = prettyShow arch <> "-" <> fromOS os
     fromOS Hurd = "unknown-gnu"
     fromOS IOS = "apple-ios"
     fromOS Android = "unknown-linux-android"
-    fromOS Ghcjs = "javascript-unknown-ghcjs"
-    fromOS Wasi = "wasm32-unknown-wasi"
+    fromOS Ghcjs = "unknown-ghcjs"
+    fromOS Wasi = "unknown-wasi"
     fromOS Haiku = "unknown-haiku"
     fromOS (OtherOS otheros) = "unknown-" <> otheros
 
