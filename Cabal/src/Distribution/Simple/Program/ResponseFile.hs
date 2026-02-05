@@ -40,7 +40,7 @@ withResponseFile _verbosity tmpFileOpts fileNameTemplate encoding arguments f =
     traverse_ (hSetEncoding hf) encoding
     let responseContents =
           unlines $
-            map escapeResponseFileArg
+            map escapeResponseFileArg $
               arguments
     hPutStr hf responseContents
     hClose hf
