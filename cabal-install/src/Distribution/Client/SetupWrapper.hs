@@ -78,7 +78,6 @@ import Distribution.Simple.Program
   , getDbProgramOutputCwd
   , getProgramSearchPath
   , ghcProgram
-  , logInvoke
   , runDbProgramCwd
   )
 import Distribution.Simple.Program.Db
@@ -537,14 +536,20 @@ setupWrapper verbosity options mpkg cmd getCommonFlags getFlags getExtraArgs = d
     flags
     extraArgs
 
---------------------------------------------------------------
+-- ------------------------------------------------------------
+
 -- * Internal SetupMethod
---------------------------------------------------------------
+
+-- ------------------------------------------------------------
 
 -- | Run a Setup script by directly invoking the @Cabal@ library.
 internalSetupMethod :: SetupRunner
 internalSetupMethod verbosity options bt args = do
-  info verbosity $ "Using internal setup method with build-type " ++ show bt
+  info verbosity $
+    "Using internal setup method with build-type "
+      ++ show bt
+      ++ " and args:\n  "
+      ++ unwords args
   -- NB: we do not set the working directory of the process here, because
   -- we will instead pass the -working-dir flag when invoking the Setup script.
   -- Note that the Setup script is guaranteed to support this flag, because
@@ -553,9 +558,9 @@ internalSetupMethod verbosity options bt args = do
   -- In the future, it would be desirable to also stop relying on the following
   -- pieces of process-global state, as this would allow us to use this internal
   -- setup method in concurrent contexts.
-  withEnv verbosity "HASKELL_DIST_DIR" (getSymbolicPath $ useDistPref options) $
-    withExtraPathEnv verbosity (useExtraPathEnv options) $
-      withEnvOverrides verbosity (useExtraEnvOverrides options) $
+  withEnv "HASKELL_DIST_DIR" (getSymbolicPath $ useDistPref options) $
+    withExtraPathEnv (useExtraPathEnv options) $
+      withEnvOverrides (useExtraEnvOverrides options) $
         buildTypeAction bt args
 
 buildTypeAction :: BuildType -> ([String] -> IO ())
@@ -569,7 +574,7 @@ buildTypeAction Custom = error "buildTypeAction Custom"
 
 invoke :: Verbosity -> FilePath -> [String] -> SetupScriptOptions -> IO ()
 invoke verbosity path args options = do
-  logInvoke verbosity path args
+  info verbosity $ unwords (path : args)
   case useLoggingHandle options of
     Nothing -> return ()
     Just logHandle -> info verbosity $ "Redirecting build log to " ++ show logHandle
@@ -586,10 +591,12 @@ invoke verbosity path args options = do
       ]
         ++ progOverrideEnv progDb
 
-  let loggingHandle = maybe Inherit UseHandle (useLoggingHandle options)
+  let loggingHandle = case useLoggingHandle options of
+        Nothing -> Inherit
+        Just hdl -> UseHandle hdl
       cp =
         (proc path args)
-          { Process.cwd = getSymbolicPath <$> useWorkingDir options
+          { Process.cwd = fmap getSymbolicPath $ useWorkingDir options
           , Process.env = env
           , Process.std_out = loggingHandle
           , Process.std_err = loggingHandle
@@ -597,9 +604,11 @@ invoke verbosity path args options = do
           }
   maybeExit $ rawSystemProc verbosity cp
 
---------------------------------------------------------------
+-- ------------------------------------------------------------
+
 -- * Self-Exec SetupMethod
---------------------------------------------------------------
+
+-- ------------------------------------------------------------
 
 selfExecSetupMethod :: SetupRunner
 selfExecSetupMethod verbosity options bt args0 = do
@@ -609,8 +618,11 @@ selfExecSetupMethod verbosity options bt args0 = do
         , "--"
         ]
           ++ args0
-  info verbosity $ "Using self-exec internal setup method with build-type " ++ show bt
-  -- no need to log the command line here, invoke will do it
+  info verbosity $
+    "Using self-exec internal setup method with build-type "
+      ++ show bt
+      ++ " and args:\n  "
+      ++ unwords args
   path <- getExecutablePath
   invoke verbosity path args options
 
@@ -666,8 +678,10 @@ getExternalSetupMethod
   -> BuildType
   -> IO (Version, SetupMethod, SetupScriptOptions)
 getExternalSetupMethod verbosity options pkg bt = do
-  info verbosity $ "Using external setup method with build-type " ++ show bt
-  debug verbosity $ "Using explicit dependencies: " ++ show (useDependenciesExclusive options)
+  debug verbosity $ "Using external setup method with build-type " ++ show bt
+  debug verbosity $
+    "Using explicit dependencies: "
+      ++ show (useDependenciesExclusive options)
   createDirectoryIfMissingVerbose verbosity True $ i setupDir
   (cabalLibVersion, mCabalLibInstalledPkgId, options') <- cabalLibVersionToUse
   debug verbosity $ "Using Cabal library version " ++ prettyShow cabalLibVersion
@@ -843,12 +857,13 @@ getExternalSetupMethod verbosity options pkg bt = do
 
       let customSetupHooks = workingDir options </> "SetupHooks.hs"
       useHs <- doesFileExist customSetupHooks
-      unless useHs $
+      unless (useHs) $
         die'
           verbosity
           "Using 'build-type: Hooks' but there is no SetupHooks.hs file."
       copyFileVerbose verbosity customSetupHooks (i setupHooks)
       rewriteFileLBS verbosity (i setupHs) (buildTypeScript cabalLibVersion)
+--      rewriteFileLBS verbosity hooksHs hooksScript
     updateSetupScript cabalLibVersion _ =
       rewriteFileLBS verbosity (i setupHs) (buildTypeScript cabalLibVersion)
 
@@ -1067,7 +1082,9 @@ getExternalSetupMethod verbosity options pkg bt = do
           (compiler, progdb, options'') <- configureToolchains options'
           pkgDbs <- traverse (traverse (makeRelativeToDirS mbWorkDir)) (coercePackageDBStack (usePackageDB options''))
           let cabalPkgid = PackageIdentifier (mkPackageName "Cabal") cabalLibVersion
-              extraOpts = ["-threaded"]
+              (program, extraOpts) =
+                case compilerFlavor compiler of
+                  _ -> (ghcProgram, ["-threaded"])
               cabalDep =
                 maybe
                   []
@@ -1120,11 +1137,11 @@ getExternalSetupMethod verbosity options pkg bt = do
                         ]
                   , ghcOptExtra = extraOpts
                   , ghcOptExtensions = toNubListR $
-                      [ Simple.DisableExtension Simple.ImplicitPrelude
-                      | not (bt == Custom || any (isBasePkgId . snd) selectedDeps)
-                      ]
-                  -- Pass -WNoImplicitPrelude to avoid depending on base
-                  -- when compiling a Simple Setup.hs file.
+                      if bt == Custom || any (isBasePkgId . snd) selectedDeps
+                      then []
+                      else [ Simple.DisableExtension Simple.ImplicitPrelude ]
+                        -- Pass -WNoImplicitPrelude to avoid depending on base
+                        -- when compiling a Simple Setup.hs file.
                   , ghcOptExtensionMap = Map.fromList . Simple.compilerExtensions $ compiler
                   }
           let ghcCmdLine = renderGhcOptions compiler platform ghcOptions
@@ -1132,7 +1149,7 @@ getExternalSetupMethod verbosity options pkg bt = do
             rewriteFileEx verbosity (i cppMacrosFile) $
               generatePackageVersionMacros (pkgVersion $ package pkg) (map snd selectedDeps)
           case useLoggingHandle options of
-            Nothing -> runDbProgramCwd verbosity mbWorkDir ghcProgram progdb ghcCmdLine
+            Nothing -> runDbProgramCwd verbosity mbWorkDir program progdb ghcCmdLine
             -- If build logging is enabled, redirect compiler output to
             -- the log file.
             Just logHandle -> do
@@ -1140,7 +1157,7 @@ getExternalSetupMethod verbosity options pkg bt = do
                 getDbProgramOutputCwd
                   verbosity
                   mbWorkDir
-                  ghcProgram
+                  program
                   progdb
                   ghcCmdLine
               hPutStr logHandle output
