@@ -38,6 +38,7 @@ import Distribution.Utils.Path
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 #ifdef mingw32_HOST_OS
 import System.FilePath    (normalise, splitDrive)
+import qualified System.FilePath as FilePath
 #endif
 import Distribution.Compat.Directory (makeAbsolute)
 
