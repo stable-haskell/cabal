@@ -1074,10 +1074,9 @@ configureArgs bcHack flags =
     ++ optFlag' "sysconfdir" sysconfdir
     ++ configConfigureArgs flags
   where
-    hc_flag = case (configHcFlavor flags, configHcPath flags) of
-      (_, Flag hc_path) -> [hc_flag_name ++ hc_path]
-      (Flag hc, NoFlag) -> [hc_flag_name ++ prettyShow hc]
-      (NoFlag, NoFlag) -> []
+    hc_flag = case configHcPath flags of
+      (Flag hc_path) -> [hc_flag_name ++ hc_path]
+      NoFlag -> []
     hc_flag_name
       -- TODO kill off this bc hack when defaultUserHooks is removed.
       | bcHack = "--with-hc="

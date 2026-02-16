@@ -70,14 +70,21 @@ runConfigureScript cfg flags programDb hp = do
   configureFile <-
     makeAbsolute $ configureScriptPath
   env <- getEnvironment
-  (ccProg, ccFlags) <- configureCCompiler verbosity programDb
-  ccProgShort <- getShortPathName ccProg
+
+  let mkProgArgs prog = do
+        (progPath, progFlags) <- configureProg verbosity programDb prog
+        progPathShort <- getShortPathName progPath
+        return (progPathShort, progFlags)
+
+  (ccProgShort, ccFlags) <- mkProgArgs gccProgram
+  (ghcProgShort, ghcFlags) <- mkProgArgs ghcProgram
+
   -- The C compiler's compilation and linker flags (e.g.
   -- "C compiler flags" and "Gcc Linker flags" from GHC) have already
   -- been merged into ccFlags, so we set both CFLAGS and LDFLAGS
-  -- to ccFlags
+  -- to ccFlags.
   -- We don't try and tell configure which ld to use, as we don't have
-  -- a way to pass its flags too
+  -- a way to pass its flags too.
 
   -- Do not presume the CXX compiler is available, but it always will be after 9.4.
   (mcxxProgShort, mcxxFlags) <- do
@@ -182,6 +189,7 @@ runConfigureScript cfg flags programDb hp = do
       overEnv =
         ("CFLAGS", Just (mkFlagsEnv ccFlags "CFLAGS"))
           : [("CXXFLAGS", Just (mkFlagsEnv cxxFlags "CXXFLAGS")) | Just cxxFlags <- [mcxxFlags]]
+          ++ [("GHCFLAGS", Just (mkFlagsEnv ghcFlags "GHCFLAGS"))]
           ++ [("PATH", Just pathEnv) | not (null extraPath)]
           ++ cabalFlagEnv
       maybeHostFlag = if hp == buildPlatform then [] else ["--host=" ++ show (pretty hp)]
@@ -190,6 +198,7 @@ runConfigureScript cfg flags programDb hp = do
           : args
           ++ ["CC=" ++ ccProgShort]
           ++ ["CXX=" ++ cxxProgShort | Just cxxProgShort <- [mcxxProgShort]]
+          ++ ["GHC=" ++ ghcProgShort]
           ++ maybeHostFlag
       shProg = simpleProgram "sh"
   progDb <- prependProgramSearchPath verbosity extraPath [] emptyProgramDb

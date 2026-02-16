@@ -23,6 +23,7 @@ module Distribution.Simple.Setup.Common
   , CopyDest (..)
   , configureCCompiler
   , configureLinker
+  , configureProg
   , programDbOption
   , programDbOptions
   , programDbPaths
