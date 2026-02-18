@@ -64,6 +64,8 @@ data PathTemplateVariable
     TestSuiteResultVar
   | -- | The name of the benchmark being run
     BenchmarkNameVar
+  | -- | The @$stage@ build phase (e.g. host or build)
+    StageVar
   deriving (Eq, Ord, Generic)
 
 instance Binary PathTemplateVariable
@@ -92,6 +94,7 @@ instance Show PathTemplateVariable where
   show TestSuiteNameVar = "test-suite"
   show TestSuiteResultVar = "result"
   show BenchmarkNameVar = "benchmark"
+  show StageVar = "stage"
 
 instance Read PathTemplateVariable where
   readsPrec _ s =
@@ -127,6 +130,7 @@ instance Read PathTemplateVariable where
         , ("test-suite", TestSuiteNameVar)
         , ("result", TestSuiteResultVar)
         , ("benchmark", BenchmarkNameVar)
+        , ("stage", StageVar)
         ]
 
 instance Show PathComponent where

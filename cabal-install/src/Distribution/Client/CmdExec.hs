@@ -107,7 +107,7 @@ import Prelude ()
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Distribution.Client.Errors
-import Distribution.Solver.Types.Stage
+import Distribution.Types.Stage
 
 execCommand :: CommandUI (NixStyleFlags ())
 execCommand =

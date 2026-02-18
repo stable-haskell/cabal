@@ -10,7 +10,7 @@ import Distribution.Package ( Package(..), HasMungedPackageId(..), HasUnitId(..)
 import Distribution.Solver.Types.ComponentDeps ( ComponentDeps )
 import Distribution.Solver.Types.PackagePath (QPN)
 import Distribution.Solver.Types.SolverId
-import Distribution.Solver.Types.Stage (Stage)
+import Distribution.Types.Stage (Stage)
 import Distribution.Types.MungedPackageId
 import Distribution.Types.PackageId
 import Distribution.Types.MungedPackageName

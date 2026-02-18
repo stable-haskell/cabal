@@ -95,7 +95,7 @@ import qualified Distribution.Solver.Types.PkgConfigDb as PC
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
-import qualified Distribution.Solver.Types.Stage as Stage
+import qualified Distribution.Types.Stage as Stage
 import Distribution.Solver.Types.Variable
 
 {-------------------------------------------------------------------------------

@@ -184,7 +184,7 @@ import qualified Data.ByteString.Char8 as BS
 import Data.ByteString.Lazy ()
 import qualified Data.Set as S
 import Distribution.Client.Errors
-import Distribution.Solver.Types.Stage (Stage (..), getStage)
+import Distribution.Types.Stage (Stage (..), getStage)
 import Distribution.Utils.Path
   ( unsafeMakeSymbolicPath
   )

@@ -15,7 +15,7 @@ import Prelude ()
 import Distribution.Package (PackageName)
 import Distribution.Pretty (pretty, flatStyle, Pretty)
 import qualified Text.PrettyPrint as Disp
-import Distribution.Solver.Types.Stage (Stage)
+import Distribution.Types.Stage (Stage)
 
 data PackagePath = PackagePath Stage Qualifier
   deriving (Eq, Ord, Show, Generic)

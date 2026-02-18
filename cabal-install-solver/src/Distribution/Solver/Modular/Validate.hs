@@ -35,7 +35,7 @@ import Distribution.Solver.Types.PackagePath
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb, pkgConfigPkgIsPresent)
 import Distribution.Types.LibraryName
 import Distribution.Types.PkgconfigVersionRange
-import Distribution.Solver.Types.Stage (Staged (..), Stage (..))
+import Distribution.Types.Stage (Staged (..), Stage (..))
 
 -- In practice, most constraints are implication constraints (IF we have made
 -- a number of choices, THEN we also have to ensure that). We call constraints

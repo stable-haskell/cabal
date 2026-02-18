@@ -17,7 +17,7 @@ import Distribution.Solver.Types.ResolverPackage
     ( ResolverPackage )
 import Distribution.Solver.Types.SourcePackage
     ( SourcePackage )
-import Distribution.Solver.Types.Stage
+import Distribution.Types.Stage
     ( Staged )
 import Distribution.Solver.Types.SummarizedMessage
     ( SummarizedMessage(..) )

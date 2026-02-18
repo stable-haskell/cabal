@@ -44,7 +44,7 @@ import Distribution.Solver.Types.OptionalStanza (OptionalStanza (..), OptionalSt
 import Distribution.Solver.Types.PackageConstraint (PackageProperty (..))
 
 import Data.Coerce (Coercible, coerce)
-import Distribution.Solver.Types.Stage (Stage)
+import Distribution.Types.Stage (Stage)
 import Network.URI (URI (..), URIAuth (..), isUnreserved)
 import Test.QuickCheck
   ( Arbitrary (..)

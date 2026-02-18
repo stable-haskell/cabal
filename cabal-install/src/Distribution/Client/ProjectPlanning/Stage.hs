@@ -15,7 +15,7 @@ import Prelude ()
 import Distribution.Client.Types.ConfiguredId (HasConfiguredId (..))
 import Distribution.Compat.Graph (IsNode (..))
 import Distribution.Package (HasUnitId (..), Package (..))
-import Distribution.Solver.Types.Stage (Stage (..), Staged (..))
+import Distribution.Types.Stage (Stage (..), Staged (..))
 import Text.PrettyPrint (colon)
 
 -- FIXME: blaaah

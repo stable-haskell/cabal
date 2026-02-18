@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveTraversable #-}
 
-module Distribution.Solver.Types.Stage
+module Distribution.Types.Stage
   ( Stage (..)
   , showStage
   , stages

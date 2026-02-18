@@ -67,7 +67,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage
-import qualified Distribution.Solver.Types.Stage as Stage
+import qualified Distribution.Types.Stage as Stage
 
 import Distribution.Client.SavedFlags (readCommandFlags, writeCommandFlags)
 import Distribution.Package

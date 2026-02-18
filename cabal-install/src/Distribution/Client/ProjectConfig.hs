@@ -77,6 +77,7 @@ module Distribution.Client.ProjectConfig
   , maxNumFetchJobs
   ) where
 
+import Distribution.Types.Stage
 import Distribution.Client.Compat.Prelude hiding (empty)
 import Distribution.Parsec.Source
 import Distribution.Simple.Utils
@@ -180,6 +181,7 @@ import Distribution.Simple.InstallDirs
   ( PathTemplate
   , fromPathTemplate
   , initialPathTemplateEnv
+  , initialPathTemplateEnv'
   , substPathTemplate
   , toPathTemplate
   )
@@ -495,6 +497,7 @@ resolveBuildTimeSettings
         :: Maybe
             ( Compiler
               -> Platform
+              -> Stage
               -> PackageId
               -> UnitId
               -> FilePath
@@ -507,6 +510,7 @@ resolveBuildTimeSettings
         toPathTemplate $
           cabalLogsDirectory
             </> "$compiler"
+            </> "$stage"
             </> "$libname"
             <.> "log"
       givenTemplate = flagToMaybe projectConfigLogFile
@@ -521,14 +525,16 @@ resolveBuildTimeSettings
         :: PathTemplate
         -> Compiler
         -> Platform
+        -> Stage
         -> PackageId
         -> UnitId
         -> FilePath
-      substLogFileName template compiler platform pkgid uid =
+      substLogFileName template compiler platform stage pkgid uid =
         fromPathTemplate (substPathTemplate env template)
         where
           env =
-            initialPathTemplateEnv
+            initialPathTemplateEnv'
+              stage
               pkgid
               uid
               (compilerInfo compiler)
