@@ -39,7 +39,7 @@ import Distribution.Solver.Modular.Tree
 import qualified Distribution.Solver.Modular.PSQ as PSQ
 
 import Distribution.Simple.Setup (BooleanFlag(..))
-import Distribution.Solver.Types.Stage (Staged, Stage(..))
+import Distribution.Types.Stage (Staged, Stage(..))
 
 
 -- | Various options for the modular solver.

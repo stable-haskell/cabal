@@ -10,7 +10,7 @@ import Prelude ()
 
 import Distribution.Package (PackageId, Package(..), UnitId)
 import Distribution.Pretty (Pretty (..))
-import Distribution.Solver.Types.Stage (Stage)
+import Distribution.Types.Stage (Stage)
 
 import Text.PrettyPrint (colon, punctuate, text)
 

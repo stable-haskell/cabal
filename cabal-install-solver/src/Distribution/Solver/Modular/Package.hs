@@ -23,7 +23,7 @@ import Distribution.Pretty (prettyShow)
 
 import Distribution.Solver.Modular.Version
 import Distribution.Solver.Types.PackagePath
-import Distribution.Solver.Types.Stage (Stage, showStage)
+import Distribution.Types.Stage (Stage, showStage)
 
 -- | A package name.
 type PN = PackageName

@@ -12,7 +12,7 @@ import Distribution.Solver.Types.ComponentDeps ( ComponentDeps )
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SourcePackage
-import Distribution.Solver.Types.Stage ( Stage )
+import Distribution.Types.Stage ( Stage )
 import Distribution.Solver.Types.PackagePath ( QPN )
 
 -- | A 'SolverPackage' is a package specified by the dependency solver.

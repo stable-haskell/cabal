@@ -62,7 +62,7 @@ import Distribution.Solver.Types.PackagePath
 import Distribution.Types.LibraryName
 import Distribution.Types.PkgconfigVersionRange
 import Distribution.Types.UnqualComponentName
-import Distribution.Solver.Types.Stage
+import Distribution.Types.Stage
 
 {-------------------------------------------------------------------------------
   Constrained instances

@@ -41,6 +41,7 @@ module Distribution.Simple.InstallDirs
   , combinePathTemplate
   , substPathTemplate
   , initialPathTemplateEnv
+  , initialPathTemplateEnv'
   , platformTemplateEnv
   , compilerTemplateEnv
   , packageTemplateEnv
@@ -62,6 +63,7 @@ import Distribution.Pretty
 import Distribution.Simple.Flag
 import Distribution.Simple.InstallDirs.Internal
 import Distribution.System
+import Distribution.Types.Stage
 
 import System.Directory (getAppUserDataDirectory)
 import System.FilePath
@@ -437,6 +439,17 @@ initialPathTemplateEnv pkgId libname compiler platform =
     ++ platformTemplateEnv platform
     ++ abiTemplateEnv compiler platform
 
+initialPathTemplateEnv'
+  :: Stage
+  -> PackageIdentifier
+  -> UnitId
+  -> CompilerInfo
+  -> Platform
+  -> PathTemplateEnv
+initialPathTemplateEnv' stage pkgId libname compiler platform =
+  stageTemplateEnv stage
+    ++ initialPathTemplateEnv pkgId libname compiler platform
+
 packageTemplateEnv :: PackageIdentifier -> UnitId -> PathTemplateEnv
 packageTemplateEnv pkgId uid =
   [ (PkgNameVar, PathTemplate [Ordinary $ prettyShow (packageName pkgId)])
@@ -445,6 +458,11 @@ packageTemplateEnv pkgId uid =
     -- it's an API change.
     (LibNameVar, PathTemplate [Ordinary $ prettyShow uid])
   , (PkgIdVar, PathTemplate [Ordinary $ prettyShow pkgId])
+  ]
+
+stageTemplateEnv :: Stage -> PathTemplateEnv
+stageTemplateEnv stage =
+  [ (StageVar, PathTemplate [Ordinary $ prettyShow stage])
   ]
 
 compilerTemplateEnv :: CompilerInfo -> PathTemplateEnv

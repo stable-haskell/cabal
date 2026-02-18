@@ -34,7 +34,7 @@ import           Distribution.Solver.Types.PackageConstraint
 import qualified Distribution.Solver.Types.PackageIndex as CI
 import           Distribution.Solver.Types.Settings
 import           Distribution.Solver.Types.SourcePackage
-import           Distribution.Solver.Types.Stage (Stage(..), Staged(..), stages)
+import           Distribution.Types.Stage (Stage(..), Staged(..), stages)
 
 import Distribution.Solver.Modular.Dependency as D
 import Distribution.Solver.Modular.Flag as F

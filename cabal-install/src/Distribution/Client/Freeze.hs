@@ -54,7 +54,7 @@ import Distribution.Solver.Types.PkgConfigDb
 import Distribution.Solver.Types.ResolverPackage (solverId)
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage (SolverPackage (..))
-import qualified Distribution.Solver.Types.Stage as Stage
+import qualified Distribution.Types.Stage as Stage
 
 import Distribution.Client.Errors
 import Distribution.Package

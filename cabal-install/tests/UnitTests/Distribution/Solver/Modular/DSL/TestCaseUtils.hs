@@ -48,7 +48,7 @@ import Distribution.Client.Dependency (foldProgress)
 import qualified Distribution.Solver.Types.PackagePath as P
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..), pkgConfigDbFromList)
 import Distribution.Solver.Types.Settings
-import Distribution.Solver.Types.Stage
+import Distribution.Types.Stage
 import Distribution.Solver.Types.Variable
 import UnitTests.Distribution.Solver.Modular.DSL
 import UnitTests.Options

@@ -142,7 +142,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage as SourcePackage
-import qualified Distribution.Solver.Types.Stage as Stage
+import qualified Distribution.Types.Stage as Stage
 
 import Distribution.Client.ProjectConfig
 import Distribution.Client.Utils

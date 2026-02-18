@@ -27,6 +27,8 @@ module Distribution.Client.ProjectConfig.Types
   , MapMappend (..)
   ) where
 
+import Distribution.Types.Stage
+
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
@@ -498,6 +500,7 @@ data BuildTimeSettings = BuildTimeSettings
       :: Maybe
           ( Compiler
             -> Platform
+            -> Stage
             -> PackageId
             -> UnitId
             -> FilePath

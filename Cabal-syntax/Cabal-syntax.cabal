@@ -181,6 +181,7 @@ library
     Distribution.Types.PkgconfigVersionRange
     Distribution.Types.SetupBuildInfo
     Distribution.Types.SetupBuildInfo.Lens
+    Distribution.Types.Stage
     Distribution.Types.SourceRepo
     Distribution.Types.SourceRepo.Lens
     Distribution.Types.TestSuite

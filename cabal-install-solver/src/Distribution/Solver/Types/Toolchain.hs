@@ -12,7 +12,7 @@ import Prelude ()
 
 import Distribution.Simple.Compiler
 import Distribution.Simple.Program.Db
-import Distribution.Solver.Types.Stage (getStage, Stage (..), Staged (..))
+import Distribution.Types.Stage (getStage, Stage (..), Staged (..))
 import Distribution.System
 
 ---------------------------

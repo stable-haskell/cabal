@@ -408,7 +408,7 @@ buildAndInstallUnpackedPackage
   verbosity
   distDirLayout
   maybe_semaphore
-  buildSettings@BuildTimeSettings{buildSettingNumJobs}
+  buildSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingLogFile}
   registerLock
   cacheLock
   pkgshared
@@ -499,6 +499,7 @@ buildAndInstallUnpackedPackage
     where
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
+      Toolchain{toolchainCompiler, toolchainPlatform} = elabToolchain pkg
 
       dispname :: String
       dispname = case elabPkgOrComp pkg of
@@ -522,12 +523,9 @@ buildAndInstallUnpackedPackage
 
       mlogFile :: Maybe FilePath
       mlogFile =
-        Just
-          $ distDirectory distDirLayout
-          </> "logs"
-          </> prettyShow (elabStage pkg)
-          </> betterPlatform (elabToolchain pkg)
-          </> prettyShow (elabUnitId pkg)
+        case buildSettingLogFile of
+          Nothing -> Nothing
+          Just mkLogFile -> Just (mkLogFile toolchainCompiler toolchainPlatform (elabStage pkg) pkgid uid)
 
       initLogFile :: IO ()
       initLogFile =
