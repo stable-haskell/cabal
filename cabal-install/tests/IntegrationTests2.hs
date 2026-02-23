@@ -2222,7 +2222,7 @@ planProject testdir cliConfig = do
                 ) <-
     configureProject testdir cliConfig
 
-  (elaboratedPlan, _, elaboratedShared, _, _) <-
+  (elaboratedPlan, elaboratedShared, _, _) <-
     rebuildInstallPlan
       verbosity
       distDirLayout

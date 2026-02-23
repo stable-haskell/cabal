@@ -205,8 +205,13 @@ rebuildTargetsDryRun distDirLayout =
       -> [BuildStatus]
       -> FilePath
       -> IO BuildStatus
-    dryRunTarballPkg _pkg _depsBuildStatus tarball =
-      return (BuildStatusUnpack tarball)
+    dryRunTarballPkg pkg depsBuildStatus tarball = do
+      exists <- doesDirectoryExist srcdir
+      if exists
+        then dryRunLocalPkg pkg depsBuildStatus srcdir
+        else return (BuildStatusUnpack tarball)
+      where
+        srcdir = distUnpackedSrcDirectory distDirLayout (packageId pkg)
 
     dryRunLocalPkg
       :: ElaboratedConfiguredPackage
@@ -216,18 +221,30 @@ rebuildTargetsDryRun distDirLayout =
     dryRunLocalPkg pkg depsBuildStatus srcdir = do
       -- Go and do lots of I/O, reading caches and probing files to work out
       -- if anything has changed
+      
       change <-
         checkPackageFileMonitorChanged
           packageFileMonitor
           pkg
           srcdir
           depsBuildStatus
+      
       case change of
         -- It did change, giving us 'BuildStatusRebuild' info on why
-        Left rebuild ->
+        Left rebuild -> do
+          putStrLn $
+            "Package "
+              ++ prettyShow (packageId pkg)
+              ++ " needs to be rebuilt because: "
+              ++ show rebuild
           return (BuildStatusRebuild srcdir rebuild)
         -- No changes, the package is up to date. Use the saved build results.
-        Right buildResult ->
+        Right buildResult -> do
+          putStrLn $
+            "Package "
+              ++ prettyShow (packageId pkg)
+              ++ " is up to date with build result: "
+              ++ show buildResult
           return (BuildStatusUpToDate buildResult)
       where
         packageFileMonitor :: PackageFileMonitor
@@ -352,6 +369,7 @@ rebuildTargets
               downloadMap
               registerLock
               cacheLock
+              installPlan
               sharedPackageConfig
               pkg
               pkgBuildStatus
@@ -490,6 +508,7 @@ rebuildTarget
   -> AsyncFetchMap
   -> Lock
   -> Lock
+  -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
   -> ElaboratedReadyPackage
   -> BuildStatus
@@ -502,6 +521,7 @@ rebuildTarget
   downloadMap
   registerLock
   cacheLock
+  installPlan
   sharedPackageConfig
   rpkg@(ReadyPackage pkg)
   pkgBuildStatus
@@ -556,12 +576,12 @@ rebuildTarget
       rebuildPhase :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> IO BuildResult
       rebuildPhase buildStatus srcdir = do
         info verbosity $ "[rebuildPhase] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir ++ " with rebuild reason " ++ show buildStatus
-        buildAndInstall srcdir (makeSymbolicPath builddir)
+        buildAndInstall buildStatus srcdir (makeSymbolicPath builddir)
         where
           builddir = distBuildDirectory (elabDistDirParams pkg)
 
-      buildAndInstall :: SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
-      buildAndInstall srcdir builddir = do
+      buildAndInstall :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
+      buildAndInstall buildStatus srcdir builddir = do
         info verbosity $ "[buildAndInstall] Building and installing " ++ prettyShow (nodeKey pkg)
         buildAndInstallUnpackedPackage
           verbosity
@@ -570,8 +590,10 @@ rebuildTarget
           buildSettings
           registerLock
           cacheLock
+          installPlan
           sharedPackageConfig
           rpkg
+          buildStatus
           srcdir
           builddir
 
@@ -669,7 +691,8 @@ withTarballLocalDirectory
   -> PackageId
   -> DistDirParams
   -> Maybe CabalFileText
-  -> ( SymbolicPath CWD (Dir Pkg) -- Source directory
+  -> ( BuildStatusRebuild
+       -> SymbolicPath CWD (Dir Pkg) -- Source directory
        -> SymbolicPath Pkg (Dir Dist) -- Build directory
        -> IO a
      )
@@ -697,7 +720,9 @@ withTarballLocalDirectory
         srcrootdir
         pkgid
         dparams
-    buildPkg (makeSymbolicPath srcdir) builddir
+
+    -- FIXME: boh?
+    buildPkg (BuildStatusConfigure MonitorFirstRun) (makeSymbolicPath srcdir) builddir
   where
     srcrootdir = distUnpackedSrcRootDirectory distDirLayout
     srcdir = distUnpackedSrcDirectory distDirLayout pkgid

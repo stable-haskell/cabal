@@ -156,7 +156,7 @@ targetAction flags@NixStyleFlags{..} ts globalFlags = do
     } <-
     establishProjectBaseContext verbosity cliConfig OtherCommand
 
-  (_, elaboratedPlan, _, _, _) <-
+  (elaboratedPlan, _, _, _) <-
     rebuildInstallPlan
       verbosity
       distDirLayout
