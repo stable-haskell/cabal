@@ -210,6 +210,7 @@ import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity
 #ifdef MIN_VERSION_unix
 import           System.Posix.Signals (sigKILL, sigSEGV)
+import qualified Distribution.Verbosity as Verbosity
 
 #endif
 
@@ -399,13 +400,17 @@ runProjectPreBuildPhase
       rebuildTargetsDryRun
         distDirLayout
         elaboratedPlan'
+    
+    putStrLn "Build status of packages in the plan:"
+    for_ (Map.toList pkgsBuildStatus) $ \(pkg, status) ->
+      putStrLn $ "  " ++ show pkg ++ ": " ++ show status
 
     -- Improve the plan by marking up-to-date packages as installed.
-    --
     let elaboratedPlan'' =
           improveInstallPlanWithUpToDatePackages
             pkgsBuildStatus
             elaboratedPlan'
+    
     debugNoWrap verbosity (InstallPlan.showInstallPlan elaboratedPlan'')
 
     return
@@ -476,7 +481,7 @@ runProjectPostBuildPhase
 
     postBuildStatus <-
       updatePostBuildProjectStatus
-        verbosity
+        Verbosity.deafening
         distDirLayout
         elaboratedPlanOriginal
         pkgsBuildStatus

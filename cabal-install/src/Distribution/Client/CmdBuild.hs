@@ -184,6 +184,11 @@ buildAction flags@NixStyleFlags{extraFlags = buildFlags} targetStrings globalFla
     printPlan verbosity baseCtx buildCtx
 
     buildOutcomes <- runProjectBuildPhase verbosity baseCtx buildCtx
+
+    putStrLn "Build outcomes:"
+    for_ (Map.toList buildOutcomes) $ \(pkg, outcome) ->
+      putStrLn $ "  " ++ show pkg ++ ": " ++ show outcome
+
     runProjectPostBuildPhase verbosity baseCtx buildCtx buildOutcomes
   where
     verbosity = cfgVerbosity normal flags

@@ -26,7 +26,8 @@ import Distribution.Simple.LocalBuildInfo
   )
 
 import qualified Data.Set as Set
-import Distribution.Client.Init.Types (removeExistingFile, runPromptIO)
+import Distribution.Client.Init.Types (removeExistingFile, runPromptIO, Interactive (putStr))
+import Distribution.Package (Package(..))
 
 -----------------------------
 -- Package change detection
@@ -140,6 +141,12 @@ checkPackageFileMonitorChanged
   pkg
   srcdir
   depsBuildStatus = do
+    putStrLn $ "Checking if local package " ++ prettyShow (packageId pkg) ++ " is up to date..."
+    putStrLn $ "  Config cache file: " ++ fileMonitorCacheFile pkgFileMonitorConfig
+    putStrLn $ "  Build cache file: " ++ fileMonitorCacheFile pkgFileMonitorBuild
+    putStrLn $ "  Registration cache file: " ++ fileMonitorCacheFile pkgFileMonitorReg
+
+      
     -- TODO: [nice to have] some debug-level message about file
     -- changes, like rerunIfChanged
     configChanged <-
@@ -147,11 +154,20 @@ checkPackageFileMonitorChanged
         pkgFileMonitorConfig
         srcdir
         pkgconfig
+
+    putStrLn $ "  Config changed: " ++ show configChanged
+    
     case configChanged of
-      MonitorChanged monitorReason ->
+      MonitorChanged monitorReason -> do
+        putStrLn $
+          "Package config changed for "
+            ++ prettyShow (elabUnitId pkg)
+            ++ ": "
+            ++ show monitorReason
         return (Left (BuildStatusConfigure monitorReason'))
         where
           monitorReason' = fmap (const ()) monitorReason
+    
       MonitorUnchanged () _
         -- The configChanged here includes the identity of the dependencies,
         -- so depsBuildStatus is just needed for the changes in the content

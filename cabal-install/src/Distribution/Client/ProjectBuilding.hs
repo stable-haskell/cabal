@@ -95,6 +95,7 @@ import Distribution.Simple.Flag (fromFlagOrDefault)
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 import Distribution.Client.ProjectBuilding.UnpackedPackage (annotateFailureNoLog, buildAndInstallUnpackedPackage)
 import qualified Distribution.Compat.Graph as Graph
+import Distribution.Client.FileMonitor (FileMonitor(..))
 
 ------------------------------------------------------------------------------
 
@@ -222,6 +223,7 @@ rebuildTargetsDryRun distDirLayout =
           pkg
           srcdir
           depsBuildStatus
+      
       case change of
         -- It did change, giving us 'BuildStatusRebuild' info on why
         Left rebuild ->
@@ -352,6 +354,7 @@ rebuildTargets
               downloadMap
               registerLock
               cacheLock
+              installPlan
               sharedPackageConfig
               pkg
               pkgBuildStatus
@@ -490,6 +493,7 @@ rebuildTarget
   -> AsyncFetchMap
   -> Lock
   -> Lock
+  -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
   -> ElaboratedReadyPackage
   -> BuildStatus
@@ -502,6 +506,7 @@ rebuildTarget
   downloadMap
   registerLock
   cacheLock
+  installPlan
   sharedPackageConfig
   rpkg@(ReadyPackage pkg)
   pkgBuildStatus
@@ -556,12 +561,12 @@ rebuildTarget
       rebuildPhase :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> IO BuildResult
       rebuildPhase buildStatus srcdir = do
         info verbosity $ "[rebuildPhase] Rebuilding " ++ prettyShow (nodeKey pkg) ++ " in " ++ prettyShow srcdir ++ " with rebuild reason " ++ show buildStatus
-        buildAndInstall srcdir (makeSymbolicPath builddir)
+        buildAndInstall buildStatus srcdir (makeSymbolicPath builddir)
         where
           builddir = distBuildDirectory (elabDistDirParams pkg)
 
-      buildAndInstall :: SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
-      buildAndInstall srcdir builddir = do
+      buildAndInstall :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
+      buildAndInstall buildStatus srcdir builddir = do
         info verbosity $ "[buildAndInstall] Building and installing " ++ prettyShow (nodeKey pkg)
         buildAndInstallUnpackedPackage
           verbosity
@@ -570,8 +575,10 @@ rebuildTarget
           buildSettings
           registerLock
           cacheLock
+          installPlan
           sharedPackageConfig
           rpkg
+          buildStatus
           srcdir
           builddir
 
@@ -669,7 +676,8 @@ withTarballLocalDirectory
   -> PackageId
   -> DistDirParams
   -> Maybe CabalFileText
-  -> ( SymbolicPath CWD (Dir Pkg) -- Source directory
+  -> ( BuildStatusRebuild
+       -> SymbolicPath CWD (Dir Pkg) -- Source directory
        -> SymbolicPath Pkg (Dir Dist) -- Build directory
        -> IO a
      )
@@ -697,7 +705,9 @@ withTarballLocalDirectory
         srcrootdir
         pkgid
         dparams
-    buildPkg (makeSymbolicPath srcdir) builddir
+
+    -- FIXME: boh?
+    buildPkg (BuildStatusConfigure MonitorFirstRun) (makeSymbolicPath srcdir) builddir
   where
     srcrootdir = distUnpackedSrcRootDirectory distDirLayout
     srcdir = distUnpackedSrcDirectory distDirLayout pkgid

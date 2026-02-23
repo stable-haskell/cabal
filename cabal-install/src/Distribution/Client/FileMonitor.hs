@@ -729,6 +729,7 @@ updateFileMonitor
   monitorFiles
   cachedKey
   cachedResult = do
+    putStrLn $ "Updating file monitor cache: " ++ fileMonitorCacheFile monitor
     hashcache <- readCacheFileHashes monitor
     msfs <- buildMonitorStateFileSet startTime hashcache root monitorFiles
     rewriteCacheFile monitor msfs cachedKey cachedResult
