@@ -71,7 +71,7 @@ import Distribution.Client.Errors
 import Distribution.Compat.Environment
 import Distribution.Compat.Time (getModTime)
 import Distribution.Simple.Setup (Flag, pattern Flag, pattern NoFlag)
-import Distribution.Simple.Utils (dieWithException, findPackageDesc, noticeNoWrap, info)
+import Distribution.Simple.Utils (dieWithException, findPackageDesc, noticeNoWrap)
 import Distribution.Utils.Path
   ( CWD
   , FileOrDir (..)
