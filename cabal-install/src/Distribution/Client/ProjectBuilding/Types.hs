@@ -27,7 +27,6 @@ import Distribution.Client.Types (DocsResult, TestsResult)
 
 import Distribution.Client.ProjectPlanning.Types (ElaboratedConfiguredPackage, ElaboratedPlanPackage)
 import qualified Distribution.Compat.Graph as Graph
-import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import Distribution.Simple.LocalBuildInfo (ComponentName)
 
 ------------------------------------------------------------------------------
@@ -73,6 +72,7 @@ data BuildStatus
     --   So this package can be put into the 'InstallPlan.Installed' state
     --   and it does not need to be built.
     BuildStatusUpToDate BuildResult
+  deriving (Show)
 
 -- | Which 'BuildStatus' values indicate we'll have to do some build work of
 -- some sort. In particular we use this as part of checking if any of a
@@ -103,12 +103,7 @@ data BuildStatusRebuild
     BuildStatusConfigure (MonitorChangedReason ())
   | -- | The configuration has not changed but the build phase needs to be
     -- rerun. We record the reason the (re)build is needed.
-    --
-    -- The optional registration info here tells us if we've registered the
-    -- package already, or if we still need to do that after building.
-    -- @Just Nothing@ indicates that we know that no registration is
-    -- necessary (e.g., executable.)
-    BuildStatusBuild (Maybe (Maybe InstalledPackageInfo)) BuildReason
+    BuildStatusBuild BuildReason
   deriving (Show)
 
 data BuildReason

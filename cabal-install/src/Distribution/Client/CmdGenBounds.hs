@@ -95,7 +95,7 @@ genBoundsAction flags targetStrings globalFlags =
     let ProjectBaseContext{distDirLayout, projectConfig, localPackages} = baseCtx
 
     -- Step 1: Create the install plan for the project.
-    (_, elaboratedPlan, _, _, _) <-
+    (elaboratedPlan, _, _, _) <-
       rebuildInstallPlan
         verbosity
         distDirLayout

@@ -188,12 +188,11 @@ import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import qualified Distribution.Simple.Setup as Setup
 import Distribution.Simple.Utils
   ( createDirectoryIfMissingVerbose
-  , debugNoWrap
   , dieWithException
   , notice
   , noticeNoWrap
   , ordNub
-  , warn
+  , warn, info
   )
 import Distribution.Types.Flag
   ( FlagAssignment
@@ -352,7 +351,7 @@ withInstallPlan
     -- everything in the project. This is independent of any specific targets
     -- the user has asked for.
     --
-    (elaboratedPlan, _, elaboratedShared, _, _) <-
+    (elaboratedPlan, elaboratedShared, _, _) <-
       rebuildInstallPlan
         verbosity
         distDirLayout
@@ -379,7 +378,7 @@ runProjectPreBuildPhase
     -- everything in the project. This is independent of any specific targets
     -- the user has asked for.
     --
-    (elaboratedPlan, _, elaboratedShared, _, _) <-
+    (elaboratedPlan, elaboratedShared, _, _) <-
       rebuildInstallPlan
         verbosity
         distDirLayout
@@ -408,7 +407,8 @@ runProjectPreBuildPhase
           improveInstallPlanWithUpToDatePackages
             pkgsBuildStatus
             elaboratedPlan'
-    debugNoWrap verbosity (InstallPlan.showInstallPlan elaboratedPlan'')
+
+    info verbosity (InstallPlan.showInstallPlan elaboratedPlan'')
 
     return
       ProjectBuildContext
@@ -1219,7 +1219,7 @@ printPlan
           BuildStatusConfigure
             (MonitoredValueChanged _) -> "configuration changed"
           BuildStatusConfigure mreason -> showMonitorChangedReason mreason
-          BuildStatusBuild _ buildreason -> case buildreason of
+          BuildStatusBuild buildreason -> case buildreason of
             BuildReasonDepsRebuilt -> "dependency rebuilt"
             BuildReasonFilesChanged
               mreason -> showMonitorChangedReason mreason
