@@ -79,7 +79,7 @@ import Distribution.Version
 import qualified Data.ByteString as BS
 import qualified Data.List.NonEmpty as NE
 
-import Control.Exception (Handler (..), SomeAsyncException, catches)
+import Control.Exception (Handler (..), SomeAsyncException, catches, onException)
 import System.Directory (canonicalizePath, createDirectoryIfMissing, doesFileExist, removeFile)
 import System.FilePath (takeDirectory, (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
@@ -89,6 +89,13 @@ import System.Semaphore (SemaphoreName (..))
 import Distribution.Client.Errors
 
 import qualified Distribution.Compat.Graph as Graph
+import Distribution.Client.ProjectBuilding.PackageFileMonitor
+import Distribution.PackageDescription (BuildType(..))
+import qualified Distribution.PackageDescription as PD
+import Distribution.Client.FileMonitor (monitorFileHashed, beginUpdateFileMonitor)
+import Distribution.Client.SourceFiles (needElaboratedConfiguredPackage)
+import Distribution.Client.SrcDist (allPackageSourceFiles)
+import Distribution.Client.RebuildMonad (execRebuild)
 
 -- | Each unpacked package is processed in the following phases:
 --
@@ -399,8 +406,10 @@ buildAndInstallUnpackedPackage
   -> BuildTimeSettings
   -> Lock
   -> Lock
+  -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
   -> ElaboratedReadyPackage
+  -> BuildStatusRebuild
   -> SymbolicPath CWD (Dir Pkg)
   -> SymbolicPath Pkg (Dir Dist)
   -> IO BuildResult
@@ -411,11 +420,14 @@ buildAndInstallUnpackedPackage
   buildSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingLogFile}
   registerLock
   cacheLock
+  plan
   pkgshared
   rpkg@(ReadyPackage pkg)
+  buildStatus
   srcdir
   builddir = do
     createDirectoryIfMissingVerbose verbosity True (interpretSymbolicPath (Just srcdir) builddir)
+    createDirectoryIfMissingVerbose verbosity True (distPackageCacheDirectory distDirLayout dparams)
 
     -- TODO: [code cleanup] deal consistently with talking to older
     --      Setup.hs versions, much like we do for ghc, with a proper
@@ -429,6 +441,11 @@ buildAndInstallUnpackedPackage
     -- TODO: [required feature] sudo re-exec
 
     initLogFile
+
+    let docsResult = DocsNotTried
+        testsResult = TestsNotTried
+        buildResult :: BuildResultMisc
+        buildResult = (docsResult, testsResult)
 
     buildAndRegisterUnpackedPackage
       verbosity
@@ -444,26 +461,83 @@ buildAndInstallUnpackedPackage
       mlogFile
       $ \case
         PBConfigurePhase{runConfigure} -> do
-          noticeProgress ProgressStarting
-          runConfigure
+          whenReconfigure $ do
+            noticeProgress ProgressStarting
+            runConfigure
+            invalidatePackageRegFileMonitor packageFileMonitor
+            updatePackageConfigFileMonitor packageFileMonitor (getSymbolicPath srcdir) pkg
         PBBuildPhase{runBuild} -> do
-          noticeProgress ProgressBuilding
-          runBuild
+          whenRebuild $ do
+            noticeProgress ProgressBuilding
+            timestamp <- beginUpdateFileMonitor
+            runBuild
+            -- Be sure to invalidate the cache if building throws an exception!
+            -- If not, we'll abort execution with a stale recompilation cache.
+            -- See ghc#24926 for an example of how this can go wrong.
+              `onException` invalidatePackageRegFileMonitor packageFileMonitor            
+
+            let listSimple =
+                  execRebuild (getSymbolicPath srcdir) (needElaboratedConfiguredPackage pkg)
+                listSdist =
+                  fmap (map monitorFileHashed) $
+                    allPackageSourceFiles verbosity (getSymbolicPath srcdir)
+                ifNullThen m m' = do
+                  xs <- m
+                  if null xs then m' else return xs
+
+            monitors <- case PD.buildType (elabPkgDescription pkg) of
+              Simple -> listSimple
+              -- If a Custom setup was used, AND the Cabal is recent
+              -- enough to have sdist --list-sources, use that to
+              -- determine the files that we need to track.  This can
+              -- cause unnecessary rebuilding (for example, if README
+              -- is edited, we will try to rebuild) but there isn't
+              -- a more accurate Custom interface we can use to get
+              -- this info.  We prefer not to use listSimple here
+              -- as it can miss extra source files that are considered
+              -- by the Custom setup.
+              _
+                | elabSetupScriptCliVersion pkg >= mkVersion [1, 17] ->
+                    -- However, sometimes sdist --list-sources will fail
+                    -- and return an empty list.  In that case, fall
+                    -- back on the (inaccurate) simple tracking.
+                    listSdist `ifNullThen` listSimple
+                | otherwise ->
+                    listSimple
+            
+            let dep_monitors =
+                  map monitorFileHashed $
+                    elabInplaceDependencyBuildCacheFiles
+                      distDirLayout
+                      plan
+                      pkg
+
+            updatePackageBuildFileMonitor
+              packageFileMonitor
+              (getSymbolicPath srcdir)
+              timestamp
+              pkg
+              buildStatus
+              (monitors ++ dep_monitors)
+              buildResult
+
         PBHaddockPhase{runHaddock} -> do
           noticeProgress ProgressHaddock
           runHaddock
+
         PBInstallPhase{runCopy, runRegister} -> do
           noticeProgress ProgressInstalling
 
           runCopy (Cabal.CopyToDb (elabRegistrationPackageDb pkg))
 
-          if elabRequiresRegistration pkg then
-            void $ runRegister
-                (elabRegisterPackageDBStack pkg)
-                Cabal.defaultRegisterOptions
-                  { Cabal.registerMultiInstance = True
-                  , Cabal.registerSuppressFilesCheck = True
-                  }
+          whenReregister $
+            if elabRequiresRegistration pkg then
+              void $ runRegister
+                  (elabRegisterPackageDBStack pkg)
+                  Cabal.defaultRegisterOptions
+                    { Cabal.registerMultiInstance = True
+                    , Cabal.registerSuppressFilesCheck = True
+                    }
           else
             info verbosity $ "registerPkg: elab does NOT require registration for " ++ prettyShow uid
 
@@ -484,10 +558,6 @@ buildAndInstallUnpackedPackage
     -- 'withWin32SelfUpgrade' dance, but it would be necessary for a
     -- shared bin dir.
 
-    -- TODO: [required feature] docs and test phases
-    let docsResult = DocsNotTried
-        testsResult = TestsNotTried
-
     noticeProgress ProgressCompleted
 
     return
@@ -499,6 +569,34 @@ buildAndInstallUnpackedPackage
     where
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
+
+      dparams = elabDistDirParams pkg
+      packageFileMonitor = newPackageFileMonitor distDirLayout dparams
+
+      whenReconfigure action = case buildStatus of
+        BuildStatusConfigure _ -> action
+        _ -> return ()
+
+      whenRebuild action
+        | null (elabBuildTargets pkg)
+        , -- NB: we have to build the test/bench suite!
+          null (elabTestTargets pkg)
+        , null (elabBenchTargets pkg) =
+            return ()
+        | otherwise = action
+
+      whenReregister action =
+        case buildStatus of
+          -- We registered the package already
+          BuildStatusBuild (Just _) _ ->
+            info verbosity "whenReregister: previously registered"
+          -- There is nothing to register
+          BuildStatusBuild Nothing _ ->
+            info verbosity "whenReregister: nothing to register, we know it!"
+          BuildStatusConfigure _reason
+            | null (elabBuildTargets pkg) ->
+                info verbosity "whenReregister: nothing to register, it seems ..."
+            | otherwise -> action
 
       dispname :: String
       dispname = case elabPkgOrComp pkg of

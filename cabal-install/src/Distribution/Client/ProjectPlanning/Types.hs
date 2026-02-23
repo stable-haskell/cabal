@@ -26,6 +26,7 @@ module Distribution.Client.ProjectPlanning.Types
   , elabOrderExeDependencies
   , elabSetupLibDependencies
   , elabPkgConfigDependencies
+  , elabInplaceDependencyBuildCacheFiles
   , elabRequiresRegistration
   , elabPlanPackageName
   , elabConfiguredName
@@ -686,6 +687,38 @@ pkgSetupLibDependencies pkg =
       CD.setupDeps (pkgLibDependencies pkg)
   where
     stage = prevStage (pkgStage pkg)
+
+-- | The cache files of all our inplace dependencies which,
+-- when updated, require us to rebuild.  See #4202 for
+-- more details.  Essentially, this is a list of filepaths
+-- that, if our dependencies get rebuilt, will themselves
+-- get updated.
+--
+-- Note: the hash of these cache files gets built into
+-- the build cache ourselves, which means that we end
+-- up tracking transitive dependencies!
+--
+-- Note: This tracks the "build" cache file, but not
+-- "registration" or "config" cache files.  Why not?
+-- Arguably we should...
+--
+-- Note: This is a bit of a hack, because it is not really
+-- the hashes of the SOURCES of our (transitive) dependencies
+-- that we should use to decide whether or not to rebuild,
+-- but the output BUILD PRODUCTS.  The strategy we use
+-- here will never work if we want to implement unchanging
+-- rebuilds.
+elabInplaceDependencyBuildCacheFiles
+  :: DistDirLayout
+  -> ElaboratedInstallPlan
+  -> ElaboratedConfiguredPackage
+  -> [FilePath]
+elabInplaceDependencyBuildCacheFiles layout plan root_elab =
+  go =<< InstallPlan.directDeps plan (nodeKey root_elab)
+  where
+    go = InstallPlan.foldPlanPackage (const []) $ \elab -> do
+      guard (elabIsSourcePackageClosure elab)
+      return $ distPackageCacheFile layout (elabDistDirParams elab) "build"
 
 -- | Some extra metadata associated with an
 -- 'ElaboratedConfiguredPackage' which indicates that the "package"
