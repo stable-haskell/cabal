@@ -157,59 +157,53 @@ checkPackageFileMonitorChanged
         -- so depsBuildStatus is just needed for the changes in the content
         -- of dependencies.
         | any buildStatusRequiresBuild depsBuildStatus -> do
-            regChanged <- checkFileMonitorChanged pkgFileMonitorReg srcdir ()
-            let mreg = changedToMaybe regChanged
-            return (Left (BuildStatusBuild mreg BuildReasonDepsRebuilt))
+            return (Left (BuildStatusBuild BuildReasonDepsRebuilt))
         | otherwise -> do
             buildChanged <-
               checkFileMonitorChanged
                 pkgFileMonitorBuild
                 srcdir
                 buildComponents
-            regChanged <-
-              checkFileMonitorChanged
-                pkgFileMonitorReg
-                srcdir
-                ()
-            let mreg = changedToMaybe regChanged
-            case (buildChanged, regChanged) of
-              (MonitorChanged (MonitoredValueChanged prevBuildComponents), _) ->
-                return (Left (BuildStatusBuild mreg buildReason))
+            case buildChanged of
+              MonitorChanged (MonitoredValueChanged prevBuildComponents) ->
+                return (Left (BuildStatusBuild buildReason))
                 where
                   buildReason = BuildReasonExtraTargets prevBuildComponents
-              (MonitorChanged monitorReason, _) ->
-                return (Left (BuildStatusBuild mreg buildReason))
+              MonitorChanged monitorReason ->
+                return (Left (BuildStatusBuild buildReason))
                 where
                   buildReason = BuildReasonFilesChanged monitorReason'
                   monitorReason' = fmap (const ()) monitorReason
-              (MonitorUnchanged _ _, MonitorChanged monitorReason) ->
-                -- this should only happen if the file is corrupt or been
-                -- manually deleted. We don't want to bother with another
-                -- phase just for this, so we'll reregister by doing a build.
-                return (Left (BuildStatusBuild Nothing buildReason))
-                where
-                  buildReason = BuildReasonFilesChanged monitorReason'
-                  monitorReason' = fmap (const ()) monitorReason
-              (MonitorUnchanged _ _, MonitorUnchanged _ _)
-                | pkgHasEphemeralBuildTargets pkg ->
-                    return (Left (BuildStatusBuild mreg buildReason))
-                where
-                  buildReason = BuildReasonEphemeralTargets
-              (MonitorUnchanged buildResult _, MonitorUnchanged _ _) ->
-                return $
-                  Right
-                    BuildResult
-                      { buildResultDocs = docsResult
-                      , buildResultTests = testsResult
-                      , buildResultLogFile = Nothing
-                      }
-                where
-                  (docsResult, testsResult) = buildResult
+              MonitorUnchanged (docsResult, testsResult) _ -> 
+                if elabRequiresRegistration pkg then do
+                  regChanged <- checkFileMonitorChanged pkgFileMonitorReg srcdir ()
+                  case regChanged of
+                    MonitorChanged monitorReason ->
+                      -- this should only happen if the file is corrupt or been
+                      -- manually deleted. We don't want to bother with another
+                      -- phase just for this, so we'll reregister by doing a build.
+                      return (Left (BuildStatusBuild (BuildReasonFilesChanged monitorReason)))
+                    MonitorUnchanged _ _
+                      | pkgHasEphemeralBuildTargets pkg ->
+                        return (Left (BuildStatusBuild BuildReasonEphemeralTargets))
+                      | otherwise ->
+                        return $
+                          Right
+                            BuildResult
+                              { buildResultDocs = docsResult
+                              , buildResultTests = testsResult
+                              , buildResultLogFile = Nothing
+                              }
+                else
+                  return $
+                    Right
+                      BuildResult
+                        { buildResultDocs = docsResult
+                        , buildResultTests = testsResult
+                        , buildResultLogFile = Nothing
+                        }
     where
       (pkgconfig, buildComponents) = packageFileMonitorKeyValues pkg
-      changedToMaybe :: MonitorChanged a b -> Maybe b
-      changedToMaybe (MonitorChanged _) = Nothing
-      changedToMaybe (MonitorUnchanged x _) = Just x
 
 updatePackageConfigFileMonitor
   :: PackageFileMonitor
@@ -266,7 +260,7 @@ updatePackageBuildFileMonitor
       -- that it's /only/ the value that changed not any files that changed.
       buildComponents' =
         case pkgBuildStatus of
-          BuildStatusBuild _ (BuildReasonExtraTargets prevBuildComponents) ->
+          BuildStatusBuild (BuildReasonExtraTargets prevBuildComponents) ->
             buildComponents `Set.union` prevBuildComponents
           _ -> buildComponents
 

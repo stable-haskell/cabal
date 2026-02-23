@@ -146,7 +146,6 @@ import Distribution.Client.ProjectPlanning.Types as Ty
 import Distribution.Client.RebuildMonad
 import Distribution.Client.Setup hiding (cabalVersion, packageName)
 import Distribution.Client.SetupWrapper
-import Distribution.Client.Store
 import Distribution.Client.Targets (userToPackageConstraint)
 import Distribution.Client.Toolchain
 import Distribution.Client.Types
@@ -161,10 +160,6 @@ import Distribution.CabalSpecVersion
 import Distribution.Utils.LogProgress
 import Distribution.Utils.MapAccum
 import Distribution.Utils.NubList
-import Distribution.Utils.Path hiding
-  ( (<.>)
-  , (</>)
-  )
 
 import qualified Hackage.Security.Client as Sec
 
@@ -635,8 +630,7 @@ rebuildInstallPlan
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> Maybe InstalledPackageIndex
   -> IO
-      ( ElaboratedInstallPlan -- with store packages
-      , ElaboratedInstallPlan -- with source packages
+      ( ElaboratedInstallPlan
       , ElaboratedSharedConfig
       , IndexUtils.TotalIndexState
       , IndexUtils.ActiveRepos
@@ -692,17 +686,7 @@ rebuildInstallPlan
                 phaseMaintainPlanOutputs elaboratedPlan elaboratedShared
                 return (elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
 
-          -- \| Given the 'InstalledPackageIndex' for a nix-style package store, and an
-          -- 'ElaboratedInstallPlan', replace configured source packages by installed
-          -- packages from the store whenever they exist.
-          --
-          -- The improved plan changes each time we install something, whereas
-          -- the underlying elaborated plan only changes when input config
-          -- changes, so it's worth caching them separately.
-          improvedPlan <- phaseImprovePlan elaboratedPlan
-          liftIO $ info verbosity (render (text "Improved install plan:" $$ text (showElaboratedInstallPlan improvedPlan)))
-
-          return (improvedPlan, elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
+          return (elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
     where
       fileMonitorSolverPlan = newFileMonitorInCacheDir "solver-plan"
       fileMonitorSourceHashes = newFileMonitorInCacheDir "source-hashes"
@@ -957,41 +941,6 @@ rebuildInstallPlan
           distDirLayout
           elaboratedPlan
           elaboratedShared
-
-      -- Improve the elaborated install plan. The elaborated plan consists
-      -- mostly of source packages (with full nix-style hashed ids). Where
-      -- corresponding installed packages already exist in the store, replace
-      -- them in the plan.
-      --
-      -- Note that we do monitor the store's package db here, so we will redo
-      -- this improvement phase when the db changes -- including as a result of
-      -- executing a plan and installing things.
-      --
-      phaseImprovePlan
-        :: ElaboratedInstallPlan
-        -> Rebuild ElaboratedInstallPlan
-      phaseImprovePlan elaboratedPlan = liftIO $ do
-        info verbosity "Improving the install plan using the package store..."
-        InstallPlan.installedM canBeImproved elaboratedPlan
-        where
-          -- Only packages that do not depend on source packages can be cached
-          canBeImproved elab = do
-            info verbosity ("Checking if " ++ prettyShow (installedUnitId elab) ++ " is already installed...")
-            isPresent <- doesStoreEntryExist
-                distStoreDirLayout
-                (elabStage elab)
-                (elabToolchain elab)
-                (installedUnitId elab)
-            if isPresent then 
-              if elabIsSourcePackageClosure elab then do
-                info verbosity (prettyShow (installedUnitId elab) ++ " is already present but I will not reuse it because it depends on source packages.")
-                return False
-              else do
-                info verbosity (prettyShow (installedUnitId elab) ++ " is already present and can be reused.")
-                return True
-            else do
-              info verbosity (prettyShow (installedUnitId elab) ++ " is not present in the store.")
-              return False
 
 -- | If a 'PackageSpecifier' refers to a single package, return Just that
 -- package.
@@ -2065,7 +2014,7 @@ elaborateInstallPlan
               Just e -> Ty.elabModuleShape e
 
             -- See the equivalent code in buildComponent for explanation.
-            pkgInstalledId = 
+            pkgInstalledId =
               case elabPkgSourceHash elab of
                 -- If we have a source hash and the package is in the project closure,
                 -- we can use it to compute the component ID.
@@ -2363,7 +2312,7 @@ elaborateInstallPlan
 
       --
       -- Per-package options
-      -- 
+      --
       -- allPackageConfig applies to all packages
       -- localPackageConfig applies to all project source packages
       -- perPackageConfig applies to specific named packages
@@ -2373,14 +2322,14 @@ elaborateInstallPlan
 
       perPkgOptionMaybe :: PackageId -> (PackageConfig -> Flag a) -> Maybe a
       perPkgOptionMaybe pkgid f = flagToMaybe (lookupPerPkgOption pkgid f)
-      
+
       perPkgOptionList :: PackageId -> (PackageConfig -> [a]) -> [a]
       perPkgOptionList pkgid f = lookupPerPkgOption pkgid f
-      
+
       perPkgOptionNubList pkgid f = fromNubList (lookupPerPkgOption pkgid f)
-      
+
       perPkgOptionMapLast pkgid f = getMapLast (lookupPerPkgOption pkgid f)
-      
+
       perPkgOptionMapMappend pkgid f = getMapMappend (lookupPerPkgOption pkgid f)
 
       perPkgOptionLibExeFlag pkgid def fboth flib = (exe, lib)

@@ -137,7 +137,7 @@ freezeAction flags extraArgs globalFlags = do
     } <-
     establishProjectBaseContext verbosity cliConfig OtherCommand
 
-  (_, elaboratedPlan, _, totalIndexState, activeRepos) <-
+  (elaboratedPlan, _, totalIndexState, activeRepos) <-
     rebuildInstallPlan
       verbosity
       distDirLayout
