@@ -1595,12 +1595,12 @@ createDirectoryIfMissingVerbose
   -> FilePath
   -> IO ()
 createDirectoryIfMissingVerbose verbosity create_parents dir = withFrozenCallStack $ do
-  info verbosity $ "creating directory " ++ dir
+  debug verbosity $ "creating directory " ++ dir
   createDirectoryIfMissing create_parents dir
 
 createDirectoryVerbose :: Verbosity -> FilePath -> IO ()
 createDirectoryVerbose verbosity dir = withFrozenCallStack $ do
-  info verbosity $ "creating " ++ dir
+  debug verbosity $ "creating " ++ dir
   createDirectory dir
   setDirOrdinary dir
 
@@ -1610,7 +1610,7 @@ createDirectoryVerbose verbosity dir = withFrozenCallStack $ do
 -- At higher verbosity levels it logs an info message.
 copyFileVerbose :: Verbosity -> FilePath -> FilePath -> IO ()
 copyFileVerbose verbosity src dest = withFrozenCallStack $ do
-  info verbosity ("copy " ++ src ++ " to " ++ dest)
+  debug verbosity ("copy " ++ src ++ " to " ++ dest)
   copyFile src dest
 
 -- | Install an ordinary file. This is like a file copy but the permissions
@@ -1618,7 +1618,7 @@ copyFileVerbose verbosity src dest = withFrozenCallStack $ do
 -- while on Windows it uses the default permissions for the target directory.
 installOrdinaryFile :: Verbosity -> FilePath -> FilePath -> IO ()
 installOrdinaryFile verbosity src dest = withFrozenCallStack $ do
-  info verbosity ("Installing " ++ src ++ " to " ++ dest)
+  debug verbosity ("Installing " ++ src ++ " to " ++ dest)
   copyOrdinaryFile src dest
 
 -- | Install an executable file. This is like a file copy but the permissions
@@ -1626,7 +1626,7 @@ installOrdinaryFile verbosity src dest = withFrozenCallStack $ do
 -- while on Windows it uses the default permissions for the target directory.
 installExecutableFile :: Verbosity -> FilePath -> FilePath -> IO ()
 installExecutableFile verbosity src dest = withFrozenCallStack $ do
-  info verbosity ("Installing executable " ++ src ++ " to " ++ dest)
+  debug verbosity ("Installing executable " ++ src ++ " to " ++ dest)
   copyExecutableFile src dest
 
 -- | Install a file that may or not be executable, preserving permissions.
