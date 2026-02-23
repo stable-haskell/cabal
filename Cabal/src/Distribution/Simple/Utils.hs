@@ -91,6 +91,7 @@ module Distribution.Simple.Utils
 
     -- * copying files
   , createDirectoryIfMissingVerbose
+  , createDirectoryVerbose
   , copyFileVerbose
   , copyFiles
   , copyFileTo
