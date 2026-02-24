@@ -73,7 +73,6 @@ data BuildStatus
     --   So this package can be put into the 'InstallPlan.Installed' state
     --   and it does not need to be built.
     BuildStatusUpToDate BuildResult
-  deriving (Show)
 
 -- | Which 'BuildStatus' values indicate we'll have to do some build work of
 -- some sort. In particular we use this as part of checking if any of a
