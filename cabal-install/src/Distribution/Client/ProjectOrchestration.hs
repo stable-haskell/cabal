@@ -210,9 +210,8 @@ import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity
 #ifdef MIN_VERSION_unix
 import           System.Posix.Signals (sigKILL, sigSEGV)
-import qualified Distribution.Verbosity as Verbosity
-
 #endif
+import qualified Distribution.Verbosity as Verbosity
 
 -- | Tracks what command is being executed, because we need to hide this somewhere
 -- for cases that need special handling (usually for error reporting).
