@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 -- | cabal-install CLI command: build
 module Distribution.Client.CmdBuild
   ( -- * The @build@ CLI and action
