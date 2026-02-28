@@ -359,6 +359,7 @@ rebuildTargets
     | otherwise = do
         registerLock <- newLock -- serialise registration
         cacheLock <- newLock -- serialise access to setup exe cache
+        unpackLock <- newLock -- serialise tarball unpacking (avoid TOCTOU race)
         rebuildTargets' verbosity projectConfig distDirLayout installPlan sharedPackageConfig pkgsBuildStatus buildSettings $
           \downloadMap jobControl pkg pkgBuildStatus ->
             rebuildTarget
@@ -369,6 +370,7 @@ rebuildTargets
               downloadMap
               registerLock
               cacheLock
+              unpackLock
               installPlan
               sharedPackageConfig
               pkg
@@ -507,7 +509,11 @@ rebuildTarget
   -> BuildTimeSettings
   -> AsyncFetchMap
   -> Lock
+  -- ^ registerLock: serialise registration
   -> Lock
+  -- ^ cacheLock: serialise access to setup exe cache
+  -> Lock
+  -- ^ unpackLock: serialise tarball unpacking
   -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
   -> ElaboratedReadyPackage
@@ -521,6 +527,7 @@ rebuildTarget
   downloadMap
   registerLock
   cacheLock
+  unpackLock
   installPlan
   sharedPackageConfig
   rpkg@(ReadyPackage pkg)
@@ -567,6 +574,7 @@ rebuildTarget
         withTarballLocalDirectory
           verbosity
           distDirLayout
+          unpackLock
           tarball
           (packageId pkg)
           (elabDistDirParams pkg)
@@ -687,6 +695,7 @@ downloadedSourceLocation pkgloc =
 withTarballLocalDirectory
   :: Verbosity
   -> DistDirLayout
+  -> Lock
   -> FilePath
   -> PackageId
   -> DistDirParams
@@ -700,28 +709,33 @@ withTarballLocalDirectory
 withTarballLocalDirectory
   verbosity
   distDirLayout
+  unpackLock
   tarball
   pkgid
   dparams
   pkgTextOverride
   buildPkg = do
-    exists <- doesDirectoryExist srcdir
-    unless exists $ do
-      createDirectoryIfMissingVerbose verbosity True srcrootdir
-      unpackPackageTarball
-        verbosity
-        tarball
-        srcrootdir
-        pkgid
-        pkgTextOverride
-      moveTarballShippedDistDirectory
-        verbosity
-        distDirLayout
-        srcrootdir
-        pkgid
-        dparams
-
-    -- FIXME: boh?
+    -- Use a lock to prevent a TOCTOU race: when two stages of the same
+    -- package (e.g. build: and host: in cross-compilation) are scheduled
+    -- concurrently, both may see the directory as non-existent and race
+    -- to unpack, corrupting the extraction and causing "No cabal file
+    -- found" errors.
+    criticalSection unpackLock $ do
+      exists <- doesDirectoryExist srcdir
+      unless exists $ do
+        createDirectoryIfMissingVerbose verbosity True srcrootdir
+        unpackPackageTarball
+          verbosity
+          tarball
+          srcrootdir
+          pkgid
+          pkgTextOverride
+        moveTarballShippedDistDirectory
+          verbosity
+          distDirLayout
+          srcrootdir
+          pkgid
+          dparams
     buildPkg (BuildStatusConfigure MonitorFirstRun) (makeSymbolicPath srcdir) builddir
   where
     srcrootdir = distUnpackedSrcRootDirectory distDirLayout
