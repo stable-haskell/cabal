@@ -209,7 +209,7 @@ import Distribution.Utils.LogProgress
 import Distribution.Utils.NubList
   ( fromNubList
   )
-import Distribution.Utils.Path (makeSymbolicPath, (</>), (<.>))
+import Distribution.Utils.Path (makeSymbolicPath, (<.>), (</>))
 import Distribution.Verbosity
 #ifdef MIN_VERSION_unix
 import System.Posix.Signals (sigKILL, sigSEGV)
@@ -548,9 +548,9 @@ installExecutables
         , let platform = toolchainPlatform (getStage toolchains (elabStage elab))
         , let exeName = unUnqualComponentName cname
         , let dir = binDirectoryFor distDirLayout elaboratedShared elab exeName
-        , let exe = exeName <.>  exeExtension platform
+        , let exe = exeName <.> exeExtension platform
         ]
-      toolchains =  pkgConfigToolchains elaboratedShared
+      toolchains = pkgConfigToolchains elaboratedShared
 
 -- Note that it is a deliberate design choice that the 'buildTargets' is
 -- not passed to phase 1, and the various bits of input config is not

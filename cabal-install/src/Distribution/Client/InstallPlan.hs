@@ -80,6 +80,7 @@ module Distribution.Client.InstallPlan
 
 import Distribution.Client.Compat.Prelude hiding (lookup, toList)
 import Distribution.Compat.Stack (WithCallStack)
+import Data.Either (fromRight)
 import Prelude ()
 
 import Distribution.Client.Types hiding (BuildOutcomes)
@@ -324,7 +325,7 @@ instance
 
   get = do
     graph <- mkInstallPlan <$> get
-    return $! either (const (error "Deserialised invalid GenericInstallPlan")) id graph
+    return $! fromRight (error "Deserialised invalid GenericInstallPlan") graph
 
 data ShowPlanNode = ShowPlanNode
   { showPlanHerald :: Doc
