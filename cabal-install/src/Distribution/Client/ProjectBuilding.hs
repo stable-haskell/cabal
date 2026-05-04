@@ -355,6 +355,7 @@ rebuildTargets
     | otherwise = do
         registerLock <- newLock -- serialise registration
         cacheLock <- newLock -- serialise access to setup exe cache
+        unpackLock <- newLock -- serialise tarball unpacking (avoid TOCTOU race)
         -- TODO: [code cleanup] eliminate setup exe cache
         info verbosity $
           "Executing install plan "
@@ -399,6 +400,7 @@ rebuildTargets
                       downloadMap
                       registerLock
                       cacheLock
+                      unpackLock
                       sharedPackageConfig
                       installPlan
                       pkg
@@ -485,7 +487,11 @@ rebuildTarget
   -> BuildTimeSettings
   -> AsyncFetchMap
   -> Lock
+  -- ^ registerLock: serialise registration
   -> Lock
+  -- ^ cacheLock: serialise access to setup exe cache
+  -> Lock
+  -- ^ unpackLock: serialise tarball unpacking
   -> ElaboratedSharedConfig
   -> ElaboratedInstallPlan
   -> ElaboratedReadyPackage
@@ -500,6 +506,7 @@ rebuildTarget
   downloadMap
   registerLock
   cacheLock
+  unpackLock
   sharedPackageConfig
   plan
   rpkg@(ReadyPackage pkg)
@@ -545,6 +552,7 @@ rebuildTarget
         withTarballLocalDirectory
           verbosity
           distDirLayout
+          unpackLock
           tarball
           (packageId pkg)
           (elabDistDirParams sharedPackageConfig pkg)
@@ -682,6 +690,7 @@ downloadedSourceLocation pkgloc =
 withTarballLocalDirectory
   :: Verbosity
   -> DistDirLayout
+  -> Lock
   -> FilePath
   -> PackageId
   -> DistDirParams
@@ -695,6 +704,7 @@ withTarballLocalDirectory
 withTarballLocalDirectory
   verbosity
   distDirLayout@DistDirLayout{..}
+  unpackLock
   tarball
   pkgid
   dparams
@@ -734,23 +744,30 @@ withTarballLocalDirectory
                 makeRelative (normalise srcdir) $
                   distBuildDirectory dparams
         -- TODO: [nice to have] ^^ do this relative stuff better
-        exists <- doesDirectoryExist srcdir
-        -- TODO: [nice to have] use a proper file monitor rather
-        -- than this dir exists test
-        unless exists $ do
-          createDirectoryIfMissingVerbose verbosity True srcrootdir
-          unpackPackageTarball
-            verbosity
-            tarball
-            srcrootdir
-            pkgid
-            pkgTextOverride
-          moveTarballShippedDistDirectory
-            verbosity
-            distDirLayout
-            srcrootdir
-            pkgid
-            dparams
+        --
+        -- Use a lock to prevent a TOCTOU race: when two stages of the same
+        -- package (e.g. build: and host: in cross-compilation) are scheduled
+        -- concurrently, both may see the directory as non-existent and race
+        -- to unpack, corrupting the extraction and causing "No cabal file
+        -- found" errors.
+        criticalSection unpackLock $ do
+          exists <- doesDirectoryExist srcdir
+          -- TODO: [nice to have] use a proper file monitor rather
+          -- than this dir exists test
+          unless exists $ do
+            createDirectoryIfMissingVerbose verbosity True srcrootdir
+            unpackPackageTarball
+              verbosity
+              tarball
+              srcrootdir
+              pkgid
+              pkgTextOverride
+            moveTarballShippedDistDirectory
+              verbosity
+              distDirLayout
+              srcrootdir
+              pkgid
+              dparams
         buildPkg (makeSymbolicPath srcdir) builddir
 
 unpackPackageTarball
