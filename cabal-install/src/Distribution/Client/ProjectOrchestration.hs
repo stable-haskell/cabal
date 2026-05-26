@@ -541,7 +541,11 @@ installExecutables
         , (ComponentTarget (CExeName cname) _subtarget, _targetSelectors) <- targets
         , let platform = toolchainPlatform (getStage toolchains (elabStage elab))
         , let exeName = unUnqualComponentName cname
-        , let dir = binDirectoryFor distDirLayout elaboratedShared elab exeName
+        -- binDirectoryFor was renamed/refactored to binDirectories with a
+        -- different signature; the call site here wasn't updated. Use
+        -- elabBinDir directly (same as what binDirectories yields) so this
+        -- file compiles. -- patched locally for wasm-cross-ghcup.
+        , let dir = elabBinDir elab
         , let exe = exeName <.>  exeExtension platform
         ]
       toolchains =  pkgConfigToolchains elaboratedShared
