@@ -87,6 +87,7 @@ import Prelude ()
 
 import Control.Arrow ((***))
 import Control.Monad (forM_)
+import Data.List (isSuffixOf)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
 import Distribution.CabalSpecVersion
@@ -128,6 +129,7 @@ import Distribution.Version
 import Language.Haskell.Extension
 import System.FilePath
   ( isRelative
+  , takeBaseName
   , takeDirectory
   )
 import qualified System.Info
@@ -339,6 +341,21 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
         versionSuffix path = takeVersionSuffix (dropExeExtension path)
         given_suf = versionSuffix given_path
         real_suf = versionSuffix real_path
+        -- For cross-compilers the ghc binary is typically prefixed with a
+        -- target triple, e.g. wasm32-unknown-wasi-ghc, javascript-unknown-ghcjs.
+        -- Try the same prefix when guessing the companion tool: given
+        -- given_path ending in "-ghc(<suf>)" or "ghc(<suf>)", strip
+        -- the "ghc<suf>" tail and prepend to the toolname.
+        -- Example: /opt/ghc/bin/wasm32-unknown-wasi-ghc  -> wasm32-unknown-wasi-ghc-pkg
+        targetPrefixOf p =
+          let base = takeBaseName p   -- strip dir + extension
+              -- find "ghc<suf>" at the end of base
+              ghcMarker = "ghc" ++ versionSuffix base
+          in if ghcMarker `isSuffixOf` base
+               then Just (take (length base - length ghcMarker) base)
+               else Nothing
+        given_prefix = targetPrefixOf given_path
+        real_prefix  = targetPrefixOf real_path
         guessNormal dir = dir </> toolname <.> exeExtension buildPlatform
         guessGhcVersioned dir suf =
           dir
@@ -348,9 +365,14 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
           dir
             </> (toolname ++ suf)
               <.> exeExtension buildPlatform
-        mkGuesses dir suf
-          | null suf = [guessNormal dir]
+        guessTargetPrefixed dir Nothing = []
+        guessTargetPrefixed dir (Just pref)
+          | null pref = []
+          | otherwise = [dir </> (pref ++ toolname) <.> exeExtension buildPlatform]
+        mkGuesses dir suf prefix
+          | null suf  = guessTargetPrefixed dir prefix ++ [guessNormal dir]
           | otherwise =
+              guessTargetPrefixed dir prefix ++
               [ guessGhcVersioned dir suf
               , guessVersioned dir suf
               , guessNormal dir
@@ -359,9 +381,9 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
         guesses =
           ( if real_path == given_path
               then []
-              else mkGuesses real_dir real_suf
+              else mkGuesses real_dir real_suf real_prefix
           )
-            ++ mkGuesses given_dir given_suf
+            ++ mkGuesses given_dir given_suf given_prefix
     info verbosity $
       "looking for tool "
         ++ toolname
