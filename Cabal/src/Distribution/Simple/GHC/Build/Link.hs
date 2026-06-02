@@ -58,6 +58,8 @@ import System.FilePath
   , replaceExtension
   )
 
+import Distribution.Simple.InstallDirs (bindir, libdir)
+
 -- | Links together the object files of the Haskell modules and extra sources
 -- using the context in which the component is being built.
 --
@@ -641,7 +643,45 @@ getRPaths pbci = do
       let hostPref = case hostOS of
             OSX -> "@loader_path"
             _ -> "$ORIGIN"
-          relPath p = if isRelative p then hostPref </> p else p
+          -- The artifact's eventual install directory; absolute rpaths are
+          -- expressed as `@loader_path`/`$ORIGIN`-relative to this when the
+          -- user has opted into relocatable mode (`relocatable: True` or
+          -- `--enable-relocatable`).
+          --
+          -- Mirrors the executable/library split in
+          -- 'Distribution.Simple.LocalBuildInfo.depLibraryPaths'.
+          installDirs = absoluteComponentInstallDirs
+            (localPkgDescr lbi) lbi (componentUnitId clbi) NoCopyDest
+          isExe = case clbi of
+            ExeComponentLocalBuildInfo{} -> True
+            _ -> False
+          relDir
+            | isExe     = bindir installDirs
+            | otherwise = libdir installDirs
+          -- Convert an rpath entry to its loader-relative form.
+          --
+          -- * Already-relative paths get the `@loader_path` / `$ORIGIN`
+          --   prefix as before.
+          -- * Absolute paths normally pass through unchanged. In
+          --   `relocatable` mode we replace them with a relative-form
+          --   expression (`@loader_path/../../...`) computed against the
+          --   binary's install dir, so the resulting binary does not bake
+          --   a build-host absolute path into LC_RPATH / DT_RUNPATH.
+          --
+          --   This matters on macOS 15 (Sequoia), whose dyld treats an
+          --   unresolvable absolute rpath as fatal — older dyld silently
+          --   falls through to subsequent rpath entries. Pre-fix, a
+          --   bindist produced under e.g.
+          --   `/Volumes/WorkSpace/_work/ghc/ghc/_build/stage2/store/...`
+          --   would abort-trap on launch when relocated off the build
+          --   host. Post-fix, the same entry becomes
+          --   `@loader_path/../../<sibling-pkg>/lib`, which dyld treats
+          --   as a normal missing-directory rpath when the bindist
+          --   layout no longer matches the store layout.
+          relPath p
+            | isRelative p   = hostPref </> p
+            | relocatable lbi = hostPref </> shortRelativePath relDir p
+            | otherwise      = p
           rpaths =
             toNubListR (map relPath libraryPaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
