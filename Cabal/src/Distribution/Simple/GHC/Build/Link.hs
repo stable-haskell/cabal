@@ -645,11 +645,10 @@ getRPaths pbci = do
           --
           -- * Already-relative paths get the `@loader_path` / `$ORIGIN`
           --   prefix as before.
-          -- * Absolute paths normally pass through unchanged. In
-          --   `relocatable` mode we replace them with a relative-form
-          --   expression (`@loader_path/../../...`) computed against the
-          --   binary's install dir, so the resulting binary does not bake
-          --   a build-host absolute path into LC_RPATH / DT_RUNPATH.
+          -- * Absolute paths are rewritten to a relative-form expression
+          --   (`@loader_path/../../...`) computed against the binary's
+          --   install dir, so the resulting binary does not bake a
+          --   build-host absolute path into LC_RPATH / DT_RUNPATH.
           --
           --   This matters on macOS 15 (Sequoia), whose dyld treats an
           --   unresolvable absolute rpath as fatal — older dyld silently
@@ -661,10 +660,16 @@ getRPaths pbci = do
           --   `@loader_path/../../<sibling-pkg>/lib`, which dyld treats
           --   as a normal missing-directory rpath when the bindist
           --   layout no longer matches the store layout.
+          --
+          --   Not gated on `relocatable lbi`: that flag also triggers
+          --   `checkRelocatable` (which refuses cabal-store layouts
+          --   where deps live in sibling prefixes) and changes how
+          --   library-dirs are emitted in .conf files. Both behaviors
+          --   are independent of rpath generation and incompatible with
+          --   the stable-haskell GHC bindist assembly pipeline.
           relPath p
-            | isRelative p   = hostPref </> p
-            | relocatable lbi = hostPref </> shortRelativePath relDir p
-            | otherwise      = p
+            | isRelative p = hostPref </> p
+            | otherwise    = hostPref </> shortRelativePath relDir p
           rpaths =
             toNubListR (map relPath libraryPaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
