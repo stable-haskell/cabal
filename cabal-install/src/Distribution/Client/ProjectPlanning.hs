@@ -883,6 +883,7 @@ rebuildInstallPlan
           , projectConfigAllPackages
           , projectConfigLocalPackages
           , projectConfigSpecificPackage
+          , projectConfigStagePackages
           , projectConfigBuildOnly
           }
         toolchains
@@ -912,6 +913,7 @@ rebuildInstallPlan
                 projectConfigAllPackages
                 projectConfigLocalPackages
                 (getMapMappend projectConfigSpecificPackage)
+                (getMapMappend projectConfigStagePackages)
 
             instantiatedPlan <-
               instantiateInstallPlan
@@ -1512,6 +1514,7 @@ elaborateInstallPlan
   -> PackageConfig
   -> PackageConfig
   -> Map PackageName PackageConfig
+  -> Map Stage PackageConfig
   -> LogProgress (ElaboratedInstallPlan, ElaboratedSharedConfig)
 elaborateInstallPlan
   verbosity
@@ -1524,7 +1527,8 @@ elaborateInstallPlan
   sharedPackageConfig
   allPackagesConfig
   localPackagesConfig
-  perPackageConfig = do
+  perPackageConfig
+  stagePackagesConfig = do
     x <- elaboratedInstallPlan
     return (x, elaboratedSharedConfig)
     where
@@ -2120,6 +2124,28 @@ elaborateInstallPlan
             elabPkgSourceId = srcpkgPackageId
 
             elabStage = solverPkgStage
+
+            -- Per-package option lookups for this package, specialised to its
+            -- stage so that stage-qualified config (@package build:*@ etc.) is
+            -- applied. These need explicit (polymorphic) type signatures: they
+            -- close over 'elabStage', and with MonoLocalBinds (implied by the
+            -- extensions this module uses) such local bindings would not
+            -- otherwise generalise over their result type.
+            perPkgOptionFlag :: PackageId -> a -> (PackageConfig -> Flag a) -> a
+            perPkgOptionFlag pkgid = perPkgOptionFlagStaged elabStage pkgid
+            perPkgOptionMaybe :: PackageId -> (PackageConfig -> Flag a) -> Maybe a
+            perPkgOptionMaybe pkgid = perPkgOptionMaybeStaged elabStage pkgid
+            perPkgOptionList :: PackageId -> (PackageConfig -> [a]) -> [a]
+            perPkgOptionList pkgid = perPkgOptionListStaged elabStage pkgid
+            perPkgOptionNubList :: Ord a => PackageId -> (PackageConfig -> NubList a) -> [a]
+            perPkgOptionNubList pkgid = perPkgOptionNubListStaged elabStage pkgid
+            perPkgOptionMapLast :: Ord k => PackageId -> (PackageConfig -> MapLast k v) -> Map k v
+            perPkgOptionMapLast pkgid = perPkgOptionMapLastStaged elabStage pkgid
+            perPkgOptionMapMappend :: (Ord k, Semigroup v) => PackageId -> (PackageConfig -> MapMappend k v) -> Map k v
+            perPkgOptionMapMappend pkgid = perPkgOptionMapMappendStaged elabStage pkgid
+            perPkgOptionLibExeFlag :: PackageId -> a -> (PackageConfig -> Flag a) -> (PackageConfig -> Flag a) -> (a, a)
+            perPkgOptionLibExeFlag pkgid = perPkgOptionLibExeFlagStaged elabStage pkgid
+
             elabToolchain = getStage toolchains elabStage
             elabCompiler = toolchainCompiler elabToolchain
             elabPlatform = toolchainPlatform elabToolchain
@@ -2229,7 +2255,7 @@ elaborateInstallPlan
             elabBuildOptionsRaw =
               LBC.BuildOptions
                 { withVanillaLib = perPkgOptionFlag srcpkgPackageId True packageConfigVanillaLib -- TODO: [required feature]: also needs to be handled recursively
-                , withSharedLib = srcpkgPackageId `Set.member` pkgsUseSharedLibrary elabCompiler
+                , withSharedLib = srcpkgPackageId `Set.member` pkgsUseSharedLibrary elabStage elabCompiler
                 , withStaticLib = perPkgOptionFlag srcpkgPackageId False packageConfigStaticLib
                 , withBytecodeLib = perPkgOptionFlag srcpkgPackageId False packageConfigBytecodeLib
                 , withDynExe =
@@ -2241,8 +2267,8 @@ elaborateInstallPlan
                 , withFullyStaticExe = perPkgOptionFlag srcpkgPackageId False packageConfigFullyStaticExe
                 , withGHCiLib = perPkgOptionFlag srcpkgPackageId False packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
                 , withProfExe = perPkgOptionFlag srcpkgPackageId False packageConfigProf
-                , withProfLib = srcpkgPackageId `Set.member` pkgsUseProfilingLibrary elabCompiler
-                , withProfLibShared = srcpkgPackageId `Set.member` pkgsUseProfilingLibraryShared elabCompiler
+                , withProfLib = srcpkgPackageId `Set.member` pkgsUseProfilingLibrary elabStage elabCompiler
+                , withProfLibShared = srcpkgPackageId `Set.member` pkgsUseProfilingLibraryShared elabStage elabCompiler
                 , exeCoverage = perPkgOptionFlag srcpkgPackageId False packageConfigCoverage
                 , libCoverage = perPkgOptionFlag srcpkgPackageId False packageConfigCoverage
                 , withOptimization = perPkgOptionFlag srcpkgPackageId NormalOptimisation packageConfigOptimization
@@ -2344,40 +2370,52 @@ elaborateInstallPlan
       -- localPackageConfig applies to all project source packages
       -- perPackageConfig applies to specific named packages
 
-      perPkgOptionFlag :: PackageId -> a -> (PackageConfig -> Flag a) -> a
-      perPkgOptionFlag pkgid def f = fromFlagOrDefault def (lookupPerPkgOption pkgid f)
+      -- These helpers take the 'Stage' of the package being elaborated so that
+      -- stage-qualified package configuration (e.g. @package build:*@) can be
+      -- applied. Within 'elaborateSolverToCommon' they are re-bound to the
+      -- current 'elabStage' (see the local definitions there), so the many call
+      -- sites can keep using the un-suffixed names.
+      perPkgOptionFlagStaged :: Stage -> PackageId -> a -> (PackageConfig -> Flag a) -> a
+      perPkgOptionFlagStaged stage pkgid def f = fromFlagOrDefault def (lookupPerPkgOptionStaged stage pkgid f)
 
-      perPkgOptionMaybe :: PackageId -> (PackageConfig -> Flag a) -> Maybe a
-      perPkgOptionMaybe pkgid f = flagToMaybe (lookupPerPkgOption pkgid f)
+      perPkgOptionMaybeStaged :: Stage -> PackageId -> (PackageConfig -> Flag a) -> Maybe a
+      perPkgOptionMaybeStaged stage pkgid f = flagToMaybe (lookupPerPkgOptionStaged stage pkgid f)
 
-      perPkgOptionList :: PackageId -> (PackageConfig -> [a]) -> [a]
-      perPkgOptionList pkgid f = lookupPerPkgOption pkgid f
+      perPkgOptionListStaged :: Stage -> PackageId -> (PackageConfig -> [a]) -> [a]
+      perPkgOptionListStaged stage pkgid f = lookupPerPkgOptionStaged stage pkgid f
 
-      perPkgOptionNubList pkgid f = fromNubList (lookupPerPkgOption pkgid f)
+      perPkgOptionNubListStaged :: Ord a => Stage -> PackageId -> (PackageConfig -> NubList a) -> [a]
+      perPkgOptionNubListStaged stage pkgid f = fromNubList (lookupPerPkgOptionStaged stage pkgid f)
 
-      perPkgOptionMapLast pkgid f = getMapLast (lookupPerPkgOption pkgid f)
+      perPkgOptionMapLastStaged :: Ord k => Stage -> PackageId -> (PackageConfig -> MapLast k v) -> Map k v
+      perPkgOptionMapLastStaged stage pkgid f = getMapLast (lookupPerPkgOptionStaged stage pkgid f)
 
-      perPkgOptionMapMappend pkgid f = getMapMappend (lookupPerPkgOption pkgid f)
+      perPkgOptionMapMappendStaged :: (Ord k, Semigroup v) => Stage -> PackageId -> (PackageConfig -> MapMappend k v) -> Map k v
+      perPkgOptionMapMappendStaged stage pkgid f = getMapMappend (lookupPerPkgOptionStaged stage pkgid f)
 
-      perPkgOptionLibExeFlag pkgid def fboth flib = (exe, lib)
+      perPkgOptionLibExeFlagStaged :: Stage -> PackageId -> a -> (PackageConfig -> Flag a) -> (PackageConfig -> Flag a) -> (a, a)
+      perPkgOptionLibExeFlagStaged stage pkgid def fboth flib = (exe, lib)
         where
           exe = fromFlagOrDefault def bothflag
           lib = fromFlagOrDefault def (bothflag <> libflag)
-          bothflag = lookupPerPkgOption pkgid fboth
-          libflag = lookupPerPkgOption pkgid flib
+          bothflag = lookupPerPkgOptionStaged stage pkgid fboth
+          libflag = lookupPerPkgOptionStaged stage pkgid flib
 
-      lookupPerPkgOption
+      lookupPerPkgOptionStaged
         :: (Package pkg, Monoid m)
-        => pkg
+        => Stage
+        -> pkg
         -> (PackageConfig -> m)
         -> m
-      lookupPerPkgOption pkg f =
+      lookupPerPkgOptionStaged stage pkg f =
         -- This is where we merge the options from the project config that
-        -- apply to all packages, all project local packages, and to specific
-        -- named packages
-        global `mappend` local `mappend` perpkg
+        -- apply to all packages, all project local packages, all packages of
+        -- a given stage, and to specific named packages. Later (more specific)
+        -- entries override earlier ones.
+        global `mappend` local `mappend` stagecfg `mappend` perpkg
         where
           global = f allPackagesConfig
+          stagecfg = foldMap f (Map.lookup stage stagePackagesConfig)
           local
             | isProjectSourcePackage pkg =
                 f localPackagesConfig
@@ -2424,11 +2462,16 @@ elaborateInstallPlan
       projectSourcePackages =
         Set.fromList (mapMaybe isLocalUnpackedPackage localPackages)
 
-      pkgsUseSharedLibrary :: Compiler -> Set PackageId
-      pkgsUseSharedLibrary compiler =
-        packagesWithLibDepsDownwardClosedProperty (needsSharedLib compiler)
+      -- These are parameterised by 'Stage' so that stage-qualified package
+      -- configuration (@package build:*@ etc.) is honoured and so the
+      -- downward-closed lib-dependency closure stays within a single stage.
+      -- Without this a host-stage dynamic executable would drag its (same
+      -- 'PackageId') build-stage dependencies into the shared-lib set.
+      pkgsUseSharedLibrary :: Stage -> Compiler -> Set PackageId
+      pkgsUseSharedLibrary stage compiler =
+        packagesWithLibDepsDownwardClosedProperty stage (needsSharedLib stage compiler)
 
-      needsSharedLib compiler pkgid =
+      needsSharedLib stage compiler pkgid =
         fromMaybe
           compilerShouldUseSharedLibByDefault
           -- Case 1: --enable-shared or --disable-shared is passed explicitly, honour that.
@@ -2449,9 +2492,9 @@ elaborateInstallPlan
                 _ -> Nothing
           )
         where
-          pkgSharedLib = perPkgOptionMaybe pkgid packageConfigSharedLib
-          pkgDynExe = perPkgOptionMaybe pkgid packageConfigDynExe
-          pkgProf = perPkgOptionMaybe pkgid packageConfigProf
+          pkgSharedLib = perPkgOptionMaybeStaged stage pkgid packageConfigSharedLib
+          pkgDynExe = perPkgOptionMaybeStaged stage pkgid packageConfigDynExe
+          pkgProf = perPkgOptionMaybeStaged stage pkgid packageConfigProf
 
           compilerShouldUseSharedLibByDefault =
             case compilerFlavor compiler of
@@ -2467,16 +2510,15 @@ elaborateInstallPlan
           canBuildSharedLibs = canBuildWayLibs dynamicSupported
           canBuildProfilingSharedLibs = canBuildWayLibs profilingDynamicSupported
 
-      pkgsUseProfilingLibrary :: Compiler -> Set PackageId
-      pkgsUseProfilingLibrary compiler =
-        packagesWithLibDepsDownwardClosedProperty (needsProfilingLib compiler)
+      pkgsUseProfilingLibrary :: Stage -> Compiler -> Set PackageId
+      pkgsUseProfilingLibrary stage compiler =
+        packagesWithLibDepsDownwardClosedProperty stage (needsProfilingLib stage compiler)
 
-      needsProfilingLib compiler pkg =
+      needsProfilingLib stage compiler pkgid =
         fromFlagOrDefault compilerShouldUseProfilingLibByDefault (profBothFlag <> profLibFlag)
         where
-          pkgid = packageId pkg
-          profBothFlag = lookupPerPkgOption pkgid packageConfigProf
-          profLibFlag = lookupPerPkgOption pkgid packageConfigProfLib
+          profBothFlag = lookupPerPkgOptionStaged stage pkgid packageConfigProf
+          profLibFlag = lookupPerPkgOptionStaged stage pkgid packageConfigProfLib
 
           compilerShouldUseProfilingLibByDefault =
             case compilerFlavor compiler of
@@ -2487,11 +2529,11 @@ elaborateInstallPlan
 
           canBuildProfilingLibs = canBuildWayLibs profilingVanillaSupported
 
-      pkgsUseProfilingLibraryShared :: Compiler -> Set PackageId
-      pkgsUseProfilingLibraryShared compiler =
-        packagesWithLibDepsDownwardClosedProperty (needsProfilingLibShared compiler)
+      pkgsUseProfilingLibraryShared :: Stage -> Compiler -> Set PackageId
+      pkgsUseProfilingLibraryShared stage compiler =
+        packagesWithLibDepsDownwardClosedProperty stage (needsProfilingLibShared stage compiler)
 
-      needsProfilingLibShared compiler pkg =
+      needsProfilingLibShared stage compiler pkgid =
         fromMaybe
           compilerShouldUseProfilingSharedLibByDefault
           -- case 1: If --enable-profiling-shared is passed explicitly, honour that
@@ -2510,10 +2552,9 @@ elaborateInstallPlan
                 _ -> Nothing
           )
         where
-          pkgid = packageId pkg
-          profLibSharedFlag = perPkgOptionMaybe pkgid packageConfigProfShared
-          pkgDynExe = perPkgOptionMaybe pkgid packageConfigDynExe
-          pkgProf = perPkgOptionMaybe pkgid packageConfigProf
+          profLibSharedFlag = perPkgOptionMaybeStaged stage pkgid packageConfigProfShared
+          pkgDynExe = perPkgOptionMaybeStaged stage pkgid packageConfigDynExe
+          pkgProf = perPkgOptionMaybeStaged stage pkgid packageConfigProf
 
           compilerShouldUseProfilingSharedLibByDefault =
             case compilerFlavor compiler of
@@ -2532,14 +2573,18 @@ elaborateInstallPlan
             NonSetupLibDepSolverPlanPackage
             (SolverInstallPlan.toList solverPlan)
 
-      packagesWithLibDepsDownwardClosedProperty :: (PackageIdentifier -> Bool) -> Set PackageIdentifier
-      packagesWithLibDepsDownwardClosedProperty property =
+      -- Only packages built for the given 'stage' are considered as roots; the
+      -- lib-dependency closure (which never crosses stages) then keeps the
+      -- result within that stage.
+      packagesWithLibDepsDownwardClosedProperty :: Stage -> (PackageIdentifier -> Bool) -> Set PackageIdentifier
+      packagesWithLibDepsDownwardClosedProperty stage property =
         Set.fromList
           . maybe [] (map packageId)
           $ Graph.closure
             libDepGraph
             [ Graph.nodeKey pkg
             | pkg <- SolverInstallPlan.toList solverPlan
+            , solverStage (solverId pkg) == stage
             , property (packageId pkg) -- just the packages that satisfy the property
             -- TODO: [nice to have] this does not check the config consistency,
             -- e.g. a package explicitly turning off profiling, but something

@@ -44,8 +44,10 @@ projectConfigFieldGrammar source knownPrograms =
     <*> blurFieldGrammar L.projectConfigLocalPackages (packageConfigFieldGrammar knownPrograms)
     -- \^ PackageConfig to be applied to locally built packages, specified not inside a stanza
     <*> pure mempty
-  where
     -- \^ PackageConfig applied to explicitly named packages
+    <*> pure mempty
+    -- \^ PackageConfig applied to all packages of a given stage ('package build:*' etc.)
+  where
     provenance = Set.singleton (Explicit source)
 
 formatPackageVersionConstraints :: [PackageVersionConstraint] -> List CommaVCat (Identity PackageVersionConstraint) PackageVersionConstraint

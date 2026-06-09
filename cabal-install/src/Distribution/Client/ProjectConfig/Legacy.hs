@@ -644,6 +644,8 @@ convertLegacyProjectConfig
       , projectConfigAllPackages = configAllPackages
       , projectConfigLocalPackages = configLocalPackages
       , projectConfigSpecificPackage = fmap perPackage legacySpecificConfig
+      , -- The legacy parser does not support stage-qualified package stanzas.
+        projectConfigStagePackages = mempty
       }
     where
       configAllPackages = convertLegacyPerPackageFlags g i h t b
