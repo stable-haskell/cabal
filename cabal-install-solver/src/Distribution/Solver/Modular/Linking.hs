@@ -274,8 +274,7 @@ linkDeps target = \deps -> do
       (Simple (LDep _ (Pkg  _ _)) _, _) -> return ()
 
     requalify :: FlaggedDeps QPN -> UpdateState (FlaggedDeps QPN)
-    requalify deps = do
-      vs <- get
+    requalify deps =
       return $ qualifyDeps target (unqualifyDeps deps)
 
 pickFlag :: QFN -> Bool -> UpdateState ()

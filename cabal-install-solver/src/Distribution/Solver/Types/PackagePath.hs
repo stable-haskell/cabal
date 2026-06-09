@@ -64,6 +64,7 @@ instance Structured Qualifier
 
 instance Pretty Qualifier where
   pretty QualToplevel = Disp.text "toplevel"
+  pretty (QualBase pn) = pretty pn <<>> Disp.text ":base"
   pretty (QualSetup pn) = pretty pn <<>> Disp.text ":setup"
   pretty (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
                             pretty pn2 <<>> Disp.text ":exe"
@@ -78,6 +79,7 @@ instance Pretty Qualifier where
 -- 'Base' qualifier, will always be @base@).
 dispQualifier :: Qualifier -> Disp.Doc
 dispQualifier QualToplevel = mempty
+dispQualifier (QualBase pn) = pretty pn <> Disp.text "."
 dispQualifier (QualSetup pn) = pretty pn <> Disp.text ":setup."
 dispQualifier (QualExe pn pn2) =
   pretty pn

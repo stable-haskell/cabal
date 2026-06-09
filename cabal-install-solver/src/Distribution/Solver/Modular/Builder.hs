@@ -261,7 +261,7 @@ alreadyLinked = error "addLinking called on tree that already contains linked no
 -- | Interface to the tree builder. Just takes an index and a list of package names,
 -- and computes the initial state and then the tree from there.
 buildTree :: Index -> IndependentGoals -> [PN] -> Tree () QGoalReason
-buildTree idx (IndependentGoals ind) igs =
+buildTree idx (IndependentGoals _ind) igs =
     build Linker {
         buildState = BS {
             index = idx

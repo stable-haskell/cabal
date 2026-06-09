@@ -101,7 +101,7 @@ import Distribution.Types.TestType                 (TestType)
 import Distribution.Types.UnitId                   (UnitId)
 import Distribution.Types.UnqualComponentName      (UnqualComponentName)
 import Distribution.Utils.Path                     (SymbolicPath, RelativePath, FileOrDir(..), Pkg, Build)
-import Distribution.Verbosity                      (Verbosity, VerbosityFlags)
+import Distribution.Verbosity                      (VerbosityFlags)
 import Distribution.Version                        (Version, VersionRange)
 import Language.Haskell.Extension                  (Extension, Language, knownLanguages)
 
