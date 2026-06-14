@@ -671,7 +671,18 @@ getRPaths pbci = do
             | isRelative p = hostPref </> p
             | otherwise    = hostPref </> shortRelativePath relDir p
           rpaths =
-            toNubListR (map relPath libraryPaths)
+            -- Always search the artifact's own directory ($ORIGIN /
+            -- @loader_path) first, so a sibling library installed alongside it
+            -- is found by the dynamic loader. depLibraryPaths can yield the
+            -- parent directory for a same-directory dependency (relativized to
+            -- "$ORIGIN/.."), which leaves the dependency unfound. glibc papers
+            -- over this via the runtime LD_LIBRARY_PATH GHC sets before
+            -- dlopen, but musl reads LD_LIBRARY_PATH only at process startup,
+            -- so the missing self-rpath is fatal there: a Backpack signature
+            -- implementation (libHSp) installed next to the instantiated unit
+            -- (libHSindef) fails to load (testsuite T14304 on Alpine/musl).
+            toNubListR [hostPref]
+              <> toNubListR (map relPath libraryPaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
       return rpaths
     else return mempty
