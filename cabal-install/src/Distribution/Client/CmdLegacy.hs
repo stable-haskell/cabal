@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -14,7 +13,8 @@ import Distribution.Client.Sandbox
   )
 import qualified Distribution.Client.Setup as Client
 import Distribution.Client.SetupWrapper
-  ( SetupScriptOptions (..)
+  ( SetupRunnerArgs (NotInLibrary)
+  , SetupScriptOptions (..)
   , defaultSetupScriptOptions
   , setupWrapper
   )
@@ -46,7 +46,7 @@ wrapperCmd
   -> (flags -> Setup.CommonSetupFlags)
   -> CommandSpec (Client.GlobalFlags -> IO ())
 wrapperCmd ui getCommonFlags =
-  CommandSpec ui (\ui' -> wrapperAction ui' getCommonFlags) NormalCommand
+  CommandSpec ui (`wrapperAction` getCommonFlags) NormalCommand
 
 wrapperAction
   :: Monoid flags
@@ -84,6 +84,7 @@ wrapperAction command getCommonFlags =
         getCommonFlags
         (const (return flags))
         (const extraArgs)
+        NotInLibrary
 
 --
 

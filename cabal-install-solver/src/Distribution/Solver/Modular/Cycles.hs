@@ -15,6 +15,7 @@ import Distribution.Solver.Modular.Tree
 import qualified Distribution.Solver.Modular.ConflictSet as CS
 import Distribution.Solver.Types.ComponentDeps (Component)
 import Distribution.Solver.Types.PackagePath
+import GHC.Stack (HasCallStack)
 
 -- | Find and reject any nodes with cyclic dependencies
 detectCyclesPhase :: Tree d c -> Tree d c
@@ -23,11 +24,11 @@ detectCyclesPhase = go
     -- Only check children of choice nodes.
     go :: Tree d c -> Tree d c
     go (PChoice qpn rdm gr                         cs) =
-        PChoice qpn rdm gr     $ fmap (checkChild qpn)   (fmap go cs)
+        PChoice qpn rdm gr     $ fmap (checkChild qpn . go) cs
     go (FChoice qfn@(FN qpn _) rdm gr w m d cs) =
-        FChoice qfn rdm gr w m d $ fmap (checkChild qpn) (fmap go cs)
+        FChoice qfn rdm gr w m d $ fmap (checkChild qpn . go) cs
     go (SChoice qsn@(SN qpn _) rdm gr w     cs) =
-        SChoice qsn rdm gr w   $ fmap (checkChild qpn)   (fmap go cs)
+        SChoice qsn rdm gr w   $ fmap (checkChild qpn . go) cs
     go (GoalChoice rdm cs) = GoalChoice rdm (fmap go cs)
     go x@(Fail _ _) = x
     go x@(Done _ _) = x
@@ -51,7 +52,7 @@ detectCyclesPhase = go
 -- all decisions that could potentially break the cycle.
 --
 -- TODO: The conflict set should also contain flag and stanza variables.
-findCycles :: QPN -> RevDepMap -> Maybe ConflictSet
+findCycles :: HasCallStack => QPN -> RevDepMap -> Maybe ConflictSet
 findCycles pkg rdm =
     -- This function has two parts: a faster cycle check that is called at every
     -- step and a slower calculation of the conflict set.
@@ -115,6 +116,6 @@ instance G.IsNode RevDepMapNode where
   nodeKey (RevDepMapNode qpn _) = qpn
   nodeNeighbors (RevDepMapNode _ ns) = ordNub $ map snd ns
 
-revDepMapToGraph :: RevDepMap -> G.Graph RevDepMapNode
+revDepMapToGraph :: HasCallStack => RevDepMap -> G.Graph RevDepMapNode
 revDepMapToGraph rdm = G.fromDistinctList
                        [RevDepMapNode qpn ns | (qpn, ns) <- M.toList rdm]

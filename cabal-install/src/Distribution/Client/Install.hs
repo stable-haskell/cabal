@@ -51,7 +51,6 @@ import System.Directory
   , doesFileExist
   , getTemporaryDirectory
   , listDirectory
-  , removeFile
   , renameDirectory
   )
 import System.FilePath
@@ -117,7 +116,8 @@ import Distribution.Client.Setup
   , filterTestFlags
   )
 import Distribution.Client.SetupWrapper
-  ( SetupScriptOptions (..)
+  ( SetupRunnerArgs (NotInLibrary)
+  , SetupScriptOptions (..)
   , defaultSetupScriptOptions
   , setupWrapper
   )
@@ -127,6 +127,7 @@ import Distribution.Client.Tar (extractTarGzFile)
 import Distribution.Client.Targets
 import Distribution.Client.Types as Source
 import Distribution.Client.Types.OverwritePolicy (OverwritePolicy (..))
+import Distribution.Client.Types.ReadyPackage (ReadyPackage)
 import qualified Distribution.Client.Win32SelfUpgrade as Win32SelfUpgrade
 import qualified Distribution.InstalledPackageInfo as Installed
 import Distribution.Solver.Types.PackageFixedDeps
@@ -142,6 +143,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage as SourcePackage
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.Client.ProjectConfig
 import Distribution.Client.Utils
@@ -237,6 +239,7 @@ import Distribution.Simple.Utils as Utils
   , dieWithException
   , info
   , notice
+  , removeFileForcibly
   , warn
   , withTempDirectory
   )
@@ -274,6 +277,7 @@ import Distribution.Version
   )
 
 import qualified Data.ByteString as BS
+import Data.Foldable (fold)
 import Distribution.Client.Errors
 
 -- TODO:
@@ -336,7 +340,7 @@ install
           ++ "see https://github.com/haskell/cabal/issues/3353"
           ++ " (if you didn't type --root-cmd, comment out root-cmd"
           ++ " in your ~/.config/cabal/config file)"
-    let userOrSandbox = fromFlag (configUserInstall configFlags)
+    let userOrSandbox = fromFlagOrDefault defaultUserInstall (configUserInstall configFlags)
     unless userOrSandbox $
       warn verbosity $
         "the --global flag is deprecated -- "
@@ -582,9 +586,9 @@ planPackages
   pkgConfigDb
   pkgSpecifiers =
     resolveDependencies
-      platform
-      (compilerInfo comp)
-      pkgConfigDb
+      (Stage.always (compilerInfo comp, platform))
+      (Stage.always pkgConfigDb)
+      (Stage.always installedPkgIndex)
       resolverParams
       >>= if onlyDeps then pruneInstallPlan pkgSpecifiers else return
     where
@@ -647,7 +651,6 @@ planPackages
           -- doesn't understand how to install them
           . setSolveExecutables (SolveExecutables False)
           $ standardInstallPolicy
-            installedPkgIndex
             sourcePkgDb
             pkgSpecifiers
 
@@ -713,7 +716,7 @@ pruneInstallPlan pkgSpecifiers =
           nub
             [ depid
             | SolverInstallPlan.PackageMissingDeps _ depids <- problems
-            , depid <- depids
+            , depid <- toList depids
             , packageName depid `elem` targetnames
             ]
 
@@ -1002,7 +1005,7 @@ printPlan dryRun verbosity plan sourcePkgDb = case plan of
                 )
             )
           _ <-
-          CD.flatDeps (confPkgDeps cpkg)
+          fold (confPkgDeps cpkg)
       ]
 
     revDeps :: Map.Map PackageId [PackageId]
@@ -1198,8 +1201,8 @@ storeDetailedBuildReports verbosity logsDir reports =
         createDirectoryIfMissing True reportsDir -- FIXME
         writeFile reportFile (show (showBuildReport report, buildLog))
     | (report, Just repo) <- reports
-    , Just remoteRepo <- [maybeRepoRemote repo]
     , isLikelyToHaveLogFile (BuildReports.installOutcome report)
+    , Just remoteRepo <- [maybeRepoRemote repo]
     ]
   where
     isLikelyToHaveLogFile BuildReports.ConfigureFailed{} = True
@@ -1240,7 +1243,7 @@ regenerateHaddockIndex
         defaultDirs <-
           InstallDirs.defaultInstallDirs
             (compilerFlavor comp)
-            (fromFlag (configUserInstall configFlags))
+            (fromFlagOrDefault defaultUserInstall (configUserInstall configFlags))
             True
         let indexFileTemplate = fromFlag (installHaddockIndex installFlags)
             indexFile = substHaddockIndexFileName defaultDirs indexFileTemplate
@@ -1494,7 +1497,6 @@ performInstallations
           distPref
           (chooseCabalVersion configExFlags (libVersion miscOptions))
           (Just lock)
-          parallelInstall
           index
           (Just rpkg)
 
@@ -1959,7 +1961,7 @@ installUnpackedPackage
                     _ -> ipkgs
               let packageDBs =
                     interpretPackageDbFlags
-                      (fromFlag (configUserInstall configFlags))
+                      (fromFlagOrDefault defaultUserInstall (configUserInstall configFlags))
                       (configPackageDBs configFlags)
               for_ ipkgs' $ \ipkg' ->
                 registerPackage
@@ -2061,13 +2063,12 @@ installUnpackedPackage
             let logFileName = mkLogFileName (packageId pkg) uid
                 logDir = takeDirectory logFileName
             unless (null logDir) $ createDirectoryIfMissing True logDir
-            logFileExists <- doesFileExist logFileName
-            when logFileExists $ removeFile logFileName
+            removeFileForcibly logFileName
             return (Just logFileName)
 
       setup cmd getCommonFlags flags mLogPath =
         Exception.bracket
-          (traverse (\path -> openFile path AppendMode) mLogPath)
+          (traverse (`openFile` AppendMode) mLogPath)
           (traverse_ hClose)
           ( \logFileHandle ->
               setupWrapper
@@ -2081,6 +2082,7 @@ installUnpackedPackage
                 getCommonFlags
                 flags
                 (const [])
+                NotInLibrary
           )
 
 -- helper
@@ -2115,7 +2117,7 @@ withWin32SelfUpgrade verbosity uid configFlags cinfo platform pkg action = do
   defaultDirs <-
     InstallDirs.defaultInstallDirs
       compFlavor
-      (fromFlag (configUserInstall configFlags))
+      (fromFlagOrDefault defaultUserInstall (configUserInstall configFlags))
       (PackageDescription.hasLibs pkg)
 
   Win32SelfUpgrade.possibleSelfUpgrade

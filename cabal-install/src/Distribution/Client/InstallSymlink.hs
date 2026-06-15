@@ -61,10 +61,9 @@ import qualified Distribution.Simple.InstallDirs as InstallDirs
 import Distribution.Simple.Setup
   ( ConfigFlags (..)
   , flagToMaybe
-  , fromFlag
   , fromFlagOrDefault
   )
-import Distribution.Simple.Utils (info, withTempDirectory)
+import Distribution.Simple.Utils (info, removeFileForcibly, withTempDirectory)
 import Distribution.System
   ( Platform
   )
@@ -79,7 +78,6 @@ import System.Directory
   , getSymbolicLinkTarget
   , getTemporaryDirectory
   , pathIsSymbolicLink
-  , removeFile
   )
 import System.FilePath
   ( isAbsolute
@@ -97,6 +95,7 @@ import System.IO.Error
   , isDoesNotExistError
   )
 
+import Distribution.Client.Config (defaultUserInstall)
 import Distribution.Client.Init.Prompt (promptYesNo)
 import Distribution.Client.Init.Types (DefaultPrompt (MandatoryPrompt), runPromptIO)
 import Distribution.Client.Types.OverwritePolicy
@@ -219,7 +218,7 @@ symlinkBinaries
         defaultDirs <-
           InstallDirs.defaultInstallDirs
             compilerFlavor
-            (fromFlag (configUserInstall configFlags))
+            (fromFlagOrDefault defaultUserInstall (configUserInstall configFlags))
             (PackageDescription.hasLibs pkg)
         let templateDirs =
               InstallDirs.combineInstallDirs
@@ -322,7 +321,7 @@ symlinkBinary inputs@Symlink{publicBindir, privateBindir, publicName, privateNam
     mkLink = True <$ createFileLink (relativeBindir </> privateName) (publicBindir </> publicName)
 
     rmLink :: IO Bool
-    rmLink = True <$ removeFile (publicBindir </> publicName)
+    rmLink = True <$ removeFileForcibly (publicBindir </> publicName)
 
     overwrite :: IO Bool
     overwrite = rmLink *> mkLink

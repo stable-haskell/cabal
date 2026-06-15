@@ -100,37 +100,47 @@ targetPlatform ghcInfo = platformFromTriple =<< lookup "Target platform" ghcInfo
 
 -- | Adjust the way we find and configure gcc and ld
 configureToolchain
-  :: GhcImplInfo
+  :: Verbosity
+  -> GhcImplInfo
   -> ConfiguredProgram
   -> Map String String
   -> ProgramDb
-  -> ProgramDb
-configureToolchain _implInfo ghcProg ghcInfo =
-  addKnownProgram
-    gccProgram
-      { programFindLocation = findProg gccProgramName extraGccPath
-      , programPostConf = configureGcc
-      }
-    . addKnownProgram
-      gppProgram
-        { programFindLocation = findProg gppProgramName extraGppPath
-        , programPostConf = configureGpp
+  -> IO ProgramDb
+configureToolchain verbosity _implInfo ghcProg ghcInfo db = do
+  -- this is a bit of a hack. We have a dependency of ld on gcc.
+  -- ld needs to compiler a c program, to check an ld feature.
+  -- we _could_ use ghc as a c frontend, but we do not pass all
+  -- db stack appropriately, and thus we can run into situations
+  -- where GHC will fail if it's stricter in it's wired-in-unit
+  -- selction and has the wrong db stack. However we don't need
+  -- ghc to compile a _test_ c program. So we configure `gcc`
+  -- first and then use `gcc` (the generic c compiler in cabal
+  -- terminology) to compile the test program.
+  let gccProgram' = gccProgram
+        { programFindLocation = findProg gccProgramName extraGccPath
+        , programPostConf = configureGcc
         }
-    . addKnownProgram
-      ldProgram
-        { programFindLocation = findProg ldProgramName extraLdPath
-        , programPostConf = \v cp ->
-            -- Call any existing configuration first and then add any new configuration
-            configureLd v =<< programPostConf ldProgram v cp
-        }
-    . addKnownProgram
-      arProgram
-        { programFindLocation = findProg arProgramName extraArPath
-        }
-    . addKnownProgram
-      stripProgram
-        { programFindLocation = findProg stripProgramName extraStripPath
-        }
+  let db' = flip addKnownProgram db $ gccProgram'
+  (gccProg, db'') <- requireProgram verbosity gccProgram' db'
+  return $
+    flip addKnownPrograms db'' $
+      [ gppProgram
+          { programFindLocation = findProg gppProgramName extraGppPath
+          , programPostConf = configureGpp
+          }
+      , ldProgram
+          { programFindLocation = findProg ldProgramName extraLdPath
+          , programPostConf = \v cp ->
+              -- Call any existing configuration first and then add any new configuration
+              configureLd gccProg v =<< programPostConf ldProgram v cp
+          }
+      , arProgram
+          { programFindLocation = findProg arProgramName extraArPath
+          }
+      , stripProgram
+          { programFindLocation = findProg stripProgramName extraStripPath
+          }
+      ]
   where
     compilerDir, base_dir, mingwBinDir :: FilePath
     compilerDir = takeDirectory (programPath ghcProg)
@@ -192,10 +202,8 @@ configureToolchain _implInfo ghcProg ghcInfo =
 
     ccFlags = getFlags "C compiler flags"
     cxxFlags = getFlags "C++ compiler flags"
-    -- GHC 7.8 renamed "Gcc Linker flags" to "C compiler link flags"
-    -- and "Ld Linker flags" to "ld flags" (GHC #4862).
-    gccLinkerFlags = getFlags "Gcc Linker flags" ++ getFlags "C compiler link flags"
-    ldLinkerFlags = getFlags "Ld Linker flags" ++ getFlags "ld flags"
+    gccLinkerFlags = getFlags "C compiler link flags"
+    ldLinkerFlags = getFlags "ld flags"
 
     -- It appears that GHC 7.6 and earlier encode the tokenized flags as a
     -- [String] in these settings whereas later versions just encode the flags as
@@ -230,27 +238,26 @@ configureToolchain _implInfo ghcProg ghcInfo =
                 ++ cxxFlags
           }
 
-    configureLd :: Verbosity -> ConfiguredProgram -> IO ConfiguredProgram
-    configureLd v ldProg = do
-      ldProg' <- configureLd' v ldProg
+    configureLd :: ConfiguredProgram -> Verbosity -> ConfiguredProgram -> IO ConfiguredProgram
+    configureLd gccProg v ldProg = do
+      ldProg' <- configureLd' gccProg v ldProg
       return
         ldProg'
           { programDefaultArgs = programDefaultArgs ldProg' ++ ldLinkerFlags
           }
 
     -- we need to find out if ld supports the -x flag
-    configureLd' :: Verbosity -> ConfiguredProgram -> IO ConfiguredProgram
-    configureLd' verbosity ldProg = do
+    configureLd' :: ConfiguredProgram -> Verbosity -> ConfiguredProgram -> IO ConfiguredProgram
+    configureLd' gccProg v ldProg = do
       ldx <- withTempFile ".c" $ \testcfile testchnd ->
         withTempFile ".o" $ \testofile testohnd -> do
           hPutStrLn testchnd "int foo() { return 0; }"
           hClose testchnd
           hClose testohnd
           runProgram
-            verbosity
-            ghcProg
-            [ "-hide-all-packages"
-            , "-c"
+            v
+            gccProg
+            [ "-c"
             , testcfile
             , "-o"
             , testofile
@@ -271,11 +278,9 @@ configureToolchain _implInfo ghcProg ghcInfo =
         else return ldProg
 
 getLanguages
-  :: Verbosity
-  -> GhcImplInfo
-  -> ConfiguredProgram
+  :: GhcImplInfo
   -> IO [(Language, String)]
-getLanguages _ implInfo _
+getLanguages implInfo
   -- TODO: should be using --supported-languages rather than hard coding
   | supportsGHC2024 implInfo =
       return
@@ -290,12 +295,11 @@ getLanguages _ implInfo _
         , (Haskell2010, "-XHaskell2010")
         , (Haskell98, "-XHaskell98")
         ]
-  | supportsHaskell2010 implInfo =
+  | otherwise =
       return
         [ (Haskell98, "-XHaskell98")
         , (Haskell2010, "-XHaskell2010")
         ]
-  | otherwise = return [(Haskell98, "")]
 
 getGhcInfo
   :: Verbosity
@@ -317,45 +321,18 @@ getGhcInfo verbosity _implInfo ghcProg = do
 
 getExtensions
   :: Verbosity
-  -> GhcImplInfo
   -> ConfiguredProgram
   -> IO [(Extension, Maybe String)]
-getExtensions verbosity implInfo ghcProg = do
+getExtensions verbosity ghcProg = do
   str <-
     getProgramOutput
       verbosity
       (suppressOverrideArgs ghcProg)
       ["--supported-languages"]
-  let extStrs =
-        if reportsNoExt implInfo
-          then lines str
-          else -- Older GHCs only gave us either Foo or NoFoo,
-          -- so we have to work out the other one ourselves
-
-            [ extStr''
-            | extStr <- lines str
-            , let extStr' = case extStr of
-                    'N' : 'o' : xs -> xs
-                    _ -> "No" ++ extStr
-            , extStr'' <- [extStr, extStr']
-            ]
-  let extensions0 =
-        [ (ext, Just $ "-X" ++ prettyShow ext)
-        | Just ext <- map simpleParsec extStrs
-        ]
-      extensions1 =
-        if alwaysNondecIndent implInfo
-          then -- ghc-7.2 split NondecreasingIndentation off
-          -- into a proper extension. Before that it
-          -- was always on.
-          -- Since it was not a proper extension, it could
-          -- not be turned off, hence we omit a
-          -- DisableExtension entry here.
-
-            (EnableExtension NondecreasingIndentation, Nothing)
-              : extensions0
-          else extensions0
-  return extensions1
+  return
+    [ (ext, Just $ "-X" ++ prettyShow ext)
+    | Just ext <- map simpleParsec $ lines str
+    ]
 
 includePaths
   :: LocalBuildInfo

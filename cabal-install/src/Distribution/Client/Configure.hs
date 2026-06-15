@@ -42,7 +42,8 @@ import Distribution.Client.Setup
   , filterConfigureFlags
   )
 import Distribution.Client.SetupWrapper
-  ( SetupScriptOptions (..)
+  ( SetupRunnerArgs (NotInLibrary)
+  , SetupScriptOptions (..)
   , defaultSetupScriptOptions
   , setupWrapper
   )
@@ -52,7 +53,7 @@ import Distribution.Client.Targets
   , userToPackageConstraint
   )
 import Distribution.Client.Types as Source
-
+import Distribution.Client.Types.ReadyPackage (ReadyPackage)
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.LabeledPackageConstraint
@@ -67,6 +68,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import Distribution.Client.SavedFlags (readCommandFlags, writeCommandFlags)
 import Distribution.Package
@@ -204,6 +206,7 @@ configure
           configCommonFlags
           (const (return configFlags))
           (const extraArgs)
+          NotInLibrary
       Right installPlan0 ->
         let installPlan = InstallPlan.configureInstallPlan configFlags installPlan0
          in case fst (InstallPlan.ready installPlan) of
@@ -247,7 +250,6 @@ configure
               (flagToMaybe (configCabalVersion configExFlags))
           )
           Nothing
-          False
 
       logMsg message rest = debug verbosity message >> rest
 
@@ -259,7 +261,6 @@ configureSetupScript
   -> SymbolicPath Pkg (Dir Dist)
   -> VersionRange
   -> Maybe Lock
-  -> Bool
   -> InstalledPackageIndex
   -> Maybe ReadyPackage
   -> SetupScriptOptions
@@ -271,7 +272,6 @@ configureSetupScript
   distPref
   cabalVersion
   lock
-  forceExternal
   index
   mpkg =
     SetupScriptOptions
@@ -289,7 +289,6 @@ configureSetupScript
       , useExtraEnvOverrides = []
       , setupCacheLock = lock
       , useWin32CleanHack = False
-      , forceExternalSetupMethod = forceExternal
       , -- If we have explicit setup dependencies, list them; otherwise, we give
         -- the empty list of dependencies; ideally, we would fix the version of
         -- Cabal here, so that we no longer need the special case for that in
@@ -465,14 +464,18 @@ planLocalPackage
           . setSolveExecutables (SolveExecutables False)
           . setSolverVerbosity (verbosityLevel verbosity)
           $ standardInstallPolicy
-            installedPkgIndex
             -- NB: We pass in an *empty* source package database,
             -- because cabal configure assumes that all dependencies
             -- have already been installed
             (SourcePackageDb mempty packagePrefs)
             [SpecificSourcePackage localPkg]
 
-    return (resolveDependencies platform (compilerInfo comp) pkgConfigDb resolverParams)
+    return $
+      resolveDependencies
+        (Stage.always (compilerInfo comp, platform))
+        (Stage.always pkgConfigDb)
+        (Stage.always installedPkgIndex)
+        resolverParams
 
 -- | Call an installer for an 'SourcePackage' but override the configure
 -- flags with the ones given by the 'ReadyPackage'. In particular the
@@ -507,6 +510,7 @@ configurePackage
       configCommonFlags
       (return . configureFlags)
       (const extraArgs)
+      NotInLibrary
     where
       gpkg :: PkgDesc.GenericPackageDescription
       gpkg = srcpkgDescription spkg

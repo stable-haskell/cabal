@@ -44,6 +44,7 @@ import Distribution.Solver.Types.OptionalStanza (OptionalStanza (..), OptionalSt
 import Distribution.Solver.Types.PackageConstraint (PackageProperty (..))
 
 import Data.Coerce (Coercible, coerce)
+import Distribution.Solver.Types.Stage (Stage)
 import Network.URI (URI (..), URIAuth (..), isUnreserved)
 import Test.QuickCheck
   ( Arbitrary (..)
@@ -111,8 +112,7 @@ instance Arbitrary URI where
 
 instance Arbitrary URIAuth where
   arbitrary =
-    URIAuth
-      <$> pure "" -- no password as this does not roundtrip
+    pure (URIAuth "") -- no password as this does not roundtrip
       <*> arbitraryURIToken
       <*> arbitraryURIPort
 
@@ -287,6 +287,10 @@ instance Arbitrary UserConstraintScope where
   arbitrary = genericArbitrary
   shrink = genericShrink
 
+instance Arbitrary UserConstraintQualifier where
+  arbitrary = genericArbitrary
+  shrink = genericShrink
+
 instance Arbitrary UserQualifier where
   arbitrary =
     oneof
@@ -323,6 +327,10 @@ instance Arbitrary a => Arbitrary (OptionalStanzaMap a) where
     return $ optStanzaTabulate $ \x -> case x of
       TestStanzas -> x1
       BenchStanzas -> x2
+
+instance Arbitrary Stage where
+  arbitrary = genericArbitrary
+  shrink = genericShrink
 
 -------------------------------------------------------------------------------
 -- BuildReport
@@ -387,9 +395,8 @@ instance Arbitrary Glob where
       take
         (max 1 sz)
         [ pure GlobDirTrailing
-        , GlobFile <$> (getGlobPieces <$> arbitrary)
-        , GlobDir
-            <$> (getGlobPieces <$> arbitrary)
+        , GlobFile . getGlobPieces <$> arbitrary
+        , (GlobDir . getGlobPieces <$> arbitrary)
             <*> resize (sz `div` 2) arbitrary
         ]
 
@@ -421,6 +428,11 @@ instance Arbitrary GlobPieces where
 mergeLiterals :: [GlobPiece] -> [GlobPiece]
 mergeLiterals (Literal a : Literal b : ps) = mergeLiterals (Literal (a ++ b) : ps)
 mergeLiterals (Union as : ps) = Union (map mergeLiterals as) : mergeLiterals ps
+-- Two consecutive wildcards are semantically equivalent to a single one, but
+-- would syntactically produce a recursive wildcard when pretty-printed, so
+-- whenever we end up generating two or more consecutive wildcards, we merge
+-- them together to avoid this problem.
+mergeLiterals (WildCard : WildCard : ps) = mergeLiterals (WildCard : ps)
 mergeLiterals (p : ps) = p : mergeLiterals ps
 mergeLiterals [] = []
 

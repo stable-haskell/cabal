@@ -54,6 +54,7 @@ import qualified Distribution.Client.ProjectOrchestration as Orchestration (targ
 import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
+  , WithStage (..)
   , binDirectoryFor
   )
 import Distribution.Client.ProjectPlanning.Types
@@ -61,7 +62,6 @@ import Distribution.Client.ProjectPlanning.Types
   , dataDirsEnvironmentForPlan
   , elabExeDependencyPaths
   )
-
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
   , TargetContext (..)
@@ -124,6 +124,7 @@ import Distribution.Types.UnqualComponentName
   ( UnqualComponentName
   , unUnqualComponentName
   )
+import Distribution.Utils.LogProgress (runLogProgress)
 import Distribution.Utils.NubList
   ( fromNubList
   )
@@ -200,7 +201,9 @@ runCommand =
 -- For more details on how this works, see the module
 -- "Distribution.Client.ProjectOrchestration"
 runAction :: NixStyleFlags () -> [String] -> GlobalFlags -> IO ()
-runAction flags targetAndArgs globalFlags =
+runAction flags targetAndArgs globalFlags = do
+  fullArgs <- getFullArgs
+  let (targetStr, args) = splitTargetAndArgs fullArgs targetAndArgs
   withContextAndSelectors (cfgVerbosity normal flags) RejectNoTargets (Just ExeKind) flags targetStr globalFlags OtherCommand $ \targetCtx ctx targetSelectors -> do
     (baseCtx, defaultVerbosity) <- case targetCtx of
       ProjectContext -> return (ctx, normal)
@@ -214,7 +217,6 @@ runAction flags targetAndArgs globalFlags =
         when (buildSettingOnlyDeps (buildSettings baseCtx)) $
           dieWithException verbosity NoSupportForRunCommand
 
-        fullArgs <- getFullArgs
         when (occursOnlyOrBefore fullArgs "+RTS" "--") $
           warn verbosity $
             giveRTSWarning "run"
@@ -245,11 +247,13 @@ runAction flags targetAndArgs globalFlags =
             )
             targets
 
-        let elaboratedPlan' =
-              pruneInstallPlanToTargets
-                TargetActionBuild
-                targets
-                elaboratedPlan
+        elaboratedPlan' <-
+          runLogProgress verbosity $
+            pruneInstallPlanToTargets
+              TargetActionBuild
+              targets
+              elaboratedPlan
+
         return (elaboratedPlan', targets)
 
     (selectedUnitId, selectedComponent) <-
@@ -354,8 +358,62 @@ runAction flags targetAndArgs globalFlags =
                     (distDirLayout baseCtx)
                     elaboratedPlan
             }
-  where
-    (targetStr, args) = splitAt 1 targetAndArgs
+
+-- | Split @cabal run@ arguments (@exe cmd@ arguments in the examples) into
+-- target selectors and target executable arguments.
+--
+-- When a target is given it appears in both lists:
+--
+-- >>> splitTargetAndArgs ["exe", "cmd", "target"] ["target"]
+-- (["target"],[])
+--
+-- The @+RTS@ argument is passed to the executable so only appears in the first
+-- list:
+--
+-- >>> splitTargetAndArgs ["exe", "cmd", "target", "+RTS"] ["target"]
+-- (["target"],[])
+--
+-- The @--@ follows the @+RTS@ argument, so @+RTS@ is passed to the executable
+-- and only appears in the first list:
+--
+-- >>> splitTargetAndArgs ["exe", "cmd", "target", "+RTS", "--"] ["target"]
+-- (["target"],[])
+--
+-- The @--@ precedes the @+RTS@ argument, so @+RTS@ is included in the
+-- 'targetAndArgs' list as well:
+--
+-- >>> splitTargetAndArgs ["exe", "cmd", "target", "--", "+RTS"] ["target", "+RTS"]
+-- (["target"],["+RTS"])
+--
+-- Same examples as above but when no target is given:
+--
+-- >>> splitTargetAndArgs ["exe", "cmd"] []
+-- ([],[])
+-- >>> splitTargetAndArgs ["exe", "cmd", "+RTS"] []
+-- ([],[])
+-- >>> splitTargetAndArgs ["exe", "cmd", "+RTS", "--"] []
+-- ([],[])
+-- >>> splitTargetAndArgs ["exe", "cmd", "--", "+RTS"] ["+RTS"]
+-- ([],["+RTS"])
+splitTargetAndArgs
+  :: [String]
+  -- ^ Full command line arguments, the original command line from
+  -- 'getFullArgs', which is only used to detect whether a @--@ separator was
+  -- present so that @cabal run -- ...@ keeps the target empty.
+  -> [String]
+  -- ^ The second argument is the parser-produced list that combines targets and
+  -- their arguments.  These arguments do not include those passed to @cabal@
+  -- such as @+RTS@ preceding the @--@ separator.
+  -> ([String], [String])
+splitTargetAndArgs fullArgs targetAndArgs = case dropWhile (/= "--") fullArgs of
+  ("--" : exeArgs) ->
+    -- targetAndArgs contains targets (>=0) and args; exeArgs contains only args; so
+    -- the difference (>=0) is the number of targets
+    let numTargets = length targetAndArgs - length exeArgs
+     in splitAt numTargets targetAndArgs
+  _ ->
+    -- No '--': first element (if any) is the target.
+    splitAt 1 targetAndArgs
 
 -- | Used by the main CLI parser as heuristic to decide whether @cabal@ was
 -- invoked as a script interpreter, i.e. via
@@ -383,7 +441,7 @@ handleShebang :: FilePath -> [String] -> IO ()
 handleShebang script args =
   runAction (commandDefaultFlags runCommand) (script : args) defaultGlobalFlags
 
-singleExeOrElse :: IO (UnitId, UnqualComponentName) -> TargetsMap -> IO (UnitId, UnqualComponentName)
+singleExeOrElse :: IO (WithStage UnitId, UnqualComponentName) -> TargetsMapS -> IO (WithStage UnitId, UnqualComponentName)
 singleExeOrElse action targetsMap =
   case Set.toList . distinctTargetComponents $ targetsMap of
     [(unitId, CExeName component)] -> return (unitId, component)
@@ -395,19 +453,20 @@ singleExeOrElse action targetsMap =
 -- 'ElaboratedConfiguredPackage's that match the specified
 -- 'UnitId'.
 matchingPackagesByUnitId
-  :: UnitId
+  :: WithStage UnitId
   -> ElaboratedInstallPlan
   -> [ElaboratedConfiguredPackage]
-matchingPackagesByUnitId uid =
-  mapMaybe
-    ( foldPlanPackage
-        (const Nothing)
-        ( \x ->
-            if elabUnitId x == uid
-              then Just x
-              else Nothing
-        )
-    )
+matchingPackagesByUnitId (WithStage s uid) =
+  catMaybes
+    . fmap
+      ( foldPlanPackage
+          (const Nothing)
+          ( \x ->
+              if elabUnitId x == uid && elabStage x == s
+                then Just x
+                else Nothing
+          )
+      )
     . toList
 
 -- | This defines what a 'TargetSelector' means for the @run@ command.
@@ -492,7 +551,7 @@ data RunProblem
   | -- | A single 'TargetSelector' matches multiple targets
     TargetProblemMatchesMultiple TargetSelector [AvailableTarget ()]
   | -- | Multiple 'TargetSelector's match multiple targets
-    TargetProblemMultipleTargets TargetsMap
+    TargetProblemMultipleTargets TargetsMapS
   | -- | The 'TargetSelector' refers to a component that is not an executable
     TargetProblemComponentNotExe PackageId ComponentName
   | -- | Asking to run an individual file or module is not supported
@@ -509,7 +568,7 @@ matchesMultipleProblem selector targets =
   CustomTargetProblem $
     TargetProblemMatchesMultiple selector targets
 
-multipleTargetsProblem :: TargetsMap -> TargetProblem RunProblem
+multipleTargetsProblem :: TargetsMapS -> TargetProblem RunProblem
 multipleTargetsProblem = CustomTargetProblem . TargetProblemMultipleTargets
 
 componentNotExeProblem :: PackageId -> ComponentName -> TargetProblem RunProblem
@@ -556,9 +615,7 @@ renderRunProblem (TargetProblemMatchesMultiple targetSelector targets) =
           <$> zip
             ["executables", "test-suites", "benchmarks"]
             ( filter (not . null) . map sortNub $
-                map (componentNameRaw . availableTargetComponentName)
-                  <$> (`filterTargetsKind` targets)
-                  <$> [ExeKind, TestKind, BenchKind]
+                (map (componentNameRaw . availableTargetComponentName) . (`filterTargetsKind` targets) <$> [ExeKind, TestKind, BenchKind])
             )
       )
 renderRunProblem (TargetProblemMultipleTargets selectorMap) =

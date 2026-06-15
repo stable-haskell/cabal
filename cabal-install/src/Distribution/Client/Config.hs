@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PatternSynonyms #-}
 
@@ -114,6 +113,7 @@ import Distribution.Utils.NubList
   )
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as M
 import Distribution.Client.Errors
 import Distribution.Client.HttpUtils
@@ -208,6 +208,7 @@ import Distribution.Simple.Utils
   , notice
   , toUTF8BS
   , warn
+  , writeFileAtomic
   )
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Utils.Path (getSymbolicPath, unsafeMakeSymbolicPath)
@@ -233,7 +234,6 @@ import System.Directory
 import System.FilePath
   ( normalise
   , takeDirectory
-  , (<.>)
   , (</>)
   )
 import System.IO.Error
@@ -578,6 +578,10 @@ instance Semigroup SavedConfig where
               combineMonoid savedConfigureExFlags configAllowOlder
           , configWriteGhcEnvironmentFilesPolicy =
               combine configWriteGhcEnvironmentFilesPolicy
+          , configBuildHcFlavor = combine configBuildHcFlavor
+          , configBuildHcPath = combine configBuildHcPath
+          , configBuildHcPkg = combine configBuildHcPkg
+          , configBuildPackageDBs = lastNonEmpty configBuildPackageDBs
           }
         where
           combine = combine' savedConfigureExFlags
@@ -1046,7 +1050,7 @@ getConfigFilePathAndSource verbosity configFileFlag =
 
     sources =
       [ (CommandlineOption, return . flagToMaybe $ configFileFlag)
-      , (EnvironmentVariable, lookup "CABAL_CONFIG" `liftM` getEnvironment)
+      , (EnvironmentVariable, lookup "CABAL_CONFIG" <$> getEnvironment)
       , (Default, defaultSource)
       ]
 
@@ -1078,11 +1082,10 @@ createDefaultConfigFile verbosity extraLines filePath = do
 
 writeConfigFile :: FilePath -> SavedConfig -> SavedConfig -> IO ()
 writeConfigFile file comments vals = do
-  let tmpFile = file <.> "tmp"
   createDirectoryIfMissing True (takeDirectory file)
-  writeFile tmpFile $
-    explanation ++ showConfigWithComments comments vals ++ "\n"
-  renameFile tmpFile file
+  writeFileAtomic file $
+    LBS.fromStrict . toUTF8BS $
+      explanation ++ showConfigWithComments comments vals ++ "\n"
   where
     explanation =
       unlines

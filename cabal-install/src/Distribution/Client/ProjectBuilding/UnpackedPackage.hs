@@ -1,7 +1,9 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -80,24 +82,30 @@ import Distribution.Simple.Compiler
   ( PackageDBStackCWD
   , coercePackageDBStack
   )
+import qualified Distribution.Simple.Configure as Cabal
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import Distribution.Simple.LocalBuildInfo
   ( ComponentName (..)
   , LibraryName (..)
   )
+import qualified Distribution.Simple.LocalBuildInfo as Cabal
 import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
 import qualified Distribution.Simple.Setup as Cabal
+
 import Distribution.Types.BuildType
 import Distribution.Types.PackageDescription.Lens (componentModules)
 
+import Distribution.Client.Errors
 import Distribution.Simple.Utils
-import Distribution.System (Platform (..))
 import Distribution.Utils.Path hiding
   ( (<.>)
   , (</>)
   )
+import Distribution.Verbosity (setVerbosityHandles)
 import Distribution.Version
+
+import Distribution.Client.ProjectBuilding.PackageFileMonitor
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
@@ -105,18 +113,19 @@ import qualified Data.ByteString.Lazy.Char8 as LBS.Char8
 import qualified Data.List.NonEmpty as NE
 
 import Control.Exception (ErrorCall, Handler (..), SomeAsyncException, assert, catches, onException)
-import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, listDirectory, removeFile)
+import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, listDirectory)
 import System.FilePath (dropDrive, normalise, takeDirectory, (<.>), (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
 import System.Semaphore (SemaphoreName (..))
 
+import GHC.Stack
 import Web.Browser (openBrowser)
 
 import Distribution.Client.Errors
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
-import Distribution.Verbosity (setVerbosityHandles)
-
+import qualified Distribution.Compat.Graph as Graph
+import Distribution.System (Platform (..))
 -- | Each unpacked package is processed in the following phases:
 --
 -- * Configure phase
@@ -131,20 +140,21 @@ import Distribution.Verbosity (setVerbosityHandles)
 -- Depending on whether we are installing the package or building it inplace,
 -- the phases will be carried out differently. For example, when installing,
 -- the test, benchmark, and repl phase are ignored.
-data PackageBuildingPhase
-  = PBConfigurePhase {runConfigure :: IO ()}
-  | PBBuildPhase {runBuild :: IO ()}
-  | PBHaddockPhase {runHaddock :: IO ()}
-  | PBInstallPhase
-      { runCopy :: FilePath -> IO ()
-      , runRegister
+data PackageBuildingPhase r where
+  PBConfigurePhase :: {runConfigure :: IO InLibraryLBI} -> PackageBuildingPhase InLibraryLBI
+  PBBuildPhase :: {runBuild :: IO [MonitorFilePath]} -> PackageBuildingPhase ()
+  PBHaddockPhase :: {runHaddock :: IO [MonitorFilePath]} -> PackageBuildingPhase ()
+  PBReplPhase :: {runRepl :: IO [MonitorFilePath]} -> PackageBuildingPhase ()
+  PBInstallPhase
+    :: { runCopy :: FilePath -> IO ()
+       , runRegister
           :: PackageDBStackCWD
           -> Cabal.RegisterOptions
           -> IO InstalledPackageInfo
-      }
-  | PBTestPhase {runTest :: IO ()}
-  | PBBenchPhase {runBench :: IO ()}
-  | PBReplPhase {runRepl :: IO ()}
+       }
+    -> PackageBuildingPhase ()
+  PBTestPhase :: {runTest :: IO ()} -> PackageBuildingPhase ()
+  PBBenchPhase :: {runBench :: IO ()} -> PackageBuildingPhase ()
 
 -- | Structures the phases of building and registering a package amongst others
 -- (see t'PackageBuildingPhase'). Delegates logic specific to a certain
@@ -167,62 +177,70 @@ buildAndRegisterUnpackedPackage
   -> SymbolicPath Pkg (Dir Dist)
   -> Maybe FilePath
   -- ^ The path to an /initialized/ log file
-  -> (PackageBuildingPhase -> IO ())
+  -> (forall r. PackageBuildingPhase r -> IO r)
   -> IO ()
 buildAndRegisterUnpackedPackage
   verbosity
   distDirLayout@DistDirLayout{distTempDirectory}
   maybe_semaphore
-  buildTimeSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingKeepTempFiles}
+  buildTimeSettings@BuildTimeSettings{buildSettingKeepTempFiles}
   registerLock
   cacheLock
-  pkgshared@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigCompilerProgs = progdb
-    }
+  pkgshared
   plan
   rpkg@(ReadyPackage pkg)
   srcdir
   builddir
   mlogFile
   delegate = do
+    info verbosity $ "\n\nbuildAndRegisterUnpackedPackage: " ++ prettyShow (Graph.nodeKey pkg)
     -- Configure phase
-    delegate $
-      PBConfigurePhase $
-        annotateFailure mlogFile ConfigureFailed $
-          setup configureCommand Cabal.configCommonFlags configureFlags configureArgs
+    mbLBI <-
+      delegate $
+        PBConfigurePhase $
+          annotateFailure mlogFile ConfigureFailed $ do
+            info verbosity $ "--- Configure phase " ++ prettyShow (Graph.nodeKey pkg)
+            setup configureCommand Cabal.configCommonFlags configureFlags configureArgs
+              (InLibraryArgs $ InLibraryConfigureArgs pkgshared rpkg)
 
     -- Build phase
     delegate $
       PBBuildPhase $
         annotateFailure mlogFile BuildFailed $ do
+          info verbosity $ "--- Build phase " ++ prettyShow (Graph.nodeKey pkg)
           setup buildCommand Cabal.buildCommonFlags (return . buildFlags) buildArgs
+            (InLibraryArgs $ InLibraryPostConfigureArgs SBuildPhase mbLBI)
 
     -- Haddock phase
     whenHaddock $
       delegate $
         PBHaddockPhase $
           annotateFailure mlogFile HaddocksFailed $ do
+            info verbosity $ "--- Haddock phase " ++ prettyShow (Graph.nodeKey pkg)
             setup haddockCommand Cabal.haddockCommonFlags (return . haddockFlags) haddockArgs
+              (InLibraryArgs $ InLibraryPostConfigureArgs SHaddockPhase mbLBI)
 
     -- Install phase
     delegate $
       PBInstallPhase
         { runCopy = \destdir ->
-            annotateFailure mlogFile InstallFailed $
+            annotateFailure mlogFile InstallFailed $ do
+              info verbosity $ "--- Install phase, copy " ++ prettyShow (Graph.nodeKey pkg)
               setup Cabal.copyCommand Cabal.copyCommonFlags (return . copyFlags destdir) copyArgs
+                (InLibraryArgs $ InLibraryPostConfigureArgs SCopyPhase mbLBI)
         , runRegister = \pkgDBStack registerOpts ->
             annotateFailure mlogFile InstallFailed $ do
+              info verbosity $ "--- Install phase, register " ++ prettyShow (Graph.nodeKey pkg)
               -- We register ourselves rather than via Setup.hs. We need to
               -- grab and modify the InstalledPackageInfo. We decide what
               -- the installed package id is, not the build system.
-              ipkg0 <- generateInstalledPackageInfo
+              ipkg0 <- generateInstalledPackageInfo mbLBI
               let ipkg = ipkg0{Installed.installedUnitId = uid}
               criticalSection registerLock $
                 Cabal.registerPackage
                   verbosity
-                  compiler
-                  progdb
+                  toolchainCompiler
+                  toolchainProgramDb
                   Nothing
                   (coercePackageDBStack pkgDBStack)
                   ipkg
@@ -234,26 +252,35 @@ buildAndRegisterUnpackedPackage
     whenTest $
       delegate $
         PBTestPhase $
-          annotateFailure mlogFile TestsFailed $
+          annotateFailure mlogFile TestsFailed $ do
+            info verbosity $ "--- Test phase " ++ prettyShow (Graph.nodeKey pkg)
             setup testCommand Cabal.testCommonFlags (return . testFlags) testArgs
+              (InLibraryArgs $ InLibraryPostConfigureArgs STestPhase mbLBI)
 
     -- Bench phase
     whenBench $
       delegate $
         PBBenchPhase $
-          annotateFailure mlogFile BenchFailed $
+          annotateFailure mlogFile BenchFailed $ do
+            info verbosity $ "--- Benchmark phase " ++ prettyShow (Graph.nodeKey pkg)
             setup benchCommand Cabal.benchmarkCommonFlags (return . benchFlags) benchArgs
+              (InLibraryArgs $ InLibraryPostConfigureArgs SBenchPhase mbLBI)
 
     -- Repl phase
     whenRepl $
       delegate $
         PBReplPhase $
-          annotateFailure mlogFile ReplFailed $
-            setupInteractive replCommand Cabal.replCommonFlags replFlags replArgs
+          annotateFailure mlogFile ReplFailed $ do
+            info verbosity $ "--- Repl phase " ++ prettyShow (Graph.nodeKey pkg)
+            setupInteractive replCommand Cabal.replCommonFlags (return . replFlags) replArgs
+              (InLibraryArgs $ InLibraryPostConfigureArgs SReplPhase mbLBI)
 
     return ()
     where
       uid = installedUnitId rpkg
+
+      Toolchain{toolchainCompiler, toolchainProgramDb} =
+        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
 
       comp_par_strat = case maybe_semaphore of
         Just sem_name -> Cabal.toFlag (getSemaphoreName sem_name)
@@ -276,17 +303,18 @@ buildAndRegisterUnpackedPackage
         | otherwise = return ()
 
       mbWorkDir = useWorkingDir scriptOptions
-      commonFlags = setupHsCommonFlags verbosity mbWorkDir builddir buildSettingKeepTempFiles
+      commonFlags targets =
+        setupHsCommonFlags verbosity mbWorkDir builddir targets buildSettingKeepTempFiles
 
       configureCommand = Cabal.configureCommand defaultProgramDb
       configureFlags v =
         flip filterConfigureFlags v
           <$> setupHsConfigureFlags
-            (\p -> makeSymbolicPath <$> canonicalizePath p)
+            (fmap makeSymbolicPath . canonicalizePath)
             plan
             rpkg
             pkgshared
-            commonFlags
+            (commonFlags $ configureArgs v)
       configureArgs _ = setupHsConfigureArgs pkg
 
       buildCommand = Cabal.buildCommand defaultProgramDb
@@ -296,7 +324,7 @@ buildAndRegisterUnpackedPackage
             comp_par_strat
             pkg
             pkgshared
-            commonFlags
+            (commonFlags $ buildArgs v)
       buildArgs _ = setupHsBuildArgs pkg
 
       copyFlags destdir v =
@@ -304,7 +332,7 @@ buildAndRegisterUnpackedPackage
           setupHsCopyFlags
             pkg
             pkgshared
-            commonFlags
+            (commonFlags $ buildArgs v)
             destdir
       -- In theory, we could want to copy less things than those that were
       -- built, but instead, we simply copy the targets that were built.
@@ -315,7 +343,7 @@ buildAndRegisterUnpackedPackage
         flip filterTestFlags v $
           setupHsTestFlags
             pkg
-            commonFlags
+            (commonFlags $ testArgs v)
       testArgs _ = setupHsTestArgs pkg
 
       benchCommand = Cabal.benchmarkCommand
@@ -324,7 +352,7 @@ buildAndRegisterUnpackedPackage
           setupHsBenchFlags
             pkg
             pkgshared
-            commonFlags
+            (commonFlags $ benchArgs v)
       benchArgs _ = setupHsBenchArgs pkg
 
       replCommand = Cabal.replCommand defaultProgramDb
@@ -333,7 +361,7 @@ buildAndRegisterUnpackedPackage
           setupHsReplFlags
             pkg
             pkgshared
-            commonFlags
+            (commonFlags $ replArgs v)
       replArgs _ = setupHsReplArgs pkg
 
       haddockCommand = Cabal.haddockCommand
@@ -343,7 +371,7 @@ buildAndRegisterUnpackedPackage
             pkg
             pkgshared
             buildTimeSettings
-            commonFlags
+            (commonFlags $ haddockArgs v)
       haddockArgs v =
         flip filterHaddockArgs v $
           setupHsHaddockArgs pkg
@@ -356,17 +384,18 @@ buildAndRegisterUnpackedPackage
           distDirLayout
           srcdir
           builddir
-          (isParallelBuild buildSettingNumJobs)
           cacheLock
 
       setup
-        :: CommandUI flags
+        :: (HasCallStack, RightFlagsForPhase flags setupSpec)
+        => CommandUI flags
         -> (flags -> CommonSetupFlags)
         -> (Version -> IO flags)
         -> (Version -> [String])
-        -> IO ()
-      setup cmd getCommonFlags flags args =
-        withLogging $ \mLogFileHandle -> do
+        -> SetupRunnerArgs setupSpec
+        -> IO (SetupRunnerRes setupSpec)
+      setup cmd getCommonFlags flags args wrapperArgs =
+        withLogging $ \mLogFileHandle ->
           setupWrapper
             (setVerbosityHandles mLogFileHandle verbosity)
             scriptOptions
@@ -381,25 +410,24 @@ buildAndRegisterUnpackedPackage
             getCommonFlags
             flags
             args
+            wrapperArgs
 
       setupInteractive
-        :: CommandUI flags
+        :: RightFlagsForPhase flags setupSpec
+        => CommandUI flags
         -> (flags -> CommonSetupFlags)
-        -> (Version -> flags)
+        -> (Version -> IO flags)
         -> (Version -> [String])
-        -> IO ()
-      setupInteractive cmd getCommonFlags flags args =
+        -> SetupRunnerArgs setupSpec
+        -> IO (SetupRunnerRes setupSpec)
+      setupInteractive =
         setupWrapper
           verbosity
           scriptOptions{isInteractive = True}
           (Just (elabPkgDescription pkg))
-          cmd
-          getCommonFlags
-          (\v -> return (flags v))
-          args
 
-      generateInstalledPackageInfo :: IO InstalledPackageInfo
-      generateInstalledPackageInfo =
+      generateInstalledPackageInfo :: InLibraryLBI -> IO InstalledPackageInfo
+      generateInstalledPackageInfo mbLBI =
         withTempInstalledPackageInfoFile
           verbosity
           distTempDirectory
@@ -409,9 +437,14 @@ buildAndRegisterUnpackedPackage
                     setupHsRegisterFlags
                       pkg
                       pkgshared
-                      commonFlags
+                      (commonFlags [])
                       pkgConfDest
-            setup (Cabal.registerCommand) Cabal.registerCommonFlags (\v -> return (registerFlags v)) (const [])
+            setup
+              (Cabal.registerCommand)
+              Cabal.registerCommonFlags
+              (return . registerFlags)
+              (const [])
+              (InLibraryArgs $ InLibraryPostConfigureArgs SRegisterPhase mbLBI)
 
       withLogging :: (Maybe Handle -> IO r) -> IO r
       withLogging action =
@@ -450,7 +483,7 @@ buildInplaceUnpackedPackage
   buildSettings@BuildTimeSettings{buildSettingHaddockOpen}
   registerLock
   cacheLock
-  pkgshared@ElaboratedSharedConfig{pkgConfigPlatform = Platform _ os}
+  pkgshared
   plan
   rpkg@(ReadyPackage pkg)
   buildStatus
@@ -464,12 +497,6 @@ buildInplaceUnpackedPackage
       verbosity
       True
       (distPackageCacheDirectory dparams)
-
-    let docsResult = DocsNotTried
-        testsResult = TestsNotTried
-
-        buildResult :: BuildResultMisc
-        buildResult = (docsResult, testsResult)
 
     buildAndRegisterUnpackedPackage
       verbosity
@@ -485,65 +512,18 @@ buildInplaceUnpackedPackage
       builddir
       Nothing -- no log file for inplace builds!
       $ \case
-        PBConfigurePhase{runConfigure} -> do
-          whenReConfigure $ do
-            runConfigure
+        PBConfigurePhase{runConfigure} ->
+          whenReconfigure $ do
+            mbLBI <- runConfigure
             invalidatePackageRegFileMonitor packageFileMonitor
             updatePackageConfigFileMonitor packageFileMonitor (getSymbolicPath srcdir) pkg
-        PBBuildPhase{runBuild} -> do
-          whenRebuild $ do
-            timestamp <- beginUpdateFileMonitor
-            runBuild
-              -- Be sure to invalidate the cache if building throws an exception!
-              -- If not, we'll abort execution with a stale recompilation cache.
-              -- See ghc#24926 for an example of how this can go wrong.
-              `onException` invalidatePackageRegFileMonitor packageFileMonitor
-
-            let listSimple =
-                  execRebuild (getSymbolicPath srcdir) (needElaboratedConfiguredPackage pkg)
-                listSdist =
-                  fmap (map monitorFileHashed) $
-                    allPackageSourceFiles verbosity (getSymbolicPath srcdir)
-                ifNullThen m m' = do
-                  xs <- m
-                  if null xs then m' else return xs
-            monitors <- case PD.buildType (elabPkgDescription pkg) of
-              Simple -> listSimple
-              -- If a Custom setup was used, AND the Cabal is recent
-              -- enough to have sdist --list-sources, use that to
-              -- determine the files that we need to track.  This can
-              -- cause unnecessary rebuilding (for example, if README
-              -- is edited, we will try to rebuild) but there isn't
-              -- a more accurate Custom interface we can use to get
-              -- this info.  We prefer not to use listSimple here
-              -- as it can miss extra source files that are considered
-              -- by the Custom setup.
-              _
-                | elabSetupScriptCliVersion pkg >= mkVersion [1, 17] ->
-                    -- However, sometimes sdist --list-sources will fail
-                    -- and return an empty list.  In that case, fall
-                    -- back on the (inaccurate) simple tracking.
-                    listSdist `ifNullThen` listSimple
-                | otherwise ->
-                    listSimple
-
-            let dep_monitors =
-                  map monitorFileHashed $
-                    elabInplaceDependencyBuildCacheFiles
-                      distDirLayout
-                      pkgshared
-                      plan
-                      pkg
-            updatePackageBuildFileMonitor
-              packageFileMonitor
-              (getSymbolicPath srcdir)
-              timestamp
-              pkg
-              buildStatus
-              (monitors ++ dep_monitors)
-              buildResult
+            return mbLBI
+        PBBuildPhase{runBuild} ->
+          whenRebuild $ withFileMonitor runBuild
+        PBReplPhase{runRepl} ->
+          withFileMonitor runRepl
         PBHaddockPhase{runHaddock} -> do
-          runHaddock
+          withFileMonitor runHaddock
           let haddockTarget = elabHaddockForHackage pkg
           when (haddockTarget == Cabal.ForHackage) $ do
             let dest = distDirectory </> name <.> "tar.gz"
@@ -586,7 +566,6 @@ buildInplaceUnpackedPackage
             updatePackageRegFileMonitor packageFileMonitor (getSymbolicPath srcdir) mipkg
         PBTestPhase{runTest} -> runTest
         PBBenchPhase{runBench} -> runBench
-        PBReplPhase{runRepl} -> runRepl
 
     return
       BuildResult
@@ -595,14 +574,78 @@ buildInplaceUnpackedPackage
         , buildResultLogFile = Nothing
         }
     where
+      docsResult = DocsNotTried
+      testsResult = TestsNotTried
+      buildResult :: BuildResultMisc
+      buildResult = (docsResult, testsResult)
+
       dparams = elabDistDirParams pkgshared pkg
+
+      Toolchain{toolchainPlatform = Platform _ os} =
+        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
 
       packageFileMonitor = newPackageFileMonitor pkgshared distDirLayout dparams
 
-      whenReConfigure action = case buildStatus of
-        BuildStatusConfigure _ -> action
-        _ -> return ()
+      withFileMonitor :: IO [MonitorFilePath] -> IO ()
+      withFileMonitor runAction = do
+        timestamp <- beginUpdateFileMonitor
+        monitors' <-
+          runAction
+            -- Be sure to invalidate the cache if building throws an exception!
+            -- If not, we'll abort execution with a stale recompilation cache.
+            -- See ghc#24926 for an example of how this can go wrong.
+            `onException` invalidatePackageRegFileMonitor packageFileMonitor
+        let listSimple =
+              execRebuild (getSymbolicPath srcdir) (needElaboratedConfiguredPackage pkg)
+            listSdist =
+              fmap (map monitorFileHashed) $
+                allPackageSourceFiles verbosity (getSymbolicPath srcdir)
+            ifNullThen m m' = do
+              xs <- m
+              if null xs then m' else return xs
+        monitors <- case PD.buildType (elabPkgDescription pkg) of
+          Simple -> listSimple
+          Hooks -> listSdist `ifNullThen` listSimple
+          _
+            | elabSetupScriptCliVersion pkg >= mkVersion [1, 17] ->
+                listSdist `ifNullThen` listSimple
+            | otherwise ->
+                listSimple
 
+        let dep_monitors =
+              map monitorFileHashed $
+                elabInplaceDependencyBuildCacheFiles
+                  distDirLayout
+                  pkgshared
+                  plan
+                  pkg
+        updatePackageBuildFileMonitor
+          packageFileMonitor
+          (getSymbolicPath srcdir)
+          timestamp
+          pkg
+          buildStatus
+          (monitors ++ monitors' ++ dep_monitors)
+          buildResult
+
+      whenReconfigure :: IO InLibraryLBI -> IO InLibraryLBI
+      whenReconfigure action =
+        case buildStatus of
+          BuildStatusConfigure _ -> action
+          _ -> do
+            lbi_wo_programs <- Cabal.getPersistBuildConfig (Just srcdir) builddir
+            -- Restore info about unconfigured programs, since it is not serialized
+            -- TODO: copied from Distribution.Simple.getBuildConfig.
+            let lbi =
+                  lbi_wo_programs
+                    { Cabal.withPrograms =
+                        restoreProgramDb
+                          builtinPrograms
+                          (Cabal.withPrograms lbi_wo_programs)
+                    }
+            return $ InLibraryLBI lbi
+
+      whenRebuild, whenReRegister :: IO () -> IO ()
       whenRebuild action
         | null (elabBuildTargets pkg)
         , -- NB: we have to build the test/bench suite!
@@ -655,10 +698,7 @@ buildAndInstallUnpackedPackage
   buildSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingLogFile}
   registerLock
   cacheLock
-  pkgshared@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigPlatform = platform
-    }
+  pkgshared
   plan
   rpkg@(ReadyPackage pkg)
   srcdir
@@ -697,10 +737,12 @@ buildAndInstallUnpackedPackage
           runConfigure
         PBBuildPhase{runBuild} -> do
           noticeProgress ProgressBuilding
-          runBuild
+          _monitors <- runBuild
+          return ()
         PBHaddockPhase{runHaddock} -> do
           noticeProgress ProgressHaddock
-          runHaddock
+          _monitors <- runHaddock
+          return ()
         PBInstallPhase{runCopy, runRegister} -> do
           noticeProgress ProgressInstalling
 
@@ -710,11 +752,8 @@ buildAndInstallUnpackedPackage
                       "registerPkg: elab does NOT require registration for "
                         ++ prettyShow uid
                 | otherwise = do
-                    assert
-                      ( elabRegisterPackageDBStack pkg
-                          == storePackageDBStack compiler (elabPackageDbs pkg)
-                      )
-                      (return ())
+                    let packageDbStack = elabPackageDbs pkg ++ [storePackageDB storeDirLayout toolchainCompiler]
+                    assert (elabRegisterPackageDBStack pkg == packageDbStack) (return ())
                     _ <-
                       runRegister
                         (elabRegisterPackageDBStack pkg)
@@ -729,7 +768,7 @@ buildAndInstallUnpackedPackage
             newStoreEntry
               verbosity
               storeDirLayout
-              compiler
+              toolchainCompiler
               uid
               (copyPkgFiles verbosity pkgshared pkg runCopy)
               registerPkg
@@ -767,6 +806,9 @@ buildAndInstallUnpackedPackage
       uid = installedUnitId rpkg
       pkgid = packageId rpkg
 
+      Toolchain{toolchainCompiler, toolchainPlatform} =
+        getStage (pkgConfigToolchains pkgshared) (elabStage pkg)
+
       dispname :: String
       dispname = case elabPkgOrComp pkg of
         -- Packages built altogether, instead of per component
@@ -791,7 +833,7 @@ buildAndInstallUnpackedPackage
       mlogFile =
         case buildSettingLogFile of
           Nothing -> Nothing
-          Just mkLogFile -> Just (mkLogFile compiler platform pkgid uid)
+          Just mkLogFile -> Just (mkLogFile toolchainCompiler toolchainPlatform pkgid uid)
 
       initLogFile :: IO ()
       initLogFile =
@@ -799,8 +841,7 @@ buildAndInstallUnpackedPackage
           Nothing -> return ()
           Just logFile -> do
             createDirectoryIfMissing True (takeDirectory logFile)
-            exists <- doesFileExist logFile
-            when exists $ removeFile logFile
+            removeFileForcibly logFile
 
 -- | The copy part of the installation phase when doing build-and-install
 copyPkgFiles

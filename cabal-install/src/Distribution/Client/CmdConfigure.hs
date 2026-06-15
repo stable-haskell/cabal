@@ -157,14 +157,14 @@ configureAction' flags@NixStyleFlags{..} _extraArgs globalFlags = do
               v
               (fromNubList . projectConfigProgPathExtra $ projectConfigShared cliConfig)
               (flagToMaybe . projectConfigHttpTransport $ projectConfigBuildOnly cliConfig)
-          (CondNode conf imps bs) <-
+          (CondNode (imps, conf) bs) <-
             runRebuild (distProjectRootDirectory . distDirLayout $ baseCtx) $
               readProjectLocalExtraConfig
                 v
                 (fromFlagOrDefault defaultProjectFileParser $ projectConfigProjectFileParser $ projectConfigShared cliConfig)
                 httpTransport
                 (distDirLayout baseCtx)
-          when (not (null imps && null bs)) $ dieWithException v UnableToPerformInplaceUpdate
+          unless (null imps && null bs) $ dieWithException v UnableToPerformInplaceUpdate
           return (baseCtx, conf <> cliConfig)
         else return (baseCtx, cliConfig)
   where

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -61,6 +62,7 @@ module Distribution.Client.ProjectOrchestration
   , resolveTargetsFromSolver
   , resolveTargetsFromLocalPackages
   , TargetsMap
+  , TargetsMapS
   , allTargetSelectors
   , uniqueTargetSelectors
   , TargetSelector (..)
@@ -102,12 +104,14 @@ module Distribution.Client.ProjectOrchestration
     -- * Dummy projects
   , establishDummyProjectBaseContext
   , establishDummyDistDirLayout
+  , filterTargetsWithStage
   ) where
 
 import Distribution.Client.Compat.Prelude
 import System.Directory
   ( makeAbsolute
   )
+import qualified Distribution.Compat.Graph as Graph
 import Prelude ()
 
 import Distribution.Client.ProjectBuilding
@@ -135,12 +139,9 @@ import Distribution.Client.TargetSelector
   , reportTargetSelectorProblems
   )
 import Distribution.Client.Types
-  ( DocsResult (..)
-  , GenericReadyPackage (..)
-  , PackageLocation (..)
+  ( GenericReadyPackage (..)
   , PackageSpecifier (..)
   , SourcePackageDb (..)
-  , TestsResult (..)
   , UnresolvedSourcePackage
   , WriteGhcEnvironmentFilesPolicy (..)
   )
@@ -149,22 +150,10 @@ import Distribution.Solver.Types.PackageIndex
   )
 import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
 
-import Distribution.Client.BuildReports.Anonymous (cabalInstallID)
-import qualified Distribution.Client.BuildReports.Anonymous as BuildReports
-import qualified Distribution.Client.BuildReports.Storage as BuildReports
-  ( storeLocal
-  )
-
 import Distribution.Client.HttpUtils
 import Distribution.Client.Setup hiding (packageName)
-import Distribution.Compiler
-  ( CompilerFlavor (GHC)
-  )
 import Distribution.Types.ComponentName
   ( componentNameString
-  )
-import Distribution.Types.InstalledPackageInfo
-  ( InstalledPackageInfo
   )
 import Distribution.Types.UnqualComponentName
   ( UnqualComponentName
@@ -184,9 +173,6 @@ import Distribution.Package
 import Distribution.Simple.Command (commandShowOptions)
 import Distribution.Simple.Compiler
   ( OptimisationLevel (..)
-  , compilerCompatVersion
-  , compilerId
-  , compilerInfo
   , showCompilerId
   )
 import Distribution.Simple.Configure (computeEffectiveProfiling)
@@ -209,22 +195,19 @@ import Distribution.Simple.Utils
   , ordNub
   , warn
   )
-import Distribution.System
-  ( Platform (Platform)
-  )
 import Distribution.Types.Flag
   ( FlagAssignment
   , diffFlagAssignment
   , showFlagAssignment
+  )
+import Distribution.Utils.LogProgress
+  ( LogProgress
   )
 import Distribution.Utils.NubList
   ( fromNubList
   )
 import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity
-import Distribution.Version
-  ( mkVersion
-  )
 #ifdef MIN_VERSION_unix
 import           System.Posix.Signals (sigKILL, sigSEGV)
 
@@ -345,7 +328,7 @@ data ProjectBuildContext = ProjectBuildContext
   , pkgsBuildStatus :: BuildStatusMap
   -- ^ The result of the dry-run phase. This tells us about each member of
   -- the 'elaboratedPlanToExecute'.
-  , targetsMap :: TargetsMap
+  , targetsMap :: TargetsMapS
   -- ^ The targets selected by @selectPlanSubset@. This is useful eg. in
   -- CmdRun, where we need a valid target to execute.
   }
@@ -383,7 +366,7 @@ withInstallPlan
 runProjectPreBuildPhase
   :: Verbosity
   -> ProjectBaseContext
-  -> (ElaboratedInstallPlan -> IO (ElaboratedInstallPlan, TargetsMap))
+  -> (ElaboratedInstallPlan -> IO (ElaboratedInstallPlan, TargetsMapS))
   -> IO ProjectBuildContext
 runProjectPreBuildPhase
   verbosity
@@ -490,7 +473,7 @@ runProjectPostBuildPhase _ ProjectBaseContext{buildSettings} _ _
 runProjectPostBuildPhase
   verbosity
   ProjectBaseContext{..}
-  bc@ProjectBuildContext{..}
+  ProjectBuildContext{..}
   buildOutcomes = do
     -- Update other build artefacts
     -- TODO: currently none, but could include:
@@ -519,21 +502,19 @@ runProjectPostBuildPhase
             writeGhcEnvFilesPolicy of
             AlwaysWriteGhcEnvironmentFiles -> True
             NeverWriteGhcEnvironmentFiles -> False
-            WriteGhcEnvironmentFilesOnlyForGhc844AndNewer ->
-              let compiler = pkgConfigCompiler elaboratedShared
-                  ghcCompatVersion = compilerCompatVersion GHC compiler
-               in maybe False (>= mkVersion [8, 4, 4]) ghcCompatVersion
-
+            -- FIXME: whatever
+            WriteGhcEnvironmentFilesOnlyForGhc844AndNewer -> True
     when shouldWriteGhcEnvironment $
       void $
         writePlanGhcEnvironment
           (distProjectRootDirectory distDirLayout)
+          Host
           elaboratedPlanOriginal
           elaboratedShared
           postBuildStatus
 
     -- Write the build reports
-    writeBuildReports buildSettings bc elaboratedPlanToExecute buildOutcomes
+    -- writeBuildReports buildSettings bc elaboratedPlanToExecute buildOutcomes
 
     -- Finally if there were any build failures then report them and throw
     -- an exception to terminate the program
@@ -571,12 +552,22 @@ type TargetsMap = TargetsMapX UnitId
 
 type TargetsMapX u = Map u [(ComponentTarget, NonEmpty TargetSelector)]
 
+type TargetsMapS = TargetsMapX (WithStage UnitId)
+
+filterTargetsWithStage :: Stage -> TargetsMapS -> TargetsMap
+filterTargetsWithStage stage =
+  Map.fromList
+    . mapMaybe (\(WithStage s uid, v) -> if s == stage then Just (uid, v) else Nothing)
+    . Map.toList
+
+-- Map.mapMaybeWithKey (\(WithStage s uid) v  -> if s == stage then Just v else Nothing)
+
 -- | Get all target selectors.
-allTargetSelectors :: TargetsMap -> [TargetSelector]
+allTargetSelectors :: TargetsMapS -> [TargetSelector]
 allTargetSelectors = concatMap (NE.toList . snd) . concat . Map.elems
 
 -- | Get all unique target selectors.
-uniqueTargetSelectors :: TargetsMap -> [TargetSelector]
+uniqueTargetSelectors :: TargetsMapS -> [TargetSelector]
 uniqueTargetSelectors = ordNub . allTargetSelectors
 
 -- | Resolve targets from a solver result.
@@ -599,7 +590,7 @@ resolveTargetsFromSolver
   -> ElaboratedInstallPlan
   -> Maybe (SourcePackageDb)
   -> [TargetSelector]
-  -> Either [TargetProblem err] TargetsMap
+  -> Either [TargetProblem err] TargetsMapS
 resolveTargetsFromSolver selectPackageTargets selectComponentTarget installPlan sourceDb targetSelectors =
   resolveTargets
     selectPackageTargets
@@ -782,7 +773,7 @@ resolveTargets
         -> [(b, ComponentName)]
         -> [(b, ComponentTarget)]
       componentTargets subtarget =
-        map (fmap (\cname -> ComponentTarget cname subtarget))
+        map (fmap (`ComponentTarget` subtarget))
 
       selectComponentTargets
         :: SubComponentTarget
@@ -821,18 +812,18 @@ type AvailableTargetsMap k u = Map k [AvailableTarget (u, ComponentName)]
 --
 -- They are all constructed lazily because they are not necessarily all used.
 --
-availableTargetIndexes :: ElaboratedInstallPlan -> AvailableTargetIndexes UnitId
+availableTargetIndexes :: ElaboratedInstallPlan -> AvailableTargetIndexes (WithStage UnitId)
 availableTargetIndexes installPlan = AvailableTargetIndexes{..}
   where
     availableTargetsByPackageIdAndComponentName
       :: Map
           (PackageId, ComponentName)
-          [AvailableTarget (UnitId, ComponentName)]
+          [AvailableTarget (WithStage UnitId, ComponentName)]
     availableTargetsByPackageIdAndComponentName =
       availableTargets installPlan
 
     availableTargetsByPackageId
-      :: Map PackageId [AvailableTarget (UnitId, ComponentName)]
+      :: Map PackageId [AvailableTarget (WithStage UnitId, ComponentName)]
     availableTargetsByPackageId =
       Map.mapKeysWith
         (++)
@@ -841,7 +832,7 @@ availableTargetIndexes installPlan = AvailableTargetIndexes{..}
         `Map.union` availableTargetsEmptyPackages
 
     availableTargetsByPackageName
-      :: Map PackageName [AvailableTarget (UnitId, ComponentName)]
+      :: Map PackageName [AvailableTarget (WithStage UnitId, ComponentName)]
     availableTargetsByPackageName =
       Map.mapKeysWith
         (++)
@@ -851,7 +842,7 @@ availableTargetIndexes installPlan = AvailableTargetIndexes{..}
     availableTargetsByPackageNameAndComponentName
       :: Map
           (PackageName, ComponentName)
-          [AvailableTarget (UnitId, ComponentName)]
+          [AvailableTarget (WithStage UnitId, ComponentName)]
     availableTargetsByPackageNameAndComponentName =
       Map.mapKeysWith
         (++)
@@ -861,7 +852,7 @@ availableTargetIndexes installPlan = AvailableTargetIndexes{..}
     availableTargetsByPackageNameAndUnqualComponentName
       :: Map
           (PackageName, UnqualComponentName)
-          [AvailableTarget (UnitId, ComponentName)]
+          [AvailableTarget (WithStage UnitId, ComponentName)]
     availableTargetsByPackageNameAndUnqualComponentName =
       Map.mapKeysWith
         (++)
@@ -1053,9 +1044,9 @@ selectComponentTargetBasic
 -- for the extra unneeded info in the 'TargetsMap'.
 pruneInstallPlanToTargets
   :: TargetAction
-  -> TargetsMap
+  -> TargetsMapS
   -> ElaboratedInstallPlan
-  -> ElaboratedInstallPlan
+  -> LogProgress ElaboratedInstallPlan
 pruneInstallPlanToTargets targetActionType targetsMap elaboratedPlan =
   assert (Map.size targetsMap > 0) $
     ProjectPlanning.pruneInstallPlanToTargets
@@ -1065,7 +1056,7 @@ pruneInstallPlanToTargets targetActionType targetsMap elaboratedPlan =
 
 -- | Utility used by repl and run to check if the targets spans multiple
 -- components, since those commands do not support multiple components.
-distinctTargetComponents :: TargetsMap -> Set.Set (UnitId, ComponentName)
+distinctTargetComponents :: TargetsMapS -> Set.Set (WithStage UnitId, ComponentName)
 distinctTargetComponents targetsMap =
   Set.fromList
     [ (uid, cname)
@@ -1136,6 +1127,7 @@ printPlan
           filter
             (not . null)
             [ " -"
+            , prettyShow (elabStage elab)
             , if verbosityLevel verbosity >= Deafening
                 then prettyShow (installedUnitId elab)
                 else prettyShow (packageId elab)
@@ -1145,17 +1137,17 @@ printPlan
             , case elabPkgOrComp elab of
                 ElabPackage pkg -> showTargets elab ++ ifVerbose (showStanzas (pkgStanzasEnabled pkg))
                 ElabComponent comp ->
-                  "(" ++ showComp elab comp ++ ")"
+                  "(" ++ showComp comp ++ ")"
             , showFlagAssignment (nonDefaultFlags elab)
             , showConfigureFlags elab
-            , let buildStatus = pkgsBuildStatus Map.! installedUnitId elab
+            , let buildStatus = pkgsBuildStatus Map.! Graph.nodeKey elab
                in "(" ++ showBuildStatus buildStatus ++ ")"
             ]
 
-      showComp :: ElaboratedConfiguredPackage -> ElaboratedComponent -> String
-      showComp elab comp =
+      showComp :: ElaboratedComponent -> String
+      showComp comp =
         maybe "custom" prettyShow (compComponentName comp)
-          ++ if Map.null (elabInstantiatedWith elab)
+          ++ if Map.null (compInstantiatedWith comp)
             then ""
             else
               " with "
@@ -1163,7 +1155,7 @@ printPlan
                   ", "
                   -- TODO: Abbreviate the UnitIds
                   [ prettyShow k ++ "=" ++ prettyShow v
-                  | (k, v) <- Map.toList (elabInstantiatedWith elab)
+                  | (k, v) <- Map.toList (compInstantiatedWith comp)
                   ]
 
       nonDefaultFlags :: ElaboratedConfiguredPackage -> FlagAssignment
@@ -1184,11 +1176,13 @@ printPlan
 
       showConfigureFlags :: ElaboratedConfiguredPackage -> String
       showConfigureFlags elab =
-        let commonFlags =
+        let Toolchain{toolchainProgramDb} = getStage (pkgConfigToolchains elaboratedShared) (elabStage elab)
+            commonFlags =
               setupHsCommonFlags
                 verbosity
                 Nothing -- omit working directory
                 (makeSymbolicPath "$builddir")
+                (setupHsConfigureArgs elab)
                 buildSettingKeepTempFiles
             fullConfigureFlags =
               runIdentity
@@ -1223,7 +1217,7 @@ printPlan
          in -- Not necessary to "escape" it, it's just for user output
             unwords . ("" :) $
               commandShowOptions
-                (Setup.configureCommand (pkgConfigCompilerProgs elaboratedShared))
+                (Setup.configureCommand toolchainProgramDb)
                 partialConfigureFlags
 
       showBuildStatus :: BuildStatus -> String
@@ -1255,7 +1249,8 @@ printPlan
       showBuildProfile =
         "Build profile: "
           ++ unwords
-            [ "-w " ++ (showCompilerId . pkgConfigCompiler) elaboratedShared
+            [ "-w " ++ (showCompilerId . toolchainCompiler $ getStage (pkgConfigToolchains elaboratedShared) Host)
+            , "-W " ++ (showCompilerId . toolchainCompiler $ getStage (pkgConfigToolchains elaboratedShared) Build)
             , "-O"
                 ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
                       Setup.Flag NoOptimisation -> "0"
@@ -1266,53 +1261,53 @@ printPlan
             ]
           ++ "\n"
 
-writeBuildReports :: BuildTimeSettings -> ProjectBuildContext -> ElaboratedInstallPlan -> BuildOutcomes -> IO ()
-writeBuildReports settings buildContext plan buildOutcomes = do
-  let plat@(Platform arch os) = pkgConfigPlatform . elaboratedShared $ buildContext
-      comp = pkgConfigCompiler . elaboratedShared $ buildContext
-      getRepo (RepoTarballPackage r _ _) = Just r
-      getRepo _ = Nothing
-      fromPlanPackage (InstallPlan.Configured pkg) (Just result) =
-        let installOutcome = case result of
-              Left bf -> case buildFailureReason bf of
-                GracefulFailure _ -> BuildReports.PlanningFailed
-                DependentFailed p -> BuildReports.DependencyFailed p
-                DownloadFailed _ -> BuildReports.DownloadFailed
-                UnpackFailed _ -> BuildReports.UnpackFailed
-                ConfigureFailed _ -> BuildReports.ConfigureFailed
-                BuildFailed _ -> BuildReports.BuildFailed
-                TestsFailed _ -> BuildReports.TestsFailed
-                InstallFailed _ -> BuildReports.InstallFailed
-                ReplFailed _ -> BuildReports.InstallOk
-                HaddocksFailed _ -> BuildReports.InstallOk
-                BenchFailed _ -> BuildReports.InstallOk
-              Right _br -> BuildReports.InstallOk
+-- writeBuildReports :: BuildTimeSettings -> ProjectBuildContext -> ElaboratedInstallPlan -> BuildOutcomes -> IO ()
+-- writeBuildReports settings buildContext plan buildOutcomes = do
+--   let plat@(Platform arch os) = pkgConfigPlatform . elaboratedShared $ buildContext
+--       comp = pkgConfigCompiler . elaboratedShared $ buildContext
+--       getRepo (RepoTarballPackage r _ _) = Just r
+--       getRepo _ = Nothing
+--       fromPlanPackage (InstallPlan.Configured pkg) (Just result) =
+--         let installOutcome = case result of
+--               Left bf -> case buildFailureReason bf of
+--                 GracefulFailure _ -> BuildReports.PlanningFailed
+--                 DependentFailed p -> BuildReports.DependencyFailed p
+--                 DownloadFailed _ -> BuildReports.DownloadFailed
+--                 UnpackFailed _ -> BuildReports.UnpackFailed
+--                 ConfigureFailed _ -> BuildReports.ConfigureFailed
+--                 BuildFailed _ -> BuildReports.BuildFailed
+--                 TestsFailed _ -> BuildReports.TestsFailed
+--                 InstallFailed _ -> BuildReports.InstallFailed
+--                 ReplFailed _ -> BuildReports.InstallOk
+--                 HaddocksFailed _ -> BuildReports.InstallOk
+--                 BenchFailed _ -> BuildReports.InstallOk
+--               Right _br -> BuildReports.InstallOk
 
-            docsOutcome = case result of
-              Left bf -> case buildFailureReason bf of
-                HaddocksFailed _ -> BuildReports.Failed
-                _ -> BuildReports.NotTried
-              Right br -> case buildResultDocs br of
-                DocsNotTried -> BuildReports.NotTried
-                DocsFailed -> BuildReports.Failed
-                DocsOk -> BuildReports.Ok
+--             docsOutcome = case result of
+--               Left bf -> case buildFailureReason bf of
+--                 HaddocksFailed _ -> BuildReports.Failed
+--                 _ -> BuildReports.NotTried
+--               Right br -> case buildResultDocs br of
+--                 DocsNotTried -> BuildReports.NotTried
+--                 DocsFailed -> BuildReports.Failed
+--                 DocsOk -> BuildReports.Ok
 
-            testsOutcome = case result of
-              Left bf -> case buildFailureReason bf of
-                TestsFailed _ -> BuildReports.Failed
-                _ -> BuildReports.NotTried
-              Right br -> case buildResultTests br of
-                TestsNotTried -> BuildReports.NotTried
-                TestsOk -> BuildReports.Ok
-         in Just (BuildReports.BuildReport (packageId pkg) os arch (compilerId comp) cabalInstallID (elabFlagAssignment pkg) (map (packageId . fst) $ elabLibDependencies pkg) installOutcome docsOutcome testsOutcome, getRepo . elabPkgSourceLocation $ pkg) -- TODO handle failure log files?
-      fromPlanPackage _ _ = Nothing
-      buildReports = mapMaybe (\x -> fromPlanPackage x (InstallPlan.lookupBuildOutcome x buildOutcomes)) $ InstallPlan.toList plan
+--             testsOutcome = case result of
+--               Left bf -> case buildFailureReason bf of
+--                 TestsFailed _ -> BuildReports.Failed
+--                 _ -> BuildReports.NotTried
+--               Right br -> case buildResultTests br of
+--                 TestsNotTried -> BuildReports.NotTried
+--                 TestsOk -> BuildReports.Ok
+--          in Just $ (BuildReports.BuildReport (packageId pkg) os arch (compilerId comp) cabalInstallID (elabFlagAssignment pkg) (map (packageId . fst) $ elabLibDependencies pkg) installOutcome docsOutcome testsOutcome, getRepo . elabPkgSourceLocation $ pkg) -- TODO handle failure log files?
+--       fromPlanPackage _ _ = Nothing
+--       buildReports = mapMaybe (\x -> fromPlanPackage x (InstallPlan.lookupBuildOutcome x buildOutcomes)) $ InstallPlan.toList plan
 
-  BuildReports.storeLocal
-    (compilerInfo comp)
-    (buildSettingSummaryFile settings)
-    buildReports
-    plat
+--   BuildReports.storeLocal
+--     (compilerInfo comp)
+--     (buildSettingSummaryFile settings)
+--     buildReports
+--     plat
 
 -- Note this doesn't handle the anonymous build reports set by buildSettingBuildReports but those appear to not be used or missed from v1
 -- The usage pattern appears to be that rather than rely on flags to cabal to send build logs to the right place and package them with reports, etc, it is easier to simply capture its output to an appropriate handle.
@@ -1359,7 +1354,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
           , (pkg, failureClassification) <- failuresClassification
           ]
   where
-    failures :: [(UnitId, BuildFailure)]
+    failures :: [(Graph.Key ElaboratedPlanPackage, BuildFailure)]
     failures =
       [ (pkgid, failure)
       | (pkgid, Left failure) <- Map.toList buildOutcomes
@@ -1417,9 +1412,10 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
     --
     isSimpleCase :: Bool
     isSimpleCase
-      | [(pkgid, failure)] <- failures
+      | [(WithStage s pkgid, failure)] <- failures
       , [pkg] <- rootpkgs
       , installedUnitId pkg == pkgid
+      , stageOf pkg == s
       , isFailureSelfExplanatory (buildFailureReason failure)
       , currentCommand `notElem` [InstallCommand, BuildCommand, ReplCommand] =
           True
@@ -1443,16 +1439,15 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
       , hasNoDependents pkg
       ]
 
-    ultimateDeps
-      :: UnitId
-      -> [InstallPlan.GenericPlanPackage InstalledPackageInfo ElaboratedConfiguredPackage]
-    ultimateDeps pkgid =
+    ultimateDeps :: (WithStage UnitId) -> [ElaboratedPlanPackage]
+    ultimateDeps pkgid@(WithStage s uid) =
       filter
-        (\pkg -> hasNoDependents pkg && installedUnitId pkg /= pkgid)
+        (\pkg -> hasNoDependents pkg && installedUnitId pkg /= uid && stageOf pkg == s)
         (InstallPlan.reverseDependencyClosure plan [pkgid])
 
-    hasNoDependents :: HasUnitId pkg => pkg -> Bool
-    hasNoDependents = null . InstallPlan.revDirectDeps plan . installedUnitId
+    -- TODO: ugly
+    hasNoDependents :: (Graph.IsNode pkg, Graph.Key pkg ~ WithStage UnitId) => pkg -> Bool
+    hasNoDependents = null . InstallPlan.revDirectDeps plan . Graph.nodeKey
 
     renderFailureDetail :: Bool -> ElaboratedConfiguredPackage -> BuildFailureReason -> String
     renderFailureDetail mentionDepOf pkg reason =
@@ -1466,7 +1461,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
       case reason of
         DownloadFailed _ -> "Failed to download " ++ pkgstr
         UnpackFailed _ -> "Failed to unpack " ++ pkgstr
-        ConfigureFailed _ -> "Failed to build " ++ pkgstr
+        ConfigureFailed _ -> "Failed to configure " ++ pkgstr
         BuildFailed _ -> "Failed to build " ++ pkgstr
         ReplFailed _ -> "repl failed for " ++ pkgstr
         HaddocksFailed _ -> "Failed to build documentation for " ++ pkgstr
@@ -1476,7 +1471,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
         GracefulFailure msg -> msg
         DependentFailed depid ->
           "Failed to build "
-            ++ prettyShow (packageId pkg)
+            ++ prettyShow (Graph.nodeKey pkg)
             ++ " because it depends on "
             ++ prettyShow depid
             ++ " which itself failed to build"
@@ -1484,7 +1479,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
         pkgstr =
           elabConfiguredName verbosity pkg
             ++ if mentionDepOf
-              then renderDependencyOf (installedUnitId pkg)
+              then renderDependencyOf (Graph.nodeKey pkg)
               else ""
 
     renderFailureExtraDetail :: BuildFailureReason -> String
@@ -1495,7 +1490,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
     renderFailureExtraDetail _ =
       ""
 
-    renderDependencyOf :: UnitId -> String
+    renderDependencyOf :: Graph.Key ElaboratedConfiguredPackage -> String
     renderDependencyOf pkgid =
       case ultimateDeps pkgid of
         [] -> ""

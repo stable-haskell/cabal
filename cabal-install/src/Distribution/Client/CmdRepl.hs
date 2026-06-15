@@ -26,7 +26,8 @@ import Distribution.Compat.Lens
 import qualified Distribution.Types.Lens as L
 
 import Distribution.Client.CmdErrorMessages
-  ( Plural (..)
+  ( ComponentKind (..)
+  , Plural (..)
   , componentKind
   , renderComponentKind
   , renderListCommaAnd
@@ -56,9 +57,13 @@ import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
   ( ElaboratedInstallPlan
   , ElaboratedSharedConfig (..)
+  , Stage (..)
+  , WithStage
+  , getStage
   )
 import Distribution.Client.ProjectPlanning.Types
-  ( elabOrderExeDependencies
+  ( Toolchain (..)
+  , elabOrderExeDependencies
   , showElaboratedInstallPlan
   )
 import Distribution.Client.ScriptUtils
@@ -81,7 +86,7 @@ import Distribution.Client.TargetProblem
   )
 import Distribution.Client.Targets
   ( UserConstraint (..)
-  , UserConstraintScope (..)
+  , UserConstraintQualifier (..)
   )
 import Distribution.Client.Types
   ( PackageSpecifier (..)
@@ -93,7 +98,6 @@ import Distribution.Compiler
 import Distribution.Package
   ( Package (..)
   , UnitId
-  , installedUnitId
   , mkPackageName
   , packageName
   )
@@ -158,6 +162,9 @@ import Distribution.Types.VersionRange
 import Distribution.Utils.Generic
   ( safeHead
   )
+import Distribution.Utils.LogProgress
+  ( runLogProgress
+  )
 import Distribution.Verbosity
   ( lessVerbose
   , modifyVerbosityFlags
@@ -185,11 +192,12 @@ import Distribution.Client.ReplFlags
   , topReplOptions
   )
 import Distribution.Compat.Binary (decode)
+import qualified Distribution.Compat.Graph as Graph
+import Distribution.Types.PackageName.Magic (fakePackageId)
 import Distribution.Simple.Flag (flagToMaybe, fromFlagOrDefault, pattern Flag)
 import Distribution.Simple.Program.Builtin (ghcProgram)
 import Distribution.Simple.Program.Db (requireProgram)
 import Distribution.Simple.Program.Types
-import Distribution.Types.PackageName.Magic (fakePackageId)
 import System.Directory
   ( doesFileExist
   , getCurrentDirectory
@@ -360,7 +368,7 @@ resolveGlobalTarget flags@NixStyleFlags{extraFlags = ReplFlags{..}} targetString
       sourcePackage =
         fakeProjectSourcePackage projectRoot
           & ( (lSrcpkgDescription . L.condLibrary)
-                ?~ (CondNode library [baseDep] [])
+                ?~ (CondNode library [])
             )
       library = emptyLibrary{libBuildInfo = lBuildInfo}
       lBuildInfo =
@@ -443,13 +451,14 @@ targetedRepl
         -- especially in the no-project case.
         withInstallPlan (modifyVerbosityFlags lessVerbose verbosity) baseCtx' $ \elaboratedPlan sharedConfig -> do
           -- targets should be non-empty map, but there's no NonEmptyMap yet.
-          targets <- validatedTargets' (projectConfigShared (projectConfig ctx)) (pkgConfigCompiler sharedConfig) elaboratedPlan targetSelectors
-
+          let Toolchain{toolchainCompiler = compiler} = getStage (pkgConfigToolchains sharedConfig) Build
+          -- FIXME there is total confusion here about who is filtering for the stage
+          targets <- validatedTargets (projectConfigShared (projectConfig ctx)) compiler elaboratedPlan targetSelectors
           let
-            (unitId, _) = fromMaybe (error "panic: targets should be non-empty") $ safeHead $ Map.toList targets
-            originalDeps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan unitId
-            oci = OriginalComponentInfo unitId originalDeps
-            pkgId = maybe (error $ "cannot find " ++ prettyShow unitId) packageId (InstallPlan.lookup elaboratedPlan unitId)
+            (key, _uid) = fromMaybe (error "panic: targets should be non-empty") $ safeHead $ Map.toList targets
+            originalDeps = Graph.nodeKey <$> InstallPlan.directDeps elaboratedPlan key
+            oci = OriginalComponentInfo key originalDeps
+            pkgId = fromMaybe (error $ "cannot find " ++ prettyShow key) $ packageId <$> InstallPlan.lookup elaboratedPlan key
             baseCtx'' = addDepsToProjectTarget (envPackages replEnvFlags) pkgId baseCtx'
 
           return (Just oci, baseCtx'')
@@ -462,25 +471,23 @@ targetedRepl
     -- In addition, to avoid a *third* trip through the solver, we are
     -- replicating the second half of 'runProjectPreBuildPhase' by hand
     -- here.
-    (buildCtx, compiler, platform, replOpts', targets) <- withInstallPlan verbosity baseCtx'' $
+    (buildCtx, compiler, progdb, platform, replOpts', targets) <- withInstallPlan verbosity baseCtx'' $
       \elaboratedPlan elaboratedShared' -> do
         let ProjectBaseContext{..} = baseCtx''
+            -- TODO: This mightr not make sense
+            Toolchain{..} = getStage (pkgConfigToolchains elaboratedShared') Host
 
         -- Recalculate with updated project.
-        targets <- validatedTargets' (projectConfigShared projectConfig) (pkgConfigCompiler elaboratedShared') elaboratedPlan targetSelectors
+        targets <- validatedTargets (projectConfigShared projectConfig) toolchainCompiler elaboratedPlan targetSelectors
 
-        let
-          elaboratedPlan' =
-            -- Guard against pruning with empty targets and failing an assertion
-            -- within pruneInstallPlanToTargets.
-            if null targets
-              then elaboratedPlan
-              else
-                pruneInstallPlanToTargets
-                  TargetActionRepl
-                  targets
-                  elaboratedPlan
-          includeTransitive = fromFlagOrDefault True (envIncludeTransitive replEnvFlags)
+        elaboratedPlan' <-
+          runLogProgress verbosity $
+            pruneInstallPlanToTargets
+              TargetActionRepl
+              targets
+              elaboratedPlan
+
+        let includeTransitive = fromFlagOrDefault True (envIncludeTransitive replEnvFlags)
 
         pkgsBuildStatus <-
           rebuildTargetsDryRun
@@ -504,13 +511,11 @@ targetedRepl
               , targetsMap = targets
               }
 
-          ElaboratedSharedConfig{pkgConfigCompiler = compiler, pkgConfigPlatform = platform} = elaboratedShared'
-
           repl_flags = case originalComponent of
             Just oci -> generateReplFlags includeTransitive elaboratedPlan' oci
             Nothing -> []
 
-        return (buildCtx, compiler, platform, configureReplOptions & lReplOptionsFlags %~ (++ repl_flags), targets)
+        return (buildCtx, toolchainCompiler, toolchainProgramDb, toolchainPlatform, configureReplOptions & lReplOptionsFlags %~ (++ repl_flags), targets)
 
     -- Multi Repl implementation see: https://well-typed.com/blog/2023/03/cabal-multi-unit/ for
     -- a high-level overview about how everything fits together.
@@ -522,7 +527,7 @@ targetedRepl
         -- into the multi-out directory.
         replOpts'' <- case targetCtx of
           ProjectContext -> return $ replOpts'{replOptionsFlagOutput = Flag dir}
-          _ -> usingGhciScript compiler projectRoot replOpts'
+          _ -> usingGhciScript projectRoot replOpts'
 
         let buildCtx' = buildCtx & lElaboratedShared . lPkgConfigReplOptions .~ replOpts''
         printPlan verbosity baseCtx'' buildCtx'
@@ -545,7 +550,7 @@ targetedRepl
         -- HACK: Just combine together all env overrides, placing the most common things last
 
         -- ghc program with overridden PATH
-        (ghcProg, _) <- requireProgram verbosity ghcProgram (pkgConfigCompilerProgs (elaboratedShared buildCtx'))
+        (ghcProg, _) <- requireProgram verbosity ghcProgram progdb
         let ghcProg' = ghcProg{programOverrideEnv = [("PATH", Just sp)]}
 
         -- Find what the unit files are, and start a repl based on all the response
@@ -591,26 +596,48 @@ targetedRepl
         -- single target repl
         replOpts'' <- case targetCtx of
           ProjectContext -> return replOpts'
-          _ -> usingGhciScript compiler projectRoot replOpts'
+          _ -> usingGhciScript projectRoot replOpts'
 
         let buildCtx' = buildCtx & lElaboratedShared . lPkgConfigReplOptions .~ replOpts''
         printPlan verbosity baseCtx'' buildCtx'
 
         buildOutcomes <- runProjectBuildPhase verbosity baseCtx'' buildCtx'
         runProjectPostBuildPhase verbosity baseCtx'' buildCtx' buildOutcomes
-    where
-      projectRoot = distProjectRootDirectory $ distDirLayout ctx
-      distDir = distDirectory $ distDirLayout ctx
+  where
+    combine_search_paths paths =
+      foldl' go Map.empty paths
+      where
+        go m ("PATH", Just s) = foldl' (\m' f -> Map.insertWith (+) f 1 m') m (splitSearchPath s)
+        go m _ = m
 
-      combine_search_paths paths =
-        foldl' go Map.empty paths
-        where
-          go m ("PATH", Just s) = foldl' (\m' f -> Map.insertWith (+) f 1 m') m (splitSearchPath s)
-          go m _ = m
+    projectRoot = distProjectRootDirectory $ distDirLayout ctx
+    distDir = distDirectory $ distDirLayout ctx
+    verbosity = cfgVerbosity normal flags
+    tempFileOptions = commonSetupTempFileOptions $ configCommonFlags configFlags
 
-      verbosity = cfgVerbosity normal flags
-      tempFileOptions = commonSetupTempFileOptions $ configCommonFlags configFlags
-      validatedTargets' = validatedTargets verbosity replFlags
+    -- FIXME: the compiler depends on the stage!!
+    validatedTargets ctx compiler elaboratedPlan targetSelectors = do
+      let multi_repl_enabled = multiReplDecision ctx compiler replFlags
+      -- Interpret the targets on the command line as repl targets
+      -- (as opposed to say build or haddock targets).
+      targets <-
+        either (reportTargetProblems verbosity) return $
+          resolveTargetsFromSolver
+            (selectPackageTargets multi_repl_enabled)
+            selectComponentTarget
+            elaboratedPlan'
+            Nothing
+            selectors
+
+      -- Reject multiple targets, or at least targets in different
+      -- components. It is ok to have two module/file targets in the
+      -- same component, but not two that live in different components.
+      when (Set.size (distinctTargetComponents targets) > 1 && not (useMultiRepl multi_repl_enabled)) $
+        reportTargetProblems
+          verbosity
+          [multipleTargetsProblem multi_repl_enabled targets]
+
+      return targets
 
 withCtx :: NixStyleFlags a -> [String] -> GlobalFlags -> TargetsAction [TargetSelector] b -> IO b
 withCtx flags targetStrings globalFlags =
@@ -673,7 +700,7 @@ validatedTargets
   -> Compiler
   -> ElaboratedInstallPlan
   -> [TargetSelector]
-  -> IO TargetsMap
+  -> IO TargetsMapS
 validatedTargets verbosity replFlags ctx compiler elaboratedPlan targetSelectors = do
   let multi_repl_enabled = multiReplDecision ctx compiler replFlags
   -- Interpret the targets on the command line as repl targets (as opposed to
@@ -702,8 +729,8 @@ minMultipleHomeUnitsVersion :: Version
 minMultipleHomeUnitsVersion = mkVersion [9, 4]
 
 data OriginalComponentInfo = OriginalComponentInfo
-  { ociUnitId :: UnitId
-  , ociOriginalDeps :: [UnitId]
+  { ociUnitId :: WithStage UnitId
+  , ociOriginalDeps :: [WithStage UnitId]
   }
   deriving (Show)
 
@@ -738,18 +765,25 @@ addDepsToProjectTarget deps pkgId ctx =
 generateReplFlags :: Bool -> ElaboratedInstallPlan -> OriginalComponentInfo -> [String]
 generateReplFlags includeTransitive elaboratedPlan OriginalComponentInfo{..} = flags
   where
-    exeDeps :: [UnitId]
+    exeDeps :: [WithStage UnitId]
     exeDeps =
       foldMap
         (InstallPlan.foldPlanPackage (const []) elabOrderExeDependencies)
         (InstallPlan.dependencyClosure elaboratedPlan [ociUnitId])
 
-    deps, deps', trans, trans' :: [UnitId]
-    flags :: [String]
-    deps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan ociUnitId
+    deps :: [WithStage UnitId]
+    deps = Graph.nodeKey <$> InstallPlan.directDeps elaboratedPlan ociUnitId
+
+    deps' :: [WithStage UnitId]
     deps' = deps \\ ociOriginalDeps
-    trans = installedUnitId <$> InstallPlan.dependencyClosure elaboratedPlan deps'
+
+    trans :: [WithStage UnitId]
+    trans = Graph.nodeKey <$> InstallPlan.dependencyClosure elaboratedPlan deps'
+
+    trans' :: [WithStage UnitId]
     trans' = trans \\ ociOriginalDeps
+
+    flags :: [String]
     flags =
       fmap (("-package-id " ++) . prettyShow) . (\\ exeDeps) $
         if includeTransitive then trans' else deps'
@@ -761,20 +795,13 @@ generateReplFlags includeTransitive elaboratedPlan OriginalComponentInfo{..} = f
 -- so we need to tell ghci to change back to the correct directory.
 --
 -- The @-ghci-script@ flag is path to the ghci script responsible for changing to the
--- correct directory. Only works on GHC >= 7.6, though. 🙁
-usingGhciScript :: Compiler -> FilePath -> ReplOptions -> IO ReplOptions
-usingGhciScript compiler projectRoot replOpts
-  | compilerCompatVersion GHC compiler >= Just minGhciScriptVersion = do
-      let ghciScriptPath = projectRoot </> "setcwd.ghci"
-      cwd <- getCurrentDirectory
-      writeFile ghciScriptPath (":cd " ++ cwd)
-      return $ replOpts & lReplOptionsFlags %~ (("-ghci-script" ++ ghciScriptPath) :)
-  | otherwise = return replOpts
-
--- | First version of GHC where GHCi supported the flag we need.
--- https://downloads.haskell.org/~ghc/7.6.1/docs/html/users_guide/release-7-6-1.html
-minGhciScriptVersion :: Version
-minGhciScriptVersion = mkVersion [7, 6]
+-- correct directory.
+usingGhciScript :: FilePath -> ReplOptions -> IO ReplOptions
+usingGhciScript projectRoot replOpts = do
+  let ghciScriptPath = projectRoot </> "setcwd.ghci"
+  cwd <- getCurrentDirectory
+  writeFile ghciScriptPath (":cd " ++ cwd)
+  return $ replOpts & lReplOptionsFlags %~ (("-ghci-script" ++ ghciScriptPath) :)
 
 -- | This defines what a 'TargetSelector' means for the @repl@ command.
 -- It selects the 'AvailableTarget's that the 'TargetSelector' refers to,
@@ -901,7 +928,7 @@ selectComponentTarget = selectComponentTargetBasic
 data ReplProblem
   = TargetProblemMatchesMultiple MultiReplDecision TargetSelector [AvailableTarget ()]
   | -- | Multiple 'TargetSelector's match multiple targets
-    TargetProblemMultipleTargets MultiReplDecision TargetsMap
+    TargetProblemMultipleTargets MultiReplDecision TargetsMapS
   deriving (Eq, Show)
 
 -- | The various error conditions that can occur when matching a
@@ -918,7 +945,7 @@ matchesMultipleProblem decision targetSelector targetsExesBuildable =
 
 multipleTargetsProblem
   :: MultiReplDecision
-  -> TargetsMap
+  -> TargetsMapS
   -> ReplTargetProblem
 multipleTargetsProblem decision = CustomTargetProblem . TargetProblemMultipleTargets decision
 

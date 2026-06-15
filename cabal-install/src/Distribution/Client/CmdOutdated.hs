@@ -264,7 +264,7 @@ outdatedAction flags targetStrings globalFlags =
               deps
               sourcePkgDb
               (ListOutdatedSettings ignorePred minorPred)
-      when (not quiet) $
+      unless quiet $
         showResult verbosity outdatedDeps simpleOutput
       when (exitCode && (not . null $ outdatedDeps)) exitFailure
   where
@@ -281,14 +281,14 @@ outdatedAction flags targetStrings globalFlags =
     exitCode = fromFlagOrDefault quiet outdatedExitCode
     ignorePred =
       let ignoreSet = S.fromList outdatedIgnore
-       in \pkgname -> pkgname `S.member` ignoreSet
+       in (`S.member` ignoreSet)
     minorPred = case outdatedMinor of
       Nothing -> const False
       Just IgnoreMajorVersionBumpsNone -> const False
       Just IgnoreMajorVersionBumpsAll -> const True
       Just (IgnoreMajorVersionBumpsSome pkgs) ->
         let minorSet = S.fromList pkgs
-         in \pkgname -> pkgname `S.member` minorSet
+         in (`S.member` minorSet)
 
 reportOutdatedTargetProblem :: Verbosity -> [TargetProblem'] -> IO a
 reportOutdatedTargetProblem verbosity problems =
@@ -300,7 +300,7 @@ showResult :: Verbosity -> [OutdatedDependency] -> Bool -> IO ()
 showResult verbosity outdatedDeps simpleOutput =
   if not . null $ outdatedDeps
     then do
-      when (not simpleOutput) $
+      unless simpleOutput $
         notice verbosity "Outdated dependencies:"
       if simpleOutput
         then -- Simple output just prints package names, one per line

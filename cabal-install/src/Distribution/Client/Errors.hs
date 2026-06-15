@@ -1,7 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
-{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 -----------------------------------------------------------------------------
 
@@ -24,6 +23,7 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Char8 as BS8
 import Data.List (groupBy)
 import Distribution.Client.IndexUtils.Timestamp
+import Distribution.Client.ProjectPlanning.Stage (WithStage)
 import qualified Distribution.Client.Types.Repo as Repo
 import qualified Distribution.Client.Types.RepoName as RepoName
 import Distribution.Compat.Prelude
@@ -96,7 +96,7 @@ data CabalInstallException
   | PlanPackages String
   | NoSupportForRunCommand
   | RunPhaseReached
-  | UnknownExecutable String UnitId
+  | UnknownExecutable String (WithStage UnitId)
   | MultipleMatchingExecutables String [String]
   | CmdRunReportTargetProblems String
   | CleanAction [String]
@@ -713,21 +713,18 @@ exceptionMessageCabalInstall e = case e of
                   ]
           ]
       | (target, nosuch) <- targets
-      , let groupByContainer =
-              map
-                ( \g@((inside, _, _, _) : _) ->
-                    ( inside
-                    , [ (thing, got, alts)
-                      | (_, thing, got, alts) <- g
-                      ]
-                    )
-                )
-                . groupBy ((==) `on` (\(x, _, _, _) -> x))
-                . sortBy (compare `on` (\(x, _, _, _) -> x))
       ]
     where
       mungeThing "file" = "file target"
       mungeThing thing = thing
+      groupByContainer xs =
+        [ ( inside
+          , [ (thing, got, alts)
+            | (_, thing, got, alts) <- g
+            ]
+          )
+        | g@((inside, _, _, _) : _) <- groupBy ((==) `on` (\(x, _, _, _) -> x)) $ sortBy (compare `on` (\(x, _, _, _) -> x)) xs
+        ]
   TargetSelectorAmbiguousErr targets ->
     unlines
       [ "Ambiguous target '"

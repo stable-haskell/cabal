@@ -14,6 +14,7 @@ module Distribution.Client.ProjectConfig
   , ProjectConfigBuildOnly (..)
   , ProjectConfigShared (..)
   , ProjectConfigSkeleton
+  , ProjectConfigToolchain (..)
   , ProjectConfigProvenance (..)
   , PackageConfig (..)
   , MapLast (..)
@@ -612,8 +613,7 @@ findProjectRoot verbosity mprojectDir mprojectFile = do
 
           getProjectRootUsability file >>= \case
             ProjectRootUsabilityPresentAndUsable ->
-              uncurry projectRoot
-                =<< first dropTrailingPathSeparator . splitFileName <$> canonicalizePath file
+              uncurry projectRoot . first dropTrailingPathSeparator . splitFileName =<< canonicalizePath file
             ProjectRootUsabilityNotPresent ->
               left (BadProjectRootExplicitFileNotFound file)
             ProjectRootUsabilityPresentAndUnusable ->
@@ -1281,28 +1281,29 @@ findProjectPackages
       checkIsFileGlobPackage pkglocstr =
         case simpleParsec pkglocstr of
           Nothing -> return Nothing
-          Just glob -> liftM Just $ do
-            matches <- matchFileGlob glob
-            case matches of
-              []
-                | isJust (isTrivialRootedGlob glob) ->
-                    return
-                      ( Left
-                          ( BadPackageLocationFile
-                              (BadLocNonexistentFile pkglocstr)
-                          )
-                      )
-              [] -> return (Left (BadLocGlobEmptyMatch pkglocstr))
-              _ -> do
-                (failures, pkglocs) <-
-                  partitionEithers
-                    <$> traverse checkFilePackageMatch matches
-                return $! case (failures, pkglocs) of
-                  ([failure], [])
-                    | isJust (isTrivialRootedGlob glob) ->
-                        Left (BadPackageLocationFile failure)
-                  (_, []) -> Left (BadLocGlobBadMatches pkglocstr failures)
-                  _ -> Right pkglocs
+          Just glob ->
+            Just <$> do
+              matches <- matchFileGlob glob
+              case matches of
+                []
+                  | isJust (isTrivialRootedGlob glob) ->
+                      return
+                        ( Left
+                            ( BadPackageLocationFile
+                                (BadLocNonexistentFile pkglocstr)
+                            )
+                        )
+                [] -> return (Left (BadLocGlobEmptyMatch pkglocstr))
+                _ -> do
+                  (failures, pkglocs) <-
+                    partitionEithers
+                      <$> traverse checkFilePackageMatch matches
+                  return $! case (failures, pkglocs) of
+                    ([failure], [])
+                      | isJust (isTrivialRootedGlob glob) ->
+                          Left (BadPackageLocationFile failure)
+                    (_, []) -> Left (BadLocGlobBadMatches pkglocstr failures)
+                    _ -> Right pkglocs
 
       checkIsSingleFilePackage pkglocstr = do
         let filename = distProjectRootDirectory </> pkglocstr
@@ -1400,7 +1401,6 @@ mplusMaybeT ma mb = do
 fetchAndReadSourcePackages
   :: Verbosity
   -> DistDirLayout
-  -> Maybe Compiler
   -> ProjectConfigShared
   -> ProjectConfigBuildOnly
   -> [ProjectPackageLocation]
@@ -1408,7 +1408,6 @@ fetchAndReadSourcePackages
 fetchAndReadSourcePackages
   verbosity
   distDirLayout
-  compiler
   projectConfigShared
   projectConfigBuildOnly
   pkgLocations = do
@@ -1445,7 +1444,6 @@ fetchAndReadSourcePackages
       syncAndReadSourcePackagesRemoteRepos
         verbosity
         distDirLayout
-        compiler
         projectConfigShared
         projectConfigBuildOnly
         (fromFlag (projectConfigOfflineMode projectConfigBuildOnly))
@@ -1565,7 +1563,6 @@ fetchAndReadSourcePackageRemoteTarball
 syncAndReadSourcePackagesRemoteRepos
   :: Verbosity
   -> DistDirLayout
-  -> Maybe Compiler
   -> ProjectConfigShared
   -> ProjectConfigBuildOnly
   -> Bool
@@ -1574,7 +1571,6 @@ syncAndReadSourcePackagesRemoteRepos
 syncAndReadSourcePackagesRemoteRepos
   verbosity
   DistDirLayout{distDownloadSrcDirectory}
-  compiler
   ProjectConfigShared
     { projectConfigProgPathExtra
     }
@@ -1609,7 +1605,7 @@ syncAndReadSourcePackagesRemoteRepos
     concat
       <$> rerunConcurrentlyIfChanged
         verbosity
-        (newJobControlFromParStrat verbosity compiler parStrat (Just maxNumFetchJobs))
+        (newJobControlFromParStrat verbosity parStrat (Just maxNumFetchJobs))
         [ ( monitor
           , repoGroup'
           , do

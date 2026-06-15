@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |
 -- Module      :  Distribution.Client.CmdPath
@@ -76,6 +77,7 @@ import Distribution.Simple.Program
 import Distribution.Simple.Utils
   ( die'
   , dieWithException
+  , warn
   , withOutputMarker
   , wrapText
   )
@@ -236,7 +238,7 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags'} cliTargetStrings globalF
               , pathDirectories = Flag [minBound .. maxBound]
               }
           else pathFlags'
-  when (not $ null cliTargetStrings) $
+  unless (null cliTargetStrings) $
     dieWithException verbosity CmdPathAcceptsNoTargets
   when (buildSettingDryRun (buildSettings baseCtx)) $
     dieWithException verbosity CmdPathCommandDoesn'tSupportDryRun
@@ -245,17 +247,13 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags'} cliTargetStrings globalF
     if not $ fromFlagOrDefault False (pathCompiler pathFlags)
       then pure Nothing
       else do
-        (compiler, _, progDb) <-
-          runRebuild (distProjectRootDirectory . distDirLayout $ baseCtx) $
-            configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
-        compilerProg <- requireCompilerProg verbosity compiler
-        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg progDb
-
-        let compilerInfo' =
-              mkCompilerInfo configuredCompilerProg compiler $
-                cabalStoreDirLayout (cabalDirLayout baseCtx)
-
-        pure $ Just compilerInfo'
+        let projectRoot = distProjectRootDirectory (distDirLayout baseCtx)
+        toolchains <- runRebuild projectRoot $ configureToolchains verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
+        warn verbosity "WIP: Assuming host toolchain, result might be wrong"
+        let Toolchain{..} = getStage toolchains Host
+        compilerProg <- requireCompilerProg verbosity toolchainCompiler
+        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg toolchainProgramDb
+        pure $ Just $ mkCompilerInfo configuredCompilerProg toolchainCompiler (cabalStoreDirLayout $ cabalDirLayout baseCtx)
 
   paths <- for (fromFlagOrDefault [] $ pathDirectories pathFlags) $ \p -> do
     t <- getPathLocation verbosity baseCtx p

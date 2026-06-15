@@ -125,8 +125,8 @@ getInstalledPackages verbosity comp mbWorkDir packagedbs progdb = do
   let pkgDirs = nub (concatMap (packageDbPaths userPkgDir systemPkgDir mbWorkDir) packagedbs)
   -- putStrLn $ "pkgdirs: " ++ show pkgDirs
   pkgs <-
-    liftM (map addBuiltinVersions . concat) $
-      traverse
+    map addBuiltinVersions . concat
+      <$> traverse
         (\d -> listDirectory d >>= filterM (isPkgDir (prettyShow compilerid) d))
         pkgDirs
   -- putStrLn $ "pkgs: " ++ show pkgs
@@ -231,9 +231,7 @@ buildLib verbosity pkg_descr lbi lib clbi = do
           -- source files
           -- suboptimal: UHC does not understand module names, so
           -- we replace periods by path separators
-          ++ map
-            (map (\c -> if c == '.' then pathSeparator else c))
-            (map prettyShow (allLibModules lib clbi))
+          ++ map (map (\c -> if c == '.' then pathSeparator else c) . prettyShow) (allLibModules lib clbi)
 
   runUhcProg uhcArgs
 

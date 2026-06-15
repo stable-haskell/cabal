@@ -34,6 +34,7 @@ import Distribution.Solver.Compat.Prelude
 import Prelude ()
 
 import Data.List (elemIndex)
+import GHC.Stack (withFrozenCallStack)
 
 -- test-framework
 import Test.Tasty as TF
@@ -50,6 +51,7 @@ import Distribution.Client.Dependency (foldProgress)
 import qualified Distribution.Solver.Types.PackagePath as P
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..), pkgConfigDbFromList)
 import Distribution.Solver.Types.Settings
+import Distribution.Solver.Types.Stage
 import Distribution.Solver.Types.Variable
 import Distribution.Types.UnitId (UnitId, mkUnitId)
 import UnitTests.Distribution.Solver.Modular.DSL
@@ -252,7 +254,7 @@ mkTestExtLangPC exts langs mPkgConfigDb db label targets result =
     }
 
 runTest :: SolverTest -> TF.TestTree
-runTest SolverTest{..} = askOption $ \(OptionShowSolverLog showSolverLog) ->
+runTest SolverTest{..} = withFrozenCallStack $ askOption $ \(OptionShowSolverLog showSolverLog) ->
   testCase testLabel $ do
     let progress =
           exResolve
@@ -322,20 +324,10 @@ runTest SolverTest{..} = askOption $ \(OptionShowSolverLog showSolverLog) ->
     toQPN q pn = P.Q pp (C.mkPackageName pn)
       where
         pp = case q of
-          QualNone -> P.PackagePath P.DefaultNamespace P.QualToplevel
-          QualIndep p ->
-            P.PackagePath
-              (P.Independent $ C.mkPackageName p)
-              P.QualToplevel
+          QualNone -> P.PackagePath Host P.QualToplevel
           QualSetup s ->
-            P.PackagePath
-              P.DefaultNamespace
-              (P.QualSetup (C.mkPackageName s))
-          QualIndepSetup p s ->
-            P.PackagePath
-              (P.Independent $ C.mkPackageName p)
-              (P.QualSetup (C.mkPackageName s))
+            P.PackagePath Host (P.QualSetup (C.mkPackageName s))
+          QualIndepSetup _ s ->
+            P.PackagePath Host (P.QualSetup (C.mkPackageName s))
           QualExe p1 p2 ->
-            P.PackagePath
-              P.DefaultNamespace
-              (P.QualExe (C.mkPackageName p1) (C.mkPackageName p2))
+            P.PackagePath Host (P.QualExe (C.mkPackageName p1) (C.mkPackageName p2))

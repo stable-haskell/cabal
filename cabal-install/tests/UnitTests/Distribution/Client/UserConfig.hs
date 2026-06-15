@@ -13,15 +13,15 @@ import System.Directory
   , getTemporaryDirectory
   )
 import System.FilePath ((</>))
+import System.IO (hClose, openTempFile)
 
 import Test.Tasty
 import Test.Tasty.HUnit
 
 import Distribution.Client.Config
 import Distribution.Client.Setup (GlobalFlags (..), InstallFlags (..))
-import Distribution.Client.Utils (removeExistingFile)
 import Distribution.Simple.Setup (ConfigFlags (..), fromFlag, pattern Flag)
-import Distribution.Simple.Utils (withTempDirectory)
+import Distribution.Simple.Utils (removeFileForcibly, withTempDirectory)
 import Distribution.Utils.NubList (fromNubList)
 import Distribution.Verbosity
 
@@ -100,8 +100,12 @@ bracketTest =
   bracket testSetup testTearDown
   where
     testSetup :: IO FilePath
-    testSetup = fmap (</> "test-user-config") getCurrentDirectory
+    testSetup = do
+      cwd <- getCurrentDirectory
+      (configFile, h) <- openTempFile cwd "test-user-config"
+      hClose h
+      pure configFile
 
     testTearDown :: FilePath -> IO ()
     testTearDown configFile =
-      mapM_ removeExistingFile [configFile, configFile ++ ".backup"]
+      mapM_ removeFileForcibly [configFile, configFile ++ ".backup"]

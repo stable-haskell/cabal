@@ -43,6 +43,7 @@ import Distribution.Solver.Types.Variable
 import Distribution.Verbosity
 import Distribution.Version
 
+import Distribution.Solver.Types.Stage (Stage)
 import UnitTests.Distribution.Solver.Modular.DSL
 import UnitTests.Distribution.Solver.Modular.QuickCheck.Utils
   ( ArbitraryOrd (..)
@@ -499,8 +500,8 @@ arbitraryConstraint pkgs = do
   (PN pn, v) <- elements pkgs
   let anyQualifier = ScopeAnyQualifier (mkPackageName pn)
   oneof
-    [ ExVersionConstraint anyQualifier <$> arbitraryVersionRange v
-    , ExStanzaConstraint anyQualifier <$> sublistOf [TestStanzas, BenchStanzas]
+    [ ExVersionConstraint (ConstraintScope Nothing anyQualifier) <$> arbitraryVersionRange v
+    , ExStanzaConstraint (ConstraintScope Nothing anyQualifier) <$> sublistOf [TestStanzas, BenchStanzas]
     ]
 
 arbitraryPreference :: [(PN, PV)] -> Gen ExPreference
@@ -558,7 +559,7 @@ instance Arbitrary Component where
 -- internal libraries.
 arbitraryUQN :: Gen UnqualComponentName
 arbitraryUQN =
-  mkUnqualComponentName <$> (\c -> "component-" ++ [c]) <$> elements "ABC"
+  mkUnqualComponentName . (\c -> "component-" ++ [c]) <$> elements "ABC"
 
 instance Arbitrary ExampleInstalled where
   arbitrary = error "arbitrary not implemented: ExampleInstalled"
@@ -621,11 +622,16 @@ instance Arbitrary OptionalStanza where
   shrink BenchStanzas = [TestStanzas]
   shrink TestStanzas = []
 
+instance Arbitrary Stage where
+  arbitrary = elements [minBound .. maxBound]
+
+  shrink stage =
+    [stage' | stage' <- [minBound .. maxBound], stage' /= stage]
+
 instance ArbitraryOrd pn => ArbitraryOrd (Variable pn)
 instance ArbitraryOrd a => ArbitraryOrd (P.Qualified a)
 instance ArbitraryOrd P.PackagePath
 instance ArbitraryOrd P.Qualifier
-instance ArbitraryOrd P.Namespace
 instance ArbitraryOrd OptionalStanza
 instance ArbitraryOrd FlagName
 instance ArbitraryOrd PackageName
@@ -633,12 +639,9 @@ instance ArbitraryOrd ShortText where
   arbitraryCompare = do
     strc <- arbitraryCompare
     pure $ \l r -> strc (fromShortText l) (fromShortText r)
+instance ArbitraryOrd Stage
 
 deriving instance Generic (Variable pn)
-deriving instance Generic (P.Qualified a)
-deriving instance Generic P.PackagePath
-deriving instance Generic P.Namespace
-deriving instance Generic P.Qualifier
 
 randomSubset :: Int -> [a] -> Gen [a]
 randomSubset n xs = take n <$> shuffle xs
