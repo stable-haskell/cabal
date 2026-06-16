@@ -94,6 +94,10 @@ constraintQualifierMatches (ScopeAnySetupQualifier pn) (QualSetup _) pn' = pn ==
 constraintQualifierMatches (ScopeAnyExeQualifier pn) (QualExe _ _) pn' = pn == pn'
 constraintQualifierMatches (ScopeAnyExeQualifier _) QualToplevel _ = False
 constraintQualifierMatches (ScopeAnyExeQualifier _) (QualSetup _) _compile = False
+-- A base-qualified dependency is never matched by a toplevel/setup/exe scope.
+constraintQualifierMatches (ScopeTarget _) (QualBase _) _ = False
+constraintQualifierMatches (ScopeAnySetupQualifier _) (QualBase _) _ = False
+constraintQualifierMatches (ScopeAnyExeQualifier _) (QualBase _) _ = False
 constraintQualifierMatches (ScopeAnyQualifier pn) _ pn' = pn == pn'
 
 instance Pretty ConstraintScope where

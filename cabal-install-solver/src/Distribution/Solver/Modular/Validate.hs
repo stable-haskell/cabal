@@ -201,7 +201,6 @@ validate = go
       svd            <- asks saved -- obtain saved dependencies
       aComps         <- asks availableComponents
       rComps         <- asks requiredComponents
-      qo             <- asks qualifyOptions
       -- obtain dependencies and index-dictated exclusions introduced by the choice
       let I stage _vr _loc = i
       let (PInfo deps comps _ mfr) = idx ! pn ! i

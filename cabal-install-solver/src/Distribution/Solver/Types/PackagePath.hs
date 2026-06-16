@@ -15,7 +15,7 @@ import Prelude ()
 import Distribution.Package (PackageName)
 import Distribution.Pretty (pretty, flatStyle, Pretty)
 import qualified Text.PrettyPrint as Disp
-import Distribution.Solver.Types.Stage (Stage)
+import Distribution.Solver.Types.Stage (Stage (..))
 
 data PackagePath = PackagePath Stage Qualifier
   deriving (Eq, Ord, Show, Generic)
@@ -25,7 +25,16 @@ instance Structured PackagePath
 
 instance Pretty PackagePath where
   pretty (PackagePath stage qualifier) =
-    pretty stage <<>> Disp.text ":" <<>> pretty qualifier
+    dispStage stage <<>> pretty qualifier
+
+-- | Pretty-prints a build stage as a prefix. The result is either empty (for
+-- the default 'Host' stage) or ends in a colon, so it can be prepended onto a
+-- qualifier or package name. Keeping the 'Host' stage invisible means logs for
+-- ordinary (non-cross) builds, where every package is on the 'Host' stage,
+-- stay free of stage noise; only the 'Build' stage is called out explicitly.
+dispStage :: Stage -> Disp.Doc
+dispStage Host = Disp.empty
+dispStage Build = pretty Build <<>> Disp.colon
 
 -- | Qualifier of a package within a namespace (see 'PackagePath')
 data Qualifier =
@@ -64,6 +73,7 @@ instance Structured Qualifier
 
 instance Pretty Qualifier where
   pretty QualToplevel = Disp.text "toplevel"
+  pretty (QualBase pn) = pretty pn <<>> Disp.text ":base"
   pretty (QualSetup pn) = pretty pn <<>> Disp.text ":setup"
   pretty (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
                             pretty pn2 <<>> Disp.text ":exe"
@@ -78,6 +88,7 @@ instance Pretty Qualifier where
 -- 'Base' qualifier, will always be @base@).
 dispQualifier :: Qualifier -> Disp.Doc
 dispQualifier QualToplevel = mempty
+dispQualifier (QualBase pn) = pretty pn <> Disp.text "."
 dispQualifier (QualSetup pn) = pretty pn <> Disp.text ":setup."
 dispQualifier (QualExe pn pn2) =
   pretty pn
@@ -97,7 +108,7 @@ type QPN = Qualified PackageName
 
 instance Pretty (Qualified PackageName) where
   pretty (Q (PackagePath stage qual) pn) =
-    pretty stage <<>> Disp.colon <<>> dispQualifier qual <<>> pretty pn
+    dispStage stage <<>> dispQualifier qual <<>> pretty pn
 
 -- | Pretty-prints a qualified package name.
 dispQPN :: QPN -> Disp.Doc

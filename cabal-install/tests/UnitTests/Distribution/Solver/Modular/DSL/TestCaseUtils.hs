@@ -291,7 +291,12 @@ runTest SolverTest{..} = withFrozenCallStack $ askOption $ \(OptionShowSolverLog
         assertBool
           ("Unexpected error:\n" ++ err)
           (checkErrorMsg testResult err)
-      Right plan -> assertEqual "" (toMaybe testResult) (Just (extractInstallPlan plan))
+      -- The install plan is compared as a set: 'extractInstallPlan' walks the
+      -- plan in the graph's topological order, which is not significant for
+      -- these assertions (and shifted when 'UnitId's became stage-aware), so we
+      -- sort both sides. Genuine differences in package set, version, or
+      -- multiplicity are still caught.
+      Right plan -> assertEqual "" (sort <$> toMaybe testResult) (Just (sort (extractInstallPlan plan)))
   where
     toMaybe :: SolverResult -> Maybe [(String, Int)]
     toMaybe = either (const Nothing) Just . resultErrorMsgPredicateOrPlan
@@ -325,6 +330,7 @@ runTest SolverTest{..} = withFrozenCallStack $ askOption $ \(OptionShowSolverLog
       where
         pp = case q of
           QualNone -> P.PackagePath Host P.QualToplevel
+          QualIndep _ -> P.PackagePath Host P.QualToplevel
           QualSetup s ->
             P.PackagePath Host (P.QualSetup (C.mkPackageName s))
           QualIndepSetup _ s ->

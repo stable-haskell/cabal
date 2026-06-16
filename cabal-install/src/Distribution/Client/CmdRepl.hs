@@ -26,8 +26,7 @@ import Distribution.Compat.Lens
 import qualified Distribution.Types.Lens as L
 
 import Distribution.Client.CmdErrorMessages
-  ( ComponentKind (..)
-  , Plural (..)
+  ( Plural (..)
   , componentKind
   , renderComponentKind
   , renderListCommaAnd

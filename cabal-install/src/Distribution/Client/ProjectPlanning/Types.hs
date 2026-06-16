@@ -127,12 +127,11 @@ import Distribution.Types.ComponentRequestedSpec
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Types.PkgconfigVersion
-import Distribution.Verbosity (Verbosity, VerbosityLevel (..), verbosityLevel)
+import Distribution.Verbosity (VerbosityLevel (..), verbosityLevel)
 import Distribution.Version
 import Distribution.Utils.Path ((</>))
 
 import qualified Data.ByteString.Lazy as LBS
-import Data.Foldable (fold)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Distribution.Compat.Graph as Graph

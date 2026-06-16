@@ -59,7 +59,6 @@ import Distribution.PackageDescription
   , buildType
   , specVersion
   )
-import qualified Distribution.Make as Make
 import qualified Distribution.Simple as Simple
 import Distribution.Simple.Build.Macros
   ( generatePackageVersionMacros
@@ -78,11 +77,8 @@ import Distribution.Simple.PreProcess
   , runSimplePreProcessor
   )
 import Distribution.Simple.Program
-  ( ProgramDb
-  , builtinPrograms
-  , emptyProgramDb
+  ( builtinPrograms
   , getDbProgramOutputCwd
-  , getProgramSearchPath
   , ghcProgram
   , runDbProgramCwd
   )
@@ -127,9 +123,6 @@ import Distribution.Client.Utils
 #endif
   , moreRecentFile
   , tryCanonicalizePath
-  , withEnv
-  , withEnvOverrides
-  , withExtraPathEnv
   )
 import Distribution.Utils.Path
   hiding ( (</>), (<.>) )
@@ -190,7 +183,6 @@ import qualified Data.Map.Lazy as Map
 import Data.Type.Equality  ( type (==) )
 import Data.Type.Bool      ( If )
 import System.Directory (doesFileExist)
-import System.Environment (getExecutablePath)
 import System.FilePath ((<.>), (</>))
 import System.IO (Handle, hPutStr)
 import System.Process (StdStream (..))
@@ -765,37 +757,6 @@ things:
 
 -- ------------------------------------------------------------
 
--- | Run a Setup script by directly invoking the @Cabal@ library.
-internalSetupMethod :: SetupRunner UseGeneralSetup
-internalSetupMethod verbosity options bt args NotInLibrary = do
-  info verbosity $
-    "Using internal setup method with build-type "
-      ++ show bt
-      ++ " and args:\n  "
-      ++ unwords args
-  -- NB: we do not set the working directory of the process here, because
-  -- we will instead pass the -working-dir flag when invoking the Setup script.
-  -- Note that the Setup script is guaranteed to support this flag, because
-  -- the logic in 'getSetupMethod' guarantees we have an up-to-date Cabal version.
-  --
-  -- In the future, it would be desirable to also stop relying on the following
-  -- pieces of process-global state, as this would allow us to use this internal
-  -- setup method in concurrent contexts.
-  withEnv "HASKELL_DIST_DIR" (getSymbolicPath $ useDistPref options) $
-    withExtraPathEnv (useExtraPathEnv options) $
-      withEnvOverrides (useExtraEnvOverrides options) $
-        buildTypeAction bt args
-
-buildTypeAction :: BuildType -> ([String] -> IO ())
-buildTypeAction Simple = Simple.defaultMainArgs
-buildTypeAction Configure =
-  Simple.defaultMainWithSetupHooksArgs
-    Simple.autoconfSetupHooks
-    defaultVerbosityHandles
-buildTypeAction Make = Make.defaultMainArgs
-buildTypeAction Hooks  = error "buildTypeAction Hooks"
-buildTypeAction Custom = error "buildTypeAction Custom"
-
 invoke :: Verbosity -> FilePath -> [String] -> SetupScriptOptions -> IO ()
 invoke verbosity path args options = do
   info verbosity $ unwords (path : args)
@@ -825,28 +786,6 @@ invoke verbosity path args options = do
           , Process.delegate_ctlc = isInteractive options
           }
   maybeExit $ rawSystemProc verbosity cp
-
--- ------------------------------------------------------------
-
--- * Self-Exec SetupMethod
-
--- ------------------------------------------------------------
-
-selfExecSetupMethod :: SetupRunner UseGeneralSetup
-selfExecSetupMethod verbosity options bt args0 NotInLibrary = do
-  let args =
-        [ "act-as-setup"
-        , "--build-type=" ++ prettyShow bt
-        , "--"
-        ]
-          ++ args0
-  info verbosity $
-    "Using self-exec internal setup method with build-type "
-      ++ show bt
-      ++ " and args:\n  "
-      ++ unwords args
-  path <- getExecutablePath
-  invoke verbosity path args options
 
 -- ------------------------------------------------------------
 

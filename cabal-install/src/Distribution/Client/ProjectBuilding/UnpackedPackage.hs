@@ -88,7 +88,7 @@ import qualified Data.ByteString as BS
 import qualified Data.List.NonEmpty as NE
 
 import Control.Exception (Handler (..), SomeAsyncException, catches, onException)
-import System.Directory (canonicalizePath, createDirectoryIfMissing, doesFileExist, removeFile)
+import System.Directory (canonicalizePath, createDirectoryIfMissing)
 import System.FilePath (takeDirectory, (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
 import System.Semaphore (SemaphoreName (..))
@@ -492,7 +492,7 @@ buildAndInstallUnpackedPackage
           whenRebuild $ do
             noticeProgress ProgressBuilding
             timestamp <- beginUpdateFileMonitor
-            runBuild
+            _ <- runBuild
             -- Be sure to invalidate the cache if building throws an exception!
             -- If not, we'll abort execution with a stale recompilation cache.
             -- See ghc#24926 for an example of how this can go wrong.

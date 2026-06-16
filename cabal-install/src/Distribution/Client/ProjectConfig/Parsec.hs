@@ -42,6 +42,7 @@ import Distribution.Simple.Program.Types (programName)
 import Distribution.Simple.Setup
 import Distribution.Simple.Utils (debug, noticeDoc)
 import Distribution.Solver.Types.ProjectConfigPath
+import Distribution.Solver.Types.Stage (Stage)
 import Distribution.System (buildOS)
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.ConfVar (ConfVar (..))
@@ -284,8 +285,11 @@ parseSection programDb (MkSection (Name pos name) args secFields)
         Just (SpecificPackage packageName) -> do
           packageCfg <- parsePackageConfig
           stateConfig . L.projectConfigSpecificPackage %= (<> MapMappend (Map.singleton packageName packageCfg))
+        Just (AllStagePackages stage) -> do
+          packageCfg <- parsePackageConfig
+          stateConfig . L.projectConfigStagePackages %= (<> MapMappend (Map.singleton stage packageCfg))
         Nothing -> do
-          lift $ parseWarning pos PWTUnknownSection "target package name or * required"
+          lift $ parseWarning pos PWTUnknownSection "target package name, '*', or '<stage>:*' required"
           return ()
   | otherwise = do
       warnInvalidSubsection pos name
@@ -345,7 +349,7 @@ parseRepoName pos args = case args of
               return Nothing
             Right name -> return $ Just name
 
-data PackageConfigTarget = AllPackages | SpecificPackage !PackageName
+data PackageConfigTarget = AllPackages | AllStagePackages !Stage | SpecificPackage !PackageName
 
 parsePackageName :: Position -> [SectionArg Position] -> ParseResult src (Maybe PackageConfigTarget)
 parsePackageName pos args = case args of
@@ -356,12 +360,18 @@ parsePackageName pos args = case args of
   where
     parseName secName = case runParsecParser parser "<parsePackageName>" (fieldLineStreamFromBS secName) of
       Left _ -> do
-        parseFailure pos ("Invalid package name" ++ fromUTF8BS secName)
+        parseFailure pos ("Invalid 'package' target (expected a package name, '*', or '<stage>:*'): " ++ fromUTF8BS secName)
         return Nothing
       Right cfgTarget -> return $ pure cfgTarget
     parser :: ParsecParser PackageConfigTarget
     parser =
-      P.choice [P.try (P.char '*' >> return AllPackages), SpecificPackage <$> parsec]
+      P.choice
+        [ P.try (P.char '*' >> return AllPackages)
+        , -- A stage qualifier, e.g. @build:*@ or @host:*@, applies the
+          -- package configuration to all packages built for that stage.
+          P.try (AllStagePackages <$> parsec <* P.char ':' <* P.char '*')
+        , SpecificPackage <$> parsec
+        ]
 
 -- | Parse fields of a program-options stanza.
 parseProgramArgs :: ProgramDb -> Fields Position -> ParseResult src (MapMappend String [String])

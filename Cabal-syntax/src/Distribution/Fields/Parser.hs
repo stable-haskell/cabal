@@ -57,9 +57,6 @@ import qualified Data.Text.Encoding       as T
 import qualified Data.Text.Encoding.Error as T
 #endif
 
--- $setup
--- >>> import Data.Either (isLeft)
-
 -- | The 'LexState'' (with a prime) is an instance of parsec's 'Stream'
 -- wrapped around lexer's 'LexState' (without a prime)
 data LexState' = LexState' !LexState (LToken, LexState')
@@ -135,8 +132,32 @@ tokCloseBrace = getToken $ \t -> case t of CloseBrace -> Just (); _ -> Nothing
 tokFieldLine = getTokenWithPos $ \t -> case t of L pos (TokFieldLine s) -> Just (FieldLine pos s); _ -> Nothing
 
 colon, openBrace, closeBrace :: Parser ()
+
+-- | A single section argument.
+--
+-- Section arguments may contain colons, e.g. a stage qualifier such as
+-- @build:pkg@ or @build:*@ in a @package@ stanza. At this point we are already
+-- committed to parsing section arguments (the field-versus-section choice is
+-- decided by whether the first token after the section name is a colon), so a
+-- colon here can only join adjacent argument tokens. A colon in this position
+-- was previously a parse error, so this accepts strictly more input.
 sectionArg :: Parser (SectionArg Position)
-sectionArg = tokSym' <|> tokStr <|> tokOther <?> "section parameter"
+sectionArg = do
+  arg0 <- sectionArgAtom
+  rest <- many (try (colon *> sectionArgAtom))
+  pure (foldl joinSectionArgColon arg0 rest)
+  where
+    sectionArgAtom = tokSym' <|> tokStr <|> tokOther <?> "section parameter"
+
+-- | Join two section arguments with a colon, reconstructing e.g. @build:pkg@
+-- from the @build@, @:@ and @pkg@ tokens.
+joinSectionArgColon :: SectionArg Position -> SectionArg Position -> SectionArg Position
+joinSectionArgColon a b =
+  SecArgOther (sectionArgAnn a) (sectionArgBytes a <> ":" <> sectionArgBytes b)
+  where
+    sectionArgBytes (SecArgName _ s) = s
+    sectionArgBytes (SecArgStr _ s) = s
+    sectionArgBytes (SecArgOther _ s) = s
 
 fieldSecName :: Parser (Name Position)
 fieldSecName = tokSym <?> "field or section name"
@@ -350,13 +371,14 @@ fieldInlineOrBraces name =
 --
 -- 'readFields' won't (necessarily) fail on invalid UTF8 data, but the reported positions may be off.
 --
--- __You may get weird errors on non-UTF8 input__, for example 'readFields' will fail on latin1 encoded non-breaking space:
+-- __You may get weird results on non-UTF8 input__, for example 'readFields'
+-- treats a latin1 encoded non-breaking space as a section name:
 --
--- >>> isLeft (readFields "\xa0 foo: bar")
--- True
+-- >>> readFields "\xa0 foo: bar"
+-- Right [Section (Name (Position 1 1) "\160") [SecArgOther (Position 1 3) "foo:bar"] []]
 --
--- That is rejected because parser thinks @\\xa0@ is a section name,
--- and section arguments may not contain colon.
+-- The parser thinks @\\xa0@ is a section name and @foo: bar@ a single
+-- (colon-joined) section argument.
 -- If there are just latin1 non-breaking spaces, they become part of the name:
 --
 -- >>> readFields "\xa0\&foo: bar"

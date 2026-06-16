@@ -34,7 +34,7 @@ import Distribution.Solver.Modular.Flag
 import Distribution.Solver.Modular.MessageUtils
     ( showUnsupportedExtension, showUnsupportedLanguage )
 import Distribution.Solver.Modular.Package
-    ( showI )
+    ( PI(PI), showI, showPI )
 import Distribution.Solver.Modular.Tree
     ( FailReason(..), POption(..), ConflictingDep(..) )
 import Distribution.Solver.Modular.Version
@@ -262,7 +262,7 @@ data MergedPackageConflict = MergedPackageConflict {
 showOption :: QPN -> POption -> String
 showOption qpn@(Q _pp pn) (POption i linkedTo) =
   case linkedTo of
-    Nothing  -> showQPN qpn ++ " == " ++ showI i
+    Nothing  -> showPI (PI qpn i) -- Consistent with prior to POption
     Just pp' -> "to reuse " ++ showQPN (Q pp' pn) ++ " for " ++ showQPN qpn
 
 -- | Shows a mixed list of instances and versions in a human-friendly way,

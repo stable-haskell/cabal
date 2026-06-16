@@ -139,8 +139,6 @@ import Distribution.Types.DependencySatisfaction
   )
 import Distribution.Verbosity
   ( VerbosityLevel (..)
-  , deafening
-  , normal
   )
 import Distribution.Version
 

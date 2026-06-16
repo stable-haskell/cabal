@@ -418,6 +418,7 @@ instance Arbitrary ProjectConfig where
       <*> ( MapMappend . fmap getNonMEmpty . Map.fromList
               <$> shortListOf 3 arbitrary
           )
+      <*> pure mempty -- projectConfigStagePackages: no round-trip coverage yet
 
   -- package entries with no content are equivalent to
   -- the entry not existing at all, so exclude empty
@@ -449,6 +450,7 @@ instance Arbitrary ProjectConfig where
                 (fmap getNonMEmpty x8')
             )
         , projectConfigAllPackages = x9'
+        , projectConfigStagePackages = mempty
         }
       | ((x0', x1', x2', x3'), (x4', x5', x6', x7', x8', x9')) <-
           shrink

@@ -821,7 +821,7 @@ exResolve
   countConflicts
   fineGrainedConflicts
   minimizeConflictSet
-  indepGoals
+  _indepGoals
   prefOldest
   reorder
   allowBootLibInstalls

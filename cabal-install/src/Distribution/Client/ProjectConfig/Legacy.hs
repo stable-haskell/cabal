@@ -644,6 +644,12 @@ convertLegacyProjectConfig
       , projectConfigAllPackages = configAllPackages
       , projectConfigLocalPackages = configLocalPackages
       , projectConfigSpecificPackage = fmap perPackage legacySpecificConfig
+      , -- The legacy parser has no stage-qualified ('package build:*' /
+        -- 'package host:*') stanzas. Its unqualified per-package configuration
+        -- flows into 'projectConfigAllPackages', 'projectConfigLocalPackages'
+        -- and 'projectConfigSpecificPackage', which apply to every stage (both
+        -- build and host); only the explicit stage map is empty here.
+        projectConfigStagePackages = mempty
       }
     where
       configAllPackages = convertLegacyPerPackageFlags g i h t b

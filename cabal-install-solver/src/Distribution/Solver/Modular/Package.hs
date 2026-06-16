@@ -26,7 +26,7 @@ import Distribution.Pretty (prettyShow)
 
 import Distribution.Solver.Modular.Version
 import Distribution.Solver.Types.PackagePath
-import Distribution.Solver.Types.Stage (Stage, showStage)
+import Distribution.Solver.Types.Stage (Stage)
 
 -- | A package name.
 type PN = PackageName
@@ -57,9 +57,17 @@ data I = I Stage Ver Loc
   deriving (Eq, Ord, Show)
 
 -- | String representation of an instance.
+-- The stage is not shown here; it is carried by the qualified package name
+-- (see the 'Pretty' instance for 'Distribution.Solver.Types.PackagePath.QPN'),
+-- so an instance renders the same regardless of stage.
 showI :: I -> String
-showI (I s v (InRepo pn)) = intercalate ":" [showStage s, "source", prettyShow (PackageIdentifier pn v)]
-showI (I s _v (Inst uid)) = intercalate ":" [showStage s, "installed", prettyShow uid]
+showI (I _s v (InRepo _pn)) = showVer v
+showI (I _s v (Inst uid)) = showVer v ++ "/installed" ++ extractPackageAbiHash uid
+  where
+    extractPackageAbiHash xs =
+      case first reverse $ break (== '-') $ reverse (prettyShow xs) of
+        (ys, []) -> ys
+        (ys, _) -> '-' : ys
 
 -- | Package instance. A package name and an instance.
 data PI qpn = PI qpn I

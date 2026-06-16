@@ -18,7 +18,6 @@ import qualified Distribution.Compat.Graph as Graph
 import Distribution.Package
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.PackageFixedDeps
-import Distribution.Solver.Types.Settings
 import Distribution.Version
 
 import Control.Concurrent (threadDelay)
