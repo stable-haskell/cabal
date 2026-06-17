@@ -30,8 +30,10 @@ import Distribution.Simple.LocalBuildInfo (LocalBuildInfo (..), mbWorkDirLBI)
 import Distribution.Simple.Program
   ( ProgramInvocation
   , arProgram
+  , getProgramInvocationOutput
   , requireProgram
   )
+import Data.List (isInfixOf)
 import Distribution.Simple.Program.ResponseFile
   ( withResponseFile
   )
@@ -113,6 +115,37 @@ createArLibArchive verbosity lbi targetPath files = do
     -- When we need to call ar multiple times we use "ar q" and for the last
     -- call on OSX we use "ar qs" so that it'll make the index.
 
+    -- @ar@'s capabilities are a property of the *ar program* we invoke, not of
+    -- the compiler. The compiler's "ar supports -L"/"ar supports at file"
+    -- settings describe the ar GHC was configured with; in a cross build that
+    -- can be the *host/target* ar (e.g. llvm-ar / emar) while the ar we actually
+    -- invoke for a *build*-platform dependency is the build ar. Trusting the
+    -- compiler's claim then breaks on the mismatch:
+    --   * GNU build ar with "ar supports -L: YES"   -> "ar: invalid option -- 'L'"
+    --   * cctools build ar with "ar supports at file: YES" -> ar treats the
+    --     "@rsp" argument as a literal member name -> "@...: No such file"
+    -- So confirm each claimed capability against the program we are about to run
+    -- (by its --version banner, matching ghc-toolchain's `arIsGnu` style):
+    --   * the @L@ modifier ("add the members of an input archive") is an
+    --     llvm-ar feature; GNU ar and Apple cctools ar lack it.
+    --   * @-file (response file) support is present in GNU ar and llvm-ar, but
+    --     not in Apple cctools ar.
+    -- Falling back to the L-free / multi-stage path is always correct, just
+    -- potentially more ar invocations.
+    arVersion <-
+      if arDashLSupported (compiler lbi) || arResponseFilesSupported (compiler lbi)
+        then
+          getProgramInvocationOutput
+            verbosity
+            (programInvocationCwd mbWorkDir arProg ["--version"])
+        else return ""
+
+    let arIsGnu = "GNU" `isInfixOf` arVersion
+        arIsLLVM = "LLVM" `isInfixOf` arVersion
+        dashLSupported = arDashLSupported (compiler lbi) && arIsLLVM
+        atFileSupported =
+          arResponseFilesSupported (compiler lbi) && (arIsGnu || arIsLLVM)
+
     let simpleArgs, initialArgs, finalArgs :: [String]
         simpleArgs = case hostOS of
           OSX -> ["-r", "-s"]
@@ -136,9 +169,7 @@ createArLibArchive verbosity lbi targetPath files = do
         oldVersionManualOverride =
           fromFlagOrDefault False $ configUseResponseFiles $ configFlags lbi
         responseArgumentsNotSupported =
-          not (arResponseFilesSupported (compiler lbi))
-        dashLSupported =
-          arDashLSupported (compiler lbi)
+          not atFileSupported
 
         invokeWithResponseFile :: FilePath -> ProgramInvocation
         invokeWithResponseFile atFile =
