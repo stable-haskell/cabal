@@ -30,7 +30,6 @@ import Distribution.Simple.LocalBuildInfo (LocalBuildInfo (..), mbWorkDirLBI)
 import Distribution.Simple.Program
   ( ProgramInvocation
   , arProgram
-  , getProgramInvocationOutput
   , requireProgram
   )
 import Data.List (isInfixOf)
@@ -38,7 +37,8 @@ import Distribution.Simple.Program.ResponseFile
   ( withResponseFile
   )
 import Distribution.Simple.Program.Run
-  ( multiStageProgramInvocation
+  ( getProgramInvocationOutputAndErrors
+  , multiStageProgramInvocation
   , programInvocationCwd
   , runProgramInvocation
   )
@@ -134,10 +134,16 @@ createArLibArchive verbosity lbi targetPath files = do
     -- potentially more ar invocations.
     arVersion <-
       if arDashLSupported (compiler lbi) || arResponseFilesSupported (compiler lbi)
-        then
-          getProgramInvocationOutput
-            verbosity
-            (programInvocationCwd mbWorkDir arProg ["--version"])
+        then do
+          -- NB: Apple cctools `ar` does not accept --version (it prints a usage
+          -- message and exits non-zero). Use the non-throwing runner and treat a
+          -- failed/non-GNU/non-LLVM banner as "unknown" so we fall back to the
+          -- conservative path, rather than aborting the whole archive step.
+          (out, _err, ec) <-
+            getProgramInvocationOutputAndErrors
+              verbosity
+              (programInvocationCwd mbWorkDir arProg ["--version"])
+          return $ if ec == ExitSuccess then out else ""
         else return ""
 
     let arIsGnu = "GNU" `isInfixOf` arVersion
