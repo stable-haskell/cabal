@@ -91,6 +91,10 @@ class HasBuildInfo a where
   cmmSources = buildInfo . cmmSources
   {-# INLINE cmmSources #-}
 
+  autogenCmmSources :: Lens' a [RelativePath Build File]
+  autogenCmmSources = buildInfo . autogenCmmSources
+  {-# INLINE autogenCmmSources #-}
+
   cSources :: Lens' a [SymbolicPath Pkg File]
   cSources = buildInfo . cSources
   {-# INLINE cSources #-}
@@ -270,6 +274,9 @@ instance HasBuildInfo BuildInfo where
 
   cmmSources f s = fmap (\x -> s{T.cmmSources = x}) (f (T.cmmSources s))
   {-# INLINE cmmSources #-}
+
+  autogenCmmSources f s = fmap (\x -> s{T.autogenCmmSources = x}) (f (T.autogenCmmSources s))
+  {-# INLINE autogenCmmSources #-}
 
   cSources f s = fmap (\x -> s{T.cSources = x}) (f (T.cSources s))
   {-# INLINE cSources #-}

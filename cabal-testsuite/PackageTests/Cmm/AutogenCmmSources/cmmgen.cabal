@@ -1,0 +1,26 @@
+cabal-version: 3.18
+name: cmmgen
+version: 0
+build-type: Custom
+
+-- A regression/feature test for 'autogen-cmm-sources': the C-- source is not
+-- shipped in the package, it is generated into the build directory by the
+-- custom Setup.hs below and listed in 'autogen-cmm-sources' so that Cabal
+-- compiles and links it like an ordinary 'cmm-sources' file.
+
+custom-setup
+  setup-depends: base, Cabal, directory, filepath
+
+library
+  default-language: Haskell2010
+  hs-source-dirs: src
+  build-depends: base
+  exposed-modules: Demo
+
+  autogen-cmm-sources: HeapPrim.cmm
+
+executable demo
+  default-language: Haskell2010
+  main-is: Main.hs
+  hs-source-dirs: demo
+  build-depends: base, cmmgen

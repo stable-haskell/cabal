@@ -184,6 +184,7 @@ libraryFieldGrammar
      , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
      , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
      , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+     , c (List VCat (RelativePathNT Build File) (RelativePath Build File))
      , c (List VCat Token String)
      , c (MQuoted Language)
      )
@@ -235,6 +236,7 @@ foreignLibFieldGrammar
      , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
      , c (List FSep (RelativePathNT Source File) (RelativePath Source File))
      , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+     , c (List VCat (RelativePathNT Build File) (RelativePath Build File))
      , c (List NoCommaFSep Token' String)
      , c (List VCat (MQuoted ModuleName) ModuleName)
      , c (List VCat Token String)
@@ -275,6 +277,7 @@ executableFieldGrammar
      , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
      , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
      , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+     , c (List VCat (RelativePathNT Build File) (RelativePath Build File))
      , c (RelativePathNT Source File)
      , c (List NoCommaFSep Token' String)
      , c (List VCat (MQuoted ModuleName) ModuleName)
@@ -352,6 +355,7 @@ testSuiteFieldGrammar
      , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
      , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
      , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+     , c (List VCat (RelativePathNT Build File) (RelativePath Build File))
      , c (RelativePathNT Source File)
      , c (List VCat Token String)
      , c (MQuoted Language)
@@ -498,6 +502,7 @@ benchmarkFieldGrammar
      , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
      , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
      , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+     , c (List VCat (RelativePathNT Build File) (RelativePath Build File))
      , c (RelativePathNT Source File)
      , c (List VCat Token String)
      , c (MQuoted Language)
@@ -603,6 +608,7 @@ buildInfoFieldGrammar
      , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
      , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
      , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+     , c (List VCat (RelativePathNT Build File) (RelativePath Build File))
      , c (List VCat Token String)
      , c (MQuoted Language)
      )
@@ -643,6 +649,8 @@ buildInfoFieldGrammar =
       ^^^ availableSince CabalSpecV3_0 []
     <*> monoidalFieldAla "cmm-sources" (alaList' VCat SymbolicPathNT) L.cmmSources
       ^^^ availableSince CabalSpecV3_0 []
+    <*> monoidalFieldAla "autogen-cmm-sources" (alaList' VCat RelativePathNT) L.autogenCmmSources
+      ^^^ availableSince CabalSpecV3_18 []
     <*> monoidalFieldAla "c-sources" (alaList' VCat SymbolicPathNT) L.cSources
     <*> monoidalFieldAla "cxx-sources" (alaList' VCat SymbolicPathNT) L.cxxSources
       ^^^ availableSince CabalSpecV2_2 []

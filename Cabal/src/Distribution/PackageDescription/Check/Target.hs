@@ -522,6 +522,12 @@ checkBuildInfoFeatures bi sv = do
   checkCVSources (extraBundledLibs bi)
   checkCVSources (extraLibFlavours bi)
 
+  -- autogen-cmm-sources requires ≥ 3.18
+  checkSpecVer
+    CabalSpecV3_18
+    (not . null $ autogenCmmSources bi)
+    (PackageDistInexcusable CVAutogenCmmSources)
+
   -- extra-dynamic-library-flavours requires ≥ 3.0
   checkSpecVer
     CabalSpecV3_0

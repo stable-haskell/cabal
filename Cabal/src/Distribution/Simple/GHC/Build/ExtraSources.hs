@@ -53,6 +53,7 @@ buildAllExtraSources =
     , buildJsSources
     , buildAsmSources
     , buildCmmSources
+    , buildAutogenCmmSources
     ]
 
 buildCSources
@@ -60,6 +61,7 @@ buildCSources
   , buildJsSources
   , buildAsmSources
   , buildCmmSources
+  , buildAutogenCmmSources
     :: Maybe (SymbolicPath Pkg File)
     -- ^ An optional non-Haskell Main file
     -> ConfiguredProgram
@@ -129,6 +131,21 @@ buildCmmSources _mbMainFile =
     "C-- Sources"
     Internal.sourcesGhcOptions
     (cmmSources . componentBuildInfo)
+
+-- | Build C-- sources that are /generated/ into the build directory (e.g. by a
+-- custom @Setup.hs@ or a build hook), as listed in 'autogenCmmSources'. Unlike
+-- 'cmmSources', these paths are relative to the build directory rather than the
+-- package source tree, so we resolve them against 'buildDir' before compiling.
+buildAutogenCmmSources _mbMainFile ghcProg buildTargetDir neededWays verbHandles = do
+  lbi <- localBuildInfo
+  buildExtraSources
+    "C-- Generated Sources"
+    Internal.sourcesGhcOptions
+    (\c -> map (buildDir lbi </>) (autogenCmmSources (componentBuildInfo c)))
+    ghcProg
+    buildTargetDir
+    neededWays
+    verbHandles
 
 -- | Create 'PreBuildComponentRules' for a given type of extra build sources
 -- which are compiled via a GHC invocation with the given options. Used to

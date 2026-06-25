@@ -78,6 +78,9 @@ data BuildInfo = BuildInfo
   -- ^ Assembly files.
   , cmmSources :: [SymbolicPath Pkg File]
   -- ^ C-- files.
+  , autogenCmmSources :: [RelativePath Build File]
+  -- ^ Generated C-- files, relative to the build directory (e.g. produced
+  -- by a custom @Setup.hs@ or a build hook), compiled like 'cmmSources'.
   , cSources :: [SymbolicPath Pkg File]
   , cxxSources :: [SymbolicPath Pkg File]
   , jsSources :: [SymbolicPath Pkg File]
@@ -172,6 +175,7 @@ instance Monoid BuildInfo where
       , extraFrameworkDirs = []
       , asmSources = []
       , cmmSources = []
+      , autogenCmmSources = []
       , cSources = []
       , cxxSources = []
       , jsSources = []
@@ -225,6 +229,7 @@ instance Semigroup BuildInfo where
       , extraFrameworkDirs = combineNub extraFrameworkDirs
       , asmSources = combineNub asmSources
       , cmmSources = combineNub cmmSources
+      , autogenCmmSources = combineNub autogenCmmSources
       , cSources = combineNub cSources
       , cxxSources = combineNub cxxSources
       , jsSources = combineNub jsSources

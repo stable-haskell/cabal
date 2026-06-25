@@ -240,6 +240,7 @@ data CheckExplanation
   | CVDefaultExtensions
   | CVExtensionsDeprecated
   | CVSources
+  | CVAutogenCmmSources
   | CVExtraDynamic [[String]]
   | CVVirtualModules
   | CVSourceRepository
@@ -408,6 +409,7 @@ data CheckExplanationID
   | CICVDefaultExtensions
   | CICVExtensionsDeprecated
   | CICVSources
+  | CICVAutogenCmmSources
   | CICVExtraDynamic
   | CICVVirtualModules
   | CICVSourceRepository
@@ -555,6 +557,7 @@ checkExplanationId (CVExtraFrameworkDirs{}) = CICVExtraFrameworkDirs
 checkExplanationId (CVDefaultExtensions{}) = CICVDefaultExtensions
 checkExplanationId (CVExtensionsDeprecated{}) = CICVExtensionsDeprecated
 checkExplanationId (CVSources{}) = CICVSources
+checkExplanationId (CVAutogenCmmSources{}) = CICVAutogenCmmSources
 checkExplanationId (CVExtraDynamic{}) = CICVExtraDynamic
 checkExplanationId (CVVirtualModules{}) = CICVVirtualModules
 checkExplanationId (CVSourceRepository{}) = CICVSourceRepository
@@ -709,6 +712,7 @@ ppCheckExplanationId CICVExtraFrameworkDirs = "extra-framework-dirs"
 ppCheckExplanationId CICVDefaultExtensions = "default-extensions"
 ppCheckExplanationId CICVExtensionsDeprecated = "extensions-field"
 ppCheckExplanationId CICVSources = "unsupported-sources"
+ppCheckExplanationId CICVAutogenCmmSources = "autogen-cmm-sources"
 ppCheckExplanationId CICVExtraDynamic = "extra-dynamic"
 ppCheckExplanationId CICVVirtualModules = "virtual-modules"
 ppCheckExplanationId CICVSourceRepository = "source-repository"
@@ -1232,6 +1236,9 @@ ppExplanation CVSources =
   "The use of 'asm-sources', 'cmm-sources', 'extra-bundled-libraries' "
     ++ " and 'extra-library-flavours' requires the package "
     ++ " to specify at least 'cabal-version: 3.0'."
+ppExplanation CVAutogenCmmSources =
+  "The use of 'autogen-cmm-sources' requires the package "
+    ++ " to specify at least 'cabal-version: 3.18'."
 ppExplanation (CVExtraDynamic flavs) =
   "The use of 'extra-dynamic-library-flavours' requires the package "
     ++ " to specify at least 'cabal-version: 3.0'. The flavours are: "

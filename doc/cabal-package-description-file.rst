@@ -1920,6 +1920,15 @@ system-dependent values for these fields.
     A list of C-- source files to be compiled and linked with the Haskell
     files.
 
+.. pkg-field:: autogen-cmm-sources: filename list
+    :since: 3.18
+
+    A list of C-- source files that are *generated* into the build directory
+    (for example by a custom ``Setup.hs`` or a build hook) and then compiled and
+    linked like :pkg-field:`cmm-sources`. Unlike :pkg-field:`cmm-sources`, whose
+    paths are relative to the package source tree, the paths listed here are
+    resolved relative to the build directory.
+
 .. pkg-field:: js-sources: filename list
 
     A list of JavaScript source files to be linked with the Haskell
