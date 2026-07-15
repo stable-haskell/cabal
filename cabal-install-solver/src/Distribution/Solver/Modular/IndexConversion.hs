@@ -100,17 +100,52 @@ convId stage ipi = (pn, I stage ver $ Inst $ IPI.installedUnitId ipi)
 -- | Convert a single installed package into the solver-specific format.
 convIP :: Stage -> SI.InstalledPackageIndex -> IPI.InstalledPackageInfo -> (PN, I, PInfo)
 convIP stage idx ipi =
-  case traverse (convIPId stage (DependencyReason pn M.empty S.empty) comp idx) (IPI.depends ipi) of
+  case traverse (convIPId stage (DependencyReason pn M.empty S.empty) comp idx) allDepends of
         Left u    -> (pn, i, PInfo [] M.empty M.empty (Just (Broken u)))
         Right fds -> (pn, i, PInfo fds components M.empty Nothing)
  where
-  -- TODO: Handle sub-libraries and visibility.
-  components =
-      M.singleton (ExposedLib LMainLibName)
-                  ComponentInfo {
-                      compIsVisible = IsVisible True
-                    , compIsBuildable = IsBuildable True
-                    }
+  -- A main-library entry also advertises the package's installed
+  -- sub-libraries (found in the index under the same source package
+  -- id), so a cross-package `pkg:sublib` dependency can be satisfied
+  -- by the installed instance.  The sub-library IPIs themselves are
+  -- indexed under MUNGED package names (see Note [Index conversion
+  -- with internal libraries]), which a `pkg:sublib` goal never
+  -- matches — without this the solver rejects the installed instance
+  -- with "does not contain library '<sublib>'".  The munged sub-lib
+  -- entries keep advertising only themselves, as before.
+  components = case IPI.sourceLibName ipi of
+      LSubLibName _ -> M.singleton (ExposedLib LMainLibName) visibleBuildable
+      LMainLibName  -> M.fromList $
+          (ExposedLib LMainLibName, visibleBuildable)
+        : [ ( ExposedLib (IPI.sourceLibName sib)
+            , ComponentInfo {
+                  compIsVisible =
+                    IsVisible (IPI.libVisibility sib == LibraryVisibilityPublic)
+                , compIsBuildable = IsBuildable True
+                } )
+          | sib <- siblingSubLibs ]
+  visibleBuildable = ComponentInfo {
+        compIsVisible = IsVisible True
+      , compIsBuildable = IsBuildable True
+      }
+
+  -- Installed sub-libraries of this package (main-lib entries only).
+  -- Multiple instances of the same (pkg-id, lib-name) are in
+  -- preference order; take the preferred one.
+  siblingSubLibs = case IPI.sourceLibName ipi of
+      LSubLibName _ -> []
+      LMainLibName  ->
+        [ sib
+        | ((spid, LSubLibName _), sibs) <- SI.allPackagesBySourcePackageIdAndLibName idx
+        , spid == IPI.sourcePackageId ipi
+        , sib <- take 1 sibs ]
+
+  -- A main-library entry carries the UNION of its own depends and its
+  -- sub-libraries': choosing this instance must pull everything its
+  -- advertised sub-library components link against into the plan
+  -- (otherwise the sub-library plan nodes injected during elaboration
+  -- would have dangling dependency edges).
+  allDepends = L.nub (IPI.depends ipi ++ concatMap IPI.depends siblingSubLibs)
 
   (pn, i) = convId stage ipi
 
