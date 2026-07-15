@@ -156,6 +156,15 @@ getStoreEntries StoreDirLayout{storeDirectory} machine toolchain = do
 --
 -- So the improvement needs to be made machine-aware before the enumeration is
 -- fixed, and the two have to land together.
+--
+-- 'phaseImprovePlan' therefore no longer uses 'getStoreEntries'. It reads the
+-- unit receipts instead ('storeUnitsDirectory': an empty file per unit, written
+-- once the unit is copied and registered, covering executables too), and
+-- 'improveInstallPlanWithStoreUnits' only marks a unit installed when every one
+-- of its dependencies -- setup and build-tool dependencies on the build
+-- machine included -- is pre-existing, installed, or itself being marked. A host
+-- unit whose build-machine dependency is missing from the build store is left
+-- configured, so the invariant of 'InstallPlan.installed' holds.
 
 -- | The outcome of 'newStoreEntry': either the store entry was newly created
 -- or it existed already. The latter case happens if there was a race between

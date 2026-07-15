@@ -171,6 +171,12 @@ data StoreDirLayout = StoreDirLayout
   , storePackageDBStack :: Machine -> Toolchain -> [Maybe PackageDBCWD] -> PackageDBStackCWD
   , storeIncomingDirectory :: Machine -> Toolchain -> FilePath
   , storeIncomingLock :: Machine -> Toolchain -> UnitId -> FilePath
+  , storeUnitsDirectory :: Machine -> Toolchain -> FilePath
+  -- ^ Directory of unit receipts: an empty file named after the unit id
+  -- is written here when the unit's store install completes.  Unlike
+  -- the store package db (libraries only), receipts also cover
+  -- executables, so a later plan can recognise any pre-built unit as
+  -- Installed (see @improveInstallPlanWithStoreUnits@).
   }
 
 -- TODO: move to another module, e.g. CabalDirLayout?
@@ -354,6 +360,10 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock :: Machine -> Toolchain -> UnitId -> FilePath
     storeIncomingLock machine toolchain unitid =
       storeIncomingDirectory machine toolchain </> prettyShow unitid <.> "lock"
+
+    storeUnitsDirectory :: Machine -> Toolchain -> FilePath
+    storeUnitsDirectory machine toolchain =
+      storeDirectory machine toolchain </> "units"
 
 -- | The platform triple in the spelling the compiler itself uses, e.g.
 -- @x86_64-unknown-linux@ rather than cabal's own @x86_64-linux@. Paths under

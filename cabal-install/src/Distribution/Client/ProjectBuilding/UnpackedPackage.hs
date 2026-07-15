@@ -781,8 +781,9 @@ buildAndInstallUnpackedPackage
 buildAndInstallUnpackedPackage
   verbosity
   distDirLayout
-  _storeDirLayout@StoreDirLayout
+  StoreDirLayout
     { storePackageDBStack
+    , storeUnitsDirectory
     }
   maybe_semaphore
   buildSettings@BuildTimeSettings{buildSettingNumJobs, buildSettingLogFile}
@@ -906,6 +907,17 @@ buildAndInstallUnpackedPackage
               mipkg <- readIORef ipkgRef
               ipkg <- maybe getInstalledPackageInfo return mipkg
               atomically $ modifyTVar ipiTVar (overMachine (elabMachine pkg) (PackageIndex.insert ipkg))
+
+            -- Unit receipt: marks this unit's store install complete so a
+            -- later plan that starts from (a copy of) this store can flip
+            -- the unit to Installed instead of rebuilding it (see
+            -- improveInstallPlanWithStoreUnits).  The package db only
+            -- records libraries; executables have no db entry and, now that
+            -- units share one lib/ and bin/, no per-unit directory either,
+            -- so presence needs an explicit marker.
+            let unitsDir = storeUnitsDirectory machine toolchain
+            createDirectoryIfMissing True unitsDir
+            writeFile (unitsDir </> prettyShow uid) ""
 
           -- No tests on install
           PBTestPhase{} -> return ()
