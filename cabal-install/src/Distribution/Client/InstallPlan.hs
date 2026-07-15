@@ -616,17 +616,32 @@ fromSolverInstallPlanWithProgress
   -> SolverInstallPlan
   -> LogProgress (GenericInstallPlan ipkg srcpkg)
 fromSolverInstallPlanWithProgress f plan = do
-  (_, pkgs'') <-
+  (_, _, pkgs'') <-
     foldM
       f'
-      (Map.empty, [])
+      (Map.empty, Set.empty, [])
       (SolverInstallPlan.reverseTopologicalOrder plan)
   new' (Graph.fromDistinctList pkgs'')
   where
-    f' (pMap, pkgs) pkg = do
+    f' (pMap, seen, pkgs) pkg = do
       pkgs' <- f (mapDep pMap) pkg
+      -- The same node may be contributed by more than one solver
+      -- package: an installed sub-library IPI appears once via its own
+      -- munged-name solver node (when some installed unit depends on
+      -- it directly) and once injected as a sibling of its parent's
+      -- PreExisting node (see elaborateInstallPlan).  Both are the
+      -- same IPI, so keep the first contribution and drop later
+      -- duplicates — `mapDep` still sees every contribution via pMap.
       let pMap' = Map.insert (nodeKey pkg) pkgs' pMap
-      return (pMap', pkgs' ++ pkgs)
+          (seen', freshRev) =
+            foldl'
+              ( \(s, acc) p ->
+                  let k = nodeKey p
+                   in if k `Set.member` s then (s, acc) else (Set.insert k s, p : acc)
+              )
+              (seen, [])
+              pkgs'
+      return (pMap', seen', reverse freshRev ++ pkgs)
 
     -- The error below shouldn't happen, since mapDep should only
     -- be called on neighbor SolverId, which must have all been done
