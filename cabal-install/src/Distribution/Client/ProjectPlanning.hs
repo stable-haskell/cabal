@@ -244,7 +244,7 @@ import Distribution.Solver.Types.ProjectConfigPath
 import Distribution.Solver.Types.ResolverPackage (solverId)
 import qualified Distribution.Solver.Types.ResolverPackage as ResolverPackage
 import GHC.Stack (HasCallStack)
-import System.Directory (doesDirectoryExist, getCurrentDirectory, listDirectory)
+import System.Directory (getCurrentDirectory, listDirectory)
 import System.FilePath (takeDirectory)
 import qualified Text.PrettyPrint as Disp
 
@@ -756,10 +756,9 @@ rebuildInstallPlan
                       distStoreDirLayout
                       stage
                       (getStage (pkgConfigToolchains elaboratedShared) stage)
-              monitorFiles [monitorDirectoryStatus dir]
-              entries <- liftIO $ do
-                exists <- doesDirectoryExist dir
-                if exists then listDirectory dir else return []
+              exists <- monitorDirectoryStatus dir
+              entries <-
+                liftIO $ if exists then listDirectory dir else return []
               return (stage, Set.fromList (map mkUnitId entries))
           )
           stages
