@@ -2867,7 +2867,16 @@ elaborateInstallPlan
                       -- wants to enable executable profiling but the
                       -- compiler doesn't support prof+dyn.
                       && (okProfDyn || not profExe)
-                , withFullyStaticExe = perPkgOptionFlag False pkgid packageConfigFullyStaticExe
+                , -- Fully static executables are a property of the HOST
+                  -- platform configuration (e.g. `package *` with
+                  -- `executable-static: True` for musl targets).  Packages
+                  -- in other stages (build tools and their dependencies)
+                  -- run on the build machine, where a fully static link may
+                  -- not even be possible (e.g. darwin has no static system
+                  -- libraries) — so the option only applies to Host units.
+                  withFullyStaticExe =
+                    elabStage == Host
+                      && perPkgOptionFlag False pkgid packageConfigFullyStaticExe
                 , withGHCiLib = perPkgOptionFlag False pkgid packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
                 , withProfExe = profExe
                 , withProfLib = (elabStage, pkgid) `Set.member` pkgsUseProfilingLibrary libWays
