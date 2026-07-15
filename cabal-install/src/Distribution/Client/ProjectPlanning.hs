@@ -144,7 +144,6 @@ import Distribution.Client.ProjectPlanning.Types as Ty
 import Distribution.Client.RebuildMonad
 import Distribution.Client.Setup hiding (cabalVersion, packageName)
 import Distribution.Client.SetupWrapper
-import Distribution.Client.Store
 import Distribution.Client.Targets (userToPackageConstraint)
 import Distribution.Client.Toolchain
   ( Machine (..)
@@ -260,7 +259,7 @@ import qualified Data.Text as Text
 import Distribution.Client.Errors
 import Distribution.Solver.Types.ProjectConfigPath
 import GHC.Stack (HasCallStack)
-import System.Directory (getCurrentDirectory)
+import System.Directory (getCurrentDirectory, listDirectory)
 import System.FilePath
 import qualified Text.PrettyPrint as Disp
 
@@ -904,6 +903,40 @@ See #9840 for more information about the problems surrounding the lossy
 -- command needs the source package info to know about flag choices and
 -- dependencies of executables and setup scripts.
 --
+-- | Change Configured packages whose unit is already present in the dist
+-- store (per its unit receipt) to Installed.  Only non-local packages are
+-- eligible (a local directory package always builds from its source dir),
+-- and only when every dependency is itself pre-existing, installed, or
+-- being improved — computed bottom-up over the plan, mirroring what the
+-- old store-entry-based improvement pass did for the flat cabal store.
+improveInstallPlanWithStoreUnits
+  :: Set (WithMachine UnitId)
+  -> ElaboratedInstallPlan
+  -> ElaboratedInstallPlan
+improveInstallPlanWithStoreUnits storeUnits installPlan =
+  InstallPlan.installed
+    (\elab -> Graph.nodeKey elab `Set.member` improvable)
+    installPlan
+  where
+    improvable =
+      foldl' step Set.empty (InstallPlan.reverseTopologicalOrder installPlan)
+    step acc (InstallPlan.Configured elab)
+      | hasReceipt elab
+      , not (isLocal elab)
+      , all (depOk acc) (Graph.nodeNeighbors elab) =
+          Set.insert (Graph.nodeKey elab) acc
+    step acc _ = acc
+    hasReceipt elab = WithMachine (elabMachine elab) (elabUnitId elab) `Set.member` storeUnits
+    isLocal elab = case elabPkgSourceLocation elab of
+      LocalUnpackedPackage _ -> True
+      _ -> False
+    depOk acc key =
+      key `Set.member` acc
+        || case InstallPlan.lookup installPlan key of
+          Just (InstallPlan.PreExisting _) -> True
+          Just (InstallPlan.Installed _) -> True
+          _ -> False
+
 rebuildInstallPlan
   :: HasCallStack
   => Verbosity
@@ -1295,21 +1328,27 @@ rebuildInstallPlan
         -> Rebuild ElaboratedInstallPlan
       phaseImprovePlan elaboratedPlan elaboratedShared = do
         liftIO $ debug verbosity "Improving the install plan..."
-        -- Each machine has its own store, so read them separately and tag the
-        -- entries with the machine they came from: a package present in the host
-        -- store says nothing about the build store, even when the two would
-        -- agree on its 'UnitId'.
-        storePkgIdSet <-
-          fmap fold $
-            traverseWithMachine
-              ( \machine toolchain ->
-                  Set.map (WithMachine machine)
-                    <$> getStoreEntries cabalStoreDirLayout machine toolchain
-              )
-              toolchains
+        -- Each machine has its own store, so read them separately: a unit
+        -- present in the host store says nothing about the build store, even
+        -- when the two would agree on its 'UnitId'.
+        --
+        -- Presence is read from the unit receipts (see
+        -- 'storeUnitsDirectory'), not by listing the store directory: units
+        -- share one @lib@ and one @bin@, so there is no directory per unit to
+        -- find (see Note [Store reuse is disabled under this layout]).
+        receipts <-
+          traverseWithMachine
+            ( \machine toolchain -> do
+                let dir = storeUnitsDirectory cabalStoreDirLayout machine toolchain
+                exists <- monitorDirectoryStatus dir
+                entries <-
+                  liftIO $ if exists then listDirectory dir else return []
+                return (Set.fromList (map (WithMachine machine . mkUnitId) entries))
+            )
+            toolchains
         let improvedPlan =
-              improveInstallPlanWithInstalledPackages
-                storePkgIdSet
+              improveInstallPlanWithStoreUnits
+                (fold receipts)
                 elaboratedPlan
         liftIO $ debugNoWrap verbosity (showElaboratedInstallPlan improvedPlan)
         -- TODO: [nice to have] having checked which packages from the store
@@ -5303,20 +5342,6 @@ packageHashConfigInputs shared pkg =
   where
     ElaboratedConfiguredPackage{..} = normaliseConfiguredPackage shared pkg
     LBC.BuildOptions{..} = elabBuildOptions
-
--- | Given the 'InstalledPackageIndex' for a nix-style package store, and an
--- 'ElaboratedInstallPlan', replace configured source packages by installed
--- packages from the store whenever they exist.
-improveInstallPlanWithInstalledPackages
-  :: Set (WithMachine UnitId)
-  -> ElaboratedInstallPlan
-  -> ElaboratedInstallPlan
-improveInstallPlanWithInstalledPackages installedPkgIdSet =
-  InstallPlan.installed canPackageBeImproved
-  where
-    -- The set is tagged with the machine each store belongs to.
-    canPackageBeImproved pkg =
-      WithMachine (elabMachine pkg) (installedUnitId pkg) `Set.member` installedPkgIdSet
 
 -- TODO: sanity checks:
 -- \* the installed package must have the expected deps etc
