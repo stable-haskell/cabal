@@ -577,10 +577,10 @@ fromSolverInstallPlanWithProgress
   -> SolverInstallPlan
   -> LogProgress (GenericInstallPlan ipkg srcpkg)
 fromSolverInstallPlanWithProgress f plan = do
-  (_, _, pkgs'') <-
+  (_, _, _, pkgs'') <-
     foldM
       f'
-      (Map.empty, Map.empty, [])
+      (Map.empty, Map.empty, Set.empty, [])
       (SolverInstallPlan.reverseTopologicalOrder plan)
   return $
     mkInstallPlan
@@ -588,13 +588,28 @@ fromSolverInstallPlanWithProgress f plan = do
       (Graph.fromDistinctList pkgs'')
       (SolverInstallPlan.planIndepGoals plan)
   where
-    f' (pidMap, ipiMap, pkgs) pkg = do
+    f' (pidMap, ipiMap, seen, pkgs) pkg = do
       pkgs' <- f (mapDep pidMap ipiMap) pkg
+      -- The same node may be contributed by more than one solver
+      -- package: an installed sub-library IPI appears once via its own
+      -- munged-name solver node (when some installed unit depends on
+      -- it directly) and once injected as a sibling of its parent's
+      -- PreExisting node (see elaborateInstallPlan).  Both are the
+      -- same IPI, so keep the first contribution and drop later
+      -- duplicates; `mapDep` still sees every contribution via the maps.
       let (pidMap', ipiMap') =
             case nodeKey pkg of
               PreExistingId machine _ uid -> (pidMap, Map.insert (machine, uid) pkgs' ipiMap)
               sid@PlannedId{} -> (Map.insert sid pkgs' pidMap, ipiMap)
-      return (pidMap', ipiMap', pkgs' ++ pkgs)
+          (seen', freshRev) =
+            foldl'
+              ( \(s, acc) p ->
+                  let k = nodeKey p
+                   in if k `Set.member` s then (s, acc) else (Set.insert k s, p : acc)
+              )
+              (seen, [])
+              pkgs'
+      return (pidMap', ipiMap', seen', reverse freshRev ++ pkgs)
 
     mapDep _ ipiMap (PreExistingId machine _pid uid)
       | Just pkgs <- Map.lookup (machine, uid) ipiMap = pkgs
