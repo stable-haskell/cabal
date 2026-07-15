@@ -244,7 +244,7 @@ import Distribution.Solver.Types.ProjectConfigPath
 import Distribution.Solver.Types.ResolverPackage (solverId)
 import qualified Distribution.Solver.Types.ResolverPackage as ResolverPackage
 import GHC.Stack (HasCallStack)
-import System.Directory (getCurrentDirectory)
+import System.Directory (doesDirectoryExist, getCurrentDirectory, listDirectory)
 import System.FilePath (takeDirectory)
 import qualified Text.PrettyPrint as Disp
 
@@ -626,6 +626,40 @@ See #9840 for more information about the problems surrounding the lossy
 -- command needs the source package info to know about flag choices and
 -- dependencies of executables and setup scripts.
 --
+-- | Change Configured packages whose unit is already present in the dist
+-- store (per its unit receipt) to Installed.  Only non-local packages are
+-- eligible (a local directory package always builds from its source dir),
+-- and only when every dependency is itself pre-existing, installed, or
+-- being improved — computed bottom-up over the plan, mirroring what the
+-- old store-entry-based improvement pass did for the flat cabal store.
+improveInstallPlanWithStoreUnits
+  :: (Stage -> Set UnitId)
+  -> ElaboratedInstallPlan
+  -> ElaboratedInstallPlan
+improveInstallPlanWithStoreUnits storeUnits installPlan =
+  InstallPlan.installed
+    (\elab -> Graph.nodeKey elab `Set.member` improvable)
+    installPlan
+  where
+    improvable =
+      foldl' step Set.empty (InstallPlan.reverseTopologicalOrder installPlan)
+    step acc (InstallPlan.Configured elab)
+      | hasReceipt elab
+      , not (isLocal elab)
+      , all (depOk acc) (Graph.nodeNeighbors elab) =
+          Set.insert (Graph.nodeKey elab) acc
+    step acc _ = acc
+    hasReceipt elab = elabUnitId elab `Set.member` storeUnits (elabStage elab)
+    isLocal elab = case elabPkgSourceLocation elab of
+      LocalUnpackedPackage _ -> True
+      _ -> False
+    depOk acc key =
+      key `Set.member` acc
+        || case InstallPlan.lookup installPlan key of
+          Just (InstallPlan.PreExisting _) -> True
+          Just (InstallPlan.Installed _) -> True
+          _ -> False
+
 rebuildInstallPlan
   :: HasCallStack
   => Verbosity
@@ -690,7 +724,8 @@ rebuildInstallPlan
                 phaseMaintainPlanOutputs elaboratedPlan elaboratedShared
                 return (elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
 
-          return (elaboratedPlan, elaboratedShared, totalIndexState, activeRepos)
+          improvedPlan <- phaseImprovePlan elaboratedPlan elaboratedShared
+          return (improvedPlan, elaboratedShared, totalIndexState, activeRepos)
     where
       fileMonitorSolverPlan = newFileMonitorInCacheDir "solver-plan"
       fileMonitorSourceHashes = newFileMonitorInCacheDir "source-hashes"
@@ -699,6 +734,38 @@ rebuildInstallPlan
 
       newFileMonitorInCacheDir :: Eq a => FilePath -> FileMonitor a b
       newFileMonitorInCacheDir = newFileMonitor . distProjectCacheFile
+
+      -- Improve the elaborated plan with units already present in the
+      -- dist store: a Configured, non-local unit whose receipt file
+      -- (<store>/<stage>/<platform>/units/<unit-id>) exists — and whose
+      -- dependencies are all pre-existing, installed, or likewise
+      -- receipt-backed — flips to Installed, so it is neither rebuilt
+      -- nor re-installed.  Receipts are written when a store install
+      -- completes (see buildAndInstallUnpackedPackage); unlike the store
+      -- package db (libraries only) they also cover executables, which
+      -- the solver can never see as installed.
+      phaseImprovePlan
+        :: ElaboratedInstallPlan
+        -> ElaboratedSharedConfig
+        -> Rebuild ElaboratedInstallPlan
+      phaseImprovePlan elaboratedPlan elaboratedShared = do
+        receipts <- traverse
+          ( \stage -> do
+              let dir =
+                    storeUnitsDirectory
+                      distStoreDirLayout
+                      stage
+                      (getStage (pkgConfigToolchains elaboratedShared) stage)
+              monitorFiles [monitorDirectoryStatus dir]
+              entries <- liftIO $ do
+                exists <- doesDirectoryExist dir
+                if exists then listDirectory dir else return []
+              return (stage, Set.fromList (map mkUnitId entries))
+          )
+          stages
+        let storeUnits stage =
+              Set.unions [s | (st, s) <- receipts, st == stage]
+        return (improveInstallPlanWithStoreUnits storeUnits elaboratedPlan)
 
       -- Configure the compiler we're using.
 

@@ -117,6 +117,12 @@ data StoreDirLayout = StoreDirLayout
   , storePackageDBStack :: Stage -> Toolchain -> [Maybe PackageDBCWD] -> PackageDBStackCWD
   , storeIncomingDirectory :: Stage -> Toolchain -> FilePath
   , storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
+  , storeUnitsDirectory :: Stage -> Toolchain -> FilePath
+  -- ^ Directory of unit receipts: an empty file named after the unit id
+  -- is written here when the unit's store install completes.  Unlike
+  -- the store package db (libraries only), receipts also cover
+  -- executables, so a later plan can recognise any pre-built unit as
+  -- Installed (see @improveInstallPlanWithStoreUnits@).
   }
 
 -- TODO: move to another module, e.g. CabalDirLayout?
@@ -267,6 +273,10 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
     storeIncomingLock stage toolchain unitid =
       storeIncomingDirectory stage toolchain </> prettyShow unitid <.> "lock"
+
+    storeUnitsDirectory :: Stage -> Toolchain -> FilePath
+    storeUnitsDirectory stage toolchain =
+      storeDirectory stage toolchain </> "units"
 
 -- | This returns the platform triple in the same string representation used by the compiler e.g. x86_64-unknown-linux.
 -- If the compiler does not have a "Target platform" property, it falls back to pretty printing the Platform value in

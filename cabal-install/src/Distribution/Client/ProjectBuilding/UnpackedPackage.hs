@@ -565,6 +565,20 @@ buildAndInstallUnpackedPackage
             else
               info verbosity $ "registerPkg: elab does NOT require registration for " ++ prettyShow uid
 
+            -- Unit receipt: marks this unit's store install complete so a
+            -- later plan that starts from (a copy of) this store can flip
+            -- the unit to Installed instead of rebuilding it (see
+            -- improveInstallPlanWithStoreUnits).  The package db already
+            -- records libraries, but executables have no db entry, so
+            -- presence needs an explicit marker.
+            let unitsDir =
+                  storeUnitsDirectory
+                    (distStoreDirLayout distDirLayout)
+                    (elabStage pkg)
+                    (elabToolchain pkg)
+            createDirectoryIfMissing True unitsDir
+            writeFile (unitsDir </> prettyShow uid) ""
+
         PBTestPhase{runTest} -> runTest
         PBBenchPhase{runBench} -> runBench
         PBReplPhase{runRepl} -> runRepl >> return ()
