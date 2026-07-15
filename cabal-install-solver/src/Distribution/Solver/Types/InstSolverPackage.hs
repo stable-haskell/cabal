@@ -20,6 +20,13 @@ data InstSolverPackage = InstSolverPackage {
       -- | The build machine this installed package was resolved for.
       instSolverMachine :: Machine,
       instSolverPkgIPI :: InstalledPackageInfo,
+      -- | Installed sub-libraries of the same source package as
+      -- 'instSolverPkgIPI' (empty unless that is a main library).
+      -- The solver advertises them on the main-library instance
+      -- (see 'convIP'), so elaboration must surface these IPIs as
+      -- plan nodes for a `pkg:sublib` dep edge to resolve to the
+      -- sub-library's unit id.
+      instSolverPkgSubLibs :: [InstalledPackageInfo],
       instSolverPkgLibDeps :: ComponentDeps [SolverId],
       instSolverPkgExeDeps :: ComponentDeps [SolverId]
     }

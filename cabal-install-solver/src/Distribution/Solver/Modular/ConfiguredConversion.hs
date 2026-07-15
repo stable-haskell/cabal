@@ -13,7 +13,9 @@ import Distribution.PackageDescription (FlagAssignment)
 import Distribution.Utils.Generic (ordNubBy)
 import Distribution.Compat.Graph (IsNode(..))
 
+import qualified Distribution.InstalledPackageInfo as IPI
 import qualified Distribution.Simple.PackageIndex as SI
+import Distribution.Types.LibraryName (LibraryName(..))
 
 import Distribution.Solver.Modular.Configured
 import Distribution.Solver.Modular.Package
@@ -153,10 +155,28 @@ convCP :: PerMachine SI.InstalledPackageIndex ->
           CP QPN -> ResolverPackage loc
 convCP iidxs sidx qualifierOf (CP qpi@(PI qpn _) fa es ds) =
   case convPI qpi of
-    Left  pi -> PreExisting $
+    Left  pi ->
+      let idx = onMachine iidxs machine
+          ipi = fromMaybe (error "convCP: lookupUnitId failed") $ SI.lookupUnitId idx pi
+          -- Installed sub-libraries of the chosen instance (main-lib
+          -- instances only).  Must mirror the sibling enumeration in
+          -- 'convIP', which advertised these components to the solver;
+          -- elaboration surfaces them as plan nodes so a `pkg:sublib`
+          -- dep edge resolves to the sub-library's unit id (via
+          -- mkCCMapping / toConfiguredComponent).
+          subs = case IPI.sourceLibName ipi of
+            LSubLibName _ -> []
+            LMainLibName ->
+              [ sib
+              | ((spid, LSubLibName _), sibs) <- SI.allPackagesBySourcePackageIdAndLibName idx
+              , spid == IPI.sourcePackageId ipi
+              , sib <- take 1 sibs ]
+      in
+                PreExisting $
                   InstSolverPackage {
                     instSolverMachine = machine,
-                    instSolverPkgIPI = fromJust $ SI.lookupUnitId (onMachine iidxs machine) pi,
+                    instSolverPkgIPI = ipi,
+                    instSolverPkgSubLibs = subs,
                     instSolverPkgLibDeps = fmap fst ds',
                     instSolverPkgExeDeps = fmap snd ds'
                   }
