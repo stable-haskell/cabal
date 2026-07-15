@@ -1556,7 +1556,18 @@ elaborateInstallPlan
         flip InstallPlan.fromSolverInstallPlanWithProgress solverPlan $ \mapDep planpkg ->
           case planpkg of
             SolverInstallPlan.PreExisting pkg ->
-              return [InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))]
+              -- The main installed IPI plus its installed sub-library
+              -- IPIs (carried on the solver package by convCP): the
+              -- sub-libraries must be plan nodes of their own so that
+              -- `mapDep` surfaces them to mkCCMapping and a dep on
+              -- `pkg:sublib` resolves to the sub-library's unit id.
+              -- Their dependency closure is covered because the solver
+              -- unions sub-library depends into the main entry's edges
+              -- (see convIP).
+              return $
+                InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))
+                : [ InstallPlan.PreExisting (WithStage (instSolverStage pkg) sib)
+                  | sib <- instSolverPkgSubLibs pkg ]
             SolverInstallPlan.Configured pkg ->
               let inplace_doc
                     | inProjectSourcePackagesClosure pkg = text "is local"
