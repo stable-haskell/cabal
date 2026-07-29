@@ -160,26 +160,34 @@ buildCabalLibsProject projString verb mbGhc dir = do
       , "Cabal", "Cabal-syntax", "Cabal-hooks", "hooks-exe"
       ] ) { progInvokeCwd = Just dir })
 
-  -- Determine the path to the packagedb in the store for this ghc version.
-  --
-  -- The store is laid out store/<platform>/<compiler-id>-<abi>/, but these
-  -- libraries are built by the cabal on PATH rather than the one under test,
-  -- and that cabal may still write the older store/<compiler-id>-<abi>/
-  -- layout. Look for a directory named after this ghc at either depth.
-  topEntries <- listDirectory storeRoot
-  nested <- fmap concat . forM topEntries $ \entry -> do
-    let entryDir = storeRoot </> entry
-    isDir <- doesDirectoryExist entryDir
-    if isDir
-      then map (entryDir </>) <$> listDirectory entryDir
-      else return []
-  let candidates =
-        [storeRoot </> entry | entry <- topEntries, prettyShow pv `isInfixOf` entry]
-          ++ [nestedDir | nestedDir <- nested, prettyShow pv `isInfixOf` takeFileName nestedDir]
-  withDb <- filterM (\candidate -> doesDirectoryExist (candidate </> "package.db")) candidates
-  case withDb of
-    [] -> return [final_package_db]
-    storeForGhc:_ -> return [storeForGhc </> "package.db", final_package_db]
+  -- Determine the path to the package db in the store. Note that these libs
+  -- were built by the cabal on PATH, not the cabal under test, so we have to
+  -- cope with either store layout: <root>/<compiler-id>-<abi>/package.db as
+  -- older cabals lay it out, or
+  -- <root>/<stage>/<platform>/<compiler-id>-<abi>/package.conf.d as newer ones
+  -- do (the Cabal libs being host-stage artifacts).
+  storeEntries <- listDirectoryIfExists storeRoot
+  legacyDbs <-
+    filterM
+      doesDirectoryExist
+      [storeRoot </> e </> "package.db" | e <- storeEntries, prettyShow pv `isInfixOf` e]
+  let hostStoreRoot = storeRoot </> "host"
+  stagedDbs <- do
+    platforms <- listDirectoryIfExists hostStoreRoot
+    fmap concat . forM platforms $ \p -> do
+      let platformDir = hostStoreRoot </> p
+      compilers <- listDirectoryIfExists platformDir
+      filterM
+        doesDirectoryExist
+        [ platformDir </> c </> "package.conf.d"
+        | c <- compilers
+        , prettyShow pv `isInfixOf` c
+        ]
+  return (legacyDbs ++ stagedDbs ++ [final_package_db])
+  where
+    listDirectoryIfExists d = do
+      exists <- doesDirectoryExist d
+      if exists then listDirectory d else return []
 
 
 

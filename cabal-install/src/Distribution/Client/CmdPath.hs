@@ -46,6 +46,7 @@ import Distribution.Client.ScriptUtils
 import Distribution.Client.Setup
   ( yesNoOpt
   )
+import Distribution.Client.Toolchain (Stage (..), Toolchain (..))
 import Distribution.Client.Utils.Json
   ( (.=)
   )
@@ -79,7 +80,6 @@ import Distribution.Simple.Utils
   , withOutputMarker
   , wrapText
   )
-import Distribution.System (Platform)
 import Distribution.Verbosity
   ( normal
   , verbosityFlags
@@ -252,8 +252,14 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags'} cliTargetStrings globalF
         compilerProg <- requireCompilerProg verbosity compiler
         (configuredCompilerProg, _) <- requireProgram verbosity compilerProg progDb
 
-        let compilerInfo' =
-              mkCompilerInfo configuredCompilerProg compiler platform $
+        let toolchain =
+              Toolchain
+                { toolchainCompiler = compiler
+                , toolchainPlatform = platform
+                , toolchainProgramDb = progDb
+                }
+            compilerInfo' =
+              mkCompilerInfo configuredCompilerProg toolchain $
                 cabalStoreDirLayout (cabalDirLayout baseCtx)
 
         pure $ Just compilerInfo'
@@ -331,15 +337,19 @@ data PathCompilerInfo = PathCompilerInfo
   }
   deriving (Show, Eq, Ord)
 
-mkCompilerInfo :: ConfiguredProgram -> Compiler -> Platform -> StoreDirLayout -> PathCompilerInfo
-mkCompilerInfo compilerProgram compiler platform storeLayout =
+mkCompilerInfo :: ConfiguredProgram -> Toolchain -> StoreDirLayout -> PathCompilerInfo
+mkCompilerInfo compilerProgram toolchain storeLayout =
   PathCompilerInfo
     { pathCompilerInfoFlavour = compilerFlavor compiler
     , pathCompilerInfoId = compilerId compiler
     , pathCompilerInfoAbiTag = showCompilerIdWithAbi compiler
     , pathCompilerInfoPath = programPath compilerProgram
-    , pathCompilerInfoStorePath = storeDirectory storeLayout compiler platform
+    , -- @cabal path --compiler-info@ reports the compiler the project builds
+      -- /for/, i.e. the host stage.
+      pathCompilerInfoStorePath = storeDirectory storeLayout Host toolchain
     }
+  where
+    compiler = toolchainCompiler toolchain
 
 -- ----------------------------------------------------------------------------
 -- JSON

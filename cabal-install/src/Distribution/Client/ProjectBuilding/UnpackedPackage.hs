@@ -37,6 +37,7 @@ import Distribution.Client.ProjectPlanning
 import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.RebuildMonad
 import Distribution.Client.Store
+import Distribution.Client.Toolchain (Toolchain (..))
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.FileMonitor
@@ -850,7 +851,7 @@ buildAndInstallUnpackedPackage
                   | otherwise = do
                       assert
                         ( elabRegisterPackageDBStack pkg
-                            == storePackageDBStack compiler platform (elabPackageDbs pkg)
+                            == storePackageDBStack stage toolchain (elabPackageDbs pkg)
                         )
                         (return ())
                       ipkg <-
@@ -868,8 +869,8 @@ buildAndInstallUnpackedPackage
               newStoreEntry
                 verbosity
                 storeDirLayout
-                compiler
-                platform
+                stage
+                toolchain
                 uid
                 (copyPkgFiles verbosity pkgshared pkg runCopy)
                 registerPkg
@@ -920,10 +921,13 @@ buildAndInstallUnpackedPackage
         }
     where
       uid = installedUnitId rpkg
-      -- The store entry, package db and log file of this package are those of
-      -- the compiler it is built with, i.e. its own stage's.
-      compiler = elabCompiler pkgshared pkg
-      platform = elabPlatform pkgshared pkg
+
+      -- The store entry, its package db and the log file all belong to the
+      -- stage this package is built for, not necessarily the host stage.
+      stage = elabStage pkg
+      toolchain = elabToolchain pkgshared pkg
+      compiler = toolchainCompiler toolchain
+      platform = toolchainPlatform toolchain
 
       pkgid = packageId rpkg
 

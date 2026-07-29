@@ -19,6 +19,7 @@ module Distribution.Client.DistDirLayout
     -- * 'StoreDirLayout'
   , StoreDirLayout (..)
   , defaultStoreDirLayout
+  , betterPlatform
 
     -- * 'CabalDirLayout'
   , CabalDirLayout (..)
@@ -29,11 +30,17 @@ module Distribution.Client.DistDirLayout
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+import qualified Data.Map as Map
 import System.FilePath
 
 import Distribution.Client.Config
   ( defaultLogsDir
   , defaultStoreDir
+  )
+import Distribution.Client.Toolchain
+  ( Stage
+  , Toolchain (..)
+  , showStage
   )
 import Distribution.Compiler
 import Distribution.Package
@@ -143,21 +150,26 @@ data DistDirLayout = DistDirLayout
 
 -- | The layout of a cabal nix-style store.
 --
--- Every location is keyed by the platform the compiler targets /and/ the
--- compiler, in that order, as 'distBuildDirectory' spells it. The compiler
--- alone does not identify what it produces: one @ghc-9.12.2@ may target the
--- machine it runs on while another targets something else entirely, and they
--- agree on 'compilerId' and 'compilerAbiTag'. Keying on the compiler alone
--- would file both of their outputs in one directory, under one package
--- database.
+-- Every location is keyed by the build 'Stage' and the platform that stage's
+-- toolchain targets. Under cross-compilation the host and build stages must
+-- not share a store: the same package can be built for both, and (when the two
+-- toolchains report the same unit id) the two copies would otherwise land in
+-- the same directory and clobber each other.
+--
+-- The compiler is deliberately /not/ a component of the path. A store laid out
+-- this way is consumed directly by other build systems -- GHC's own copies
+-- libraries out of @\<store\>\/lib@ and package descriptions out of
+-- @\<store\>\/package.conf.d@ to assemble a binary distribution -- and they
+-- address it by stage and platform. The cost is that one store serves one
+-- compiler per platform, which is what a staged build wants anyway.
 data StoreDirLayout = StoreDirLayout
-  { storeDirectory :: Compiler -> Platform -> FilePath
-  , storePackageDirectory :: Compiler -> Platform -> UnitId -> FilePath
-  , storePackageDBPath :: Compiler -> Platform -> FilePath
-  , storePackageDB :: Compiler -> Platform -> PackageDBCWD
-  , storePackageDBStack :: Compiler -> Platform -> [Maybe PackageDBCWD] -> PackageDBStackCWD
-  , storeIncomingDirectory :: Compiler -> Platform -> FilePath
-  , storeIncomingLock :: Compiler -> Platform -> UnitId -> FilePath
+  { storeDirectory :: Stage -> Toolchain -> FilePath
+  , storePackageDirectory :: Stage -> Toolchain -> UnitId -> FilePath
+  , storePackageDBPath :: Stage -> Toolchain -> FilePath
+  , storePackageDB :: Stage -> Toolchain -> PackageDBCWD
+  , storePackageDBStack :: Stage -> Toolchain -> [Maybe PackageDBCWD] -> PackageDBStackCWD
+  , storeIncomingDirectory :: Stage -> Toolchain -> FilePath
+  , storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
   }
 
 -- TODO: move to another module, e.g. CabalDirLayout?
@@ -308,39 +320,48 @@ defaultStoreDirLayout :: FilePath -> StoreDirLayout
 defaultStoreDirLayout storeRoot =
   StoreDirLayout{..}
   where
-    storeDirectory :: Compiler -> Platform -> FilePath
-    storeDirectory compiler platform =
-      storeRoot
-        </> prettyShow platform
-        </> ( case compilerAbiTag compiler of
-                NoAbiTag -> prettyShow (compilerId compiler)
-                AbiTag tag -> prettyShow (compilerId compiler) <> "-" <> tag
-            )
+    storeDirectory :: Stage -> Toolchain -> FilePath
+    storeDirectory stage toolchain =
+      storeRoot </> showStage stage </> betterPlatform toolchain
 
-    storePackageDirectory :: Compiler -> Platform -> UnitId -> FilePath
-    storePackageDirectory compiler platform ipkgid =
-      storeDirectory compiler platform </> prettyShow ipkgid
+    storePackageDirectory :: Stage -> Toolchain -> UnitId -> FilePath
+    storePackageDirectory stage toolchain ipkgid =
+      storeDirectory stage toolchain </> prettyShow ipkgid
 
-    storePackageDBPath :: Compiler -> Platform -> FilePath
-    storePackageDBPath compiler platform =
-      storeDirectory compiler platform </> "package.db"
+    storePackageDBPath :: Stage -> Toolchain -> FilePath
+    storePackageDBPath stage toolchain =
+      storeDirectory stage toolchain </> "package.conf.d"
 
-    storePackageDB :: Compiler -> Platform -> PackageDBCWD
-    storePackageDB compiler platform =
-      SpecificPackageDB (storePackageDBPath compiler platform)
+    storePackageDB :: Stage -> Toolchain -> PackageDBCWD
+    storePackageDB stage toolchain =
+      SpecificPackageDB (storePackageDBPath stage toolchain)
 
-    storePackageDBStack :: Compiler -> Platform -> [Maybe PackageDBCWD] -> PackageDBStackCWD
-    storePackageDBStack compiler platform extraPackageDB =
+    storePackageDBStack :: Stage -> Toolchain -> [Maybe PackageDBCWD] -> PackageDBStackCWD
+    storePackageDBStack stage toolchain extraPackageDB =
       interpretPackageDbFlags False extraPackageDB
-        ++ [storePackageDB compiler platform]
+        ++ [storePackageDB stage toolchain]
 
-    storeIncomingDirectory :: Compiler -> Platform -> FilePath
-    storeIncomingDirectory compiler platform =
-      storeDirectory compiler platform </> "incoming"
+    storeIncomingDirectory :: Stage -> Toolchain -> FilePath
+    storeIncomingDirectory stage toolchain =
+      storeDirectory stage toolchain </> "incoming"
 
-    storeIncomingLock :: Compiler -> Platform -> UnitId -> FilePath
-    storeIncomingLock compiler platform unitid =
-      storeIncomingDirectory compiler platform </> prettyShow unitid <.> "lock"
+    storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
+    storeIncomingLock stage toolchain unitid =
+      storeIncomingDirectory stage toolchain </> prettyShow unitid <.> "lock"
+
+-- | The platform triple in the spelling the compiler itself uses, e.g.
+-- @x86_64-unknown-linux@ rather than cabal's own @x86_64-linux@. Paths under
+-- the store are consumed by other build systems (notably GHC's own), which
+-- expect the compiler's spelling.
+--
+-- Falls back to pretty-printing the toolchain's 'Platform' for a compiler that
+-- reports no @Target platform@ property.
+betterPlatform :: Toolchain -> String
+betterPlatform toolchain =
+  Map.findWithDefault
+    (prettyShow (toolchainPlatform toolchain))
+    "Target platform"
+    (compilerProperties (toolchainCompiler toolchain))
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

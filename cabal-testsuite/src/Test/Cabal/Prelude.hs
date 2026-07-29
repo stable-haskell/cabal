@@ -1435,8 +1435,11 @@ withShorterPathForNewBuildStore test =
     "cabal-test-store"
     (`withStoreDir` test)
 
--- | Find where a package locates in the store dir. This works only if there is exactly one 1 ghc version
--- and exactly 1 directory for the given package in the store dir.
+-- | Find where a package locates in the store dir. The store is laid out as
+-- @\<root\>\/\<stage\>\/\<platform\>\/\<unit-id\>@ and a package a test depends
+-- on is a host-stage artifact, so this works only if there is exactly 1
+-- platform directory under the host stage and exactly 1 directory for the given
+-- package under it.
 findDependencyInStore
   :: String
   -- ^ package name prefix
@@ -1445,19 +1448,14 @@ findDependencyInStore
 findDependencyInStore pkgName = do
   storeDir <- testStoreDir <$> getTestEnv
   liftIO $ do
-    -- The store is laid out store/<platform>/<compiler-id>-<abi>/, so package
-    -- directories sit two levels below the store root. A store written
-    -- without the platform segment is tolerated, since not every store a test
-    -- looks at is written by the cabal under test.
-    storeTopDir : _ <- listDirectory storeDir
-    let storeDirForPlatform = storeDir </> storeTopDir
-    dbHere <- doesDirectoryExist (storeDirForPlatform </> "package.db")
-    storeDirForPlatformAndGhc <-
-      if dbHere
-        then pure storeDirForPlatform
-        else do
-          storeDirForGhcVersion : _ <- listDirectory storeDirForPlatform
-          pure (storeDirForPlatform </> storeDirForGhcVersion)
+    -- The store is laid out store/<stage>/<platform>/<compiler-id>-<abi>/,
+    -- so package directories sit three levels below the store root. These
+    -- libs are host-stage artifacts.
+    let hostStoreDir = storeDir </> "host"
+    platformDir : _ <- listDirectory hostStoreDir
+    let storeDirForPlatform = hostStoreDir </> platformDir
+    compilerDir : _ <- listDirectory storeDirForPlatform
+    let storeDirForPlatformAndGhc = storeDirForPlatform </> compilerDir
     packageDirs <- listDirectory storeDirForPlatformAndGhc
     -- Ideally, we should call 'hashedInstalledPackageId' from 'Distribution.Client.PackageHash'.
     -- But 'PackageHashInputs', especially 'PackageHashConfigInputs', is too hard to construct.
