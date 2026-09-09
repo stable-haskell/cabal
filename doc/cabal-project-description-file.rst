@@ -1036,6 +1036,32 @@ feature was added.
     Program options are not extensively described in this documentation but a
     good amount of them can be found in the :ref:`build-info` section.
 
+    When cross-compiling (see :cfg-field:`build-compiler`), a package can be
+    built twice, once for the build machine and once for the host, and
+    ``package *`` applies to both. ``package build:*`` and ``package host:*``
+    apply to every package built for that stage only. They take precedence
+    over ``package *`` and over the fields given outside any stanza for local
+    packages, and are overridden by a stanza naming the package:
+
+    ::
+
+        package build:*
+          shared: False
+          executable-dynamic: False
+
+        package host:*
+          shared: True
+
+    Program locations given in a stage stanza also select the tools ``cabal``
+    itself runs for that stage, such as ``pkg-config``. This is how a
+    cross-compilation points the host stage at the tools that know its target
+    without taking them away from the build stage:
+
+    ::
+
+        package host:*
+          pkg-config-location: aarch64-linux-gnu-pkg-config
+
 .. cfg-section:: None
 
 .. cfg-field:: flags: list of +flagname or -flagname (space separated)
