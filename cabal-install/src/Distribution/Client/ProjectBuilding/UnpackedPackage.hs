@@ -458,9 +458,10 @@ buildAndRegisterUnpackedPackage
             scriptOptions
               { useLoggingHandle = mLogFileHandle
               , useExtraEnvOverrides =
-                  dataDirsEnvironmentForPlan
+                  dataDirsEnvironmentForPackage
                     distDirLayout
                     plan
+                    pkg
               }
             (Just (elabPkgDescription pkg))
             cmd
