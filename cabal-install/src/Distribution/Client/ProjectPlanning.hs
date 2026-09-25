@@ -2544,8 +2544,24 @@ elaborateInstallPlan
 
           compilerShouldUseSharedLibByDefault =
             case compilerFlavor compiler of
-              GHC -> GHC.compilerBuildWay compiler == DynWay && canBuildSharedLibs
+              GHC ->
+                (GHC.compilerBuildWay compiler == DynWay && canBuildSharedLibs)
+                  || rtsLinkerOnlySupportsSharedLibs
               _ -> False
+
+          -- Some targets (wasm since GHC 9.10) have an RTS linker that can
+          -- only load shared objects, so Template Haskell needs a shared
+          -- library for every package it might load.  Such a target does
+          -- build shared libraries, even though it has no dynamic RTS
+          -- (`dyn` is absent from "RTS ways", so canBuildSharedLibs is
+          -- False), and the compiler binary itself is not dynamic.  Default
+          -- to shared there.  This is decided per stage, because
+          -- `compiler` is the compiler of the stage being elaborated: a
+          -- wasm Host gets shared libraries while its Build stage (the
+          -- build machine's native compiler) keeps its own default.
+          rtsLinkerOnlySupportsSharedLibs =
+            Map.lookup "target RTS linker only supports shared libraries" (compilerProperties compiler)
+              == Just "YES"
 
           canBuildWayLibs predicate = case predicate compiler of
             Just can_build -> can_build
