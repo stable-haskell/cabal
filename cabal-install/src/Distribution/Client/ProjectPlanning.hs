@@ -3177,8 +3177,24 @@ compilerCanBuildProfilingSharedLibs = compilerCanBuildWayLibs profilingDynamicSu
 compilerShouldUseSharedLibByDefault :: Compiler -> Bool
 compilerShouldUseSharedLibByDefault compiler =
   case compilerFlavor compiler of
-    GHC -> GHC.compilerBuildWay compiler == DynWay && compilerCanBuildSharedLibs compiler
+    GHC ->
+      (GHC.compilerBuildWay compiler == DynWay && compilerCanBuildSharedLibs compiler)
+        || rtsLinkerOnlySupportsSharedLibs
     _ -> False
+  where
+    -- Some targets (wasm since GHC 9.10) have an RTS linker that can
+    -- only load shared objects, so Template Haskell needs a shared
+    -- library for every package it might load.  Such a target does
+    -- build shared libraries, even though it has no dynamic RTS
+    -- (`dyn` is absent from "RTS ways", so compilerCanBuildSharedLibs is
+    -- False), and the compiler binary itself is not dynamic.  Default
+    -- to shared there.  This is decided per machine, because `compiler`
+    -- is the compiler of the package being elaborated: a wasm Host gets
+    -- shared libraries while the Build machine (whose
+    -- compiler is native) keeps its own default.
+    rtsLinkerOnlySupportsSharedLibs =
+      Map.lookup "target RTS linker only supports shared libraries" (compilerProperties compiler)
+        == Just "YES"
 
 -- | Whether a compiler builds profiled code by default (so that packages it
 -- builds need profiling libraries of their dependencies).
