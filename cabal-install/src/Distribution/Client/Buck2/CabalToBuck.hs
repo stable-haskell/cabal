@@ -11,13 +11,15 @@ module Distribution.Client.Buck2.CabalToBuck
   , PackageTargets (..)
   , generatePackageTargets
   , libTargetName
+  , AutogenExport (..)
   ) where
 
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import System.Directory (createDirectoryIfMissing, doesFileExist)
-import System.FilePath ((<.>), (</>), normalise, splitDirectories, takeExtension)
+import System.Directory (copyFile, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, listDirectory)
+import System.FilePath ((<.>), (</>), joinPath, normalise, splitDirectories, takeDirectory, takeExtension)
+import Data.List (stripPrefix)
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -25,7 +27,7 @@ import qualified Data.Set as Set
 import qualified Distribution.Compat.NonEmptySet as NES
 import Distribution.Compiler (CompilerFlavor (GHC))
 import qualified Distribution.ModuleName as ModuleName
-import Distribution.Package (packageName)
+import Distribution.Package (packageName, packageVersion)
 import Distribution.PackageDescription
   ( Benchmark (benchmarkInterface, benchmarkName)
   , BenchmarkInterface (..)
@@ -41,14 +43,19 @@ import Distribution.PackageDescription
   , cppOptions
   , ccOptions
   , cxxOptions
+  , asmSources
+  , cmmSources
   , cxxSources
   , cSources
-  , defaultExtensions
+  , usedExtensions
   , defaultLanguage
   , extraLibs
   , ldOptions
   , hcOptions
+  , buildType
   , hsSourceDirs
+  , lookupComponent
+  , updatePackageDescription
   , includeDirs
   , otherModules
   , pkgBuildableComponents
@@ -56,25 +63,38 @@ import Distribution.PackageDescription
   , targetBuildDepends
   )
 import Distribution.Types.Component (Component (..), componentBuildInfo, componentName)
-import Distribution.Types.ComponentLocalBuildInfo (ComponentLocalBuildInfo)
-import Distribution.Types.ComponentName (ComponentName)
+import Distribution.Backpack (OpenModule (..), OpenUnitId (..))
+import Distribution.Types.ComponentLocalBuildInfo (ComponentLocalBuildInfo (componentPackageDeps, componentUnitId), maybeComponentExposedModules)
+import Distribution.Types.ExposedModule (ExposedModule (..))
+import Distribution.Types.MungedPackageId (MungedPackageId (mungedName))
+import Distribution.Types.MungedPackageName (MungedPackageName (..))
+import Distribution.Types.UnitId (unDefUnitId)
+import Distribution.Types.ComponentName (ComponentName (..))
 import Distribution.Types.Dependency (depLibraries, depPkgName)
 import Distribution.Types.ExeDependency (ExeDependency (..))
-import Distribution.Types.LocalBuildInfo (LocalBuildInfo, componentNameCLBIs)
+import Distribution.Types.LocalBuildInfo (LocalBuildInfo, componentNameCLBIs, installedPkgs, localPkgDescr, withPrograms)
+import qualified Distribution.Simple.PackageIndex as PackageIndex
+import Distribution.InstalledPackageInfo (InstalledPackageInfo (sourceLibName))
+import Distribution.Simple.Program (ghcProgram, lookupProgram, programOverrideArgs)
 import Distribution.Types.PackageName (PackageName, unPackageName)
 import Distribution.Types.PkgconfigDependency (PkgconfigDependency (..))
 import Distribution.Types.PkgconfigName (unPkgconfigName)
 import Distribution.Types.UnqualComponentName (unUnqualComponentName)
-import Distribution.Utils.Path (getSymbolicPath)
+import Distribution.Utils.Path (getSymbolicPath, interpretSymbolicPath)
 import Distribution.Verbosity (VerbosityFlags (vLevel), VerbosityLevel (Silent), modifyVerbosityFlags)
 
 import Distribution.Simple.Build.Macros (generateCabalMacrosHeader)
 import Distribution.Simple.Build.PathsModule (generatePathsModule)
 import Distribution.Simple.Build.PackageInfoModule (generatePackageInfoModule)
 import Distribution.Simple.BuildPaths (autogenPackageInfoModuleName, autogenPathsModuleName)
-import Distribution.Simple.Utils (ordNub, warn)
+import Distribution.Simple.Utils (findHookedPackageDesc, ordNub, warn)
+import Distribution.Simple.PackageDescription (readHookedBuildInfo)
+import Distribution.Simple.LocalBuildInfo (buildDir, mbWorkDirLBI)
+import Distribution.Types.BuildType (BuildType (Configure))
+import Distribution.Types.HookedBuildInfo (HookedBuildInfo, emptyHookedBuildInfo)
 
 import Distribution.Client.Buck2.Starlark
+import Distribution.Client.Buck2.Variant
 
 -- | Maps every local project package's name to the buck2 cell-relative
 -- directory its @BUCK@ file lives in (@.@ for one at the project root), so
@@ -96,8 +116,17 @@ type LocalPackageIndex = Map PackageName (FilePath, [PackageName])
 data PackageTargets = PackageTargets
   { ptLoads :: [(String, [String])]
   , ptCalls :: [Call]
-  , ptAutogenExports :: [(String, FilePath)]
+  , ptAutogenExports :: [AutogenExport]
   }
+
+-- | A target of the package's @cabal-buck2/autogen/BUCK@ file: a file
+-- (@export_file@, path relative to the autogen directory) or a directory
+-- of headers (@filegroup@, entries @(path in the output, path relative
+-- to the autogen directory)@ - see Note [Configure build type]).
+data AutogenExport
+  = AutogenFile String FilePath
+  | AutogenDir String [(String, FilePath)]
+  deriving (Eq, Ord, Show)
 
 instance Semigroup PackageTargets where
   PackageTargets l1 c1 e1 <> PackageTargets l2 c2 e2 =
@@ -115,6 +144,7 @@ instance Monoid PackageTargets where
 -- @BUCK.cabal.bzl@ will live) - every emitted path is relative to it.
 generatePackageTargets
   :: Verbosity
+  -> Variant
   -> LocalPackageIndex
   -> FilePath
   -- ^ @pkgDir@'s own buck2 cell-relative directory (@.@ at the project
@@ -130,19 +160,40 @@ generatePackageTargets
   -> FilePath
   -> PackageDescription
   -> IO PackageTargets
-generatePackageTargets verbosity localIndex rootRelPkgDir componentLBIs externalBuildTools pkgDir pkgDesc = do
+generatePackageTargets verbosity variant localIndex rootRelPkgDir componentLBIs externalBuildTools pkgDir pkgDesc = do
+  hbi <- hookedBuildInfo verbosity pkgDesc componentLBIs
   -- Computed up front (silently - see 'skippedLibraries's own haddock),
   -- so every component below - regardless of its own textual position
   -- in the .cabal file relative to the library it depends on - already
   -- knows which of this package's own libraries won't get a rule, and
   -- can skip itself too instead of emitting a dangling dependency edge.
-  skippedLibs <- skippedLibraries verbosity pkgDesc rootRelPkgDir pkgDir componentLBIs
+  skippedLibs <- skippedLibraries verbosity variant pkgDesc rootRelPkgDir pkgDir componentLBIs
   targets <-
     mconcat
       <$> traverse
-        (generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuildTools pkgDir pkgDesc skippedLibs)
+        (generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs externalBuildTools pkgDir pkgDesc hbi skippedLibs)
         (pkgBuildableComponents pkgDesc)
   return targets{ptCalls = dedupPkgconfigCalls (ptCalls targets)}
+
+-- | The @.buildinfo@ that a build-type Configure package's configure
+-- script wrote when cabal buck2 configured the package (it runs in the
+-- component's build directory); empty for other packages. Cabal applies
+-- it to the package description at build time ('updatePackageDescription'),
+-- which is what 'generateComponent' does too: extra-libraries,
+-- include-dirs, ... come from it (e.g. GHC's rts and ghc-internal).
+hookedBuildInfo :: Verbosity -> PackageDescription -> Map (PackageName, ComponentName) LocalBuildInfo -> IO HookedBuildInfo
+hookedBuildInfo verbosity pkgDesc componentLBIs
+  | buildType pkgDesc /= Configure = return emptyHookedBuildInfo
+  | otherwise = case [lbi | ((pn, _), lbi) <- Map.toList componentLBIs, pn == packageName pkgDesc] of
+      [] -> return emptyHookedBuildInfo
+      lbi : _ -> do
+        let mbWorkDir = mbWorkDirLBI lbi
+        exists <- doesDirectoryExist (interpretSymbolicPath mbWorkDir (buildDir lbi))
+        if not exists
+          then return emptyHookedBuildInfo
+          else do
+            mfile <- findHookedPackageDesc verbosity mbWorkDir (buildDir lbi)
+            maybe (return emptyHookedBuildInfo) (readHookedBuildInfo verbosity mbWorkDir) mfile
 
 -- | Which of this package's own libraries 'generateComponent' is going
 -- to skip (unresolvable modules - see 'resolveModules'), found out
@@ -159,15 +210,15 @@ generatePackageTargets verbosity localIndex rootRelPkgDir componentLBIs external
 -- same resolution 'generateComponent' below will redo for real (and
 -- warn about) when it reaches that library component itself - this
 -- pass exists only to know the *outcome* early, not to report it twice.
-skippedLibraries :: Verbosity -> PackageDescription -> FilePath -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> IO (Set LibraryName)
-skippedLibraries verbosity pkgDesc rootRelPkgDir pkgDir componentLBIs =
+skippedLibraries :: Verbosity -> Variant -> PackageDescription -> FilePath -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> IO (Set LibraryName)
+skippedLibraries verbosity variant pkgDesc rootRelPkgDir pkgDir componentLBIs =
   Set.fromList . catMaybes
     <$> traverse checkLib [lib | CLib lib <- pkgBuildableComponents pkgDesc]
   where
     quiet = modifyVerbosityFlags (\vf -> vf{vLevel = Silent}) verbosity
     checkLib lib = do
       let bi = libBuildInfo lib
-      msrcs <- resolveModules quiet pkgDesc (lbiClbiFor pkgDesc componentLBIs (CLib lib)) rootRelPkgDir pkgDir bi (exposedModules lib ++ otherModules bi)
+      msrcs <- resolveModules quiet variant (variantTargetName variant (libTargetName (packageName pkgDesc) (libName lib))) pkgDesc (lbiClbiFor pkgDesc componentLBIs (CLib lib)) rootRelPkgDir pkgDir bi (exposedModules lib ++ otherModules bi)
       return $ if isNothing msrcs then Just (libName lib) else Nothing
 
 -- | Look up a component's real, Cabal-computed 'LocalBuildInfo' (from
@@ -204,25 +255,63 @@ dedupPkgconfigCalls = go []
 
 generateComponent
   :: Verbosity
+  -> Variant
   -> LocalPackageIndex
   -> FilePath
   -> Map (PackageName, ComponentName) LocalBuildInfo
   -> Set String
   -> FilePath
   -> PackageDescription
+  -> HookedBuildInfo
   -> Set LibraryName
   -> Component
   -> IO PackageTargets
-generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuildTools pkgDir pkgDesc skippedLibs comp = case comp of
-  CLib lib -> library (libTargetName (packageName pkgDesc) (libName lib)) lib
-  CExe exe -> ifNotOnSkippedLib (componentBuildInfo comp) (unUnqualComponentName (exeName exe)) "executable" $ executable exe
-  CTest test -> ifNotOnSkippedLib (componentBuildInfo comp) (unUnqualComponentName (testName test)) "test-suite" $ testSuite test
-  CBench bench -> ifNotOnSkippedLib (componentBuildInfo comp) (unUnqualComponentName (benchmarkName bench)) "benchmark" $ benchmark bench
+generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs externalBuildTools pkgDir pkgDesc hbi skippedLibs comp0 = case comp of
+  CLib lib -> library (tname (libTargetName (packageName pkgDesc) (libName lib))) lib
+  CExe exe -> ifNotOnSkippedLib (componentBuildInfo comp) (tname (unUnqualComponentName (exeName exe))) "executable" $ executable exe
+  CTest test -> ifNotOnSkippedLib (componentBuildInfo comp) (tname (unUnqualComponentName (testName test))) "test-suite" $ testSuite test
+  CBench bench -> ifNotOnSkippedLib (componentBuildInfo comp) (tname (unUnqualComponentName (benchmarkName bench))) "benchmark" $ benchmark bench
   CFLib _ -> skip "foreign library (not supported yet)"
   where
     skip why = do
       warn verbosity $ "cabal buck2: skipping " ++ why ++ " in package " ++ unPackageName (packageName pkgDesc)
       return mempty
+
+    -- The component as configured, when the plan has a LocalBuildInfo for
+    -- it: a build-type Configure package's configure script adds fields
+    -- through its .buildinfo (extra-libraries, include-dirs, ...), which
+    -- the plan's own description does not have.
+    comp = case lbiClbiFor pkgDesc componentLBIs comp0 of
+      Just (lbi, _) | Just c <- lookupComponent (updatePackageDescription hbi (localPkgDescr lbi)) (componentName comp0) -> c
+      _ -> fromMaybe comp0 (lookupComponent (updatePackageDescription hbi pkgDesc) (componentName comp0))
+
+    -- Target name in this variant (see Note [Variants]).
+    tname = variantTargetName variant
+
+    -- `default_target_platform` of every generated rule in a variant.
+    platformArg = [("default_target_platform", str plat) | Just plat <- [variantPlatform variant]]
+
+    -- See Note [Project-level ghc-options]
+    projectGhcOptions lbi = maybe [] programOverrideArgs (lookupProgram ghcProgram (withPrograms lbi))
+
+    -- `unit_id` and `package_name` of a library: Cabal's unit id, unless
+    -- the .cabal file fixes it with `-this-unit-id` in its ghc-options (the
+    -- last flag wins for GHC, so it wins here too); that flag is then
+    -- removed from compiler_flags. The registered name is Cabal's: the
+    -- package name, or `z-<pkg>-z-<lib>` for a sub-library.
+    unitIdArgs lib clbi =
+      let (flags, explicit) = splitThisUnitId (hcOptions GHC (libBuildInfo lib))
+          uid = fromMaybe (prettyShow (componentUnitId clbi)) explicit
+          pn = unPackageName (packageName pkgDesc)
+          regName = case libName lib of
+            LMainLibName -> pn
+            LSubLibName n -> "z-" ++ pn ++ "-z-" ++ unUnqualComponentName n
+          -- `package-name`/`lib-name` of the registration, which is how
+          -- GHC resolves a unit id of the form `pkg:lib` (GHC's rts ways).
+          sublibArgs = case libName lib of
+            LMainLibName -> []
+            LSubLibName n -> [("cabal_package", str pn), ("lib_name", str (unUnqualComponentName n))]
+       in ([("unit_id", str uid), ("package_name", str regName), ("version", str (prettyShow (packageVersion pkgDesc)))] ++ sublibArgs, flags)
 
     -- A component that build-depends on one of *this same package's*
     -- own libraries, when that library was itself skipped (see
@@ -246,56 +335,98 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
         [] -> act
 
     library targetName lib
-      | null (exposedModules lib ++ otherModules (libBuildInfo lib)) = nonHaskellLibrary targetName (libBuildInfo lib)
+      | noModules && null (compiledSources (libBuildInfo lib)) = nonHaskellLibrary targetName lib
       | otherwise = case lbiClbiFor pkgDesc componentLBIs comp of
       Nothing -> skip ("library " ++ targetName ++ " (no LocalBuildInfo found for it in the elaborated build plan)")
       Just (lbi, clbi) -> do
         let bi = libBuildInfo lib
-        msrcs <- resolveModules verbosity pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (exposedModules lib ++ otherModules bi)
+        msrcs <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (exposedModules lib ++ otherModules bi)
         case msrcs of
           Nothing -> skip ("library " ++ targetName ++ " (couldn't resolve all its modules)")
           Just (srcs, srcAutogenExports) -> do
-            (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") bi
-            macrosExport <- writeMacrosHeader pkgDir targetName pkgDesc lbi clbi
-            let (pkgs, deps) = classifyDeps localIndex bi
+            -- See Note [C and Cmm sources]
+            let ghcCompilesC = null (pkgconfigDepends bi)
+                ghcSrcs = sourcesWithOptions (map (normalise . getSymbolicPath) (cmmSources bi ++ (if ghcCompilesC then cSources bi ++ cxxSources bi ++ asmSources bi else [])))
+                ghcSrcEntries = [(f, str f) | (f, _) <- ghcSrcs]
+                perSrcFlags = [(f, strList opts) | (f, opts) <- ghcSrcs, not (null opts)]
+                -- -I for the Haskell preprocessor (and for GHC's C
+                -- compilation), as Cabal passes it.
+                includeFlags = includeFlagsFor rootRelPkgDir bi
+                cFlags = (if ghcCompilesC then map ("-optc" ++) (ccOptions bi) ++ map ("-optcxx" ++) (cxxOptions bi) else []) ++ includeFlags
+            headers <- if ghcCompilesC then headerSources pkgDir bi else return []
+            -- See Note [Configure build type]
+            configured <- configureIncludes variant pkgDir targetName lbi bi
+            let confLabel = autogenExportLabel variant rootRelPkgDir . fst <$> configured
+                confFlags = ["-I$(location " ++ l ++ ")" | Just l <- [confLabel]]
+            (cxxLoads, cxxDeps, cxxCalls) <-
+              if ghcCompilesC then return ([], [], []) else cxxLibraryFor variant localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") (allDeps bi) confFlags bi
+            macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
+            let (pkgs, deps) = classifyDeps variant localIndex bi
+                (unitArgs, hcFlags) = unitIdArgs lib clbi
                 hlCall =
                   call
                     "haskell_library"
                     ( [ ("name", str targetName)
-                      , ("srcs", VDict srcs)
-                      , cabalComponentArg rootRelPkgDir targetName
+                      , ("srcs", VDict (srcs ++ ghcSrcEntries ++ [(h, str h) | h <- headers]))
                       ]
-                        ++ compilerFlagsArg bi
+                        ++ cabalComponentArgs variant rootRelPkgDir targetName
+                        ++ unitArgs
+                        ++ compilerFlagsArg (hcFlags ++ projectGhcOptions lbi ++ cFlags ++ confFlags) bi
+                        ++ optionalListArg "hsc_flags" (includeFlags ++ confFlags)
+                        ++ [("per_src_flags", VDict perSrcFlags) | not (null perSrcFlags)]
+                        ++ includeDirsArgs rootRelPkgDir confLabel bi
+                        ++ reexportedModulesArg variant localIndex componentLBIs lbi clbi
                         ++ exportedLinkerFlagsArg bi
                         ++ optionalListArg "packages" pkgs
                         ++ optionalListArg "deps" (deps ++ cxxDeps)
-                        ++ buildToolDependsArg localIndex externalBuildTools bi
+                        ++ buildToolDependsArg variant localIndex externalBuildTools bi
+                        ++ platformArg
                         ++ [("visibility", strList ["PUBLIC"])]
                     )
             return $
               PackageTargets
                 (("//buck2:haskell.bzl", ["haskell_library"]) : cxxLoads)
                 (cxxCalls ++ [hlCall])
-                (macrosExport : srcAutogenExports)
+                (macrosExport : [uncurry AutogenDir c | Just c <- [configured]] ++ srcAutogenExports)
+      where
+        noModules = null (exposedModules lib ++ otherModules (libBuildInfo lib))
+        compiledSources bi = cmmSources bi ++ cSources bi ++ cxxSources bi ++ asmSources bi
 
     -- See Note [Packages without Haskell modules]
-    nonHaskellLibrary targetName bi
-      | not (null (cSources bi ++ cxxSources bi)) = do
-          (cxxLoads, _cxxDeps, cxxCalls) <- cxxLibraryFor localIndex rootRelPkgDir pkgDir targetName bi
-          return (PackageTargets cxxLoads cxxCalls [])
-      | otherwise =
-          return $
-            PackageTargets
-              []
-              [ call
-                  -- a native rule: not in scope in a .bzl file without the prefix
-                  "native.prebuilt_cxx_library"
-                  ( [("name", str targetName), ("header_only", VBool True)]
-                      ++ optionalListArg "header_dirs" (map getSymbolicPath (includeDirs bi))
-                      ++ [("visibility", strList ["PUBLIC"])]
-                  )
-              ]
-              []
+    nonHaskellLibrary targetName lib = case lbiClbiFor pkgDesc componentLBIs comp of
+          Nothing -> skip ("library " ++ targetName ++ " (no LocalBuildInfo found for it in the elaborated build plan)")
+          Just (lbi, clbi) -> do
+            -- A header-only package is a registered unit without objects:
+            -- GHC reads the unit's include-dirs (DerivedConstants.h of the
+            -- rts unit), dependents get the headers as -I flags. A library
+            -- that only re-exports modules (happy-lib) is registered the
+            -- same way, with its re-exports.
+            configured <- configureIncludes variant pkgDir targetName lbi bi
+            let (unitArgs, _) = unitIdArgs lib clbi
+                confLabel = autogenExportLabel variant rootRelPkgDir . fst <$> configured
+            return $
+              PackageTargets
+                [("//buck2:haskell.bzl", ["haskell_library"])]
+                [ call
+                    "haskell_library"
+                    ( [("name", str targetName), ("srcs", VDict [])]
+                        ++ unitArgs
+                        ++ includeDirsArgs rootRelPkgDir confLabel bi
+                        ++ reexportedModulesArg variant localIndex componentLBIs lbi clbi
+                        ++ exportedLinkerFlagsArg bi
+                        ++ optionalListArg "deps" (allDeps bi)
+                        ++ platformArg
+                        ++ [("visibility", strList ["PUBLIC"])]
+                    )
+                ]
+                [uncurry AutogenDir c | Just c <- [configured]]
+      where
+        bi = libBuildInfo lib
+
+    -- The component's dependencies as buck2 labels: local libraries and
+    -- third-party packages alike (a prebuilt package exports its C
+    -- headers too, e.g. the boot compiler's rts).
+    allDeps bi = let (pkgs, deps) = classifyDeps variant localIndex bi in deps ++ map (thirdPartyHaskellTargetLabel variant) pkgs
 
     executable exe
       | takeExtension mainIs `elem` [".c", ".cpp", ".cc", ".cxx"] && null (otherModules bi) = cExecutable
@@ -303,35 +434,42 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
       Nothing -> skip ("executable " ++ targetName ++ " (no LocalBuildInfo found for it in the elaborated build plan)")
       Just (lbi, clbi) -> do
         mmainSrc <- resolveMainIs verbosity pkgDir bi mainIs
-        motherSrcs <- resolveModules verbosity pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
+        motherSrcs <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
         case (mmainSrc, motherSrcs) of
           (Just mainSrc0, Just (otherSrcs, srcAutogenExports)) -> do
-            (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") bi
-            macrosExport <- writeMacrosHeader pkgDir targetName pkgDesc lbi clbi
-            let (pkgs, deps) = classifyDeps localIndex bi
+            -- The C sources of an executable are compiled by GHC and
+            -- linked as objects. See Note [C and Cmm sources].
+            let ghcSrcs = sourcesWithOptions (map (normalise . getSymbolicPath) (cmmSources bi ++ cSources bi ++ cxxSources bi ++ asmSources bi))
+                ghcSrcEntries = [(f, str f) | (f, _) <- ghcSrcs]
+                perSrcFlags = [(f, strList opts) | (f, opts) <- ghcSrcs, not (null opts)]
+                cFlags = map ("-optc" ++) (ccOptions bi) ++ map ("-optcxx" ++) (cxxOptions bi) ++ includeFlagsFor rootRelPkgDir bi
+            macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
+            let (pkgs, deps) = classifyDeps variant localIndex bi
                 binCall =
                   call
                     "haskell_binary"
                     ( [ ("name", str targetName)
-                      , ("srcs", VDict ((mainSrcKeyFor mainSrc0, str mainSrc0) : otherSrcs))
-                      , cabalComponentArg rootRelPkgDir targetName
+                      , ("srcs", VDict ((mainSrcKeyFor mainSrc0, str mainSrc0) : otherSrcs ++ ghcSrcEntries))
                       ]
-                        ++ compilerFlagsArg bi
-                        ++ linkerFlagsArg bi
+                        ++ cabalComponentArgs variant rootRelPkgDir targetName
+                        ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi ++ cFlags) bi
+                        ++ [("per_src_flags", VDict perSrcFlags) | not (null perSrcFlags)]
+                        ++ linkerFlagsArg (projectGhcOptions lbi) bi
                         ++ optionalListArg "packages" pkgs
-                        ++ optionalListArg "deps" (deps ++ cxxDeps)
-                        ++ buildToolDependsArg localIndex externalBuildTools bi
+                        ++ optionalListArg "deps" deps
+                        ++ buildToolDependsArg variant localIndex externalBuildTools bi
+                        ++ platformArg
                         ++ [("visibility", strList ["PUBLIC"])]
                     )
             return $
               PackageTargets
-                (("//buck2:haskell.bzl", ["haskell_binary"]) : cxxLoads)
-                (cxxCalls ++ [binCall])
+                [("//buck2:haskell.bzl", ["haskell_binary"])]
+                [binCall]
                 (macrosExport : srcAutogenExports)
           _ -> skip ("executable " ++ targetName ++ " (couldn't resolve all its modules)")
       where
         bi = componentBuildInfo (CExe exe)
-        targetName = unUnqualComponentName (exeName exe)
+        targetName = tname (unUnqualComponentName (exeName exe))
         mainIs = getSymbolicPath (modulePath exe)
 
         -- See Note [Packages without Haskell modules]
@@ -340,7 +478,7 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
           case mmainSrc of
             Nothing -> skip ("executable " ++ targetName ++ " (couldn't find its main-is file)")
             Just mainSrc -> do
-              let (_pkgs, deps) = classifyDeps localIndex bi
+              let (_pkgs, deps) = classifyDeps variant localIndex bi
                   srcs = normalise mainSrc : map getSymbolicPath (cSources bi ++ cxxSources bi)
                   binCall =
                     call
@@ -350,6 +488,7 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
                           ++ optionalListArg "compiler_flags" (ccOptions bi ++ cxxOptions bi)
                           ++ optionalListArg "linker_flags" (["-l" ++ lib | lib <- extraLibs bi] ++ ldOptions bi)
                           ++ optionalListArg "deps" deps
+                          ++ platformArg
                           ++ [("visibility", strList ["PUBLIC"])]
                           ++ [("cxx_std", VBool False) | takeExtension mainIs == ".c", null (cxxSources bi)]
                       )
@@ -367,24 +506,25 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
         Nothing -> skip ("benchmark " ++ targetName ++ " (no LocalBuildInfo found for it in the elaborated build plan)")
         Just (lbi, clbi) -> do
           mmainSrc <- resolveMainIs verbosity pkgDir bi (getSymbolicPath mainIs)
-          motherSrcs <- resolveModules verbosity pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
+          motherSrcs <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
           case (mmainSrc, motherSrcs) of
             (Just mainSrc0, Just (otherSrcs, srcAutogenExports)) -> do
-              (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") bi
-              macrosExport <- writeMacrosHeader pkgDir targetName pkgDesc lbi clbi
-              let (pkgs, deps) = classifyDeps localIndex bi
+              (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor variant localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") (allDeps bi) [] bi
+              macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
+              let (pkgs, deps) = classifyDeps variant localIndex bi
                   binCall =
                     call
                       "haskell_binary"
                       ( [ ("name", str targetName)
                         , ("srcs", VDict ((mainSrcKeyFor mainSrc0, str mainSrc0) : otherSrcs))
-                        , cabalComponentArg rootRelPkgDir targetName
                         ]
-                          ++ compilerFlagsArg bi
-                          ++ linkerFlagsArg bi
+                          ++ cabalComponentArgs variant rootRelPkgDir targetName
+                          ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi) bi
+                          ++ linkerFlagsArg (projectGhcOptions lbi) bi
                           ++ optionalListArg "packages" pkgs
                           ++ optionalListArg "deps" (deps ++ cxxDeps)
-                          ++ buildToolDependsArg localIndex externalBuildTools bi
+                          ++ buildToolDependsArg variant localIndex externalBuildTools bi
+                          ++ platformArg
                           ++ [("visibility", strList ["PUBLIC"])]
                       )
               return $
@@ -401,14 +541,14 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
           )
       where
         bi = componentBuildInfo (CBench bench)
-        targetName = unUnqualComponentName (benchmarkName bench)
+        targetName = tname (unUnqualComponentName (benchmarkName bench))
 
     testSuite test = case testInterface test of
       TestSuiteExeV10 _ver mainIs -> case lbiClbiFor pkgDesc componentLBIs comp of
         Nothing -> skip ("test-suite " ++ targetName ++ " (no LocalBuildInfo found for it in the elaborated build plan)")
         Just (lbi, clbi) -> do
           mmainSrc <- resolveMainIs verbosity pkgDir bi (getSymbolicPath mainIs)
-          motherSrcs <- resolveModules verbosity pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
+          motherSrcs <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
           case (mmainSrc, motherSrcs) of
             (Just mainSrc0, Just (otherSrcs, srcAutogenExports)) ->
               mkTestCall lbi clbi (mainSrcKeyFor mainSrc0) (str mainSrc0) otherSrcs srcAutogenExports
@@ -442,11 +582,11 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
       TestSuiteLibV09 _ver testModule -> case lbiClbiFor pkgDesc componentLBIs comp of
         Nothing -> skip ("test-suite " ++ targetName ++ " (no LocalBuildInfo found for it in the elaborated build plan)")
         Just (lbi, clbi) -> do
-          mtestModSrc <- resolveModules verbosity pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi [testModule]
-          motherSrcs <- resolveModules verbosity pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
+          mtestModSrc <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi [testModule]
+          motherSrcs <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
           case (mtestModSrc, motherSrcs) of
             (Just (testModSrc, testModAutogenExports), Just (otherSrcs, otherAutogenExports)) -> do
-              (stubLabel, stubAutogenExport) <- writeDetailedTestStub rootRelPkgDir pkgDir targetName testModule
+              (stubLabel, stubAutogenExport) <- writeDetailedTestStub variant rootRelPkgDir pkgDir targetName testModule
               mkTestCall
                 lbi
                 clbi
@@ -463,17 +603,16 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
           )
       where
         bi = componentBuildInfo (CTest test)
-        targetName = unUnqualComponentName (testName test)
+        targetName = tname (unUnqualComponentName (testName test))
         mkTestCall lbi clbi mainSrcKey mainSrc otherSrcs srcAutogenExports = do
-          (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") bi
-          macrosExport <- writeMacrosHeader pkgDir targetName pkgDesc lbi clbi
-          let (pkgs, deps) = classifyDeps localIndex bi
+          (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor variant localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") (allDeps bi) [] bi
+          macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
+          let (pkgs, deps) = classifyDeps variant localIndex bi
               testCall =
                 call
                   "haskell_test"
                   ( [ ("name", str targetName)
                     , ("srcs", VDict ((mainSrcKey, mainSrc) : otherSrcs))
-                    , cabalComponentArg rootRelPkgDir targetName
                     , -- Real `cabal test` always runs a test-suite with its
                       -- cwd set to the package's own directory - matched
                       -- here so a test that reads its own fixture files by
@@ -483,11 +622,13 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
                       -- generated wrapper, not just a plain attr).
                       ("cwd", str rootRelPkgDir)
                     ]
-                      ++ compilerFlagsArg bi
-                      ++ linkerFlagsArg bi
+                      ++ cabalComponentArgs variant rootRelPkgDir targetName
+                      ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi) bi
+                      ++ linkerFlagsArg (projectGhcOptions lbi) bi
                       ++ optionalListArg "packages" pkgs
                       ++ optionalListArg "deps" (deps ++ cxxDeps)
-                      ++ buildToolDependsArg localIndex externalBuildTools bi
+                      ++ buildToolDependsArg variant localIndex externalBuildTools bi
+                      ++ platformArg
                   )
           return $
             PackageTargets
@@ -503,9 +644,9 @@ generateComponent verbosity localIndex rootRelPkgDir componentLBIs externalBuild
 -- injected by buck2\/haskell.bzl's own @cabal_component@ kwarg (see
 -- 'cabalComponentArg'), which - unlike a plain string folded into this
 -- list - can be a real, buck2-tracked dependency edge.
-compilerFlagsArg :: BuildInfo -> [(String, Value)]
-compilerFlagsArg bi =
-  optionalListArg "compiler_flags" (hcOptions GHC bi ++ cppOptions bi ++ languageFlag ++ extensionFlags)
+compilerFlagsArg :: [String] -> BuildInfo -> [(String, Value)]
+compilerFlagsArg ghcFlags bi =
+  optionalListArg "compiler_flags" (ghcFlags ++ cppOptions bi ++ languageFlag ++ extensionFlags)
   where
     -- default-language isn't just documentation: GHC2021/GHC2024 each
     -- imply a large bundle of extensions (TypeApplications among them) -
@@ -515,7 +656,8 @@ compilerFlagsArg bi =
     -- with nothing naming TypeApplications directly) went unnoticed
     -- until a real `buck2 build` on it failed outright.
     languageFlag = ["-X" ++ prettyShow lang | lang <- maybeToList (defaultLanguage bi)]
-    extensionFlags = ["-X" ++ prettyShow ext | ext <- defaultExtensions bi]
+    -- usedExtensions: default-extensions and the legacy extensions field
+    extensionFlags = ["-X" ++ prettyShow ext | ext <- usedExtensions bi]
 
 -- | @extra-libraries@ on a library, as @-l@ flags on its
 -- @exported_linker_flags@
@@ -536,8 +678,28 @@ exportedLinkerFlagsArg bi = optionalListArg "exported_linker_flags" ["-l" ++ lib
 -- @linker_flags@, or it's silently dropped. A compile-only flag showing
 -- up here too (e.g. @-Wall@) is harmless: GHC's link-mode invocation
 -- just ignores flags that don't apply to it.
-linkerFlagsArg :: BuildInfo -> [(String, Value)]
-linkerFlagsArg bi = optionalListArg "linker_flags" (["-l" ++ lib | lib <- extraLibs bi] ++ hcOptions GHC bi)
+linkerFlagsArg :: [String] -> BuildInfo -> [(String, Value)]
+linkerFlagsArg extraGhcFlags bi = optionalListArg "linker_flags" (["-l" ++ lib | lib <- extraLibs bi] ++ hcOptions GHC bi ++ extraGhcFlags)
+
+-- Note [Project-level ghc-options]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- A cabal.project can add GHC flags to a package (@package rts
+-- ghc-options: -no-rts@), to all packages (@program-options@), or from the
+-- command line (@--ghc-options@). Cabal passes them to every GHC call for
+-- the component, after the .cabal file's own ghc-options. They are in the
+-- component's configured 'LocalBuildInfo' as the override arguments of
+-- the ghc program, which is where 'projectGhcOptions' takes them from.
+
+-- | Removes @-this-unit-id X@ from GHC flags and returns @X@ (the last
+-- one, as GHC itself takes it). See 'unitIdArgs'.
+splitThisUnitId :: [String] -> ([String], Maybe String)
+splitThisUnitId = go Nothing
+  where
+    go _ ("-this-unit-id" : uid : rest) = go (Just uid) rest
+    go acc (f : rest)
+      | Just uid <- stripPrefix "-this-unit-id=" f = go (Just uid) rest
+      | otherwise = let (fs, acc') = go acc rest in (f : fs, acc')
+    go acc [] = ([], acc)
 
 -- | Writes this component's @cabal_macros.h@ to a real file next to the
 -- package's own sources - exactly how real Cabal wires this up, just
@@ -547,14 +709,14 @@ linkerFlagsArg bi = optionalListArg "linker_flags" (["-l" ++ lib | lib <- extraL
 -- runs). Returns the @cabal-buck2\/autogen\/BUCK@ export entry for it
 -- (see 'PackageTargets'' own haddock) - 'cabalComponentArg' is what
 -- actually wires the generated component up to include it.
-writeMacrosHeader :: FilePath -> String -> PackageDescription -> LocalBuildInfo -> ComponentLocalBuildInfo -> IO (String, FilePath)
-writeMacrosHeader pkgDir targetName pkgDesc lbi clbi = do
+writeMacrosHeader :: Variant -> FilePath -> String -> PackageDescription -> LocalBuildInfo -> ComponentLocalBuildInfo -> IO AutogenExport
+writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi = do
   createDirectoryIfMissing True headerDir
   writeFile headerPath (generateCabalMacrosHeader pkgDesc lbi clbi)
-  return (targetName ++ "-cabal-macros", exportRelPath)
+  return (AutogenFile (targetName ++ "-cabal-macros") exportRelPath)
   where
     exportRelPath = targetName </> "cabal_macros.h"
-    headerDir = pkgDir </> "cabal-buck2" </> "autogen" </> targetName
+    headerDir = pkgDir </> variantAutogenDir variant </> targetName
     headerPath = headerDir </> "cabal_macros.h"
 
 -- | The @cabal_component = (pkg, component)@ kwarg understood by
@@ -570,9 +732,10 @@ writeMacrosHeader pkgDir targetName pkgDesc lbi clbi = do
 -- label (@\/\/pkg\/cabal-buck2\/autogen:component-cabal-macros@) the
 -- same way "Distribution.Client.Buck2.Generate" lays out
 -- @cabal-buck2\/autogen\/BUCK@ itself.
-cabalComponentArg :: FilePath -> String -> (String, Value)
-cabalComponentArg rootRelPkgDir targetName =
+cabalComponentArgs :: Variant -> FilePath -> String -> [(String, Value)]
+cabalComponentArgs variant rootRelPkgDir targetName =
   ("cabal_component", VTuple [str rootRelPkgDir, str targetName])
+    : [("cabal_autogen_dir", str (variantAutogenDir variant)) | isJust (variantName variant)]
 
 optionalListArg :: String -> [String] -> [(String, Value)]
 optionalListArg _ [] = []
@@ -602,34 +765,80 @@ libTargetName _ (LSubLibName n) = unUnqualComponentName n
 -- 'libTargetName', not one per package name) when one was named there
 -- instead, or nothing at all for an ordinary external main-library
 -- dependency (that one's covered by @packages =@ already).
-classifyDeps :: LocalPackageIndex -> BuildInfo -> ([String], [String])
-classifyDeps localIndex bi =
-  ( ordNub [unPackageName pn | (pn, LMainLibName) <- allDeps, not (Map.member pn localIndex)]
-  , ordNub $
-      [localTargetLabel dir (libTargetName pn ln) | (pn, ln) <- allDeps, Just (dir, _) <- [Map.lookup pn localIndex]]
-        ++ [ thirdPartyHaskellTargetLabel (libTargetName pn ln)
-           | (pn, ln@(LSubLibName _)) <- allDeps
-           , not (Map.member pn localIndex)
-           ]
-  )
+-- Note [Re-exported modules]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- A library can re-export modules of its dependencies (GHC's ghc-prim
+-- re-exports GHC.Internal.Prim of ghc-internal as GHC.Prim). Cabal
+-- registers them in @exposed-modules@ as @New from <unit-id>:Orig@, with
+-- the unit id of the dependency as configured. The registered id of a
+-- buck2 library can differ from the configured one (@-this-unit-id@ in
+-- its ghc-options), so the generated rule names the dependency by its
+-- label and the prelude fills in the registered id:
+--
+--   reexported_modules = {'GHC.Prim': ('//libraries/ghc-internal:ghc-internal-stage2', 'GHC.Internal.Prim')}
+--
+-- A module re-exported from the library itself (@Paths_x as X.Paths@)
+-- has @None@ for the label. Cabal resolves a chain of re-exports to the
+-- unit that defines the module, which need not be a direct dependency
+-- (GHC's compiler re-exports GHC.Platform.ArchOS of ghc-platform through
+-- ghc-boot), so the unit is looked up among all local libraries and the
+-- installed packages.
+
+-- | The @reexported_modules@ kwarg of a library (see Note [Re-exported
+-- modules]), from the exposed modules Cabal resolved at configure time.
+reexportedModulesArg
+  :: Variant
+  -> LocalPackageIndex
+  -> Map (PackageName, ComponentName) LocalBuildInfo
+  -> LocalBuildInfo
+  -> ComponentLocalBuildInfo
+  -> [(String, Value)]
+reexportedModulesArg variant localIndex componentLBIs lbi clbi =
+  [("reexported_modules", VDict entries) | not (null entries)]
   where
+    entries =
+      [ (prettyShow (exposedName em), VTuple [origin (unDefUnitId uid), str (prettyShow m)])
+      | em <- fromMaybe [] (maybeComponentExposedModules clbi)
+      , Just (OpenModule (DefiniteUnitId uid) m) <- [exposedReexport em]
+      ]
+    origin uid
+      | uid == componentUnitId clbi = VNone
+      | Just (pn, ln) <- Map.lookup uid local_units = str (libraryLabel variant localIndex pn ln)
+      | Just ipi <- PackageIndex.lookupUnitId (installedPkgs lbi) uid = str (libraryLabel variant localIndex (packageName ipi) (sourceLibName ipi))
+      | otherwise = VNone
+    -- The configured unit ids of the local libraries.
+    local_units =
+      Map.fromList
+        [ (componentUnitId c, (pn, ln))
+        | ((pn, cname@(CLibName ln)), l) <- Map.toList componentLBIs
+        , c <- componentNameCLBIs l cname
+        ]
+
+-- | The label of a library a component depends on: a local package's
+-- target, or a target of the third-party cell.
+libraryLabel :: Variant -> LocalPackageIndex -> PackageName -> LibraryName -> String
+libraryLabel variant localIndex pn ln = case Map.lookup pn localIndex of
+  Just (dir, _) -> localTargetLabel dir (variantTargetName variant (libTargetName pn ln))
+  Nothing -> thirdPartyHaskellTargetLabel variant (libTargetName pn ln)
+
+classifyDeps :: Variant -> LocalPackageIndex -> BuildInfo -> ([String], [String])
+classifyDeps variant localIndex bi
+  -- In a variant, external packages are labels of the variant's own
+  -- third-party cell, in `deps` (buck2/haskell.bzl's `packages` kwarg
+  -- names targets of the base cell). See Note [Variants].
+  | isJust (variantName variant) = ([], thirdParty externalMain ++ externalSubs ++ localLabels)
+  | otherwise = (externalMain, externalSubs ++ localLabels)
+  where
+    thirdParty = map (thirdPartyHaskellTargetLabel variant)
+    externalMain = ordNub [unPackageName pn | (pn, LMainLibName) <- allDeps, not (Map.member pn localIndex)]
+    externalSubs = thirdParty (ordNub [libTargetName pn ln | (pn, ln@(LSubLibName _)) <- allDeps, not (Map.member pn localIndex)])
+    localLabels = ordNub [localTargetLabel dir (variantTargetName variant (libTargetName pn ln)) | (pn, ln) <- allDeps, Just (dir, _) <- [Map.lookup pn localIndex]]
     directDeps =
       ordNub
         [ (depPkgName d, ln)
         | d <- targetBuildDepends bi
         , ln <- NES.toList (depLibraries d)
         ]
-    -- A local package's buck2 haskell_library() rule only ever declares
-    -- its own real source modules - unlike a real GHC package db entry,
-    -- it has no way to also claim modules reexported (`reexported-
-    -- modules:` in the .cabal file) from elsewhere. So a component that
-    -- depends on a local package with reexports (e.g. `Cabal` re-
-    -- exporting a chunk of `Cabal-syntax`) needs the reexport's origin
-    -- package added as an explicit direct dependency too, or - once
-    -- compile.bzl's `-hide-all-packages` is in effect - GHC can't find
-    -- the reexported module at all: "Could not load module ...". This
-    -- closure adds those origins (transitively, in case a reexporting
-    -- package itself depends on another reexporting package).
     allDeps = closeOverReexports [] directDeps
     closeOverReexports seen [] = seen
     closeOverReexports seen (p@(pn, _) : rest)
@@ -638,8 +847,11 @@ classifyDeps localIndex bi =
           let origins = maybe [] snd (Map.lookup pn localIndex)
            in closeOverReexports (p : seen) (rest ++ [(o, LMainLibName) | o <- origins])
 
-thirdPartyHaskellTargetLabel :: String -> String
-thirdPartyHaskellTargetLabel name = "third-party-haskell//:" ++ name
+-- | A target of the variant's third-party cell: @third-party-haskell//:x@,
+-- or @third-party-haskell-stage2//:x@ (a cell alias of .buckconfig for
+-- the variant's @third-party/haskell-stage2@ directory). See Note [Variants].
+thirdPartyHaskellTargetLabel :: Variant -> String -> String
+thirdPartyHaskellTargetLabel variant name = "third-party-haskell" ++ variantSuffix variant ++ "//:" ++ name
 
 localTargetLabel :: FilePath -> String -> String
 localTargetLabel dir targetName = "//" ++ (if dir == "." then "" else dir) ++ ":" ++ targetName
@@ -683,16 +895,22 @@ localTargetLabel dir targetName = "//" ++ (if dir == "." then "" else dir) ++ ":
 -- executable at all, skipped or not - the bug this rewrite exists to
 -- fix), so left as a known, pre-existing class of limitation rather than
 -- solved here.
-buildToolDependsArg :: LocalPackageIndex -> Set String -> BuildInfo -> [(String, Value)]
-buildToolDependsArg localIndex externalBuildTools bi =
+buildToolDependsArg :: Variant -> LocalPackageIndex -> Set String -> BuildInfo -> [(String, Value)]
+buildToolDependsArg variant localIndex externalBuildTools bi =
   optionalListArg "build_tool_depends" (mapMaybe resolve (ordNub [(pn, exe) | ExeDependency pn exe _ <- buildToolDepends bi]))
   where
-    resolve (pn, exe) = case Map.lookup pn localIndex of
-      Just (dir, _) -> Just (localTargetLabel dir (unUnqualComponentName exe))
-      Nothing
-        | unUnqualComponentName exe `Set.member` externalBuildTools ->
-            Just (thirdPartyHaskellTargetLabel (unUnqualComponentName exe ++ "-exe"))
-        | otherwise -> Nothing
+    -- Tools are exec deps of the base variant: an unsuffixed local target,
+    -- or the base variant's third-party tool. See Note [Variants].
+    resolve (pn, exe)
+      | exeName `Set.member` variantBaseTools variant = Just (thirdPartyHaskellTargetLabel baseVariant (exeName ++ "-exe"))
+      | otherwise = case Map.lookup pn localIndex of
+          Just (dir, _) -> Just (localTargetLabel dir exeName)
+          Nothing
+            | exeName `Set.member` externalBuildTools ->
+                Just (thirdPartyHaskellTargetLabel variant (exeName ++ "-exe"))
+            | otherwise -> Nothing
+      where
+        exeName = unUnqualComponentName exe
 
 -- | The target label for one @cabal-buck2\/autogen\/BUCK@ export (see
 -- 'PackageTargets') - needed (not just the plain file path) to reference
@@ -702,12 +920,12 @@ buildToolDependsArg localIndex externalBuildTools bi =
 -- package), so a file living there is no longer a plain same-package
 -- source path as far as @pkgDir@'s own rules are concerned, even though
 -- it's still on disk right where it always was.
-autogenExportLabel :: FilePath -> String -> String
-autogenExportLabel rootRelPkgDir = localTargetLabel autogenDir
+autogenExportLabel :: Variant -> FilePath -> String -> String
+autogenExportLabel variant rootRelPkgDir = localTargetLabel autogenDir
   where
     autogenDir
-      | rootRelPkgDir == "." = "cabal-buck2" </> "autogen"
-      | otherwise = rootRelPkgDir </> "cabal-buck2" </> "autogen"
+      | rootRelPkgDir == "." = variantAutogenDir variant
+      | otherwise = rootRelPkgDir </> variantAutogenDir variant
 
 -- | Resolve each module in @hs-source-dirs@ to its real file, trying
 -- @.hs@\/@.lhs@\/@.hsc@ in turn (the extensions buck2/hsc2hs.bzl knows how
@@ -733,9 +951,9 @@ autogenExportLabel rootRelPkgDir = localTargetLabel autogenDir
 -- (since a @buck2 build //...@ evaluates every @BUCK@ file up front)
 -- would otherwise take the *entire* build down over one unresolvable
 -- module in one component of one package.
-resolveModules :: Verbosity -> PackageDescription -> Maybe (LocalBuildInfo, ComponentLocalBuildInfo) -> FilePath -> FilePath -> BuildInfo -> [ModuleName.ModuleName] -> IO (Maybe ([(String, Value)], [(String, FilePath)]))
-resolveModules verbosity pkgDesc mlbiClbi rootRelPkgDir pkgDir bi mods = do
-  results <- traverse (resolveOne verbosity pkgDesc mlbiClbi rootRelPkgDir pkgDir (sourceDirs bi) (autogenModules bi)) mods
+resolveModules :: Verbosity -> Variant -> String -> PackageDescription -> Maybe (LocalBuildInfo, ComponentLocalBuildInfo) -> FilePath -> FilePath -> BuildInfo -> [ModuleName.ModuleName] -> IO (Maybe ([(String, Value)], [AutogenExport]))
+resolveModules verbosity variant targetName pkgDesc mlbiClbi rootRelPkgDir pkgDir bi mods = do
+  results <- traverse (resolveOne verbosity variant targetName pkgDesc mlbiClbi rootRelPkgDir pkgDir (sourceDirs bi) (autogenModules bi)) mods
   return $ case sequenceA results of
     Nothing -> Nothing
     Just pairs -> Just (concatMap fst pairs, concatMap snd pairs)
@@ -750,18 +968,18 @@ resolveModules verbosity pkgDesc mlbiClbi rootRelPkgDir pkgDir bi mods = do
 -- the @deriveConstants@ tool in its Setup.hs.
 --
 -- Instead of skipping the whole component, we map such a module to the
--- same-package target @:autogen-<Module.Name>@:
+-- same-package target @:<target>-autogen-<Module.Name>@:
 --
---   srcs = { 'GHC/Platform/Constants.hs': ':autogen-GHC.Platform.Constants' }
+--   srcs = { 'GHC/Platform/Constants.hs': ':ghc-autogen-GHC.Platform.Constants' }
 --
 -- The hand-maintained @BUCK@ file must define that target (a @genrule@ or
 -- an @export_file@) with the module source as its output. buck2 reports
 -- an unknown target if it is missing, and the warning we emit here names
 -- the target to define.
-resolveOne :: Verbosity -> PackageDescription -> Maybe (LocalBuildInfo, ComponentLocalBuildInfo) -> FilePath -> FilePath -> [FilePath] -> [ModuleName.ModuleName] -> ModuleName.ModuleName -> IO (Maybe ([(String, Value)], [(String, FilePath)]))
-resolveOne verbosity pkgDesc mlbiClbi rootRelPkgDir pkgDir dirs autogens m
+resolveOne :: Verbosity -> Variant -> String -> PackageDescription -> Maybe (LocalBuildInfo, ComponentLocalBuildInfo) -> FilePath -> FilePath -> [FilePath] -> [ModuleName.ModuleName] -> ModuleName.ModuleName -> IO (Maybe ([(String, Value)], [AutogenExport]))
+resolveOne verbosity variant targetName pkgDesc mlbiClbi rootRelPkgDir pkgDir dirs autogens m
   | m == autogenPackageInfoModuleName pkgDesc = do
-      (label, autogenExport) <- writePackageInfoModule rootRelPkgDir pkgDir pkgDesc m
+      (label, autogenExport) <- writePackageInfoModule variant rootRelPkgDir pkgDir pkgDesc m
       return (Just ([(ModuleName.toFilePath m <.> "hs", str label)], [autogenExport]))
   | m == autogenPathsModuleName pkgDesc = case mlbiClbi of
       Nothing -> do
@@ -769,24 +987,35 @@ resolveOne verbosity pkgDesc mlbiClbi rootRelPkgDir pkgDir dirs autogens m
           "cabal buck2: couldn't generate " ++ prettyShow m ++ " (no LocalBuildInfo available for this component)"
         return Nothing
       Just (lbi, clbi) -> do
-        (label, autogenExport) <- writePathsModule rootRelPkgDir pkgDir pkgDesc lbi clbi m
+        (label, autogenExport) <- writePathsModule variant rootRelPkgDir pkgDir pkgDesc lbi clbi m
         return (Just ([(ModuleName.toFilePath m <.> "hs", str label)], [autogenExport]))
   | otherwise = do
       let modPath = ModuleName.toFilePath m
           hsPath = modPath <.> "hs"
+      -- A configure script (build-type Configure) can generate a module
+      -- into the build directory, which Cabal searches before the source
+      -- directories (GHC's ghc-internal: GHC.Internal.Prim, with a stub
+      -- in src/ too). Such a module is treated like an autogen module
+      -- without a generator.
+      inBuildDir <- case mlbiClbi of
+        Just (lbi, _) -> doesFileExist (interpretSymbolicPath (mbWorkDirLBI lbi) (buildDir lbi) </> hsPath)
+        Nothing -> return False
       -- buck2/haskell.bzl's own srcs-resolution (_resolve_src) auto-detects
       -- .hsc/.x/.y by the *source* file's extension and runs it through
       -- hsc2hs()/alex()/happy() - already loaded by haskell.bzl itself, so
       -- nothing extra needs to be loaded here for that to work.
-      found <- firstExistingIn pkgDir dirs [modPath <.> ext | ext <- ["hs", "lhs", "hsc", "x", "y"]]
+      found <-
+        if inBuildDir
+          then return Nothing
+          else firstExistingIn pkgDir dirs [modPath <.> ext | ext <- ["hs", "lhs", "hsc", "x", "y"]]
       case found of
         Just (dir, file) -> do
           -- A boot file next to the module goes into srcs too: the prelude
           -- passes it to GHC as a hidden input (it is not a compiler
           -- argument, but GHC reads it from the source directory).
           boots <- filterM (\b -> doesFileExist (pkgDir </> dir </> b)) [modPath <.> "hs-boot", modPath <.> "lhs-boot"]
-          let outside = outsideSourceLabel rootRelPkgDir dir
-              -- Normalised so that a source at its module path is used in
+          outside <- outsideSourceLabel (pkgDirToRoot rootRelPkgDir pkgDir) rootRelPkgDir dir
+          let -- Normalised so that a source at its module path is used in
               -- place ("./X.hs" would make buck2/haskell.bzl copy it).
               entry f = (f, str (fromMaybe (normalise (dir </> f)) (outside f)))
           for_ (outside file) $ \label ->
@@ -799,20 +1028,23 @@ resolveOne verbosity pkgDesc mlbiClbi rootRelPkgDir pkgDir dirs autogens m
                 ++ "); the target "
                 ++ label
                 ++ " must export it"
-          return (Just ((hsPath, snd (entry file)) : map entry boots, []))
-        Nothing
-          | m `elem` autogens -> do
+          -- A literate source keeps its extension: GHC unlits it.
+          let key = modPath <.> (if takeExtension file == ".lhs" then "lhs" else "hs")
+          return (Just ((key, snd (entry file)) : map entry boots, []))
+        Nothing ->
+          if m `elem` autogens || inBuildDir
+            then do
               -- See Note [Autogen modules without a generator]
               warn verbosity $
-                "cabal buck2: autogen module "
-                  ++ prettyShow m
-                  ++ " has no source file; the target :"
-                  ++ autogenTargetName m
+                "cabal buck2: "
+                  ++ (if inBuildDir then "module " ++ prettyShow m ++ " is generated into the build directory" else "autogen module " ++ prettyShow m ++ " has no source file")
+                  ++ "; the target :"
+                  ++ autogenTargetName targetName m
                   ++ " in "
                   ++ (rootRelPkgDir </> "BUCK")
                   ++ " must provide it"
-              return (Just ([(hsPath, str (":" ++ autogenTargetName m))], []))
-          | otherwise -> do
+              return (Just ([(hsPath, str (":" ++ autogenTargetName targetName m))], []))
+            else do
               warn verbosity $
                 "cabal buck2: couldn't find a source file for module "
                   ++ prettyShow m
@@ -820,23 +1052,25 @@ resolveOne verbosity pkgDesc mlbiClbi rootRelPkgDir pkgDir dirs autogens m
                   ++ intercalate ", " dirs
               return Nothing
 
--- | Name of the hand-written target that provides an autogen module.
+-- | Name of the hand-written target that provides an autogen module of a
+-- component: @<target>-autogen-<Module.Name>@, so that two variants of the
+-- component (see Note [Variants]) can have different generators.
 -- See Note [Autogen modules without a generator].
-autogenTargetName :: ModuleName.ModuleName -> String
-autogenTargetName m = "autogen-" ++ prettyShow m
+autogenTargetName :: String -> ModuleName.ModuleName -> String
+autogenTargetName targetName m = targetName ++ "-autogen-" ++ prettyShow m
 
 -- | Writes @PackageInfo_<pkg>.hs@ under @cabal-buck2\/autogen@, with the
 -- same content real Cabal generates. Like 'writePathsModule', but it needs
 -- no 'LocalBuildInfo'.
-writePackageInfoModule :: FilePath -> FilePath -> PackageDescription -> ModuleName.ModuleName -> IO (String, (String, FilePath))
-writePackageInfoModule rootRelPkgDir pkgDir pkgDesc m = do
-  createDirectoryIfMissing True (pkgDir </> "cabal-buck2" </> "autogen")
+writePackageInfoModule :: Variant -> FilePath -> FilePath -> PackageDescription -> ModuleName.ModuleName -> IO (String, AutogenExport)
+writePackageInfoModule variant rootRelPkgDir pkgDir pkgDesc m = do
+  createDirectoryIfMissing True (pkgDir </> variantAutogenDir variant)
   writeFile (pkgDir </> relPath) (generatePackageInfoModule pkgDesc)
-  return (autogenExportLabel rootRelPkgDir exportName, (exportName, moduleFileName))
+  return (autogenExportLabel variant rootRelPkgDir exportName, AutogenFile exportName moduleFileName)
   where
     exportName = ModuleName.toFilePath m
     moduleFileName = exportName <.> "hs"
-    relPath = "cabal-buck2" </> "autogen" </> moduleFileName
+    relPath = variantAutogenDir variant </> moduleFileName
 
 -- | Cabal's own Setup.hs generates a @Paths_\<pkg\>@ module fresh at
 -- configure\/build time (giving @version@\/@getDataFileName@\/etc) - no
@@ -860,15 +1094,15 @@ writePackageInfoModule rootRelPkgDir pkgDir pkgDesc m = do
 -- a same-package-relative path from @pkgDir@'s own rules, only by a real
 -- target reference (which @attrs.source()@, @srcs@'s own element type,
 -- accepts just as well as a path).
-writePathsModule :: FilePath -> FilePath -> PackageDescription -> LocalBuildInfo -> ComponentLocalBuildInfo -> ModuleName.ModuleName -> IO (String, (String, FilePath))
-writePathsModule rootRelPkgDir pkgDir pkgDesc lbi clbi m = do
-  createDirectoryIfMissing True (pkgDir </> "cabal-buck2" </> "autogen")
+writePathsModule :: Variant -> FilePath -> FilePath -> PackageDescription -> LocalBuildInfo -> ComponentLocalBuildInfo -> ModuleName.ModuleName -> IO (String, AutogenExport)
+writePathsModule variant rootRelPkgDir pkgDir pkgDesc lbi clbi m = do
+  createDirectoryIfMissing True (pkgDir </> variantAutogenDir variant)
   writeFile (pkgDir </> relPath) (generatePathsModule pkgDesc lbi clbi)
-  return (autogenExportLabel rootRelPkgDir exportName, (exportName, moduleFileName))
+  return (autogenExportLabel variant rootRelPkgDir exportName, AutogenFile exportName moduleFileName)
   where
     exportName = ModuleName.toFilePath m
     moduleFileName = exportName <.> "hs"
-    relPath = "cabal-buck2" </> "autogen" </> moduleFileName
+    relPath = variantAutogenDir variant </> moduleFileName
 
 -- | A @detailed-0.9@ test-suite's own stub @Main@ - see 'testSuite's own
 -- haddock for why this is a from-scratch driver over
@@ -879,15 +1113,15 @@ writePathsModule rootRelPkgDir pkgDir pkgDesc lbi clbi m = do
 -- export entry the same way 'writePathsModule' does, and for the same
 -- reason (a different buck2 package from @pkgDir@ once
 -- @cabal-buck2\/autogen\/BUCK@ exists).
-writeDetailedTestStub :: FilePath -> FilePath -> String -> ModuleName.ModuleName -> IO (String, (String, FilePath))
-writeDetailedTestStub rootRelPkgDir pkgDir targetName testModule = do
+writeDetailedTestStub :: Variant -> FilePath -> FilePath -> String -> ModuleName.ModuleName -> IO (String, AutogenExport)
+writeDetailedTestStub variant rootRelPkgDir pkgDir targetName testModule = do
   createDirectoryIfMissing True (pkgDir </> dir)
   writeFile (pkgDir </> relPath) contents
-  return (autogenExportLabel rootRelPkgDir exportName, (exportName, exportRelPath))
+  return (autogenExportLabel variant rootRelPkgDir exportName, AutogenFile exportName exportRelPath)
   where
     exportName = targetName ++ "-stub-main"
     exportRelPath = targetName </> "Main.hs"
-    dir = "cabal-buck2" </> "autogen" </> targetName
+    dir = variantAutogenDir variant </> targetName
     relPath = dir </> "Main.hs"
     contents =
       unlines
@@ -986,24 +1220,40 @@ firstExistingIn pkgDir dirs candidates =
 --
 --   'GHC/Lexeme.hs': '//libraries/ghc-boot-th:GHC/Lexeme.hs'
 --
--- The label is @//<source dir, relative to the project root>:<file>@. A
--- hand-maintained @BUCK@ file in that source directory must export the
--- files under these names, for example:
+-- The buck2 package of the label is the nearest directory, from the
+-- source directory up to the project root, that has a @BUCK@ file; the
+-- target name is the file path relative to that directory. For
+-- @../ghc-internal/src@ this gives @//libraries/ghc-internal:src/GHC/...@
+-- when @libraries/ghc-internal/BUCK@ exists, so that the ghc-internal
+-- package itself can still use its @src/@ files by path (a @BUCK@ file in
+-- @src/@ would make them members of another package). Without any @BUCK@
+-- file, the source directory itself is used.
 --
---   [export_file(name = f, src = f, visibility = ["PUBLIC"]) for f in glob(["**/*.hs"])]
+-- A hand-maintained @BUCK@ file in that directory must export the files
+-- under these names, for example:
+--
+--   [export_file(name = f, src = f, visibility = ["PUBLIC"]) for f in glob(["src/**/*.hs"])]
 --
 -- A source directory outside the project root cannot be handled this way;
 -- 'outsideSourceLabel' returns 'Nothing' and the path is used as-is.
 
 -- | The target label for a source in a directory outside the package
 -- directory, or 'Nothing' when the directory is inside the package.
+-- The first argument is the project root.
 -- See Note [Sources outside the package directory].
-outsideSourceLabel :: FilePath -> FilePath -> FilePath -> Maybe String
-outsideSourceLabel rootRelPkgDir dir file
-  | ".." `notElem` splitDirectories dir = Nothing
+outsideSourceLabel :: FilePath -> FilePath -> FilePath -> IO (FilePath -> Maybe String)
+outsideSourceLabel projectRoot rootRelPkgDir dir
+  | ".." `notElem` splitDirectories dir = return (const Nothing)
   | otherwise = case collapse (splitDirectories (rootRelPkgDir </> dir)) of
-      Just parts -> Just ("//" ++ intercalate "/" parts ++ ":" ++ file)
-      Nothing -> Nothing
+      Nothing -> return (const Nothing)
+      Just parts -> do
+        -- The nearest ancestor (or the directory itself) with a BUCK file.
+        let candidates = [splitAt n parts | n <- [length parts, length parts - 1 .. 1]]
+        found <- filterM (\(pkg, _) -> doesFileExist (projectRoot </> joinPath pkg </> "BUCK")) candidates
+        let (pkg, rest) = case found of
+              (c : _) -> c
+              [] -> (parts, [])
+        return $ \file -> Just ("//" ++ intercalate "/" pkg ++ ":" ++ joinPath (rest ++ [file]))
   where
     -- Resolve "." and ".." components; Nothing when ".." escapes the
     -- project root.
@@ -1014,10 +1264,150 @@ outsideSourceLabel rootRelPkgDir dir file
     step (Just acc) d = Just (acc ++ [d])
     step Nothing _ = Nothing
 
+-- | The project root, from a package directory and the same directory
+-- relative to the root (@.@ for a package at the root).
+pkgDirToRoot :: FilePath -> FilePath -> FilePath
+pkgDirToRoot rootRelPkgDir pkgDir = iterate takeDirectory pkgDir !! depth
+  where
+    depth = length (filter (/= ".") (splitDirectories rootRelPkgDir))
+
 sourceDirs :: BuildInfo -> [FilePath]
 sourceDirs bi = case map getSymbolicPath (hsSourceDirs bi) of
   [] -> ["."]
   ds -> ds
+
+-- | The include directories of a library, for its registration and its
+-- dependents: the configure-generated headers (see Note [Configure build
+-- type]) and the @include-dirs@ of the component. The directory @.@
+-- cannot be a buck2 source (it would cover the package's sub-packages),
+-- so it is an exported -I flag instead.
+includeDirsArgs :: FilePath -> Maybe String -> BuildInfo -> [(String, Value)]
+includeDirsArgs rootRelPkgDir confLabel bi =
+  optionalListArg "include_dirs" (maybeToList confLabel ++ filter (/= ".") dirs)
+    ++ optionalListArg "exported_preprocessor_flags" dotFlags
+  where
+    dirs = map (normalise . getSymbolicPath) (includeDirs bi)
+    dotFlags = ["-I" ++ (if rootRelPkgDir == "." then "." else rootRelPkgDir) | "." `elem` dirs]
+
+-- Note [Configure build type]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- A package of build-type Configure has a configure script that writes
+-- headers into the build directory (HsUnixConfig.h of unix,
+-- DerivedConstants.h of GHC's rts); Cabal adds @<builddir>/<dir>@ to the
+-- include path for every @include-dirs@ entry @dir@. The script runs when
+-- `cabal buck2` configures the package, so the headers exist when the
+-- targets are generated. 'configureIncludes' copies them to
+-- @cabal-buck2/autogen/<target>-configure-include/@, exported as a
+-- filegroup of that name, and the directory becomes an include directory
+-- of the library: -I for its own compilation (GHC, hsc2hs, the C sources)
+-- and @include_dirs@ for the registration and the dependents.
+--
+-- The hooked build info the script writes (<pkg>.buildinfo) is read by
+-- 'hookedBuildInfo'.
+
+-- | The headers a configure script generated into the build directory,
+-- copied into the autogen directory: the filegroup name and its entries,
+-- or 'Nothing' when there are none. See Note [Configure build type].
+configureIncludes :: Variant -> FilePath -> String -> LocalBuildInfo -> BuildInfo -> IO (Maybe (String, [(String, FilePath)]))
+configureIncludes variant pkgDir targetName lbi bi = do
+  headers <- fmap concat $ for (ordNub (map getSymbolicPath (includeDirs bi))) $ \d -> do
+    let dir = build_dir </> d
+    exists <- doesDirectoryExist dir
+    if exists then map (\f -> (f, dir </> f)) <$> header_files dir "" else return []
+  if null headers
+    then return Nothing
+    else do
+      for_ headers $ \(rel, src) -> do
+        createDirectoryIfMissing True (takeDirectory (out_dir </> rel))
+        copyFile src (out_dir </> rel)
+      return (Just (name, [(rel, name </> rel) | (rel, _) <- headers]))
+  where
+    build_dir = interpretSymbolicPath (mbWorkDirLBI lbi) (buildDir lbi)
+    name = targetName ++ "-configure-include"
+    out_dir = pkgDir </> variantAutogenDir variant </> name
+    -- The .h files under dir, relative to dir; Cabal's own autogen
+    -- directory (cabal_macros.h, Paths_<pkg>.hs) is left out.
+    header_files dir rel = do
+      entries <- listDirectory (dir </> rel)
+      fmap concat $ for entries $ \e -> do
+        let rel_e = if null rel then e else rel </> e
+        is_dir <- doesDirectoryExist (dir </> rel_e)
+        if is_dir
+          then if e == "autogen" then return [] else header_files dir rel_e
+          else return [rel_e | takeExtension e == ".h"]
+
+-- Note [C and Cmm sources]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~
+-- The @c-sources@, @cxx-sources@, @asm-sources@ and @cmm-sources@ (C--,
+-- GHC's own low-level language) of a component are compiled by GHC: they
+-- go into the @haskell_library@'s @srcs@ next to the modules
+-- (buck2/haskell.bzl passes them on to GHC, which compiles them in its
+-- --make run), with @cc-options@ as @-optc@ flags, @cxx-options@ as
+-- @-optcxx@ flags and @include-dirs@ as @-I@ flags. The objects land in
+-- the library's archive, as with Cabal. This matters for a program that
+-- the resulting compiler links by itself (GHC's stage 2): the C objects
+-- and the Haskell objects of a library reference each other
+-- (ghc-internal's RtsIface.c uses closures of its modules, the modules
+-- import C functions), which the linker resolves within one archive, and
+-- GHC links one archive per unit of the package db.
+--
+-- The header files of the component (its @include-dirs@, the
+-- directories of its C sources) are listed in @srcs@ too: they are not
+-- compiler inputs, but buck2 reruns the compilation when they change.
+--
+-- A component with @pkgconfig-depends@ keeps a separate @cxx_library@ for
+-- its C sources ('cxxLibraryFor'): buck2 resolves the pkg-config flags
+-- there.
+--
+-- The C sources of an executable are compiled by GHC too and linked as
+-- objects, before the libraries, which a C @main@ (GHC's iserv,
+-- @-no-hs-main@) needs: in an archive after the RTS, its reference to
+-- @hs_main@ would stay unresolved.
+
+-- | The header files of a component, relative to the package directory:
+-- the @.h@ files under its @include-dirs@ (not under @.@: only the
+-- top-level ones there) and next to its C sources. See Note [C and Cmm
+-- sources].
+headerSources :: FilePath -> BuildInfo -> IO [FilePath]
+headerSources pkgDir bi = do
+  let include_dirs = map (normalise . getSymbolicPath) (includeDirs bi)
+      c_dirs = ordNub (map (takeDirectory . normalise . getSymbolicPath) (cSources bi ++ cxxSources bi))
+  under_includes <- fmap concat $ for include_dirs $ \d ->
+    if d == "." then top_level "." else map (d </>) <$> recursive d
+  next_to_sources <- fmap concat $ for (filter (`notElem` include_dirs) c_dirs) top_level
+  return (ordNub (under_includes ++ next_to_sources))
+  where
+    is_header f = takeExtension f == ".h"
+    entries d = do
+      exists <- doesDirectoryExist (pkgDir </> d)
+      if exists then listDirectory (pkgDir </> d) else return []
+    top_level d = do
+      es <- entries d
+      return [normalise (d </> e) | e <- es, is_header e]
+    -- paths relative to d
+    recursive d = do
+      es <- entries d
+      fmap concat $ for es $ \e -> do
+        is_dir <- doesDirectoryExist (pkgDir </> d </> e)
+        if is_dir
+          then map (e </>) <$> recursive (d </> e)
+          else return [e | is_header e]
+
+-- | Sources of a @c-sources@\/@cmm-sources@ field with the per-file options
+-- of the Stable Haskell Cabal syntax: @Jumps_V32.cmm (-mavx2)@. Upstream
+-- Cabal reads that as two entries, the second one @(-mavx2)@; here it is
+-- paired with the file again. The options become the file's
+-- @per_src_flags@ in buck2/haskell.bzl.
+sourcesWithOptions :: [FilePath] -> [(FilePath, [String])]
+sourcesWithOptions = go
+  where
+    go (f : opts : rest)
+      | Just inner <- parenthesised opts = (f, words inner) : go rest
+    go (f : rest) = (f, []) : go rest
+    go [] = []
+    parenthesised t
+      | "(" `isPrefixOf` t, ")" `isSuffixOf` t = Just (take (length t - 2) (drop 1 t))
+      | otherwise = Nothing
 
 -- Note [Packages without Haskell modules]
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1025,24 +1415,22 @@ sourceDirs bi = case map getSymbolicPath (hsSourceDirs bi) of
 --
 --   * header-only libraries: @include-dirs@ and @install-includes@ only
 --     (rts-headers);
---   * C-only libraries: @c-sources@ and @install-includes@ (rts-fs);
+--   * C-only libraries: @c-sources@ and @install-includes@ (rts-fs), or
+--     Cmm sources (the rts ways);
 --   * C executables: @main-is: unlit.c@ (unlit).
 --
--- A @haskell_library()@ with no sources fails in the prelude ("no objects
--- to archive"), and a @haskell_binary()@ with only @Main.c@ makes GHC
--- fail ("no input files"). So such a component becomes a C target of the
--- same name:
+-- A library is a registered unit even without modules: GHC reads a
+-- unit's include-dirs (DerivedConstants.h of the rts unit), and a
+-- program built with the resulting compiler is linked against the unit's
+-- library (rts-fs) through its registration. So a header-only library is
+-- a @haskell_library()@ with no sources, and a library with C or Cmm
+-- sources has them compiled by GHC (see Note [C and Cmm sources]). A C
+-- executable, which GHC cannot link ("no input files" with only
+-- @Main.c@), becomes a @cxx_binary@ with @main-is@ and the C sources.
 --
---   * header-only library -> @prebuilt_cxx_library(header_only = True,
---     header_dirs = <include-dirs>)@;
---   * C-only library -> the @cxx_library@ 'cxxLibraryFor' makes, named
---     after the component itself instead of @<name>-cxx@;
---   * C executable -> @cxx_binary@ with @main-is@ and the C sources.
---
--- Dependents keep the same labels. A @haskell_library()@ accepts a C
--- target in @deps@, and the prelude passes the C include directories on
--- to GHC's preprocessor (@-optP@), which is how the Haskell CPP finds the
--- headers of rts-headers.
+-- Dependents keep the same labels, and get the headers of these units
+-- as -I flags (@include_dirs@) for the Haskell preprocessor and the C
+-- compiler.
 
 -- | @-I@ flags for a component's @include-dirs@, relative to the project
 -- root: every cxx action runs with the project root as its cwd, so a
@@ -1058,13 +1446,18 @@ includeFlagsFor rootRelPkgDir bi =
 -- distinct @pkgconfig-depends@ it needs - or nothing at all if the
 -- component has no C\/C++ sources.
 cxxLibraryFor
-  :: LocalPackageIndex
+  :: Variant
+  -> LocalPackageIndex
   -> FilePath
   -> FilePath
   -> String
+  -> [String]
+  -- ^ deps of the component (labels): their C headers are needed too
+  -> [String]
+  -- ^ extra exported preprocessor flags (the configure-generated headers)
   -> BuildInfo
   -> IO ([(String, [String])], [String], [Call])
-cxxLibraryFor _localIndex rootRelPkgDir _pkgDir cxxTargetName bi
+cxxLibraryFor variant _localIndex rootRelPkgDir _pkgDir cxxTargetName componentDeps extraPPFlags bi
   | null srcs = return ([], [], [])
   | otherwise =
       return
@@ -1074,10 +1467,10 @@ cxxLibraryFor _localIndex rootRelPkgDir _pkgDir cxxTargetName bi
         , pkgconfigCalls ++ [cxxCall]
         )
   where
-    srcs = map getSymbolicPath (cSources bi ++ cxxSources bi)
+    srcs = map getSymbolicPath (cSources bi ++ cxxSources bi ++ asmSources bi)
     -- @exported_preprocessor_flags@ is a plain string list, so the include
     -- paths need the package directory folded in - see 'includeFlagsFor'.
-    includeFlags = includeFlagsFor rootRelPkgDir bi
+    includeFlags = includeFlagsFor rootRelPkgDir bi ++ extraPPFlags
     pkgconfigNames = ordNub [unPkgconfigName n | PkgconfigDependency n _ <- pkgconfigDepends bi]
     pkgconfigCalls =
       [ call
@@ -1100,7 +1493,8 @@ cxxLibraryFor _localIndex rootRelPkgDir _pkgDir cxxTargetName bi
             -- buck2's compiler_flags apply to C and C++ sources alike, so
             -- @cc-options@ and @cxx-options@ are both passed.
             ++ optionalListArg "compiler_flags" (ccOptions bi ++ cxxOptions bi)
-            ++ optionalListArg "deps" [":pkgconfig-" ++ n | n <- pkgconfigNames]
+            ++ optionalListArg "deps" ([":pkgconfig-" ++ n | n <- pkgconfigNames] ++ componentDeps)
+            ++ [("default_target_platform", str plat) | Just plat <- [variantPlatform variant]]
             ++ [("visibility", strList ["PUBLIC"])]
             ++ [("cxx_std", VBool False) | null (cxxSources bi)]
         )

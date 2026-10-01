@@ -105,6 +105,7 @@ library
         Distribution.Client.Buck2.Prebuilt
         Distribution.Client.Buck2.Setup
         Distribution.Client.Buck2.Starlark
+        Distribution.Client.Buck2.Variant
         Distribution.Client.Check
         Distribution.Client.CmdBench
         Distribution.Client.CmdBuck2

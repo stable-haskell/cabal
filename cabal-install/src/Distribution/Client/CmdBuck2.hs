@@ -51,8 +51,12 @@ import qualified Distribution.Client.InLibrary as InLibrary
 import qualified Distribution.Client.InstallPlan as InstallPlan
 
 import Distribution.Client.DistDirLayout
-  ( DistDirLayout (distBuildDirectory, distProjectRootDirectory, distUnpackedSrcDirectory)
+  ( DistDirLayout (distBuildDirectory, distProjectRootDirectory, distUnpackedSrcDirectory, distUnpackedSrcRootDirectory)
   )
+import Distribution.Client.FetchUtils (fetchPackage)
+import Distribution.Client.ProjectBuilding (unpackPackageTarball)
+import Distribution.Client.ProjectConfig (projectConfigWithBuilderRepoContext)
+import Distribution.Client.ProjectConfig.Types (BuildTimeSettings)
 import Distribution.Client.NixStyleOptions
   ( NixStyleFlags (..)
   , cfgVerbosity
@@ -92,10 +96,12 @@ import Distribution.PackageDescription (PackageDescription)
 import Distribution.Simple.Compiler (PackageDBX (GlobalPackageDB))
 import qualified Distribution.Simple.PackageIndex as PackageIndex
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
-import Distribution.Simple.Command (CommandUI (..), usageAlternatives)
-import Distribution.Simple.Flag (toFlag)
+import Distribution.Simple.Command (CommandUI (..), OptionField, ShowOrParseArgs, option, reqArg', usageAlternatives)
+import Distribution.Simple.Flag (Flag, flagToList, flagToMaybe, toFlag)
+import Distribution.Simple.Program (ghcPkgProgram, ghcProgram, lookupProgram, programPath)
 import Distribution.Simple.Program.Builtin (builtinPrograms)
-import Distribution.Simple.Program.Db (prependProgramSearchPathNoLogging, restoreProgramDb)
+import qualified Distribution.Simple.Setup as Cabal
+import Distribution.Simple.Program.Db (prependProgramSearchPathNoLogging, restoreProgramDb, userSpecifyArgss)
 import Distribution.Simple.Register (generateRegistrationInfo)
 import Distribution.Simple.Utils (dieWithException, notice, ordNub)
 import Distribution.Types.Component (componentBuildInfo, componentName)
@@ -111,8 +117,9 @@ import Distribution.Types.UnitId (UnitId)
 import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity (defaultVerbosityHandles, normal)
 
-import System.Directory (canonicalizePath)
+import System.Directory (canonicalizePath, doesDirectoryExist, doesFileExist)
 import System.FilePath ((</>))
+import Data.List (isSuffixOf, stripPrefix)
 
 import Distribution.Client.Buck2.Generate (generateAllPackages)
 import Distribution.Client.Buck2.Prebuilt (generatePrebuilt)
@@ -120,11 +127,36 @@ import Distribution.Client.Buck2.Setup
   ( checkBuck2Prelude
   , ensureBuckconfigAndPackage
   )
+import Distribution.Client.Buck2.Variant
 import Distribution.Client.Errors
   ( CabalInstallException (Buck2ActionExtraArgs, Buck2NonLocalPackageLocation, ReportCannotPruneDependencies)
   )
 
-buck2Command :: CommandUI (NixStyleFlags ())
+-- | Flags of the buck2 command itself (the rest are the usual nix-style
+-- build flags).
+newtype Buck2Flags = Buck2Flags
+  { buck2Variant :: Flag String
+  -- ^ @--variant NAME@, see Note [Variants] in "Distribution.Client.Buck2.Variant"
+  }
+
+defaultBuck2Flags :: Buck2Flags
+defaultBuck2Flags = Buck2Flags{buck2Variant = mempty}
+
+buck2Options :: ShowOrParseArgs -> [OptionField Buck2Flags]
+buck2Options _ =
+  [ option
+      []
+      ["variant"]
+      ( "Generate a second set of build files for the project, named NAME: "
+          ++ "BUCK.NAME.cabal.bzl files, targets suffixed -NAME, built in the "
+          ++ "target platform root//buck2/platforms:NAME (e.g. GHC's stage 2)."
+      )
+      buck2Variant
+      (\v flags -> flags{buck2Variant = v})
+      (reqArg' "NAME" toFlag flagToList)
+  ]
+
+buck2Command :: CommandUI (NixStyleFlags Buck2Flags)
 buck2Command =
   CommandUI
     { commandName = "buck2"
@@ -142,11 +174,11 @@ buck2Command =
           ++ "configure` (-f, --enable-profiling, --enable-tests, etc.) are "
           ++ "honoured here too, and apply to the dependency build."
     , commandNotes = Nothing
-    , commandDefaultFlags = defaultNixStyleFlags ()
-    , commandOptions = nixStyleOptions (const [])
+    , commandDefaultFlags = defaultNixStyleFlags defaultBuck2Flags
+    , commandOptions = nixStyleOptions buck2Options
     }
 
-buck2Action :: NixStyleFlags () -> [String] -> GlobalFlags -> IO ()
+buck2Action :: NixStyleFlags Buck2Flags -> [String] -> GlobalFlags -> IO ()
 buck2Action flags extraArgs globalFlags = do
   unless (null extraArgs) $
     dieWithException verbosity (Buck2ActionExtraArgs extraArgs)
@@ -177,9 +209,16 @@ buck2Action flags extraArgs globalFlags = do
                 Nothing
                 targetSelectors
           let elaboratedPlan' = pruneInstallPlanToTargets TargetActionBuild targets elaboratedPlan
+              -- See Note [What cabal builds]
+              buck2Built =
+                Set.fromList
+                  [ elabUnitId elab
+                  | InstallPlan.Configured elab <- InstallPlan.toList elaboratedPlan'
+                  , elabLocalToProject elab || elabBuildStyle elab /= BuildAndInstall
+                  ]
           elaboratedPlan'' <-
             either (dieWithException verbosity . ReportCannotPruneDependencies . renderCannotPruneDependencies) return $
-              pruneToDependenciesNeeded (Map.keysSet targets) elaboratedPlan'
+              pruneToDependenciesNeeded (Map.keysSet targets `Set.union` buck2Built) elaboratedPlan'
           return (elaboratedPlan'', targets)
 
       notice verbosity "cabal buck2: building dependencies (cabal build all --only-dependencies)"
@@ -188,6 +227,17 @@ buck2Action flags extraArgs globalFlags = do
       runProjectPostBuildPhase verbosity baseCtx buildCtx buildOutcomes
 
       ensureBuckconfigAndPackage verbosity projectRoot
+
+      -- See Note [Unpacking inplace packages]
+      ensureUnpacked
+        verbosity
+        (buildSettings baseCtx)
+        (distDirLayout baseCtx)
+        [ elab
+        | InstallPlan.Configured elab <- InstallPlan.toList elaboratedPlanOriginal
+        , not (elabLocalToProject elab)
+        , elabBuildStyle elab /= BuildAndInstall
+        ]
 
       -- Every genuinely local package, *plus* every non-local one
       -- whose own build was forced 'inplace' by depending on
@@ -223,10 +273,18 @@ buck2Action flags extraArgs globalFlags = do
               , ExeDependency pn exeName _ <- PD.buildToolDepends (componentBuildInfo comp)
               ]
 
+      -- The variant's prebuilt closure goes to its own directory; the
+      -- base variant's tools stay the ones the rules use (Note [Variants]).
+      let variantName = flagToMaybe (buck2Variant (extraFlags flags))
+          preVariant = mkVariant variantName Set.empty
+      baseTools <- if isJust variantName then readBaseTools (projectRoot </> variantThirdPartyDir baseVariant </> "BUCK") else return Set.empty
+      let variant = mkVariant variantName baseTools
+
       (externalBuildTools, resolvedDeps) <-
         generatePrebuilt
           verbosity
           projectRoot
+          (variantThirdPartyDir preVariant)
           (cabalDirLayout baseCtx)
           (distDirLayout baseCtx)
           elaboratedShared
@@ -263,7 +321,7 @@ buck2Action flags extraArgs globalFlags = do
       -- ...), all sharing the same directory and the same (whole-package)
       -- 'PackageDescription' - so without this, a package with N
       -- buildable components would get regenerated N times over.
-      generateAllPackages verbosity projectRoot componentLBIs externalBuildTools (nubBy ((==) `on` fst) localPkgs)
+      generateAllPackages verbosity variant projectRoot componentLBIs externalBuildTools (nubBy ((==) `on` fst) localPkgs)
 
       notice verbosity $
         unlines
@@ -275,6 +333,77 @@ buck2Action flags extraArgs globalFlags = do
   where
     verbosity = cfgVerbosity normal flags
     depsFlags = flags{installFlags = (installFlags flags){installOnlyDeps = toFlag True}}
+
+-- | The tools (@<name>-exe@ targets) of the base variant's
+-- @third-party/haskell/BUCK@, for a variant's build-tool-depends. A plain
+-- scan of the generated file: it is ours, and its rule names are on lines
+-- of the form @    name = 'alex-exe',@.
+readBaseTools :: FilePath -> IO (Set String)
+readBaseTools path = do
+  exists <- doesFileExist path
+  if not exists
+    then return Set.empty
+    else do
+      contents <- readFile path
+      return $
+        Set.fromList
+          [ take (length name - length "-exe") name
+          | l <- lines contents
+          , Just rest <- [stripPrefix "name = '" (dropWhile (== ' ') l)]
+          , let name = takeWhile (/= '\'') rest
+          , "-exe" `isSuffixOf` name
+          ]
+
+-- Note [Unpacking inplace packages]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- A non-local package that is built inplace (a Hackage tarball that
+-- depends on a local package, see Note [What cabal builds]) is a buck2
+-- package: its generated build files go into its unpacked source
+-- directory under dist-newstyle/src. cabal unpacks a tarball there only
+-- when it builds the package, which cabal buck2 does not do, so this
+-- fetches (if needed) and unpacks such packages itself. A source
+-- repository package is already checked out when the plan is made.
+ensureUnpacked :: Verbosity -> BuildTimeSettings -> DistDirLayout -> [ElaboratedConfiguredPackage] -> IO ()
+ensureUnpacked verbosity settings distDirLayout elabs = do
+  todo <- filterM needsUnpack [(elab, loc) | elab <- elabs, Just loc <- [tarballLocation elab]]
+  unless (null todo) $
+    projectConfigWithBuilderRepoContext verbosity settings $ \repoctx ->
+      for_ todo $ \(elab, loc) -> do
+        resolved <- fetchPackage verbosity repoctx loc
+        let tarball = case resolved of
+              LocalTarballPackage file -> file
+              RemoteTarballPackage _ file -> file
+              RepoTarballPackage _ _ file -> file
+              RemoteSourceRepoPackage _ file -> file
+              _ -> error "ensureUnpacked: not a tarball"
+        unpackPackageTarball
+          verbosity
+          tarball
+          (distUnpackedSrcRootDirectory distDirLayout)
+          (elabPkgSourceId elab)
+          (elabPkgDescriptionOverride elab)
+  where
+    tarballLocation elab = case elabPkgSourceLocation elab of
+      loc@LocalTarballPackage{} -> Just loc
+      loc@RemoteTarballPackage{} -> Just loc
+      loc@RepoTarballPackage{} -> Just loc
+      loc@(RemoteSourceRepoPackage _ (Just _)) -> Just loc -- an sdist tarball, see 'packageSourceDir'
+      _ -> Nothing
+    needsUnpack (elab, _) =
+      not <$> doesDirectoryExist (distUnpackedSrcDirectory distDirLayout (elabPkgSourceId elab))
+
+-- Note [What cabal builds]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~
+-- cabal builds the store packages (BuildAndInstall) of the plan; buck2
+-- builds everything else: the local packages and every package that is
+-- built inplace because it depends on a local one (see 'localPkgs'). So
+-- the inplace packages are excluded from the dependency build too, not
+-- only the targets. A store package never depends on an inplace one, so
+-- this never leaves a dangling dependency. It matters for a staged
+-- compiler build: with an in-tree compiler every package is inplace
+-- (they all depend on the in-tree base), and cabal must not try to
+-- build e.g. the rts (whose configure script needs tools from the build)
+-- just because an inplace build tool depends on it.
 
 localPackageDir :: Verbosity -> ElaboratedConfiguredPackage -> IO FilePath
 localPackageDir verbosity elab = case elabPkgSourceLocation elab of
@@ -298,7 +427,11 @@ packageSourceDir verbosity distDirLayout elab
       LocalTarballPackage{} -> return unpackedPath
       RemoteTarballPackage{} -> return unpackedPath
       RepoTarballPackage{} -> return unpackedPath
-      RemoteSourceRepoPackage _ (Just localCheckout) -> return localCheckout
+      -- The local part of a synced source repository is an sdist tarball
+      -- of the package made from the checkout, which the build phase
+      -- unpacks like any other tarball (see ProjectBuilding's
+      -- withTarballLocalDirectory).
+      RemoteSourceRepoPackage _ (Just _) -> return unpackedPath
       RemoteSourceRepoPackage{} -> dieWithException verbosity (Buck2NonLocalPackageLocation (prettyShow (packageId elab)))
   where
     unpackedPath = distUnpackedSrcDirectory distDirLayout (elabPkgSourceId elab)
@@ -349,11 +482,17 @@ localBuildInfoFor verbosity distDirLayout plan shared ipi elab = do
       -- 'setupHsScriptOptions''s @useExtraPathEnv@ - just via a search
       -- path prepend instead of a subprocess's environment, since this
       -- runs in-process.
+      -- The per-package program arguments of the plan (a cabal.project's
+      -- `package rts ghc-options: -no-rts`, `program-options`,
+      -- `--ghc-options`) go into the program db, where the generator
+      -- reads them back (see Note [Project-level ghc-options] in
+      -- "Distribution.Client.Buck2.CabalToBuck").
       progDb =
-        prependProgramSearchPathNoLogging
-          (elabExeDependencyPaths elab ++ elabProgramPathExtra elab)
-          []
-          (restoreProgramDb builtinPrograms (pkgConfigCompilerProgs shared))
+        userSpecifyArgss (Map.toList (elabProgramArgs elab)) $
+          prependProgramSearchPathNoLogging
+            (elabExeDependencyPaths elab ++ elabProgramPathExtra elab)
+            []
+            (restoreProgramDb builtinPrograms (pkgConfigCompilerProgs shared))
       buildType = PD.buildType (elabPkgDescription elab)
       inputs =
         InLibrary.libraryConfigureInputsFromElabPackage
@@ -373,7 +512,16 @@ localBuildInfoFor verbosity distDirLayout plan shared ipi elab = do
       (ReadyPackage elab)
       shared
       commonFlags
-  InLibrary.configure inputs cfg
+  -- cabal-install names the compiler through configProgramPaths and leaves
+  -- configHcPath empty, so a build-type Configure package's configure
+  -- script would only get `--with-compiler=ghc` (the flavour) and look
+  -- `ghc` up on $PATH. Give it the real paths: a staged build's compiler
+  -- is not on $PATH (GHC's ghc-internal/configure runs `$GHC
+  -- --print-prim-module`).
+  let compilerProgs = pkgConfigCompilerProgs shared
+      hcPath = maybe mempty (toFlag . programPath) (lookupProgram ghcProgram compilerProgs)
+      hcPkgPath = maybe mempty (toFlag . programPath) (lookupProgram ghcPkgProgram compilerProgs)
+  InLibrary.configure inputs cfg{Cabal.configHcPath = hcPath, Cabal.configHcPkg = hcPkgPath}
 
 -- | If @cname@ names a library component, produce the real, in-place
 -- 'InstalledPackageInfo' for it - the same info a real @Setup register@

@@ -35,6 +35,9 @@ module Distribution.Client.ProjectBuilding
   , BuildResult (..)
   , BuildFailure (..)
   , BuildFailureReason (..)
+
+    -- * Unpacking (for "Distribution.Client.CmdBuck2")
+  , unpackPackageTarball
   ) where
 
 import Distribution.Client.Compat.Prelude

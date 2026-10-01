@@ -38,18 +38,21 @@ import Prelude ()
 
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath (makeRelative, takeFileName, (</>))
+import Data.List (isInfixOf)
 
 import qualified Data.Map as Map
 
 import qualified Distribution.ModuleName as ModuleName
-import Distribution.Package (packageName)
+import Distribution.Package (packageName, packageVersion)
+import Distribution.Version (Version)
 import Distribution.PackageDescription
   ( Library (exposedModules, reexportedModules)
   , PackageDescription
   , library
   )
 import Distribution.Types.ComponentName (ComponentName)
-import Distribution.Types.LocalBuildInfo (LocalBuildInfo)
+import Distribution.Types.LocalBuildInfo (LocalBuildInfo, flagAssignment)
+import Distribution.Types.Flag (unFlagAssignment, unFlagName)
 import Distribution.Types.ModuleReexport
   ( ModuleReexport (moduleReexportOriginalName, moduleReexportOriginalPackage)
   )
@@ -58,6 +61,7 @@ import Distribution.Types.PackageName (PackageName)
 import Distribution.Simple.Utils (notice, ordNub, warn)
 
 import Distribution.Client.Buck2.CabalToBuck
+import Distribution.Client.Buck2.Variant
 import Distribution.Client.Buck2.Starlark
 
 -- | Generate\/refresh @BUCK.cabal.bzl@ (and @BUCK@, where missing) for
@@ -73,9 +77,9 @@ import Distribution.Client.Buck2.Starlark
 -- @build-tool-depends:@ executable name "Distribution.Client.Buck2.
 -- Prebuilt" resolved a real external binary (and generated an
 -- @export_file()@ target) for - see 'CabalToBuck.buildToolDependsArg'.
-generateAllPackages :: Verbosity -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> [(FilePath, PackageDescription)] -> IO ()
-generateAllPackages verbosity projectRoot componentLBIs externalBuildTools pkgs = do
-  traverse_ (generateOnePackage verbosity localIndex projectRoot componentLBIs externalBuildTools) pkgs
+generateAllPackages :: Verbosity -> Variant -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> [(FilePath, PackageDescription)] -> IO ()
+generateAllPackages verbosity variant projectRoot componentLBIs externalBuildTools pkgs = do
+  traverse_ (generateOnePackage verbosity variant localIndex projectRoot componentLBIs externalBuildTools) pkgs
   where
     localIndex :: LocalPackageIndex
     localIndex =
@@ -117,22 +121,31 @@ rootRelativeDir projectRoot pkgDir = case makeRelative projectRoot pkgDir of
   "" -> "."
   rel -> rel
 
-generateOnePackage :: Verbosity -> LocalPackageIndex -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> (FilePath, PackageDescription) -> IO ()
-generateOnePackage verbosity localIndex projectRoot componentLBIs externalBuildTools (pkgDir, pkgDesc) = do
-  targets <- generatePackageTargets verbosity localIndex (rootRelativeDir projectRoot pkgDir) componentLBIs externalBuildTools pkgDir pkgDesc
+generateOnePackage :: Verbosity -> Variant -> LocalPackageIndex -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> (FilePath, PackageDescription) -> IO ()
+generateOnePackage verbosity variant localIndex projectRoot componentLBIs externalBuildTools (pkgDir, pkgDesc) = do
+  targets <- generatePackageTargets verbosity variant localIndex (rootRelativeDir projectRoot pkgDir) componentLBIs externalBuildTools pkgDir pkgDesc
   let pkgName = packageName pkgDesc
   if null (ptCalls targets)
     then warn verbosity $ "cabal buck2: no buck2 targets generated for package " ++ show pkgName
     else do
-      let bzlPath = pkgDir </> "BUCK.cabal.bzl"
+      let bzlPath = pkgDir </> variantBzlFile variant
           buckPath = pkgDir </> "BUCK"
-      writeFile bzlPath (renderGeneratedBzl pkgName targets)
+      writeFile bzlPath (renderGeneratedBzl pkgName (packageVersion pkgDesc) (packageFlags pkgName componentLBIs) targets)
       buckExists <- doesFileExist buckPath
-      unless buckExists $ writeFile buckPath renderBuckWrapper
-      generateAutogenBuck pkgDir pkgName targets
+      if buckExists
+        then do
+          -- A variant's call is appended to an existing (hand-maintained)
+          -- BUCK that does not mention the variant's file yet; the base
+          -- variant never touches an existing BUCK. See Note [Variants].
+          contents <- readFile buckPath
+          length contents `seq` return ()
+          when (isJust (variantName variant) && not (variantBzlFile variant `isInfixOf` contents)) $
+            appendFile buckPath (variantWrapperAppendix variant)
+        else writeFile buckPath (renderBuckWrapper variant)
+      generateAutogenBuck variant pkgDir pkgName targets
       notice verbosity $
         "cabal buck2: generated "
-          ++ (rootRelativeDir projectRoot pkgDir </> "BUCK.cabal.bzl")
+          ++ (rootRelativeDir projectRoot pkgDir </> variantBzlFile variant)
           ++ " ("
           ++ show (length (ptCalls targets))
           ++ " target(s))"
@@ -150,21 +163,22 @@ generateOnePackage verbosity localIndex projectRoot componentLBIs externalBuildT
 -- never hand-edited, so no separate wrapper file is needed here the way
 -- @BUCK@ is for it. @export_file@ is a builtin buck2\/prelude rule, so
 -- this needs no @load()@ statement at all.
-generateAutogenBuck :: FilePath -> PackageName -> PackageTargets -> IO ()
-generateAutogenBuck pkgDir pkgName targets
+generateAutogenBuck :: Variant -> FilePath -> PackageName -> PackageTargets -> IO ()
+generateAutogenBuck variant pkgDir pkgName targets
   | null exports = return ()
   | otherwise = do
       createDirectoryIfMissing True autogenDir
       writeFile (autogenDir </> "BUCK") (renderFile header [] exportCalls)
   where
     exports = ptAutogenExports targets
-    autogenDir = pkgDir </> "cabal-buck2" </> "autogen"
+    autogenDir = pkgDir </> variantAutogenDir variant
     header =
       "@generated by `cabal buck2` from "
         ++ prettyShow pkgName
         ++ ".cabal - do not edit by hand.\nRe-run `cabal buck2` after editing the .cabal file to refresh this file."
-    exportCalls =
-      [ call
+    exportCalls = map exportCall exports
+    exportCall (AutogenFile exportName exportRelPath) =
+      call
         "export_file"
         [ ("name", str exportName)
         , ("src", str exportRelPath)
@@ -187,11 +201,27 @@ generateAutogenBuck pkgDir pkgName targets
           ("out", str (takeFileName exportRelPath))
         , ("visibility", strList ["PUBLIC"])
         ]
-      | (exportName, exportRelPath) <- exports
-      ]
+    -- A directory of headers (see Note [Configure build type] in
+    -- Distribution.Client.Buck2.CabalToBuck): the filegroup's output
+    -- directory has the files at the dict keys.
+    exportCall (AutogenDir exportName entries) =
+      call
+        "filegroup"
+        [ ("name", str exportName)
+        , ("srcs", VDict [(k, str v) | (k, v) <- entries])
+        , ("visibility", strList ["PUBLIC"])
+        ]
 
-renderGeneratedBzl :: PackageName -> PackageTargets -> String
-renderGeneratedBzl pkgName targets =
+-- | The package's resolved Cabal flags, from any configured component of
+-- it (they are the same for all components of a package).
+packageFlags :: PackageName -> Map (PackageName, ComponentName) LocalBuildInfo -> [(String, Bool)]
+packageFlags pkgName componentLBIs =
+  case [lbi | ((pn, _), lbi) <- Map.toList componentLBIs, pn == pkgName] of
+    [] -> []
+    lbi : _ -> [(unFlagName fn, b) | (fn, b) <- unFlagAssignment (flagAssignment lbi)]
+
+renderGeneratedBzl :: PackageName -> Version -> [(String, Bool)] -> PackageTargets -> String
+renderGeneratedBzl pkgName version flags targets =
   unlines
     [ "# @generated by `cabal buck2` from " ++ prettyShow pkgName ++ ".cabal - do not edit by hand."
     , "# Re-run `cabal buck2` after editing the .cabal file to refresh this file."
@@ -199,6 +229,12 @@ renderGeneratedBzl pkgName targets =
     ++ "\n"
     ++ renderLoad "//buck2:cabal_overrides.bzl" ["apply_overrides"]
     ++ concatMap (uncurry renderLoad) (ptLoads targets)
+    ++ "\n"
+    ++ renderUnitIds targets
+    ++ "\n"
+    ++ "VERSION = " ++ renderValue 0 (VStr (prettyShow version)) ++ "\n"
+    ++ "\n"
+    ++ renderFlags flags
     ++ "\n"
     ++ "def generated_targets(overrides = {}):\n"
     ++ indentBlock (intercalate "\n" (map renderOverridableCall (ptCalls targets)))
@@ -221,6 +257,25 @@ renderGeneratedBzl pkgName targets =
 -- @apply_overrides@ in @buck2/cabal_overrides.bzl@ (haskell-buck2), which
 -- every generated file loads.
 
+-- | @UNIT_IDS = {target: unit id}@ of the file's libraries, for a
+-- hand-maintained BUCK that needs a unit id (e.g. GHC's compiler/BUCK
+-- generates GHC.Settings.Config with the unit ids of ghc and
+-- ghc-internal): @load(":BUCK.cabal.bzl", "UNIT_IDS")@.
+renderUnitIds :: PackageTargets -> String
+renderUnitIds targets =
+  renderValue 0 (VDict [(name, VStr uid) | Call _ args <- ptCalls targets, Just (VStr name) <- [lookup "name" args], Just (VStr uid) <- [lookup "unit_id" args]])
+    & ("UNIT_IDS = " ++)
+    & (++ "\n")
+  where
+    x & f = f x
+
+-- | @FLAGS = {flag: bool}@: the package's resolved Cabal flags, for a
+-- hand-maintained BUCK that runs the package's configure script (a
+-- @build-type: Configure@ package reads them as @CABAL_FLAG_<flag>@, the
+-- way Cabal passes them).
+renderFlags :: [(String, Bool)] -> String
+renderFlags flags = "FLAGS = " ++ renderValue 0 (VDict [(f, VBool b) | (f, b) <- flags]) ++ "\n"
+
 indentBlock :: String -> String
 indentBlock = unlines . map indentLine . lines
   where
@@ -238,13 +293,37 @@ indentBlock = unlines . map indentLine . lines
 -- for exactly this reason). Keeping @BUCK.cabal.bzl@ at the package root
 -- avoids the whole issue: it's a same-package, no-slash filename either
 -- way.
-renderBuckWrapper :: String
-renderBuckWrapper =
+renderBuckWrapper :: Variant -> String
+renderBuckWrapper variant =
   unlines
     [ "# Hand-maintained: add extra targets below, pass overrides = {...} to"
     , "# generated_targets() to extend a generated rule, or stop calling it to"
     , "# fully take over this package's BUCK rules."
-    , "load(\":BUCK.cabal.bzl\", \"generated_targets\")"
-    , ""
-    , "generated_targets()"
     ]
+    ++ variantWrapperBlock variant
+
+-- | The load and call of a variant's generated targets (see Note [Variants]):
+-- @generated_targets_stage2@ for the variant @stage2@, so that several
+-- variants can share one BUCK file.
+variantWrapperBlock :: Variant -> String
+variantWrapperBlock variant = case variantName variant of
+  Nothing ->
+    unlines
+      [ "load(\":BUCK.cabal.bzl\", \"generated_targets\")"
+      , ""
+      , "generated_targets()"
+      ]
+  Just n ->
+    unlines
+      [ "load(\":" ++ variantBzlFile variant ++ "\", " ++ fn n ++ " = \"generated_targets\")"
+      , ""
+      , fn n ++ "()"
+      ]
+  where
+    fn n = "generated_targets_" ++ map (\c -> if c == '-' then '_' else c) n
+
+-- | What a variant appends to an existing BUCK file.
+variantWrapperAppendix :: Variant -> String
+variantWrapperAppendix variant =
+  "\n# Targets of variant `" ++ fromMaybe "" (variantName variant) ++ "`, added by `cabal buck2 --variant`.\n"
+    ++ variantWrapperBlock variant

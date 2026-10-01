@@ -41,6 +41,7 @@ import System.Directory
   , createFileLink
   , doesFileExist
   , doesPathExist
+  , pathIsSymbolicLink
   , removeDirectoryRecursive
   , removeFile
   )
@@ -135,6 +136,8 @@ import Distribution.Client.Buck2.Starlark
 generatePrebuilt
   :: Verbosity
   -> FilePath
+  -> FilePath
+  -- ^ where to write (@third-party/haskell@, or a variant's directory)
   -- ^ project root (the buck2 cell root)
   -> CabalDirLayout
   -> DistDirLayout
@@ -153,7 +156,7 @@ generatePrebuilt
   -- @build-tool-depends:@, across the whole project - see this
   -- function's own return-value haddock above.
   -> IO (Set String, [InstalledPackageInfo])
-generatePrebuilt verbosity projectRoot cabalDirLayout distDirLayout shared depsPlan wantedBuildTools = do
+generatePrebuilt verbosity projectRoot thirdPartyDir cabalDirLayout distDirLayout shared depsPlan wantedBuildTools = do
   ghcProg <-
     maybe (dieWithException verbosity Buck2NoGhcProgram) return $
       lookupProgram ghcProgram (pkgConfigCompilerProgs shared)
@@ -173,7 +176,7 @@ generatePrebuilt verbosity projectRoot cabalDirLayout distDirLayout shared depsP
       -- package (see 'pruneToDependenciesNeeded's own haddock) - gets
       -- registered into.
       inplaceDB = distDirectory distDirLayout </> "packagedb" </> prettyShow (compilerId compiler)
-      targetDir = projectRoot </> "third-party" </> "haskell"
+      targetDir = projectRoot </> thirdPartyDir
       targetStoreDB = targetDir </> "store-db"
       ghcBinAbs = takeDirectory (programPath ghcProg)
 
@@ -482,8 +485,11 @@ collapseDotDot = joinPath . reverse . foldl' step [] . splitDirectories
 -- | Point @link@ at @target@, creating or repointing it as needed.
 ensureSymlink :: FilePath -> FilePath -> IO ()
 ensureSymlink link target = do
+  -- doesPathExist follows a link: a dangling one (its target was a
+  -- build output that moved) must be removed too.
+  isLink <- pathIsSymbolicLink link `catchIO` \_ -> return False
   exists <- doesPathExist link
-  when exists $ removeFile link
+  when (isLink || exists) $ removeFile link
   createFileLink target link
 
 -- | The filtered, recached db every non-global package's generated rule

@@ -919,9 +919,27 @@ resolveDependencies platform comp pkgConfigDB params = do
                     order
                     verbosity
                   ) =
-        if isJust (compilerInfoWiredInUnitIds comp) || asBool (depResolverAllowBootLibInstalls params)
-          then dependOnWiredIns comp params
-          else dontInstallNonReinstallablePackages params
+        -- See Note [No wired-in constraints with allow-boot-library-installs]
+        if asBool (depResolverAllowBootLibInstalls params)
+          then params
+          else
+            if isJust (compilerInfoWiredInUnitIds comp)
+              then dependOnWiredIns comp params
+              else dontInstallNonReinstallablePackages params
+
+    {- Note [No wired-in constraints with allow-boot-library-installs]
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    'dependOnWiredIns' forces the wired-in packages (base, ghc, ghc-prim,
+    ...) to the compiler's installed instances. A project with
+    `allow-boot-library-installs: True` builds boot libraries from source;
+    a staged GHC build even uses an in-tree compiler whose package db is
+    empty, so an installed instance does not exist and the constraint is
+    unsatisfiable ("requires installed instance with unit id ghc"). With
+    the option set, no such constraint is added: the solver then prefers
+    installed instances where they exist and builds the rest from source.
+    Same reasoning as stable-haskell/Cabal's Note [No non-reinstallable
+    constraints].
+    -}
 
     formatProgress :: Progress SummarizedMessage String a -> Progress String String a
     formatProgress p = foldProgress (\x xs -> Step (renderSummarizedMessage x) xs) Fail Done p

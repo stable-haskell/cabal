@@ -14,6 +14,7 @@ module Distribution.Client.Buck2.Starlark
   , call
   , renderCall
   , renderOverridableCall
+  , renderValue
   , renderLoad
   , renderFile
   ) where
@@ -32,6 +33,7 @@ data Value
   | VList [Value]
   | VDict [(String, Value)]
   | VTuple [Value]
+  | VNone
 
 str :: String -> Value
 str = VStr
@@ -66,6 +68,7 @@ renderStr s = '\'' : concatMap escape s ++ "'"
 renderValue :: Int -> Value -> String
 renderValue _ (VStr s) = renderStr s
 renderValue _ (VBool b) = if b then "True" else "False"
+renderValue _ VNone = "None"
 renderValue _ (VList []) = "[]"
 renderValue ind (VList xs) =
   "[\n"
