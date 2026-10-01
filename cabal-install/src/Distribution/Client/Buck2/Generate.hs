@@ -197,10 +197,29 @@ renderGeneratedBzl pkgName targets =
     , "# Re-run `cabal buck2` after editing the .cabal file to refresh this file."
     ]
     ++ "\n"
+    ++ renderLoad "//buck2:cabal_overrides.bzl" ["apply_overrides"]
     ++ concatMap (uncurry renderLoad) (ptLoads targets)
     ++ "\n"
-    ++ "def generated_targets():\n"
-    ++ indentBlock (intercalate "\n" (map renderCall (ptCalls targets)))
+    ++ "def generated_targets(overrides = {}):\n"
+    ++ indentBlock (intercalate "\n" (map renderOverridableCall (ptCalls targets)))
+
+-- Note [Overriding generated targets]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- A hand-maintained @BUCK@ file sometimes must extend a generated rule:
+-- add compiler_flags (e.g. an include dir with generated files), add
+-- srcs, add deps. A copy of the whole generated call in @BUCK@ would not
+-- follow the .cabal file any more. So @generated_targets()@ takes an
+-- optional dict, keyed by target name, of keyword arguments to merge into
+-- that target's call:
+--
+--   generated_targets(overrides = {
+--       "ghc": {"compiler_flags": ["-I$(location :primop-incls)"]},
+--   })
+--
+-- Lists are appended, dicts are merged (the override wins on a common
+-- key), any other value is replaced. The merge is done by
+-- @apply_overrides@ in @buck2/cabal_overrides.bzl@ (haskell-buck2), which
+-- every generated file loads.
 
 indentBlock :: String -> String
 indentBlock = unlines . map indentLine . lines
@@ -222,8 +241,9 @@ indentBlock = unlines . map indentLine . lines
 renderBuckWrapper :: String
 renderBuckWrapper =
   unlines
-    [ "# Hand-maintained: add extra targets below, or stop calling"
-    , "# generated_targets() to fully take over this package's BUCK rules."
+    [ "# Hand-maintained: add extra targets below, pass overrides = {...} to"
+    , "# generated_targets() to extend a generated rule, or stop calling it to"
+    , "# fully take over this package's BUCK rules."
     , "load(\":BUCK.cabal.bzl\", \"generated_targets\")"
     , ""
     , "generated_targets()"

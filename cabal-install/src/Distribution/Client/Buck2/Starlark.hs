@@ -13,6 +13,7 @@ module Distribution.Client.Buck2.Starlark
   , Call (..)
   , call
   , renderCall
+  , renderOverridableCall
   , renderLoad
   , renderFile
   ) where
@@ -100,6 +101,19 @@ renderCall (Call fn args) =
     ++ ")\n"
 
 -- | Render a @load("target", "name1", "name2")@ statement.
+-- | Like 'renderCall', but the keyword arguments first go through
+-- @apply_overrides(overrides, dict(...))@.
+-- See Note [Overriding generated targets] in Distribution.Client.Buck2.Generate.
+renderOverridableCall :: Call -> String
+renderOverridableCall (Call fn args) =
+  fn
+    ++ "(**apply_overrides(overrides, dict(\n"
+    ++ concat
+      [ indent 1 ++ k ++ " = " ++ renderValue 1 v ++ ",\n"
+      | (k, v) <- args
+      ]
+    ++ ")))\n"
+
 renderLoad :: String -> [String] -> String
 renderLoad target names =
   "load(" ++ intercalate ", " (renderStr target : map renderStr names) ++ ")\n"
