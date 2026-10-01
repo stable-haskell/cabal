@@ -118,7 +118,7 @@ import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity (defaultVerbosityHandles, normal)
 
 import System.Directory (canonicalizePath, doesDirectoryExist, doesFileExist)
-import System.FilePath ((</>))
+import System.FilePath (takeDirectory, (</>))
 import Data.List (isSuffixOf, stripPrefix)
 
 import Distribution.Client.Buck2.Generate (generateAllPackages)
@@ -278,8 +278,10 @@ buck2Action flags extraArgs globalFlags = do
       -- base variant's tools stay the ones the rules use (Note [Variants]).
       let variantName = flagToMaybe (buck2Variant (extraFlags flags))
           preVariant = mkVariant variantName Set.empty
-      baseTools <- if isJust variantName then readBaseTools (projectRoot </> variantThirdPartyDir baseVariant </> "BUCK") else return Set.empty
-      let variant = mkVariant variantName baseTools
+      -- See Note [Build tools of the base variant]
+      baseTools <- if isJust variantName then readBaseTools projectRoot (variantThirdPartyDir baseVariant) else return Map.empty
+      let variant = mkVariant variantName (Map.keysSet baseTools)
+          baseToolDirs = ordNub (map takeDirectory (Map.elems baseTools))
 
       (externalBuildTools, resolvedDeps) <-
         generatePrebuilt
@@ -315,7 +317,7 @@ buck2Action flags extraArgs globalFlags = do
       -- instance does not exist"). A skipped component just gets no
       -- rule, with the usual "no LocalBuildInfo found" warning.
       let selectedPlan = pruneInstallPlanToTargets TargetActionBuild (targetsMap buildCtx) elaboratedPlanOriginal
-      componentLBIs <- configureComponentsConcurrently verbosity (distDirLayout baseCtx) selectedPlan elaboratedShared installedIndex
+      componentLBIs <- configureComponentsConcurrently verbosity (distDirLayout baseCtx) selectedPlan elaboratedShared installedIndex baseToolDirs
 
       -- Per-component elaboration gives each local package one
       -- 'ElaboratedConfiguredPackage' per component (library, executable,
@@ -339,20 +341,39 @@ buck2Action flags extraArgs globalFlags = do
 -- @third-party/haskell/BUCK@, for a variant's build-tool-depends. A plain
 -- scan of the generated file: it is ours, and its rule names are on lines
 -- of the form @    name = 'alex-exe',@.
-readBaseTools :: FilePath -> IO (Set String)
-readBaseTools path = do
+-- Note [Build tools of the base variant]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- A variant (GHC's stage 2) does not build its build tools (alex, happy):
+-- the generated rules use the base variant's, the `<tool>-exe` targets
+-- of its third-party BUCK (see 'buildToolDependsArg'). Cabal's configure
+-- of a component with such a `build-tool-depends` still has to find the
+-- program, and the variant's plan has no executable dependency for it:
+-- the directories of the base variant's tools go on the program search
+-- path of the configure ('configureComponentsConcurrently'), ahead of
+-- $PATH.
+
+-- | The build tools of the base variant: the @<tool>-exe@ targets of its
+-- third-party BUCK, by tool name, with the absolute path of the binary.
+-- See Note [Build tools of the base variant].
+readBaseTools :: FilePath -> FilePath -> IO (Map String FilePath)
+readBaseTools projectRoot thirdPartyDir = do
+  let path = projectRoot </> thirdPartyDir </> "BUCK"
   exists <- doesFileExist path
   if not exists
-    then return Set.empty
+    then return Map.empty
     else do
       contents <- readFile path
+      -- an `export_file(name = '<tool>-exe', src = '<path>', ...)` call
+      -- spans several lines: the name line, then the src line
       return $
-        Set.fromList
-          [ take (length name - length "-exe") name
-          | l <- lines contents
-          , Just rest <- [stripPrefix "name = '" (dropWhile (== ' ') l)]
+        Map.fromList
+          [ (take (length name - length "-exe") name, projectRoot </> thirdPartyDir </> src)
+          | (nameLine, srcLine) <- zip (lines contents) (drop 1 (lines contents))
+          , Just rest <- [stripPrefix "name = '" (dropWhile (== ' ') nameLine)]
           , let name = takeWhile (/= '\'') rest
           , "-exe" `isSuffixOf` name
+          , Just srcRest <- [stripPrefix "src = '" (dropWhile (== ' ') srcLine)]
+          , let src = takeWhile (/= '\'') srcRest
           ]
 
 -- Note [Unpacking inplace packages]
@@ -453,9 +474,10 @@ localBuildInfoFor
   -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
   -> InstalledPackageIndex
+  -> [FilePath]
   -> ElaboratedConfiguredPackage
   -> IO LocalBuildInfo
-localBuildInfoFor verbosity distDirLayout plan shared ipi elab = do
+localBuildInfoFor verbosity distDirLayout plan shared ipi extraSearchPath elab = do
   -- Real Cabal's own 'InLibrary.configure' falls back to *searching* the
   -- working directory for a @<pkgname>.cabal@ file whenever
   -- 'Cabal.configCabalFilePath' isn't set (see its own use of
@@ -491,7 +513,7 @@ localBuildInfoFor verbosity distDirLayout plan shared ipi elab = do
       progDb =
         userSpecifyArgss (Map.toList (elabProgramArgs elab)) $
           prependProgramSearchPathNoLogging
-            (elabExeDependencyPaths elab ++ elabProgramPathExtra elab)
+            (elabExeDependencyPaths elab ++ elabProgramPathExtra elab ++ extraSearchPath)
             []
             (restoreProgramDb builtinPrograms (pkgConfigCompilerProgs shared))
       buildType = PD.buildType (elabPkgDescription elab)
@@ -637,8 +659,11 @@ configureComponentsConcurrently
   -> ElaboratedInstallPlan
   -> ElaboratedSharedConfig
   -> InstalledPackageIndex
+  -> [FilePath]
+  -- ^ extra program search path (the base variant's build tools, see
+  -- Note [Build tools of the base variant])
   -> IO (Map (PackageName, ComponentName) LocalBuildInfo)
-configureComponentsConcurrently verbosity distDirLayout plan shared installedIndex = do
+configureComponentsConcurrently verbosity distDirLayout plan shared installedIndex extraSearchPath = do
   -- cabal-install's own build parallelism doesn't need extra RTS
   -- capabilities (it's almost entirely "spawn ghc, block on it", and a
   -- blocked foreign call already releases its capability under the
@@ -735,7 +760,7 @@ configureComponentsConcurrently verbosity distDirLayout plan shared installedInd
           let elab = localElabs Map.! uid
               pkgDesc = elabPkgDescription elab
           idx <- readTVarIO indexVar
-          lbi <- localBuildInfoFor verbosity distDirLayout plan shared idx elab
+          lbi <- localBuildInfoFor verbosity distDirLayout plan shared idx extraSearchPath elab
           for_ (componentNamesFor elab pkgDesc) $ \cname -> do
             mipi <- libraryInstalledPackageInfo verbosity lbi pkgDesc cname
             for_ mipi $ \ipi -> atomically $ modifyTVar' indexVar (PackageIndex.insert ipi)
