@@ -11,6 +11,7 @@ module Distribution.Client.Buck2.CabalToBuck
   , PackageTargets (..)
   , generatePackageTargets
   , libTargetName
+  , localTargetLabel
   , AutogenExport (..)
   ) where
 
@@ -45,6 +46,9 @@ import Distribution.PackageDescription
   , cxxOptions
   , asmSources
   , cmmSources
+  , dataDir
+  , dataFiles
+  , specVersion
   , cxxSources
   , cSources
   , usedExtensions
@@ -80,7 +84,8 @@ import Distribution.Types.PackageName (PackageName, unPackageName)
 import Distribution.Types.PkgconfigDependency (PkgconfigDependency (..))
 import Distribution.Types.PkgconfigName (unPkgconfigName)
 import Distribution.Types.UnqualComponentName (unUnqualComponentName)
-import Distribution.Utils.Path (getSymbolicPath, interpretSymbolicPath)
+import Distribution.Simple.Glob (matchDirFileGlob)
+import Distribution.Utils.Path (getSymbolicPath, interpretSymbolicPath, makeSymbolicPath)
 import Distribution.Verbosity (VerbosityFlags (vLevel), VerbosityLevel (Silent), modifyVerbosityFlags)
 
 import Distribution.Simple.Build.Macros (generateCabalMacrosHeader)
@@ -173,7 +178,34 @@ generatePackageTargets verbosity variant localIndex rootRelPkgDir componentLBIs 
       <$> traverse
         (generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs externalBuildTools pkgDir pkgDesc hbi skippedLibs)
         (pkgBuildableComponents pkgDesc)
-  return targets{ptCalls = dedupPkgconfigCalls (ptCalls targets)}
+  dataTargets <- dataFilesTarget verbosity variant pkgDir pkgDesc
+  return (targets <> dataTargets){ptCalls = dedupPkgconfigCalls (ptCalls targets ++ ptCalls dataTargets)}
+
+-- | The @data-files@ of a package as the filegroup @<pkg>-data@ (with the
+-- variant's suffix), the files at their paths relative to the data
+-- directory: for a hand-written rule that installs them (GHC's
+-- installation takes hsc2hs's template-hsc.h). Cabal's own @Paths_<pkg>@
+-- module does not find them in a buck2 build.
+dataFilesTarget :: Verbosity -> Variant -> FilePath -> PackageDescription -> IO PackageTargets
+dataFilesTarget verbosity variant pkgDir pkgDesc
+  | null (dataFiles pkgDesc) = return mempty
+  | otherwise = do
+      files <- concat <$> traverse (fmap (map getSymbolicPath) . matchDirFileGlob verbosity (specVersion pkgDesc) (Just (makeSymbolicPath (pkgDir </> data_dir)))) (dataFiles pkgDesc)
+      return $
+        PackageTargets
+          []
+          [ call
+              "native.filegroup"
+              ( [ ("name", str (variantTargetName variant (unPackageName (packageName pkgDesc) ++ "-data")))
+                , ("srcs", VDict [(f, str (normalise (data_dir </> f))) | f <- files])
+                ]
+                  ++ [("default_target_platform", str plat) | Just plat <- [variantPlatform variant]]
+                  ++ [("visibility", strList ["PUBLIC"])]
+              )
+          ]
+          []
+  where
+    data_dir = getSymbolicPath (dataDir pkgDesc)
 
 -- | The @.buildinfo@ that a build-type Configure package's configure
 -- script wrote when cabal buck2 configured the package (it runs in the
@@ -235,7 +267,7 @@ lbiClbiFor pkgDesc componentLBIs comp = do
 
 -- | Two components of the *same* package sharing a @pkgconfig-depends@
 -- each generate their own @external_pkgconfig_library()@ call (from
--- 'cxxLibraryFor', called once per component) - harmless on its own, but
+-- 'pkgconfigLibraries', called once per component) - harmless on its own, but
 -- both would declare the same target @name@ in the same
 -- @generated_targets()@, which buck2 rejects as a duplicate target. Kept
 -- as a post-pass here (rather than threading a running set through
@@ -345,21 +377,13 @@ generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs exter
           Nothing -> skip ("library " ++ targetName ++ " (couldn't resolve all its modules)")
           Just (srcs, srcAutogenExports) -> do
             -- See Note [C and Cmm sources]
-            let ghcCompilesC = null (pkgconfigDepends bi)
-                ghcSrcs = sourcesWithOptions (map (normalise . getSymbolicPath) (cmmSources bi ++ (if ghcCompilesC then cSources bi ++ cxxSources bi ++ asmSources bi else [])))
-                ghcSrcEntries = [(f, str f) | (f, _) <- ghcSrcs]
-                perSrcFlags = [(f, strList opts) | (f, opts) <- ghcSrcs, not (null opts)]
-                -- -I for the Haskell preprocessor (and for GHC's C
-                -- compilation), as Cabal passes it.
-                includeFlags = includeFlagsFor rootRelPkgDir bi
-                cFlags = (if ghcCompilesC then map ("-optc" ++) (ccOptions bi) ++ map ("-optcxx" ++) (cxxOptions bi) else []) ++ includeFlags
-            headers <- if ghcCompilesC then headerSources pkgDir bi else return []
+            let (ghcSrcEntries, perSrcFlags, cFlags) = ghcCompiledSources rootRelPkgDir bi
+                (cxxLoads, cxxDeps, cxxCalls) = pkgconfigLibraries variant bi
+            headers <- headerSources pkgDir bi
             -- See Note [Configure build type]
             configured <- configureIncludes variant pkgDir targetName lbi bi
             let confLabel = autogenExportLabel variant rootRelPkgDir . fst <$> configured
                 confFlags = ["-I$(location " ++ l ++ ")" | Just l <- [confLabel]]
-            (cxxLoads, cxxDeps, cxxCalls) <-
-              if ghcCompilesC then return ([], [], []) else cxxLibraryFor variant localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") (allDeps bi) confFlags bi
             macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
             let (pkgs, deps) = classifyDeps variant localIndex bi
                 (unitArgs, hcFlags) = unitIdArgs lib clbi
@@ -372,7 +396,7 @@ generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs exter
                         ++ cabalComponentArgs variant rootRelPkgDir targetName
                         ++ unitArgs
                         ++ compilerFlagsArg (hcFlags ++ projectGhcOptions lbi ++ cFlags ++ confFlags) bi
-                        ++ optionalListArg "hsc_flags" (includeFlags ++ confFlags)
+                        ++ optionalListArg "hsc_flags" (includeFlagsFor rootRelPkgDir bi ++ confFlags)
                         ++ [("per_src_flags", VDict perSrcFlags) | not (null perSrcFlags)]
                         ++ includeDirsArgs rootRelPkgDir confLabel bi
                         ++ reexportedModulesArg variant localIndex componentLBIs lbi clbi
@@ -437,34 +461,33 @@ generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs exter
         motherSrcs <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
         case (mmainSrc, motherSrcs) of
           (Just mainSrc0, Just (otherSrcs, srcAutogenExports)) -> do
-            -- The C sources of an executable are compiled by GHC and
-            -- linked as objects. See Note [C and Cmm sources].
-            let ghcSrcs = sourcesWithOptions (map (normalise . getSymbolicPath) (cmmSources bi ++ cSources bi ++ cxxSources bi ++ asmSources bi))
-                ghcSrcEntries = [(f, str f) | (f, _) <- ghcSrcs]
-                perSrcFlags = [(f, strList opts) | (f, opts) <- ghcSrcs, not (null opts)]
-                cFlags = map ("-optc" ++) (ccOptions bi) ++ map ("-optcxx" ++) (cxxOptions bi) ++ includeFlagsFor rootRelPkgDir bi
+            -- See Note [C and Cmm sources]
+            let (ghcSrcEntries, perSrcFlags, cFlags) = ghcCompiledSources rootRelPkgDir bi
+                (cxxLoads, cxxDeps, cxxCalls) = pkgconfigLibraries variant bi
+            headers <- headerSources pkgDir bi
             macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
             let (pkgs, deps) = classifyDeps variant localIndex bi
                 binCall =
                   call
                     "haskell_binary"
                     ( [ ("name", str targetName)
-                      , ("srcs", VDict ((mainSrcKeyFor mainSrc0, str mainSrc0) : otherSrcs ++ ghcSrcEntries))
+                      , ("srcs", VDict ((mainSrcKeyFor mainSrc0, str mainSrc0) : otherSrcs ++ ghcSrcEntries ++ [(h, str h) | h <- headers]))
                       ]
                         ++ cabalComponentArgs variant rootRelPkgDir targetName
                         ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi ++ cFlags) bi
+                        ++ optionalListArg "hsc_flags" (includeFlagsFor rootRelPkgDir bi)
                         ++ [("per_src_flags", VDict perSrcFlags) | not (null perSrcFlags)]
                         ++ linkerFlagsArg (projectGhcOptions lbi) bi
                         ++ optionalListArg "packages" pkgs
-                        ++ optionalListArg "deps" deps
+                        ++ optionalListArg "deps" (deps ++ cxxDeps)
                         ++ buildToolDependsArg variant localIndex externalBuildTools bi
                         ++ platformArg
                         ++ [("visibility", strList ["PUBLIC"])]
                     )
             return $
               PackageTargets
-                [("//buck2:haskell.bzl", ["haskell_binary"])]
-                [binCall]
+                (("//buck2:haskell.bzl", ["haskell_binary"]) : cxxLoads)
+                (cxxCalls ++ [binCall])
                 (macrosExport : srcAutogenExports)
           _ -> skip ("executable " ++ targetName ++ " (couldn't resolve all its modules)")
       where
@@ -509,17 +532,22 @@ generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs exter
           motherSrcs <- resolveModules verbosity variant targetName pkgDesc (Just (lbi, clbi)) rootRelPkgDir pkgDir bi (otherModules bi)
           case (mmainSrc, motherSrcs) of
             (Just mainSrc0, Just (otherSrcs, srcAutogenExports)) -> do
-              (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor variant localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") (allDeps bi) [] bi
+              -- See Note [C and Cmm sources]
+              let (ghcSrcEntries, perSrcFlags, cFlags) = ghcCompiledSources rootRelPkgDir bi
+                  (cxxLoads, cxxDeps, cxxCalls) = pkgconfigLibraries variant bi
+              headers <- headerSources pkgDir bi
               macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
               let (pkgs, deps) = classifyDeps variant localIndex bi
                   binCall =
                     call
                       "haskell_binary"
                       ( [ ("name", str targetName)
-                        , ("srcs", VDict ((mainSrcKeyFor mainSrc0, str mainSrc0) : otherSrcs))
+                        , ("srcs", VDict ((mainSrcKeyFor mainSrc0, str mainSrc0) : otherSrcs ++ ghcSrcEntries ++ [(h, str h) | h <- headers]))
                         ]
                           ++ cabalComponentArgs variant rootRelPkgDir targetName
-                          ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi) bi
+                          ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi ++ cFlags) bi
+                          ++ optionalListArg "hsc_flags" (includeFlagsFor rootRelPkgDir bi)
+                          ++ [("per_src_flags", VDict perSrcFlags) | not (null perSrcFlags)]
                           ++ linkerFlagsArg (projectGhcOptions lbi) bi
                           ++ optionalListArg "packages" pkgs
                           ++ optionalListArg "deps" (deps ++ cxxDeps)
@@ -605,14 +633,17 @@ generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs exter
         bi = componentBuildInfo (CTest test)
         targetName = tname (unUnqualComponentName (testName test))
         mkTestCall lbi clbi mainSrcKey mainSrc otherSrcs srcAutogenExports = do
-          (cxxLoads, cxxDeps, cxxCalls) <- cxxLibraryFor variant localIndex rootRelPkgDir pkgDir (targetName ++ "-cxx") (allDeps bi) [] bi
+          -- See Note [C and Cmm sources]
+          let (ghcSrcEntries, perSrcFlags, cFlags) = ghcCompiledSources rootRelPkgDir bi
+              (cxxLoads, cxxDeps, cxxCalls) = pkgconfigLibraries variant bi
+          headers <- headerSources pkgDir bi
           macrosExport <- writeMacrosHeader variant pkgDir targetName pkgDesc lbi clbi
           let (pkgs, deps) = classifyDeps variant localIndex bi
               testCall =
                 call
                   "haskell_test"
                   ( [ ("name", str targetName)
-                    , ("srcs", VDict ((mainSrcKey, mainSrc) : otherSrcs))
+                    , ("srcs", VDict ((mainSrcKey, mainSrc) : otherSrcs ++ ghcSrcEntries ++ [(h, str h) | h <- headers]))
                     , -- Real `cabal test` always runs a test-suite with its
                       -- cwd set to the package's own directory - matched
                       -- here so a test that reads its own fixture files by
@@ -623,7 +654,9 @@ generateComponent verbosity variant localIndex rootRelPkgDir componentLBIs exter
                       ("cwd", str rootRelPkgDir)
                     ]
                       ++ cabalComponentArgs variant rootRelPkgDir targetName
-                      ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi) bi
+                      ++ compilerFlagsArg (hcOptions GHC bi ++ projectGhcOptions lbi ++ cFlags) bi
+                      ++ optionalListArg "hsc_flags" (includeFlagsFor rootRelPkgDir bi)
+                      ++ [("per_src_flags", VDict perSrcFlags) | not (null perSrcFlags)]
                       ++ linkerFlagsArg (projectGhcOptions lbi) bi
                       ++ optionalListArg "packages" pkgs
                       ++ optionalListArg "deps" (deps ++ cxxDeps)
@@ -1355,9 +1388,9 @@ configureIncludes variant pkgDir targetName lbi bi = do
 -- directories of its C sources) are listed in @srcs@ too: they are not
 -- compiler inputs, but buck2 reruns the compilation when they change.
 --
--- A component with @pkgconfig-depends@ keeps a separate @cxx_library@ for
--- its C sources ('cxxLibraryFor'): buck2 resolves the pkg-config flags
--- there.
+-- A @pkgconfig-depends@ entry is an @external_pkgconfig_library@ in the
+-- component's @deps@ ('pkgconfigLibraries'): GHC's C compilation gets
+-- its headers like those of any dependency, and the link its libraries.
 --
 -- The C sources of an executable are compiled by GHC too and linked as
 -- objects, before the libraries, which a C @main@ (GHC's iserv,
@@ -1441,60 +1474,35 @@ includeFlagsFor :: FilePath -> BuildInfo -> [String]
 includeFlagsFor rootRelPkgDir bi =
   ["-I" ++ (if rootRelPkgDir == "." then d else rootRelPkgDir </> d) | dir <- includeDirs bi, let d = getSymbolicPath dir]
 
--- | A 'cxx_library' named @cxxTargetName@ for a component's
--- @cxx-sources@\/@c-sources@, plus an @external_pkgconfig_library@ for each
--- distinct @pkgconfig-depends@ it needs - or nothing at all if the
--- component has no C\/C++ sources.
-cxxLibraryFor
-  :: Variant
-  -> LocalPackageIndex
-  -> FilePath
-  -> FilePath
-  -> String
-  -> [String]
-  -- ^ deps of the component (labels): their C headers are needed too
-  -> [String]
-  -- ^ extra exported preprocessor flags (the configure-generated headers)
-  -> BuildInfo
-  -> IO ([(String, [String])], [String], [Call])
-cxxLibraryFor variant _localIndex rootRelPkgDir _pkgDir cxxTargetName componentDeps extraPPFlags bi
-  | null srcs = return ([], [], [])
-  | otherwise =
-      return
-        ( ("//buck2:cxx.bzl", ["cxx_library"])
-            : [("@prelude//third-party:pkgconfig.bzl", ["external_pkgconfig_library"]) | not (null pkgconfigNames)]
-        , [":" ++ cxxTargetName]
-        , pkgconfigCalls ++ [cxxCall]
-        )
+-- | The C, C++, assembler and Cmm sources of a component for GHC to
+-- compile: the @srcs@ entries, the @per_src_flags@ and the compiler
+-- flags (@cc-options@, @cxx-options@, @include-dirs@). See Note [C and
+-- Cmm sources].
+ghcCompiledSources :: FilePath -> BuildInfo -> ([(String, Value)], [(String, Value)], [String])
+ghcCompiledSources rootRelPkgDir bi = (entries, per_src_flags, flags)
   where
-    srcs = map getSymbolicPath (cSources bi ++ cxxSources bi ++ asmSources bi)
-    -- @exported_preprocessor_flags@ is a plain string list, so the include
-    -- paths need the package directory folded in - see 'includeFlagsFor'.
-    includeFlags = includeFlagsFor rootRelPkgDir bi ++ extraPPFlags
-    pkgconfigNames = ordNub [unPkgconfigName n | PkgconfigDependency n _ <- pkgconfigDepends bi]
-    pkgconfigCalls =
-      [ call
-        "external_pkgconfig_library"
-        [("name", str ("pkgconfig-" ++ n)), ("package", str n), ("visibility", strList ["PUBLIC"])]
-      | n <- pkgconfigNames
-      ]
-    -- buck2/cxx.bzl's cxx_library() wrapper adds -std=c++20 to
-    -- compiler_flags whenever cxx_std isn't explicitly turned off - and
-    -- that flag applies to every source in the target, C included, so a
-    -- component with c-sources but no cxx-sources needs it turned off
-    -- entirely (clang/gcc reject -std=c++20 for a plain .c compile).
-    cxxCall =
-      call
-        "cxx_library"
-        ( [ ("name", str cxxTargetName)
-          , ("srcs", strList srcs)
-          ]
-            ++ optionalListArg "exported_preprocessor_flags" includeFlags
-            -- buck2's compiler_flags apply to C and C++ sources alike, so
-            -- @cc-options@ and @cxx-options@ are both passed.
-            ++ optionalListArg "compiler_flags" (ccOptions bi ++ cxxOptions bi)
-            ++ optionalListArg "deps" ([":pkgconfig-" ++ n | n <- pkgconfigNames] ++ componentDeps)
-            ++ [("default_target_platform", str plat) | Just plat <- [variantPlatform variant]]
-            ++ [("visibility", strList ["PUBLIC"])]
-            ++ [("cxx_std", VBool False) | null (cxxSources bi)]
-        )
+    srcs = sourcesWithOptions (map (normalise . getSymbolicPath) (cmmSources bi ++ cSources bi ++ cxxSources bi ++ asmSources bi))
+    entries = [(f, str f) | (f, _) <- srcs]
+    per_src_flags = [(f, strList opts) | (f, opts) <- srcs, not (null opts)]
+    flags = map ("-optc" ++) (ccOptions bi) ++ map ("-optcxx" ++) (cxxOptions bi) ++ includeFlagsFor rootRelPkgDir bi
+
+-- | An @external_pkgconfig_library@ per distinct @pkgconfig-depends@
+-- entry of a component, as @deps@ of the component: the loads, the
+-- labels and the calls. GHC's C compilation gets the headers of a
+-- dependency, and the link its libraries.
+pkgconfigLibraries :: Variant -> BuildInfo -> ([(String, [String])], [String], [Call])
+pkgconfigLibraries variant bi
+  | null names = ([], [], [])
+  | otherwise =
+      ( [("@prelude//third-party:pkgconfig.bzl", ["external_pkgconfig_library"])]
+      , [":pkgconfig-" ++ n | n <- names]
+      , [ call
+          "external_pkgconfig_library"
+          ( [("name", str ("pkgconfig-" ++ n)), ("package", str n), ("visibility", strList ["PUBLIC"])]
+              ++ [("default_target_platform", str plat) | Just plat <- [variantPlatform variant]]
+          )
+        | n <- names
+        ]
+      )
+  where
+    names = ordNub [unPkgconfigName n | PkgconfigDependency n _ <- pkgconfigDepends bi]

@@ -129,7 +129,7 @@ import Distribution.Client.Buck2.Setup
   )
 import Distribution.Client.Buck2.Variant
 import Distribution.Client.Errors
-  ( CabalInstallException (Buck2ActionExtraArgs, Buck2NonLocalPackageLocation, ReportCannotPruneDependencies)
+  ( CabalInstallException (Buck2NonLocalPackageLocation, ReportCannotPruneDependencies)
   )
 
 -- | Flags of the buck2 command itself (the rest are the usual nix-style
@@ -180,10 +180,11 @@ buck2Command =
 
 buck2Action :: NixStyleFlags Buck2Flags -> [String] -> GlobalFlags -> IO ()
 buck2Action flags extraArgs globalFlags = do
-  unless (null extraArgs) $
-    dieWithException verbosity (Buck2ActionExtraArgs extraArgs)
-
-  withContextAndSelectors verbosity RejectNoTargets Nothing depsFlags ["all"] globalFlags BuildCommand $
+  -- The targets to generate rules for: the local packages (`all`) unless
+  -- given, e.g. `cabal buck2 all exe:hsc2hs` for an executable of a
+  -- source-repository package that `all` leaves out.
+  let targetStrings = if null extraArgs then ["all"] else extraArgs
+  withContextAndSelectors verbosity RejectNoTargets Nothing depsFlags targetStrings globalFlags BuildCommand $
     \targetCtx ctx targetSelectors -> do
       baseCtx <- case targetCtx of
         ProjectContext -> return ctx
@@ -321,7 +322,7 @@ buck2Action flags extraArgs globalFlags = do
       -- ...), all sharing the same directory and the same (whole-package)
       -- 'PackageDescription' - so without this, a package with N
       -- buildable components would get regenerated N times over.
-      generateAllPackages verbosity variant projectRoot componentLBIs externalBuildTools (nubBy ((==) `on` fst) localPkgs)
+      generateAllPackages verbosity variant projectRoot (distUnpackedSrcRootDirectory (distDirLayout baseCtx)) componentLBIs externalBuildTools (nubBy ((==) `on` fst) localPkgs)
 
       notice verbosity $
         unlines

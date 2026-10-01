@@ -36,11 +36,12 @@ module Distribution.Client.Buck2.Generate
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import System.Directory (createDirectoryIfMissing, doesFileExist)
-import System.FilePath (makeRelative, takeFileName, (</>))
-import Data.List (isInfixOf)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, listDirectory)
+import System.FilePath (makeRelative, normalise, takeDirectory, takeFileName, (</>))
+import Data.List (isInfixOf, isPrefixOf, isSuffixOf)
 
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import qualified Distribution.ModuleName as ModuleName
 import Distribution.Package (packageName, packageVersion)
@@ -56,7 +57,7 @@ import Distribution.Types.Flag (unFlagAssignment, unFlagName)
 import Distribution.Types.ModuleReexport
   ( ModuleReexport (moduleReexportOriginalName, moduleReexportOriginalPackage)
   )
-import Distribution.Types.PackageName (PackageName)
+import Distribution.Types.PackageName (PackageName, unPackageName)
 
 import Distribution.Simple.Utils (notice, ordNub, warn)
 
@@ -77,9 +78,12 @@ import Distribution.Client.Buck2.Starlark
 -- @build-tool-depends:@ executable name "Distribution.Client.Buck2.
 -- Prebuilt" resolved a real external binary (and generated an
 -- @export_file()@ target) for - see 'CabalToBuck.buildToolDependsArg'.
-generateAllPackages :: Verbosity -> Variant -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> [(FilePath, PackageDescription)] -> IO ()
-generateAllPackages verbosity variant projectRoot componentLBIs externalBuildTools pkgs = do
-  traverse_ (generateOnePackage verbosity variant localIndex projectRoot componentLBIs externalBuildTools) pkgs
+generateAllPackages :: Verbosity -> Variant -> FilePath -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> [(FilePath, PackageDescription)] -> IO ()
+generateAllPackages verbosity variant projectRoot unpackedRoot componentLBIs externalBuildTools pkgs = do
+  names <- traverse (generateOnePackage verbosity variant localIndex projectRoot componentLBIs externalBuildTools) pkgs
+  generateUnpackedAliases verbosity variant projectRoot unpackedRoot (concat names)
+  -- See Note [Variant stubs]
+  when (isNothing (variantName variant)) $ writeVariantStubs verbosity projectRoot
   where
     localIndex :: LocalPackageIndex
     localIndex =
@@ -121,27 +125,18 @@ rootRelativeDir projectRoot pkgDir = case makeRelative projectRoot pkgDir of
   "" -> "."
   rel -> rel
 
-generateOnePackage :: Verbosity -> Variant -> LocalPackageIndex -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> (FilePath, PackageDescription) -> IO ()
+-- | Generate the files of one package; returns its targets (package
+-- directory, package name, target name).
+generateOnePackage :: Verbosity -> Variant -> LocalPackageIndex -> FilePath -> Map (PackageName, ComponentName) LocalBuildInfo -> Set String -> (FilePath, PackageDescription) -> IO [(FilePath, PackageName, String)]
 generateOnePackage verbosity variant localIndex projectRoot componentLBIs externalBuildTools (pkgDir, pkgDesc) = do
   targets <- generatePackageTargets verbosity variant localIndex (rootRelativeDir projectRoot pkgDir) componentLBIs externalBuildTools pkgDir pkgDesc
   let pkgName = packageName pkgDesc
   if null (ptCalls targets)
-    then warn verbosity $ "cabal buck2: no buck2 targets generated for package " ++ show pkgName
+    then do
+      warn verbosity $ "cabal buck2: no buck2 targets generated for package " ++ show pkgName
+      return []
     else do
-      let bzlPath = pkgDir </> variantBzlFile variant
-          buckPath = pkgDir </> "BUCK"
-      writeFile bzlPath (renderGeneratedBzl pkgName (packageVersion pkgDesc) (packageFlags pkgName componentLBIs) targets)
-      buckExists <- doesFileExist buckPath
-      if buckExists
-        then do
-          -- A variant's call is appended to an existing (hand-maintained)
-          -- BUCK that does not mention the variant's file yet; the base
-          -- variant never touches an existing BUCK. See Note [Variants].
-          contents <- readFile buckPath
-          length contents `seq` return ()
-          when (isJust (variantName variant) && not (variantBzlFile variant `isInfixOf` contents)) $
-            appendFile buckPath (variantWrapperAppendix variant)
-        else writeFile buckPath (renderBuckWrapper variant)
+      created <- writeGeneratedFiles variant pkgDir (renderGeneratedBzl pkgName (packageVersion pkgDesc) (packageFlags pkgName componentLBIs) targets)
       generateAutogenBuck variant pkgDir pkgName targets
       notice verbosity $
         "cabal buck2: generated "
@@ -149,7 +144,197 @@ generateOnePackage verbosity variant localIndex projectRoot componentLBIs extern
           ++ " ("
           ++ show (length (ptCalls targets))
           ++ " target(s))"
-          ++ (if buckExists then "" else ", created " ++ (rootRelativeDir projectRoot pkgDir </> "BUCK"))
+          ++ (if created then ", created " ++ (rootRelativeDir projectRoot pkgDir </> "BUCK") else "")
+      return [(pkgDir, pkgName, name) | Call _ args <- ptCalls targets, Just (VStr name) <- [lookup "name" args]]
+
+-- | Write a directory's @BUCK.cabal.bzl@ (the variant's file) and its
+-- @BUCK@ wrapper when missing; 'True' when the wrapper was created.
+writeGeneratedFiles :: Variant -> FilePath -> String -> IO Bool
+writeGeneratedFiles variant dir bzl = do
+  let bzlPath = dir </> variantBzlFile variant
+      buckPath = dir </> "BUCK"
+  writeFile bzlPath bzl
+  buckExists <- doesFileExist buckPath
+  if buckExists
+    then do
+      -- A variant's call is appended to an existing (hand-maintained)
+      -- BUCK that does not load the variant's file yet, directly or
+      -- through a .bzl file of the directory; the base variant never
+      -- touches an existing BUCK. See Note [Variants].
+      contents <- readFile buckPath
+      length contents `seq` return ()
+      loaded <- for (localBzlFiles contents) $ \f -> do
+        exists <- doesFileExist (dir </> f)
+        if exists then readFile (dir </> f) else return ""
+      let mentioned = any (variantBzlFile variant `isInfixOf`) (contents : loaded)
+      when (isJust (variantName variant) && not mentioned) $
+        appendFile buckPath (variantWrapperAppendix variant)
+    else writeFile buckPath (renderBuckWrapper variant)
+  return (not buckExists)
+  where
+    -- The `.bzl` files of the same directory a BUCK file loads.
+    localBzlFiles s =
+      [ takeWhile (/= '"') chunk
+      | chunk <- drop 1 (splitOn "load(\":" s)
+      ]
+
+-- Note [Aliases for unpacked packages]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- A tarball or source-repository package of the project is unpacked by
+-- cabal under @dist-newstyle/src/<name>-<version or hash>/@, so its
+-- labels change with its version or commit. The directory
+-- @dist-newstyle/src@ gets a generated @BUCK.cabal.bzl@ with one
+-- @alias()@ per target of these packages, under the target's own name:
+--
+--   //dist-newstyle/src:bytestring-stage2
+--
+-- is the label a hand-written rule (GHC's installation, buck2-ghc/BUCK)
+-- uses. A target name that two packages share (the library @hpc@ and the
+-- executable @hpc@ of hpc-bin) is qualified: @hpc/hpc-stage2@,
+-- @hpc-bin/hpc-stage2@.
+
+-- | The alias file of the unpacked packages' directory. See Note
+-- [Aliases for unpacked packages].
+generateUnpackedAliases :: Verbosity -> Variant -> FilePath -> FilePath -> [(FilePath, PackageName, String)] -> IO ()
+generateUnpackedAliases verbosity variant projectRoot unpackedRoot targets
+  | null aliases = return ()
+  | otherwise = do
+      _ <- writeGeneratedFiles variant unpackedRoot (renderGeneratedAliases variant aliases)
+      notice verbosity $
+        "cabal buck2: generated "
+          ++ (rootRelativeDir projectRoot unpackedRoot </> variantBzlFile variant)
+          ++ " ("
+          ++ show (length aliases)
+          ++ " alias(es))"
+  where
+    unpacked =
+      [ (pkgDir, pkgName, name)
+      | (pkgDir, pkgName, name) <- targets
+      , normalise unpackedRoot `isPrefixOf` normalise pkgDir
+      ]
+    shared = Map.keysSet (Map.filter (> (1 :: Int)) (Map.fromListWith (+) [(name, 1) | (_, _, name) <- unpacked]))
+    aliases =
+      [ (if name `Set.member` shared then unPackageName pkgName ++ "/" ++ name else name, localTargetLabel (rootRelativeDir projectRoot pkgDir) name)
+      | (pkgDir, pkgName, name) <- unpacked
+      ]
+
+renderGeneratedAliases :: Variant -> [(String, String)] -> String
+renderGeneratedAliases variant aliases =
+  unlines
+    [ "# @generated by `cabal buck2` - do not edit by hand."
+    , "# One alias per target of the packages cabal unpacked here, so that"
+    , "# their labels do not change with the version or commit."
+    , "# See Note [Aliases for unpacked packages] in Distribution.Client.Buck2.Generate."
+    ]
+    ++ "\n"
+    ++ generatedConstant True
+    ++ "\n"
+    ++ "def generated_targets(overrides = {}):\n"
+    ++ indentBlock (intercalate "\n" [renderCall (call "native.alias" ([("name", str name), ("actual", str actual)] ++ platform ++ [("visibility", strList ["PUBLIC"])])) | (name, actual) <- aliases])
+  where
+    -- An alias has the variant's platform like the target it names:
+    -- `buck2 build //...` configures a top-level target without one with
+    -- the default platform.
+    platform = [("default_target_platform", str plat) | Just plat <- [variantPlatform variant]]
+
+-- | @GENERATED = True@ in a generated file, @False@ in a stub. See Note
+-- [Variant stubs].
+generatedConstant :: Bool -> String
+generatedConstant b = "GENERATED = " ++ (if b then "True" else "False") ++ "\n"
+
+-- Note [Variant stubs]
+-- ~~~~~~~~~~~~~~~~~~~~
+-- A hand-maintained @BUCK@ or @.bzl@ file that loads the generated file
+-- of a variant (@BUCK.stage2.cabal.bzl@) fails to parse until that
+-- variant is generated, and GHC's stage 2 can only be generated once stage 1 is
+-- built. A @load@ is unconditional, so the file must exist: the base
+-- variant's generation writes a stub for every such file that is
+-- missing, with the constants a generated file has (@UNIT_IDS@,
+-- @VERSION@, @FLAGS@) and a @generated_targets()@ that defines nothing.
+-- The constant @GENERATED@ is @False@ in a stub and @True@ in a generated
+-- file: a hand-maintained rule of the variant tests it, so that the
+-- targets of a variant exist only once it is generated (and @//...@ is
+-- the base variant until then).
+
+-- | Write a stub for every variant file a @BUCK@ file of the project
+-- loads that does not exist. See Note [Variant stubs].
+writeVariantStubs :: Verbosity -> FilePath -> IO ()
+writeVariantStubs verbosity projectRoot = do
+  buckFiles <- findBuckFiles projectRoot
+  for_ buckFiles $ \buck -> do
+    contents <- readFile buck
+    length contents `seq` return ()
+    for_ (loadedVariantFiles (takeDirectory buck) contents) $ \path -> do
+      exists <- doesFileExist path
+      unless exists $ do
+        notice verbosity $ "cabal buck2: " ++ makeRelative projectRoot buck ++ " loads " ++ makeRelative projectRoot path ++ ", not generated yet: writing a stub"
+        writeFile path stub
+  where
+    stub =
+      unlines
+        [ "# @generated stub by `cabal buck2`: the BUCK file loads this variant's"
+        , "# file, but the variant has not been generated yet (see Note [Variant"
+        , "# stubs] in Distribution.Client.Buck2.Generate). `cabal buck2 --variant`"
+        , "# replaces it."
+        , ""
+        , "UNIT_IDS = {}"
+        , ""
+        , "VERSION = '0'"
+        , ""
+        , "FLAGS = {}"
+        , ""
+        , generatedConstant False
+        , "def generated_targets(overrides = {}):"
+        , "    pass"
+        ]
+    -- The `BUCK.<name>.cabal.bzl` files a BUCK or .bzl file in `dir`
+    -- loads, as paths: `load(":X")` is in the same directory,
+    -- `load("//pkg:X")` in the package's directory (other cells are left
+    -- alone).
+    loadedVariantFiles dir s =
+      [ path
+      | chunk <- drop 1 (splitOn "load(\"" s)
+      , let label = takeWhile (/= '"') chunk
+            (pkg, file) = case break (== ':') label of
+              (p, ':' : f) -> (p, f)
+              _ -> ("", "")
+      , "BUCK." `isPrefixOf` file
+      , ".cabal.bzl" `isSuffixOf` file
+      , file /= "BUCK.cabal.bzl"
+      , Just path <- [resolve pkg file]
+      ]
+      where
+        resolve "" file = Just (dir </> file)
+        resolve pkg file
+          | "//" `isPrefixOf` pkg = Just (projectRoot </> drop 2 pkg </> file)
+          | otherwise = Nothing
+
+-- | Split a string on a separator.
+splitOn :: String -> String -> [String]
+splitOn sep = go
+  where
+    go t = case breakOn t of
+      (before, Nothing) -> [before]
+      (before, Just rest) -> before : go rest
+    breakOn t
+      | sep `isPrefixOf` t = ("", Just (drop (length sep) t))
+      | otherwise = case t of
+          [] -> ("", Nothing)
+          c : cs -> let (b, r) = breakOn cs in (c : b, r)
+
+-- | The @BUCK@ and hand-maintained @.bzl@ files under a directory,
+-- leaving out buck2's output, the repositories and the generated files
+-- (cabal's build directory is included: the packages it unpacks have
+-- BUCK files).
+findBuckFiles :: FilePath -> IO [FilePath]
+findBuckFiles dir = do
+  entries <- listDirectory dir
+  fmap concat $ for entries $ \e -> do
+    let path = dir </> e
+    isDir <- doesDirectoryExist path
+    if isDir
+      then if e `elem` [".git", "buck-out"] then return [] else findBuckFiles path
+      else return [path | e == "BUCK" || (".bzl" `isSuffixOf` e && not (".cabal.bzl" `isSuffixOf` e))]
 
 -- | @cabal-buck2\/autogen\/BUCK@: one @export_file()@ per generated
 -- autogen file (a component's own @cabal_macros.h@, or the package's
@@ -235,6 +420,8 @@ renderGeneratedBzl pkgName version flags targets =
     ++ "VERSION = " ++ renderValue 0 (VStr (prettyShow version)) ++ "\n"
     ++ "\n"
     ++ renderFlags flags
+    ++ "\n"
+    ++ generatedConstant True
     ++ "\n"
     ++ "def generated_targets(overrides = {}):\n"
     ++ indentBlock (intercalate "\n" (map renderOverridableCall (ptCalls targets)))
