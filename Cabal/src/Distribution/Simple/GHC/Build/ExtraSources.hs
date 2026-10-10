@@ -26,7 +26,7 @@ import Distribution.Simple.GHC.Build.Utils
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program.Types
 import Distribution.Simple.Setup.Common (commonSetupTempFileOptions)
-import Distribution.System (Arch (JavaScript), Platform (..))
+import Distribution.System (Arch (JavaScript, Wasm32), Platform (..))
 import Distribution.Types.ComponentLocalBuildInfo
 import Distribution.Types.ExtraSource (ExtraSource (..))
 import Distribution.Utils.Path
@@ -226,10 +226,23 @@ buildExtraSources
                   clbi
                   buildTargetDir
                   extraSource
-              vanillaSrcOpts =
+              vanillaSrcOpts
+                -- On wasm, only the dyn way may be PIC (as hadrian builds
+                -- it).  The rts and ghc-internal pick their JSFFI init
+                -- protocol with `#if defined(__PIC__)`: the static-way one
+                -- keeps JSFFI imports out of plain wasi executables, the
+                -- PIC one is what dyld (the TH interpreter) calls into a
+                -- loaded .so.  Outside the repl the interpreter only ever
+                -- loads the dyn way, so vanilla objects need not be PIC.
+                | Platform Wasm32 _ <- platform
+                , not (isRepl buildingWhat) =
+                    baseSrcOpts
                 -- -fPIC is used in case you are using the repl
                 -- of a dynamically linked GHC
-                baseSrcOpts{ghcOptFPic = toFlag True}
+                | otherwise =
+                    baseSrcOpts{ghcOptFPic = toFlag True}
+              isRepl BuildRepl{} = True
+              isRepl _ = False
               profSrcOpts =
                 vanillaSrcOpts
                   `mappend` mempty
