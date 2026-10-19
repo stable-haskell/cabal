@@ -1,7 +1,8 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 
 module Distribution.Client.InLibrary
-  ( libraryConfigureInputsFromElabPackage
+  ( LibraryConfigureInputs (compiler, platform, localBuildConfig)
+  , libraryConfigureInputsFromElabPackage
   , configure
   , build
   , haddock
@@ -74,7 +75,7 @@ libraryConfigureInputsFromElabPackage
   :: VerbosityHandles
   -> BuildType
   -> ProgramDb
-  -> ElaboratedSharedConfig
+  -> Toolchain
   -> ElaboratedReadyPackage
   -> [String]
   -- ^ targets
@@ -83,10 +84,12 @@ libraryConfigureInputsFromElabPackage
   verbHandles
   bt
   progDb
-  -- NB: don't use the ProgramDb from the ElaboratedSharedConfig;
-  -- that one is only for the compiler itself and not for the package.
-  ElaboratedSharedConfig
-    { pkgConfigToolchains = toolchains
+  -- The caller selects the package's stage once for both this metadata and
+  -- its ProgramDb. Keep the supplied package-specific ProgramDb, which also
+  -- contains the configured tools and arguments needed by this package.
+  Toolchain
+    { toolchainCompiler = compil
+    , toolchainPlatform = plat
     }
   (ReadyPackage pkg)
   userTargets =
@@ -122,9 +125,6 @@ libraryConfigureInputsFromElabPackage
     where
       pkgDescr = elabPkgDescription pkg
       gpkgDescr = elabGPkgDescription pkg
-      hostToolchain = getStage toolchains Host
-      plat = toolchainPlatform hostToolchain
-      compil = toolchainCompiler hostToolchain
 
 configure
   :: LibraryConfigureInputs
