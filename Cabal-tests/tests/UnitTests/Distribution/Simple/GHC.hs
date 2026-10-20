@@ -35,7 +35,7 @@ import Distribution.Simple.Program.Db
 import Distribution.Simple.Program.Find (ProgramSearchPathEntry (ProgramSearchPathDir))
 import Distribution.Simple.Program.Types (programPath)
 import Distribution.Pretty (prettyShow)
-import Distribution.System (Arch (X86_64), OS (Linux), Platform (..))
+import Distribution.System (Arch (Arm, X86_64), OS (Linux), Platform (..))
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Version (mkVersion)
 import Distribution.Verbosity (defaultVerbosityHandles, mkVerbosity, silent)
@@ -145,6 +145,59 @@ tests =
               withProperty "Target name" "arm-unknown-linux-gnueabihf-prof" ordinaryCompiler
       actual <- either assertFailure (pure . renderTargetName) (compilerTargetName platform comp)
       actual @?= "arm-unknown-linux-gnueabihf-prof"
+  , testCase "GHC target metadata classifies Linux without losing its environment name" $ do
+      if os == "mingw32"
+        then pure ()
+        else withSystemTempDirectory "cabal-target-platform" $ \temp -> do
+        let versionText = "9.14.1"
+            compilerPath = temp </> "ghc-metadata"
+            verbosity = mkVerbosity defaultVerbosityHandles silent
+            compilerDb = addKnownProgram ghcProgram emptyProgramDb
+            vectors =
+              [ ("x86_64-unknown-linux-gnu", X86_64)
+              , ("x86_64-unknown-linux-musl", X86_64)
+              , ("arm-unknown-linux-gnueabi", Arm)
+              , ("arm-unknown-linux-gnueabihf", Arm)
+              ]
+        mapM_
+          (\(machine, expectedArch) -> do
+            let infoFields =
+                  [ ("Project version", versionText)
+                  , ("Target platform", machine)
+                  , ("Target name", machine)
+                  , ("Target ABI", "")
+                  , ("GHC Profiled", "NO")
+                  , ("LibDir", temp </> "lib")
+                  , ("Global Package DB", temp </> "lib" </> "package.conf.d")
+                  ]
+            writeExecutable compilerPath $ unlines
+              [ "#!/bin/sh"
+              , "for arg in \"$@\"; do"
+              , "case \"$arg\" in"
+              , "-package-env=-) : ;;"
+              , "--numeric-version) echo " ++ versionText ++ ";;"
+              , "--supported-languages) echo Haskell98;;"
+              , "--info) echo " ++ shellQuote (show infoFields) ++ ";;"
+              , "*) echo 'unexpected ghc argument' >&2; exit 99 ;;"
+              , "esac"
+              , "done"
+              , "exit 0"
+              ]
+            (compiler, target, _) <-
+              GHC.configureCompiler verbosity (Just compilerPath) compilerDb
+            platform <-
+              maybe
+                (assertFailure ("GHC --info omitted target platform " ++ machine))
+                pure
+                target
+            case platform of
+              Platform arch Linux -> arch @?= expectedArch
+              Platform _ os -> assertFailure ("GHC --info target " ++ machine ++ " classified as " ++ show os)
+            Map.lookup "Target platform" (compilerProperties compiler) @?= Just machine
+            actual <- either assertFailure (pure . renderTargetName) (compilerTargetName platform compiler)
+            actual @?= machine
+          )
+          vectors
   , testCase "new target metadata rejects contradictory ABI names" $ do
       let platform = Platform X86_64 Linux
           comp = withProperty "Target ABI" "" $
@@ -274,8 +327,10 @@ tests =
             Just configuredHaddock -> programPath configuredHaddock @?= haddockVersioned
           explicitWrong <- try (GHC.compilerProgramDb verbosity compiler configuredCompiler (Just wrongPkg)) :: IO (Either SomeException ProgramDb)
           case explicitWrong of
-            Left err -> assertBool "explicit package-tool error omits its protocol failure" $
-              "missing Project version" `isInfixOf` displayException err
+            Left err ->
+              assertBool
+                ("explicit package-tool protocol diagnostic was: " ++ displayException err)
+                ("missing Project version" `isInfixOf` unwords (words (displayException err)))
             Right _ -> assertFailure "explicit wrong ghc-pkg was accepted"
           let missingDir = temp </> "missing-real-bin"
               missingGivenDir = temp </> "missing-external-bin"
