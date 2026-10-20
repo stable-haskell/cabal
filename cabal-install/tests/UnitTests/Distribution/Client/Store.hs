@@ -4,9 +4,9 @@ module UnitTests.Distribution.Client.Store (tests) where
 -- import Control.Concurrent (forkIO, threadDelay)
 -- import Control.Concurrent.MVar
 
+import Data.List (isInfixOf, isSuffixOf, nub)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.List (isInfixOf, isSuffixOf, nub)
 import System.Directory
 import System.FilePath
 
@@ -20,9 +20,9 @@ import Distribution.System (buildPlatform)
 import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
-import Distribution.Client.RebuildMonad
 import Distribution.Client.DistDirLayout (DistDirParams (..), ProjectRoot (..), defaultDistDirLayout, distBuildDirectory)
 import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
+import Distribution.Client.RebuildMonad
 import Distribution.Client.Store
 import qualified Distribution.Client.Utils.Json as Json
 import Distribution.Solver.Types.Stage (Stage (..))

@@ -1,7 +1,11 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module UnitTests.Distribution.Client.ProjectPlanning (tests) where
 
+import Control.Exception (finally)
+import Control.Monad (when)
 import Data.Binary (decode, encode)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (isInfixOf, nub)
@@ -13,21 +17,31 @@ import Distribution.Client.HashValue (hashValue)
 import Distribution.Client.PackageHash
 import Distribution.Client.ProjectConfig (lookupLocalPackageConfig, resolveSolverSettings)
 import Distribution.Client.ProjectConfig.Types (MapMappend (..), PackageConfig (..), ProjectConfig (..), SolverSettings (..))
-import Distribution.Client.ProjectPlanning (ComponentTarget (..), Stage (..), SubComponentTarget (..), normaliseUnscopedPackageConfig, nubComponentTargets, setupHsConfigureFlags)
-import Distribution.Client.ProjectPlanning.Types (ElaboratedComponent (..), ElaboratedConfiguredPackage (..), ElaboratedPackageOrComponent (..))
+import Distribution.Client.ProjectPlanning (ComponentTarget (..), Stage (..), Staged (..), SubComponentTarget (..), Toolchain (..), configureTargetArgs, normaliseUnscopedPackageConfig, nubComponentTargets, setupHsConfigureFlags)
+import Distribution.Client.ProjectPlanning.Types (ElaboratedComponent (..), ElaboratedConfiguredPackage (..), ElaboratedPackageOrComponent (..), ElaboratedSharedConfig (..))
 import Distribution.Client.Types (ConfiguredId (..), GenericReadyPackage (..))
+import Distribution.Package (PackageIdentifier (..), mkComponentId, newSimpleUnitId, unsafeMkDefUnitId)
+import Distribution.Simple (autoconfSetupHooks)
+import Distribution.Simple.Command (CommandParse (..), CommandUI (commandDefaultFlags), commandParseArgs, commandShowOptions)
 import Distribution.Simple.Compiler
 import Distribution.Simple.Configure (computeEffectiveProfiling)
 import Distribution.Simple.Flag
-import Distribution.Simple.Setup (ConfigFlags (..), emptyConfigFlags)
+import Distribution.Simple.Program.Db (defaultProgramDb)
+import Distribution.Simple.Setup (CommonSetupFlags (setupWorkingDir), ConfigFlags (..), configureCommand, emptyConfigFlags)
+import qualified Distribution.Simple.SetupHooks.Internal as SetupHooks
+import Distribution.System (buildPlatform)
 import Distribution.Types.ComponentName
-import Distribution.Package (PackageIdentifier (..), mkComponentId, newSimpleUnitId, unsafeMkDefUnitId)
 import Distribution.Types.Flag (mkFlagAssignment, mkFlagName)
 import Distribution.Types.LibraryName
+import Distribution.Types.LocalBuildConfig (PackageBuildDescr (..))
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageName (mkPackageName)
+import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Version (mkVersion)
-import Distribution.System (buildPlatform)
+import System.Directory (createDirectory, getTemporaryDirectory, removeFile, removePathForcibly)
+import System.FilePath ((</>))
+import System.IO (hClose, openTempFile)
+import System.Info (os)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -38,113 +52,306 @@ tests =
   , testGroup "Intrinsic profiling configuration layers" profilingBuildOptionsTests
   , testGroup "Install-local target configuration" installPromotionTests
   , testCase "coverage configure flags include canonical sibling unit ids" testCoverageDependencies
+  , testCase "configure target arguments retain full Host and Build triples" testConfigureTargetArgs
   ]
 
 testCoverageDependencies :: Assertion
 testCoverageDependencies = do
+  let hostCompiler =
+        ordinaryCompiler
+          { compilerProperties = Map.singleton "Target platform" "arm-unknown-linux-gnueabihf"
+          }
+      buildCompiler =
+        ordinaryCompiler
+          { compilerProperties = Map.singleton "Target platform" "x86_64-unknown-linux-musl"
+          }
   let sourceId = PackageIdentifier (mkPackageName "coverage-fixture") (mkVersion [1])
       siblingId = mkComponentId "coverage-fixture-library"
       externalId = PackageIdentifier (mkPackageName "coverage-dependency") (mkVersion [1])
       externalComponentId = mkComponentId "coverage-dependency-library"
       siblingUnitId = newSimpleUnitId siblingId
       externalUnitId = newSimpleUnitId externalComponentId
-      component = ElaboratedComponent
-        { compSolverName = undefined
-        , compComponentName = undefined
-        , compLibDependencies = [ (ConfiguredId sourceId Nothing siblingId, False), (ConfiguredId externalId Nothing externalComponentId, False) ]
-        , compLinkedLibDependencies = [ DefiniteUnitId (unsafeMkDefUnitId siblingUnitId), DefiniteUnitId (unsafeMkDefUnitId externalUnitId), IndefFullUnitId siblingId Map.empty ]
-        , compInstantiatedWith = undefined
-        , compLinkedInstantiatedWith = undefined
-        , compExeDependencies = undefined
-        , compPkgConfigDependencies = undefined
-        , compExeDependencyPaths = undefined
-        , compOrderLibDependencies = undefined
-        }
-      elab = ElaboratedConfiguredPackage
-        { elabUnitId = undefined
-        , elabComponentId = undefined
-        , elabIsCanonical = undefined
-        , elabPkgSourceId = sourceId
-        , elabModuleShape = undefined
-        , elabFlagAssignment = undefined
-        , elabFlagDefaults = undefined
-        , elabPkgDescription = undefined
-        , elabGPkgDescription = undefined
-        , elabPkgSourceLocation = undefined
-        , elabPkgSourceHash = undefined
-        , elabIsSourcePackage = undefined
-        , elabIsSourcePackageClosure = undefined
-        , elabEnabledSpec = undefined
-        , elabStanzasAvailable = undefined
-        , elabStanzasRequested = undefined
-        , elabStage = Host
-        , elabToolchain = undefined
-        , elabPackageDbs = undefined
-        , elabSetupPackageDBStack = undefined
-        , elabBuildPackageDBStack = []
-        , elabRegisterPackageDBStack = undefined
-        , elabPkgDescriptionOverride = undefined
-        , elabBuildOptions = testBuildOptions
-        , elabDumpBuildInfo = undefined
-        , elabProgramPaths = undefined
-        , elabProgramArgs = undefined
-        , elabProgramPathExtra = undefined
-        , elabConfiguredPrograms = undefined
-        , elabConfigureScriptArgs = undefined
-        , elabExtraLibDirs = undefined
-        , elabExtraLibDirsStatic = undefined
-        , elabExtraFrameworkDirs = undefined
-        , elabExtraIncludeDirs = undefined
-        , elabProgPrefix = undefined
-        , elabProgSuffix = undefined
-        , elabInstallDirs = undefined
-        , elabHaddockHoogle = undefined
-        , elabHaddockHtml = undefined
-        , elabHaddockHtmlLocation = undefined
-        , elabHaddockForeignLibs = undefined
-        , elabHaddockForHackage = undefined
-        , elabHaddockExecutables = undefined
-        , elabHaddockTestSuites = undefined
-        , elabHaddockBenchmarks = undefined
-        , elabHaddockInternal = undefined
-        , elabHaddockCss = undefined
-        , elabHaddockLinkedSource = undefined
-        , elabHaddockQuickJump = undefined
-        , elabHaddockHscolourCss = undefined
-        , elabHaddockContents = undefined
-        , elabHaddockIndex = undefined
-        , elabHaddockBaseUrl = undefined
-        , elabHaddockResourcesDir = undefined
-        , elabHaddockOutputDir = undefined
-        , elabHaddockUseUnicode = undefined
-        , elabTestMachineLog = undefined
-        , elabTestHumanLog = undefined
-        , elabTestShowDetails = undefined
-        , elabTestKeepTix = undefined
-        , elabTestWrapper = undefined
-        , elabTestFailWhenNoTestSuites = undefined
-        , elabTestTestOptions = undefined
-        , elabBenchmarkOptions = undefined
-        , elabSetupScriptStyle = undefined
-        , elabSetupScriptCliVersion = undefined
-        , elabConfigureTargets = undefined
-        , elabBuildTargets = undefined
-        , elabTestTargets = undefined
-        , elabBenchTargets = undefined
-        , elabReplTarget = undefined
-        , elabHaddockTargets = undefined
-        , elabBuildHaddocks = undefined
-        , elabPkgOrComp = ElabComponent component
-        }
+      component =
+        ElaboratedComponent
+          { compSolverName = undefined
+          , compComponentName = undefined
+          , compLibDependencies = [(ConfiguredId sourceId Nothing siblingId, False), (ConfiguredId externalId Nothing externalComponentId, False)]
+          , compLinkedLibDependencies = [DefiniteUnitId (unsafeMkDefUnitId siblingUnitId), DefiniteUnitId (unsafeMkDefUnitId externalUnitId), IndefFullUnitId siblingId Map.empty]
+          , compInstantiatedWith = undefined
+          , compLinkedInstantiatedWith = undefined
+          , compExeDependencies = undefined
+          , compPkgConfigDependencies = undefined
+          , compExeDependencyPaths = undefined
+          , compOrderLibDependencies = undefined
+          }
+      elab =
+        ElaboratedConfiguredPackage
+          { elabUnitId = undefined
+          , elabComponentId = undefined
+          , elabIsCanonical = undefined
+          , elabPkgSourceId = sourceId
+          , elabModuleShape = undefined
+          , elabFlagAssignment = undefined
+          , elabFlagDefaults = undefined
+          , elabPkgDescription = undefined
+          , elabGPkgDescription = undefined
+          , elabPkgSourceLocation = undefined
+          , elabPkgSourceHash = undefined
+          , elabIsSourcePackage = undefined
+          , elabIsSourcePackageClosure = undefined
+          , elabEnabledSpec = undefined
+          , elabStanzasAvailable = undefined
+          , elabStanzasRequested = undefined
+          , elabStage = Host
+          , elabToolchain = testToolchain hostCompiler
+          , elabPackageDbs = undefined
+          , elabSetupPackageDBStack = undefined
+          , elabBuildPackageDBStack = []
+          , elabRegisterPackageDBStack = undefined
+          , elabPkgDescriptionOverride = undefined
+          , elabBuildOptions = testBuildOptions
+          , elabDumpBuildInfo = undefined
+          , elabProgramPaths = undefined
+          , elabProgramArgs = undefined
+          , elabProgramPathExtra = undefined
+          , elabConfiguredPrograms = undefined
+          , elabConfigureScriptArgs = []
+          , elabExtraLibDirs = undefined
+          , elabExtraLibDirsStatic = undefined
+          , elabExtraFrameworkDirs = undefined
+          , elabExtraIncludeDirs = undefined
+          , elabProgPrefix = undefined
+          , elabProgSuffix = undefined
+          , elabInstallDirs = undefined
+          , elabHaddockHoogle = undefined
+          , elabHaddockHtml = undefined
+          , elabHaddockHtmlLocation = undefined
+          , elabHaddockForeignLibs = undefined
+          , elabHaddockForHackage = undefined
+          , elabHaddockExecutables = undefined
+          , elabHaddockTestSuites = undefined
+          , elabHaddockBenchmarks = undefined
+          , elabHaddockInternal = undefined
+          , elabHaddockCss = undefined
+          , elabHaddockLinkedSource = undefined
+          , elabHaddockQuickJump = undefined
+          , elabHaddockHscolourCss = undefined
+          , elabHaddockContents = undefined
+          , elabHaddockIndex = undefined
+          , elabHaddockBaseUrl = undefined
+          , elabHaddockResourcesDir = undefined
+          , elabHaddockOutputDir = undefined
+          , elabHaddockUseUnicode = undefined
+          , elabTestMachineLog = undefined
+          , elabTestHumanLog = undefined
+          , elabTestShowDetails = undefined
+          , elabTestKeepTix = undefined
+          , elabTestWrapper = undefined
+          , elabTestFailWhenNoTestSuites = undefined
+          , elabTestTestOptions = undefined
+          , elabBenchmarkOptions = undefined
+          , elabSetupScriptStyle = undefined
+          , elabSetupScriptCliVersion = undefined
+          , elabConfigureTargets = undefined
+          , elabBuildTargets = undefined
+          , elabTestTargets = undefined
+          , elabBenchTargets = undefined
+          , elabReplTarget = undefined
+          , elabHaddockTargets = undefined
+          , elabBuildHaddocks = undefined
+          , elabPkgOrComp = ElabComponent component
+          }
   config <-
     setupHsConfigureFlags
       (\_ -> pure (error "unexpected package database path"))
+      (testSharedConfigWith hostCompiler buildCompiler)
       (ReadyPackage elab)
       mempty
   case flagToMaybe (configCoverageFor config) of
     Just unitIds -> unitIds @?= [siblingUnitId]
     Nothing -> assertFailure "component coverage omitted its canonical sibling library id"
+  configConfigureArgs config
+    @?= [ "--host=arm-unknown-linux-gnueabihf"
+        , "--build=x86_64-unknown-linux-musl"
+        ]
+  let targetFlags = emptyConfigFlags{configConfigureArgs = configConfigureArgs config}
+      setupArgs = commandShowOptions (configureCommand defaultProgramDb) targetFlags
+  assertBool "Setup CLI serialization includes the selected Host triple" $
+    "--configure-option=--host=arm-unknown-linux-gnueabihf" `elem` setupArgs
+  assertBool "Setup CLI serialization includes the selected Build triple" $
+    "--configure-option=--build=x86_64-unknown-linux-musl" `elem` setupArgs
+  case commandParseArgs (configureCommand defaultProgramDb) False setupArgs of
+    CommandReadyToGo (applyFlags, []) ->
+      do
+        let parsedConfig = applyFlags (commandDefaultFlags (configureCommand defaultProgramDb))
+        configConfigureArgs parsedConfig @?= configConfigureArgs config
+        when (os /= "mingw32") $
+          runSyntheticConfigure
+            parsedConfig
+            hostCompiler
+            ["--host=arm-unknown-linux-gnueabihf", "--build=x86_64-unknown-linux-musl"]
+    CommandErrors errors -> assertFailure $ "failed to parse serialized Setup flags: " ++ unlines errors
+    CommandHelp _ -> assertFailure "Setup flag serialization unexpectedly produced help"
+    CommandList options -> assertFailure $ "Setup flag serialization unexpectedly listed options: " ++ unlines options
+    CommandReadyToGo (_, leftovers) -> assertFailure $ "unparsed serialized Setup flags: " ++ unwords leftovers
 
+  let buildElab = elab{elabStage = Build, elabToolchain = testToolchain buildCompiler}
+  buildConfig <-
+    setupHsConfigureFlags
+      (\_ -> pure (error "unexpected package database path"))
+      (testSharedConfigWith hostCompiler buildCompiler)
+      (ReadyPackage buildElab)
+      mempty
+  let buildConfigureArgs =
+        [ "--host=x86_64-unknown-linux-musl"
+        , "--build=x86_64-unknown-linux-musl"
+        ]
+  configConfigureArgs buildConfig @?= buildConfigureArgs
+  let buildTargetFlags = emptyConfigFlags{configConfigureArgs = configConfigureArgs buildConfig}
+      buildSetupArgs = commandShowOptions (configureCommand defaultProgramDb) buildTargetFlags
+  assertBool "Setup CLI serialization includes the selected Build-stage Host triple" $
+    "--configure-option=--host=x86_64-unknown-linux-musl" `elem` buildSetupArgs
+  assertBool "Setup CLI serialization includes the selected Build triple" $
+    "--configure-option=--build=x86_64-unknown-linux-musl" `elem` buildSetupArgs
+  case commandParseArgs (configureCommand defaultProgramDb) False buildSetupArgs of
+    CommandReadyToGo (applyFlags, []) -> do
+      let parsedConfig = applyFlags (commandDefaultFlags (configureCommand defaultProgramDb))
+      configConfigureArgs parsedConfig @?= buildConfigureArgs
+      when (os /= "mingw32") $
+        runSyntheticConfigure parsedConfig buildCompiler buildConfigureArgs
+    CommandErrors errors -> assertFailure $ "failed to parse serialized Build Setup flags: " ++ unlines errors
+    CommandHelp _ -> assertFailure "Build Setup flag serialization unexpectedly produced help"
+    CommandList options -> assertFailure $ "Build Setup flag serialization unexpectedly listed options: " ++ unlines options
+    CommandReadyToGo (_, leftovers) -> assertFailure $ "unparsed Build Setup flags: " ++ unwords leftovers
+
+runSyntheticConfigure :: ConfigFlags -> Compiler -> [String] -> Assertion
+runSyntheticConfigure config selectedCompiler expectedArgs = do
+  tempRoot <- getTemporaryDirectory
+  (marker, handle) <- openTempFile tempRoot "cabal-configure-target"
+  hClose handle
+  removeFile marker
+  createDirectory marker
+  let cleanup = removePathForcibly marker
+      captureDir = marker </> "dist" </> "build"
+      configurePath = marker </> "configure"
+      configured =
+        config
+          { configCommonFlags =
+              (configCommonFlags config)
+                { setupWorkingDir = toFlag (makeSymbolicPath marker)
+                }
+          }
+      packageBuild =
+        PackageBuildDescr
+          { configFlags = configured
+          , flagAssignment = mempty
+          , componentEnabledSpec = undefined
+          , compiler = selectedCompiler
+          , hostPlatform = buildPlatform
+          , pkgDescrFile = undefined
+          , localPkgDescr = undefined
+          , installDirTemplates = undefined
+          , withPackageDB = undefined
+          , extraCoverageFor = undefined
+          }
+      hookInputs =
+        SetupHooks.PostConfPackageInputs
+          { SetupHooks.localBuildConfig = undefined
+          , SetupHooks.packageBuildDescr = packageBuild
+          }
+  ( do
+      writeFile configurePath $
+        unlines
+          [ "#!/bin/sh"
+          , "printf '%s\\n' \"$@\" > captured-target-args"
+          ]
+      case SetupHooks.postConfPackageHook $ SetupHooks.configureHooks autoconfSetupHooks of
+        Nothing -> assertFailure "autoconfSetupHooks omitted its post-configure hook"
+        Just hook -> hook hookInputs
+      args <- lines <$> readFile (captureDir </> "captured-target-args")
+      args @?= expectedArgs
+    )
+    `finally` cleanup
+
+testConfigureTargetArgs :: Assertion
+testConfigureTargetArgs = do
+  let host =
+        ordinaryCompiler
+          { compilerProperties = Map.singleton "Target platform" "arm-unknown-linux-gnueabihf"
+          }
+      build =
+        ordinaryCompiler
+          { compilerProperties = Map.singleton "Target platform" "x86_64-unknown-linux-musl"
+          }
+      toolchains = pkgConfigToolchains (testSharedConfigWith host build)
+  configureTargetArgs Host toolchains []
+    @?= ["--host=arm-unknown-linux-gnueabihf", "--build=x86_64-unknown-linux-musl"]
+  configureTargetArgs Host toolchains ["--host", "explicit-host"]
+    @?= ["--build=x86_64-unknown-linux-musl", "--host", "explicit-host"]
+  configureTargetArgs Host toolchains ["--host=explicit-host", "--build=explicit-build"]
+    @?= ["--host=explicit-host", "--build=explicit-build"]
+  configureTargetArgs Build toolchains []
+    @?= ["--host=x86_64-unknown-linux-musl", "--build=x86_64-unknown-linux-musl"]
+  let softHost =
+        ordinaryCompiler
+          { compilerProperties = Map.singleton "Target platform" "arm-unknown-linux-gnueabi"
+          }
+      softToolchains = pkgConfigToolchains (testSharedConfigWith softHost build)
+  configureTargetArgs Host softToolchains []
+    @?= ["--host=arm-unknown-linux-gnueabi", "--build=x86_64-unknown-linux-musl"]
+  let bareLinux =
+        ordinaryCompiler
+          { compilerProperties = Map.singleton "Target platform" "x86_64-unknown-linux"
+          }
+      gnuLinux =
+        ordinaryCompiler
+          { compilerProperties = Map.singleton "Target platform" "x86_64-unknown-linux-gnu"
+          }
+      bareHostToolchains = pkgConfigToolchains (testSharedConfigWith bareLinux gnuLinux)
+      gnuHostToolchains = pkgConfigToolchains (testSharedConfigWith gnuLinux bareLinux)
+  configureTargetArgs Host bareHostToolchains []
+    @?= ["--host=x86_64-unknown-linux-gnu", "--build=x86_64-unknown-linux-gnu"]
+  configureTargetArgs Host gnuHostToolchains []
+    @?= ["--host=x86_64-unknown-linux-gnu", "--build=x86_64-unknown-linux-gnu"]
+  configureTargetArgs Host bareHostToolchains ["--host=x86_64-unknown-linux"]
+    @?= ["--build=x86_64-unknown-linux", "--host=x86_64-unknown-linux"]
+  configureTargetArgs Host bareHostToolchains ["--build", "x86_64-unknown-linux"]
+    @?= ["--host=x86_64-unknown-linux", "--build", "x86_64-unknown-linux"]
+  configureTargetArgs Host bareHostToolchains ["--host=x86_64-unknown-linux", "--host=x86_64-unknown-linux-gnu"]
+    @?= ["--build=x86_64-unknown-linux-gnu", "--host=x86_64-unknown-linux", "--host=x86_64-unknown-linux-gnu"]
+  configureTargetArgs Host bareHostToolchains ["--host=x86_64-unknown-linux", "--build=x86_64-unknown-linux-gnu"]
+    @?= ["--host=x86_64-unknown-linux", "--build=x86_64-unknown-linux-gnu"]
+  configureTargetArgs Host toolchains ["--host=arm-unknown-linux-gnueabi", "--build=arm-unknown-linux-gnueabihf"]
+    @?= ["--host=arm-unknown-linux-gnueabi", "--build=arm-unknown-linux-gnueabihf"]
+  let gnuLinuxToolchains = pkgConfigToolchains (testSharedConfigWith gnuLinux (compilerWithTarget "x86_64-unknown-linux-musl"))
+      armAbiToolchains = pkgConfigToolchains (testSharedConfigWith (compilerWithTarget "arm-unknown-linux-gnueabi") (compilerWithTarget "arm-unknown-linux-gnueabihf"))
+  configureTargetArgs Host gnuLinuxToolchains []
+    @?= ["--host=x86_64-unknown-linux-gnu", "--build=x86_64-unknown-linux-musl"]
+  configureTargetArgs Host armAbiToolchains []
+    @?= ["--host=arm-unknown-linux-gnueabi", "--build=arm-unknown-linux-gnueabihf"]
+  where
+    compilerWithTarget target =
+      ordinaryCompiler
+        { compilerProperties = Map.singleton "Target platform" target
+        }
+
+testToolchain :: Compiler -> Toolchain
+testToolchain compiler =
+  Toolchain
+    { toolchainPlatform = buildPlatform
+    , toolchainCompiler = compiler
+    , toolchainProgramDb = defaultProgramDb
+    , toolchainPackageDBs = undefined
+    }
+
+testSharedConfigWith :: Compiler -> Compiler -> ElaboratedSharedConfig
+testSharedConfigWith host build =
+  ElaboratedSharedConfig
+    { pkgConfigToolchains = Staged $ \case
+        Host -> testToolchain host
+        Build -> testToolchain build
+    , pkgConfigReplOptions = undefined
+    }
 
 testBuildOptions :: LBC.BuildOptions
 testBuildOptions =

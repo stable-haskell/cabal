@@ -103,6 +103,7 @@ module Distribution.Simple.Setup
   , benchmarkCommand
   , CopyDest (..)
   , configureArgs
+  , configureTargetDefaults
   , configureOptions
   , configureCCompiler
   , configureLinker

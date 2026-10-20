@@ -285,6 +285,7 @@ buildAndRegisterUnpackedPackage
         flip filterConfigureFlags v
           <$> setupHsConfigureFlags
             (fmap makeSymbolicPath . canonicalizePath)
+            pkgshared
             rpkg
             (commonFlags $ configureArgs v)
       configureArgs _ = setupHsConfigureArgs pkg

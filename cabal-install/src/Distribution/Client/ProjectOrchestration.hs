@@ -1179,6 +1179,7 @@ printPlan
               runIdentity
                 ( setupHsConfigureFlags
                     (\_ -> return (error "unused"))
+                    elaboratedShared
                     (ReadyPackage elab)
                     commonFlags
                 )

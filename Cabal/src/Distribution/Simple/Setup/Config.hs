@@ -38,6 +38,7 @@ module Distribution.Simple.Setup.Config
   , showPackageDb
   , showPackageDbList
   , configureArgs
+  , configureTargetDefaults
   , configureOptions
   , installDirsOptions
   , canonicalisePathSeparator
@@ -1102,6 +1103,45 @@ configureArgs flags =
             . config_field
             . configInstallDirs
         )
+
+-- | Infer missing Autoconf host and build aliases. Autoconf compares these
+-- raw values before config.sub canonicalizes them, so keep the specific Linux
+-- bare/GNU alias pair equal when at least one side is inferred.
+configureTargetDefaults :: String -> String -> [String] -> [String]
+configureTargetDefaults hostDefault buildDefault args =
+  ["--host=" ++ host | explicitHost == Nothing]
+    ++ ["--build=" ++ build | explicitBuild == Nothing]
+  where
+    explicitHost = configureTargetValue "--host" args
+    explicitBuild = configureTargetValue "--build" args
+    (host, build) = alignLinuxGnuAliases explicitHost explicitBuild hostDefault buildDefault
+
+configureTargetValue :: String -> [String] -> Maybe String
+configureTargetValue targetOption = go Nothing
+  where
+    go value [] = value
+    go value (arg : rest)
+      | arg == targetOption = case rest of
+          next : more -> go (Just next) more
+          [] -> Just ""
+      | (targetOption ++ "=") `isPrefixOf` arg = go (Just (drop (length targetOption + 1) arg)) rest
+      | otherwise = go value rest
+
+alignLinuxGnuAliases :: Maybe String -> Maybe String -> String -> String -> (String, String)
+alignLinuxGnuAliases explicitHost explicitBuild hostDefault buildDefault =
+  case (explicitHost, explicitBuild) of
+    (Just _, Just _) -> (hostDefault, buildDefault)
+    (Just host, Nothing) -> (hostDefault, if isAliasPair host buildDefault then host else buildDefault)
+    (Nothing, Just build) -> (if isAliasPair build hostDefault then build else hostDefault, buildDefault)
+    (Nothing, Nothing) -> case aliasPair hostDefault buildDefault of
+      Just (_, gnu) -> (gnu, gnu)
+      Nothing -> (hostDefault, buildDefault)
+  where
+    aliasPair left right
+      | left ++ "-gnu" == right && "-linux" `isSuffixOf` left = Just (left, right)
+      | right ++ "-gnu" == left && "-linux" `isSuffixOf` right = Just (right, left)
+      | otherwise = Nothing
+    isAliasPair left right = isJust (aliasPair left right)
 
 canonicalisePathSeparator :: FilePath -> FilePath
 canonicalisePathSeparator = map replaceSeparator
