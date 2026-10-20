@@ -231,7 +231,9 @@ jobs:
 
   build-mac-aarch64:
     name: Build binary (Mac aarch64)
-    runs-on: macos-latest
+    # macos-15 rather than macos-latest until actions/runner-images#14940
+    # is fixed; see #12465.
+    runs-on: macos-15
     env:
       MACOSX_DEPLOYMENT_TARGET: 10.13
       ADD_CABAL_ARGS: ""
@@ -294,7 +296,7 @@ jobs:
           # https://www.msys2.org/docs/updating/
           C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -Syuu"
           C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -Syuu"
-          C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -S make mingw-w64-x86_64-clang curl autoconf mingw-w64-x86_64-pkgconf ca-certificates base-devel gettext autoconf make libtool automake python p7zip patch unzip zip git"
+          C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -S make mingw-w64-x86_64-clang curl autoconf mingw-w64-x86_64-pkgconf ca-certificates base-devel gettext autoconf make libtool automake python p7zip patch unzip zip mingw-w64-x86_64-git"
           taskkill /F /FI "MODULES eq msys-2.0.dll"
 
       - name: Install GHCup
@@ -338,6 +340,12 @@ jobs:
       matrix:
         branch: ${{ fromJSON(inputs.branches) }}
     steps:
+      # We need Node for actions and compat for GHCup, so it is better to just
+      # install everything before those two steps.
+      - name: Install requirements (build)
+        run: |
+          pkg install -y www/node misc/compat10x misc/compat11x misc/compat12x curl gcc gmp gmake ncurses perl5 pkgconf libffi libiconv git bash
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ matrix.branch }}
@@ -349,10 +357,9 @@ jobs:
 
       - name: Run build
         run: |
-          sudo sed -i.bak -e 's/quarterly/latest/' /etc/pkg/FreeBSD.conf
-          sudo pkg install -y curl gcc gmp gmake ncurses perl5 pkgconf libffi libiconv git bash misc/compat10x misc/compat11x misc/compat12x
-          sudo tzsetup Etc/GMT
-          sudo adjkerntz -a
+          sed -i.bak -e 's/quarterly/latest/' /etc/pkg/FreeBSD.conf
+          tzsetup Etc/GMT
+          adjkerntz -a
           bash .github/scripts/build.bash
 
       - if: always()
@@ -529,7 +536,9 @@ jobs:
 
   test-mac-aarch64:
     name: Test binary (Mac aarch64)
-    runs-on: macos-latest
+    # macos-15 rather than macos-latest until actions/runner-images#14940
+    # is fixed; see #12465.
+    runs-on: macos-15
     needs: ["build-mac-aarch64"]
     if: ${{ inputs.test }}
     env:
@@ -590,7 +599,7 @@ jobs:
         run: |
           C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -Syuu"
           C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -Syuu"
-          C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -S make mingw-w64-x86_64-clang curl autoconf mingw-w64-x86_64-pkgconf ca-certificates base-devel gettext autoconf make libtool automake python p7zip patch unzip zip git"
+          C:\msys64\usr\bin\bash -lc "pacman --disable-download-timeout --noconfirm -S make mingw-w64-x86_64-clang curl autoconf mingw-w64-x86_64-pkgconf ca-certificates base-devel gettext autoconf make libtool automake python p7zip patch unzip zip mingw-w64-x86_64-git"
           taskkill /F /FI "MODULES eq msys-2.0.dll"
 
       - uses: ./.github/actions/download
@@ -630,6 +639,12 @@ jobs:
       matrix:
         branch: ${{ fromJSON(inputs.branches) }}
     steps:
+      # Same as in `build-freebsd-x86_64`, we install everything needed
+      # before checking out and installing GHCup.
+      - name: Install requirements (test)
+        run: |
+          pkg install -y www/node misc/compat10x misc/compat11x misc/compat12x curl gcc gmp gmake ncurses perl5 pkgconf libffi libiconv git bash groff autoconf automake
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ matrix.branch }}
@@ -646,9 +661,8 @@ jobs:
 
       - name: Run test
         run: |
-          sudo sed -i.bak -e 's/quarterly/latest/' /etc/pkg/FreeBSD.conf
-          sudo pkg install -y curl gcc gmp gmake ncurses perl5 pkgconf libffi libiconv git bash misc/compat10x misc/compat11x misc/compat12x groff autoconf automake
-          sudo tzsetup Etc/GMT
-          sudo adjkerntz -a
+          sed -i.bak -e 's/quarterly/latest/' /etc/pkg/FreeBSD.conf
+          tzsetup Etc/GMT
+          adjkerntz -a
           bash .github/scripts/test.bash
 

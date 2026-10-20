@@ -42,7 +42,8 @@ import Distribution.Client.Setup
   , filterConfigureFlags
   )
 import Distribution.Client.SetupWrapper
-  ( SetupRunnerArgs (NotInLibrary)
+  ( SetupDependencies (..)
+  , SetupRunnerArgs (NotInLibrary)
   , SetupScriptOptions (..)
   , defaultSetupScriptOptions
   , setupWrapper
@@ -68,6 +69,7 @@ import Distribution.Solver.Types.PkgConfigDb
   )
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Stage (always)
 
 import Distribution.Client.SavedFlags (readCommandFlags, writeCommandFlags)
 import Distribution.Package
@@ -288,14 +290,15 @@ configureSetupScript
       , useExtraEnvOverrides = []
       , setupCacheLock = lock
       , useWin32CleanHack = False
-      , -- If we have explicit setup dependencies, list them; otherwise, we give
-        -- the empty list of dependencies; ideally, we would fix the version of
-        -- Cabal here, so that we no longer need the special case for that in
-        -- `compileSetupExecutable` in `externalSetupMethod`, but we don't yet
-        -- know the version of Cabal at this point, but only find this there.
-        -- Therefore, for now, we just leave this blank.
-        useDependencies = fromMaybe [] explicitSetupDeps
-      , useDependenciesExclusive = not defaultSetupDeps && isJust explicitSetupDeps
+      , -- If the @custom-setup@ stanza has an explicit list of dependencies,
+        -- use those exclusively. Otherwise, the list is not exhaustive, and
+        -- we have a special case in 'SetupWrapper' to go looking for a Cabal
+        -- library. We don't yet know its version, so for now we leave the list
+        -- of implicit dependencies blank.
+        useSetupDependencies =
+          case explicitSetupDeps of
+            Just deps | not defaultSetupDeps -> ExplicitSetupDeps deps
+            _ -> ImplicitSetupDeps (fromMaybe [] explicitSetupDeps)
       , useVersionMacros = not defaultSetupDeps && isJust explicitSetupDeps
       , isInteractive = False
       , isMainLibOrExeComponent = True
@@ -463,14 +466,19 @@ planLocalPackage
           . setSolveExecutables (SolveExecutables False)
           . setSolverVerbosity (verbosityLevel verbosity)
           $ standardInstallPolicy
-            installedPkgIndex
+            (always installedPkgIndex)
             -- NB: We pass in an *empty* source package database,
             -- because cabal configure assumes that all dependencies
             -- have already been installed
             (SourcePackageDb mempty packagePrefs)
             [SpecificSourcePackage localPkg]
 
-    return (resolveDependencies platform (compilerInfo comp) pkgConfigDb resolverParams)
+    return
+      ( resolveDependencies
+          (always (compilerInfo comp, platform))
+          (always pkgConfigDb)
+          resolverParams
+      )
 
 -- | Call an installer for an 'SourcePackage' but override the configure
 -- flags with the ones given by the 'ReadyPackage'. In particular the

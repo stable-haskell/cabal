@@ -19,6 +19,7 @@ module Distribution.Client.DistDirLayout
     -- * 'StoreDirLayout'
   , StoreDirLayout (..)
   , defaultStoreDirLayout
+  , betterPlatform
 
     -- * 'CabalDirLayout'
   , CabalDirLayout (..)
@@ -29,11 +30,17 @@ module Distribution.Client.DistDirLayout
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+import qualified Data.Map as Map
 import System.FilePath
 
 import Distribution.Client.Config
   ( defaultLogsDir
   , defaultStoreDir
+  )
+import Distribution.Client.Toolchain
+  ( Stage
+  , Toolchain (..)
+  , showStage
   )
 import Distribution.Compiler
 import Distribution.Package
@@ -130,20 +137,39 @@ data DistDirLayout = DistDirLayout
   , distSdistDirectory :: FilePath
   , distTempDirectory :: FilePath
   , distBinDirectory :: FilePath
-  , distPackageDB :: CompilerId -> PackageDBCWD
+  , distPackageDB :: Platform -> CompilerId -> PackageDBCWD
+  -- ^ The database the packages built inplace are registered in, keyed by the
+  -- platform the compiler targets and the compiler, in that order, as
+  -- 'distBuildDirectory' and 'StoreDirLayout' are. Inplace unit ids do not
+  -- mention the compiler, so without the platform the build-stage and
+  -- host-stage copies of a local package would be registered over one another
+  -- whenever the two compilers agree on 'compilerId'.
   , distHaddockOutputDir :: Maybe FilePath
   -- ^ Is needed when `--haddock-output-dir` flag is used.
   }
 
 -- | The layout of a cabal nix-style store.
+--
+-- Every location is keyed by the build 'Stage' and the platform that stage's
+-- toolchain targets. Under cross-compilation the host and build stages must
+-- not share a store: the same package can be built for both, and (when the two
+-- toolchains report the same unit id) the two copies would otherwise land in
+-- the same directory and clobber each other.
+--
+-- The compiler is deliberately /not/ a component of the path. A store laid out
+-- this way is consumed directly by other build systems -- GHC's own copies
+-- libraries out of @\<store\>\/lib@ and package descriptions out of
+-- @\<store\>\/package.conf.d@ to assemble a binary distribution -- and they
+-- address it by stage and platform. The cost is that one store serves one
+-- compiler per platform, which is what a staged build wants anyway.
 data StoreDirLayout = StoreDirLayout
-  { storeDirectory :: Compiler -> FilePath
-  , storePackageDirectory :: Compiler -> UnitId -> FilePath
-  , storePackageDBPath :: Compiler -> FilePath
-  , storePackageDB :: Compiler -> PackageDBCWD
-  , storePackageDBStack :: Compiler -> [Maybe PackageDBCWD] -> PackageDBStackCWD
-  , storeIncomingDirectory :: Compiler -> FilePath
-  , storeIncomingLock :: Compiler -> UnitId -> FilePath
+  { storeDirectory :: Stage -> Toolchain -> FilePath
+  , storePackageDirectory :: Stage -> Toolchain -> UnitId -> FilePath
+  , storePackageDBPath :: Stage -> Toolchain -> FilePath
+  , storePackageDB :: Stage -> Toolchain -> PackageDBCWD
+  , storePackageDBStack :: Stage -> Toolchain -> [Maybe PackageDBCWD] -> PackageDBStackCWD
+  , storeIncomingDirectory :: Stage -> Toolchain -> FilePath
+  , storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
   }
 
 -- TODO: move to another module, e.g. CabalDirLayout?
@@ -277,11 +303,15 @@ defaultDistDirLayout projectRoot mdistDirectory haddockOutputDir =
     distBinDirectory :: FilePath
     distBinDirectory = distDirectory </> "bin"
 
-    distPackageDBPath :: CompilerId -> FilePath
-    distPackageDBPath compid = distDirectory </> "packagedb" </> prettyShow compid
+    distPackageDBPath :: Platform -> CompilerId -> FilePath
+    distPackageDBPath platform compid =
+      distDirectory
+        </> "packagedb"
+        </> prettyShow platform
+        </> prettyShow compid
 
-    distPackageDB :: CompilerId -> PackageDBCWD
-    distPackageDB = SpecificPackageDB . distPackageDBPath
+    distPackageDB :: Platform -> CompilerId -> PackageDBCWD
+    distPackageDB platform = SpecificPackageDB . distPackageDBPath platform
 
     distHaddockOutputDir :: Maybe FilePath
     distHaddockOutputDir = haddockOutputDir
@@ -290,36 +320,53 @@ defaultStoreDirLayout :: FilePath -> StoreDirLayout
 defaultStoreDirLayout storeRoot =
   StoreDirLayout{..}
   where
-    storeDirectory :: Compiler -> FilePath
-    storeDirectory compiler =
-      storeRoot </> case compilerAbiTag compiler of
-        NoAbiTag -> prettyShow (compilerId compiler)
-        AbiTag tag -> prettyShow (compilerId compiler) <> "-" <> tag
+    storeDirectory :: Stage -> Toolchain -> FilePath
+    storeDirectory stage toolchain =
+      storeRoot </> showStage stage </> betterPlatform toolchain
 
-    storePackageDirectory :: Compiler -> UnitId -> FilePath
-    storePackageDirectory compiler ipkgid =
-      storeDirectory compiler </> prettyShow ipkgid
+    storePackageDirectory :: Stage -> Toolchain -> UnitId -> FilePath
+    storePackageDirectory stage toolchain ipkgid =
+      -- Must agree with the @libdir@ that 'storePackageInstallDirs' hands to
+      -- the package: units live in one shared @lib@, not each at the store
+      -- root. Anything that looks a unit up by directory -- checking whether
+      -- the store already holds it, finding its documentation -- goes through
+      -- here, and silently finds nothing if this disagrees.
+      storeDirectory stage toolchain </> "lib" </> prettyShow ipkgid
 
-    storePackageDBPath :: Compiler -> FilePath
-    storePackageDBPath compiler =
-      storeDirectory compiler </> "package.db"
+    storePackageDBPath :: Stage -> Toolchain -> FilePath
+    storePackageDBPath stage toolchain =
+      storeDirectory stage toolchain </> "package.conf.d"
 
-    storePackageDB :: Compiler -> PackageDBCWD
-    storePackageDB compiler =
-      SpecificPackageDB (storePackageDBPath compiler)
+    storePackageDB :: Stage -> Toolchain -> PackageDBCWD
+    storePackageDB stage toolchain =
+      SpecificPackageDB (storePackageDBPath stage toolchain)
 
-    storePackageDBStack :: Compiler -> [Maybe PackageDBCWD] -> PackageDBStackCWD
-    storePackageDBStack compiler extraPackageDB =
+    storePackageDBStack :: Stage -> Toolchain -> [Maybe PackageDBCWD] -> PackageDBStackCWD
+    storePackageDBStack stage toolchain extraPackageDB =
       interpretPackageDbFlags False extraPackageDB
-        ++ [storePackageDB compiler]
+        ++ [storePackageDB stage toolchain]
 
-    storeIncomingDirectory :: Compiler -> FilePath
-    storeIncomingDirectory compiler =
-      storeDirectory compiler </> "incoming"
+    storeIncomingDirectory :: Stage -> Toolchain -> FilePath
+    storeIncomingDirectory stage toolchain =
+      storeDirectory stage toolchain </> "incoming"
 
-    storeIncomingLock :: Compiler -> UnitId -> FilePath
-    storeIncomingLock compiler unitid =
-      storeIncomingDirectory compiler </> prettyShow unitid <.> "lock"
+    storeIncomingLock :: Stage -> Toolchain -> UnitId -> FilePath
+    storeIncomingLock stage toolchain unitid =
+      storeIncomingDirectory stage toolchain </> prettyShow unitid <.> "lock"
+
+-- | The platform triple in the spelling the compiler itself uses, e.g.
+-- @x86_64-unknown-linux@ rather than cabal's own @x86_64-linux@. Paths under
+-- the store are consumed by other build systems (notably GHC's own), which
+-- expect the compiler's spelling.
+--
+-- Falls back to pretty-printing the toolchain's 'Platform' for a compiler that
+-- reports no @Target platform@ property.
+betterPlatform :: Toolchain -> String
+betterPlatform toolchain =
+  Map.findWithDefault
+    (prettyShow (toolchainPlatform toolchain))
+    "Target platform"
+    (compilerProperties (toolchainCompiler toolchain))
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

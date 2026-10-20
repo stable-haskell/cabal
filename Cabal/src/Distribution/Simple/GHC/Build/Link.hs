@@ -10,6 +10,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import Distribution.Backpack
 import Distribution.Compat.Binary (encode)
 import Distribution.Compat.ResponseFile
@@ -134,9 +135,10 @@ linkOrLoadComponent
                   programOverrideArgs
                   (lookupProgram ldProgram (withPrograms lbi))
           , ghcOptLinkLibs =
-              if withFullyStaticExe lbi
-                then extraLibsStatic bi
-                else extraLibs bi
+              map Text.unpack $
+                if withFullyStaticExe lbi
+                  then extraLibsStatic bi
+                  else extraLibs bi
           , ghcOptLinkLibPath =
               toNubListR $
                 if withFullyStaticExe lbi
@@ -274,6 +276,23 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     bytecodeLibFilePath =
       buildTargetDir
         </> makeRelativePathEx (mkBytecodeLibName compiler_id uid)
+    -- Merge the object files into a GHCi library. GHC >= 9.4 exposes its own
+    -- object merging as @ghc --merge-objs@, which uses the merge tool GHC was
+    -- configured with; with older GHCs we have to run @ld -r@ ourselves.
+    combineObjectFiles :: SymbolicPath Pkg File -> [SymbolicPath Pkg File] -> IO ()
+    combineObjectFiles target files
+      | Just ghcProg <- lookupProgram ghcProgram (withPrograms lbi)
+      , ghcSupports GhcMergeObjs ghcProg =
+          runGhcProg
+            mempty
+              { ghcOptMode = toFlag GhcModeMergeObjs
+              , ghcOptInputFiles = toNubListR files
+              , ghcOptOutputFile = toFlag target
+              }
+      | otherwise = do
+          (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
+          Ld.combineObjectFiles verbosity lbi ldProg target files
+
     ghciLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiLibName uid)
     ghciProfLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiProfLibName uid)
 
@@ -310,7 +329,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     ghcBaseLinkArgs =
       Internal.linkGhcOptions (verbosityLevel verbosity) lbi libBi clbi
         <> mempty
-          { ghcOptExtra = hcStaticOptions GHC libBi
+          { ghcOptExtra = map Text.unpack $ hcStaticOptions GHC libBi
           , ghcOptNoAutoLinkPackages = toFlag True
           }
 
@@ -325,7 +344,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
         , ghcOptInputFiles = toNubListR $ map coerceSymbolicPath dynObjectFiles
         , ghcOptOutputFile = toFlag sharedLibFilePath
         , ghcOptDylibName = mempty
-        , ghcOptLinkLibs = extraLibs libBi
+        , ghcOptLinkLibs = map Text.unpack $ extraLibs libBi
         , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
         , ghcOptLinkFrameworks = toNubListR $ map getSymbolicPath $ PD.frameworks libBi
         , ghcOptLinkFrameworkDirs =
@@ -344,7 +363,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
         , ghcOptInputFiles = toNubListR pdynObjectFiles
         , ghcOptOutputFile = toFlag profSharedLibFilePath
         , ghcOptDylibName = mempty
-        , ghcOptLinkLibs = extraLibs libBi
+        , ghcOptLinkLibs = map Text.unpack $ extraLibs libBi
         , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
         , ghcOptLinkFrameworks = toNubListR $ map getSymbolicPath $ PD.frameworks libBi
         , ghcOptLinkFrameworkDirs =
@@ -356,7 +375,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
         { ghcOptStaticLib = toFlag True
         , ghcOptInputFiles = toNubListR $ map coerceSymbolicPath staticObjectFiles
         , ghcOptOutputFile = toFlag staticLibFilePath
-        , ghcOptLinkLibs = extraLibs libBi
+        , ghcOptLinkLibs = map Text.unpack $ extraLibs libBi
         , -- TODO: Shouldn't this use cleanedExtraLibDirsStatic instead?
           ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
         }
@@ -379,11 +398,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
       ProfWay -> do
         Ar.createArLibArchive verbosity lbi profileLibFilePath profObjectFiles
         when (withGHCiLib lbi) $ do
-          (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
-          Ld.combineObjectFiles
-            verbosity
-            lbi
-            ldProg
+          combineObjectFiles
             ghciProfLibFilePath
             profObjectFiles
       ProfDynWay -> do
@@ -398,11 +413,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
         when (withVanillaLib lbi) $ do
           Ar.createArLibArchive verbosity lbi vanillaLibFilePath staticObjectFiles
           when (withGHCiLib lbi) $ do
-            (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
-            Ld.combineObjectFiles
-              verbosity
-              lbi
-              ldProg
+            combineObjectFiles
               ghciLibFilePath
               staticObjectFiles
         when (withStaticLib lbi) $ do
@@ -593,9 +604,51 @@ getRPaths pbci = do
       let hostPref = case hostOS of
             OSX -> "@loader_path"
             _ -> "$ORIGIN"
-          relPath p = if isRelative p then hostPref </> p else p
+          -- The directory this artifact is installed to: a library goes to
+          -- the libdir, an executable to the bindir (the same split as
+          -- 'depLibraryPaths'). Absolute rpaths are re-expressed relative to
+          -- it below.
+          installDirs =
+            absoluteComponentInstallDirs
+              (localPkgDescr lbi)
+              lbi
+              (componentUnitId clbi)
+              NoCopyDest
+          ownDir = case clbi of
+            ExeComponentLocalBuildInfo{} -> bindir installDirs
+            _ -> libdir installDirs
+          -- Every rpath entry is loader-relative:
+          --
+          --  * a relative path gets the @$ORIGIN@ / @\@loader_path@ prefix, as
+          --    before;
+          --
+          --  * an absolute path is rewritten to a @$ORIGIN/../..@-style
+          --    expression computed against the artifact's own install
+          --    directory, so no build-host absolute path is baked into
+          --    DT_RUNPATH / LC_RPATH. A binary distribution assembled from a
+          --    store under, say, @/builds/ghc/_build/stage2/store/...@ must
+          --    keep working once moved; macOS 15's dyld even aborts on an
+          --    unresolvable absolute rpath instead of trying the next entry.
+          --    This is not gated on 'relocatable': that flag also triggers
+          --    'checkRelocatable', which refuses store layouts where the
+          --    dependencies live in sibling prefixes, and changes how
+          --    @library-dirs@ are registered, neither of which rpath
+          --    generation needs.
+          relPath p
+            | isRelative p = hostPref </> p
+            | otherwise = hostPref </> shortRelativePath ownDir p
           rpaths =
-            toNubListR (map relPath libraryPaths)
+            -- The artifact's own directory comes first, so a library
+            -- installed next to it is found: 'depLibraryPaths' can yield the
+            -- parent directory for a same-directory dependency (relativised
+            -- to @$ORIGIN/..@), which leaves that dependency unfound. glibc
+            -- masks this with the LD_LIBRARY_PATH GHC sets before dlopen,
+            -- but musl reads LD_LIBRARY_PATH only at process start, so there
+            -- the missing self-rpath is fatal: a Backpack signature
+            -- implementation installed next to the instantiated unit fails
+            -- to load (GHC's testsuite T14304 on Alpine).
+            toNubListR [hostPref]
+              <> toNubListR (map relPath libraryPaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
       return rpaths
     else return mempty
@@ -671,7 +724,7 @@ extractRtsInfo lbi =
 -- threaded RTS. This is used to determine which RTS to link against when
 -- building a foreign library with a GHC without support for @-flink-rts@.
 hasThreaded :: BuildInfo -> Bool
-hasThreaded bi = "-threaded" `elem` ghc
+hasThreaded bi = Text.pack "-threaded" `elem` ghc
   where
     PerCompilerFlavor ghc _ = options bi
 

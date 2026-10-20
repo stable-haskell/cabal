@@ -11,7 +11,6 @@ Flags for gen-bounds:
                                 files (default dist)
  --keep-temp-files            # Keep temporary files.
  -g, --ghc                    # Compile with GHC
- --ghcjs                      # Compile with GHCJS
  --uhc                        # Compile with UHC
  -w PATH or -wPATH, --with-compiler=PATH
                               # Give the path to a particular compiler
@@ -185,6 +184,11 @@ Flags for gen-bounds:
                                 any alterations
  --disable-backup             # Disable the backup of the config file before
                                 any alterations
+ -W PATH or -WPATH, --with-build-compiler=PATH
+                              # give the path to the compiler for the build
+                                stage (cross-compilation)
+ --with-build-hc-pkg=PATH     # give the path to the package tool for the
+                                build stage (cross-compilation)
  -c CONSTRAINT or -cCONSTRAINT, --constraint=CONSTRAINT
                               # Specify constraints on a package (version,
                                 installed/source, flags)

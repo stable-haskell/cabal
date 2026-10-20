@@ -9,8 +9,10 @@ import Distribution.Package ( Package(..) )
 import Distribution.PackageDescription ( FlagAssignment )
 import Distribution.Solver.Types.ComponentDeps ( ComponentDeps )
 import Distribution.Solver.Types.OptionalStanza
+import Distribution.Solver.Types.GoalScope ( GoalScope )
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Stage ( Stage )
 
 -- | A 'SolverPackage' is a package specified by the dependency solver.
 -- It will get elaborated into a 'ConfiguredPackage' or even an
@@ -20,11 +22,15 @@ import Distribution.Solver.Types.SourcePackage
 -- but for symmetry we have the parameter.  (Maybe it can be removed.)
 --
 data SolverPackage loc = SolverPackage {
+        -- | The build stage this package is to be built for.
+        solverPkgStage   :: Stage,
         solverPkgSource  :: SourcePackage loc,
         solverPkgFlags   :: FlagAssignment,
         solverPkgStanzas :: OptionalStanzaSet,
         solverPkgLibDeps :: ComponentDeps [SolverId],
-        solverPkgExeDeps :: ComponentDeps [SolverId]
+        solverPkgExeDeps :: ComponentDeps [SolverId],
+        -- | Which instance of the package this is, see 'solverQualifier'.
+        solverPkgQualifier :: Maybe GoalScope
     }
   deriving (Eq, Show, Generic)
 

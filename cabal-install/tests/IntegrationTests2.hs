@@ -18,6 +18,7 @@ import Distribution.Client.ProjectOrchestration
   , resolveTargetsFromSolver
   )
 import Distribution.Client.ProjectPlanning
+import Distribution.Client.ProjectPlanning.Stage (withoutStage)
 import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.TargetProblem
   ( TargetProblem (..)
@@ -27,13 +28,14 @@ import Distribution.Client.TargetSelector hiding (DirActions (..))
 import qualified Distribution.Client.TargetSelector as TS (DirActions (..))
 import Distribution.Client.Targets
   ( UserConstraint (..)
-  , UserConstraintScope (UserAnyQualifier)
+  , UserConstraintQualifier (UserAnyQualifier)
   )
 import Distribution.Client.Types
   ( PackageLocation (..)
   , PackageSpecifier (..)
   , UnresolvedSourcePackage
   )
+import Distribution.Compat.Graph (nodeKey)
 import Distribution.Solver.Types.ConstraintSource
   ( ConstraintSource (ConstraintSourceUnknown)
   )
@@ -2348,9 +2350,9 @@ expectPackagePreExisting
   -> IO InstalledPackageInfo
 expectPackagePreExisting plan buildOutcomes pkgid = do
   planpkg <- expectPlanPackage plan pkgid
-  case (planpkg, InstallPlan.lookupBuildOutcome planpkg buildOutcomes) of
+  case (planpkg, Map.lookup (nodeKey planpkg) buildOutcomes) of
     (InstallPlan.PreExisting pkg, Nothing) ->
-      return pkg
+      return (withoutStage pkg)
     (_, buildResult) -> unexpectedBuildResult "PreExisting" planpkg buildResult
 
 expectPackageConfigured
@@ -2360,7 +2362,7 @@ expectPackageConfigured
   -> IO ElaboratedConfiguredPackage
 expectPackageConfigured plan buildOutcomes pkgid = do
   planpkg <- expectPlanPackage plan pkgid
-  case (planpkg, InstallPlan.lookupBuildOutcome planpkg buildOutcomes) of
+  case (planpkg, Map.lookup (nodeKey planpkg) buildOutcomes) of
     (InstallPlan.Configured pkg, Nothing) ->
       return pkg
     (_, buildResult) -> unexpectedBuildResult "Configured" planpkg buildResult
@@ -2372,7 +2374,7 @@ expectPackageInstalled
   -> IO ElaboratedConfiguredPackage
 expectPackageInstalled plan buildOutcomes pkgid = do
   planpkg <- expectPlanPackage plan pkgid
-  case (planpkg, InstallPlan.lookupBuildOutcome planpkg buildOutcomes) of
+  case (planpkg, Map.lookup (nodeKey planpkg) buildOutcomes) of
     (InstallPlan.Configured pkg, Just (Right _result)) ->
       -- result isn't used by any test
       return pkg
@@ -2389,7 +2391,7 @@ expectPackageFailed
   -> IO (ElaboratedConfiguredPackage, BuildFailure)
 expectPackageFailed plan buildOutcomes pkgid = do
   planpkg <- expectPlanPackage plan pkgid
-  case (planpkg, InstallPlan.lookupBuildOutcome planpkg buildOutcomes) of
+  case (planpkg, Map.lookup (nodeKey planpkg) buildOutcomes) of
     (InstallPlan.Configured pkg, Just (Left failure)) ->
       return (pkg, failure)
     (_, buildResult) -> unexpectedBuildResult "Failed" planpkg buildResult
@@ -2705,8 +2707,6 @@ testConfigOptionComments = do
   "  -- gcc-location" `assertHasCommentLine` "gcc-location"
   "  -- ghc-location" `assertHasCommentLine` "ghc-location"
   "  -- ghc-pkg-location" `assertHasCommentLine` "ghc-pkg-location"
-  "  -- ghcjs-location" `assertHasCommentLine` "ghcjs-location"
-  "  -- ghcjs-pkg-location" `assertHasCommentLine` "ghcjs-pkg-location"
   "  -- haddock-location" `assertHasCommentLine` "haddock-location"
   "  -- happy-location" `assertHasCommentLine` "happy-location"
   "  -- hpc-location" `assertHasCommentLine` "hpc-location"
@@ -2727,8 +2727,6 @@ testConfigOptionComments = do
   "  -- gcc-options" `assertHasCommentLine` "gcc-options"
   "  -- ghc-options" `assertHasCommentLine` "ghc-options"
   "  -- ghc-pkg-options" `assertHasCommentLine` "ghc-pkg-options"
-  "  -- ghcjs-options" `assertHasCommentLine` "ghcjs-options"
-  "  -- ghcjs-pkg-options" `assertHasCommentLine` "ghcjs-pkg-options"
   "  -- haddock-options" `assertHasCommentLine` "haddock-options"
   "  -- happy-options" `assertHasCommentLine` "happy-options"
   "  -- hpc-options" `assertHasCommentLine` "hpc-options"

@@ -44,8 +44,14 @@ import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectConfig.Types
 import Distribution.Client.ProjectPlanning
+import Distribution.Client.ProjectPlanning.Stage (Staged (..), WithStage)
 import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.Store
+import Distribution.Client.Toolchain
+  ( Stage (..)
+  , Toolchain (..)
+  , prevStage
+  )
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.FetchUtils
@@ -84,7 +90,8 @@ import qualified Data.Set as Set
 import qualified Text.PrettyPrint as Disp
 
 import Control.Concurrent.STM (TVar, newTVarIO)
-import Control.Exception (assert, handle)
+import Control.Exception (handle, try)
+import Data.Either (isLeft)
 import qualified Distribution.Client.IndexUtils as IndexUtils
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import System.Directory (doesDirectoryExist, doesFileExist, renameDirectory)
@@ -171,7 +178,7 @@ rebuildTargetsDryRun
   -> ElaboratedInstallPlan
   -> IO BuildStatusMap
 rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
-  -- Do the various checks to work out the 'BuildStatus' of each package
+  -- Do the various checks to work out the 'BuildStatus' of each package.
   foldMInstallPlanDepOrder dryRunPkg
   where
     dryRunPkg
@@ -341,10 +348,7 @@ rebuildTargets
   distDirLayout@DistDirLayout{..}
   storeDirLayout
   installPlan
-  sharedPackageConfig@ElaboratedSharedConfig
-    { pkgConfigCompiler = compiler
-    , pkgConfigCompilerProgs = progdb
-    }
+  sharedPackageConfig
   pkgsBuildStatus
   buildSettings@BuildTimeSettings
     { buildSettingNumJobs
@@ -352,8 +356,10 @@ rebuildTargets
     }
     | fromFlagOrDefault False (projectConfigOfflineMode config) && not (null packagesToDownload) = return offlineError
     | otherwise = do
+        let compiler = pkgConfigCompiler sharedPackageConfig
         registerLock <- newLock -- serialise registration
         cacheLock <- newLock -- serialise access to setup exe cache
+        unpackLock <- newLock -- serialise tarball unpacking, see 'withTarballLocalDirectory'
         -- TODO: [code cleanup] eliminate setup exe cache
         info verbosity $
           "Executing install plan "
@@ -364,24 +370,36 @@ rebuildTargets
 
         createDirectoryIfMissingVerbose verbosity True distBuildRootDirectory
         createDirectoryIfMissingVerbose verbosity True distTempDirectory
-        traverse_ (createPackageDBIfMissing verbosity compiler progdb) packageDBsToUse
+        -- Each package database belongs to one build stage and is created and
+        -- read with that stage's toolchain (its ghc-pkg understands the
+        -- format). In a non-cross build there is a single stage.
+        for_ packageDBsByStage $ \(_, toolchain, dbs) ->
+          traverse_
+            (createPackageDBIfMissing verbosity (toolchainCompiler toolchain) (toolchainProgramDb toolchain))
+            dbs
 
         -- Populate the running InstalledPackageIndex by doing a single
-        -- bulk read at startup. This allows us to obtain the
+        -- bulk read per stage at startup. This allows us to obtain the
         -- InstalledPackageInfo of every 'PreExisting' and 'Installed' unit
         -- in the plan, regardless of how they ended up in the PackageDBs.
-        -- See (ProjIPI1) in Note [Per-project InstalledPackageIndex].
-        initialIPI <-
+        -- See (ProjIPI1) and (ProjIPI4) in Note [Per-project InstalledPackageIndex].
+        initialIPIs <-
           -- NB: 'getInstalledPackages' returns an error when there are no
-          -- PackageDBs, so we handle that case explicitly first.
-          if null packageDBsToUse
-            then return mempty
-            else IndexUtils.getInstalledPackages verbosity compiler packageDBsToUse progdb
+          -- PackageDBs; a stage only appears in 'packageDBsByStage' with a
+          -- non-empty list.
+          for packageDBsByStage $ \(stage, toolchain, dbs) ->
+            (,) stage
+              <$> IndexUtils.getInstalledPackages verbosity (toolchainCompiler toolchain) dbs (toolchainProgramDb toolchain)
+        let initialIPI =
+              Staged
+                { onHost = fromMaybe mempty (lookup Host initialIPIs)
+                , onBuild = lookup Build initialIPIs
+                }
         ipiTVar <- newTVarIO initialIPI
 
         -- Concurrency control: create the job controller and concurrency limits
         -- for downloading, building and installing.
-        withJobControl (newJobControlFromParStrat verbosity (Just compiler) buildSettingNumJobs Nothing) $ \jobControl -> do
+        buildOutcomes <- withJobControl (newJobControlFromParStrat verbosity (Just compiler) buildSettingNumJobs Nothing) $ \jobControl -> do
           -- Before traversing the install plan, preemptively find all packages that
           -- will need to be downloaded and start downloading them.
           asyncDownloadPackages
@@ -410,40 +428,55 @@ rebuildTargets
                       downloadMap
                       registerLock
                       cacheLock
+                      unpackLock
                       sharedPackageConfig
                       installPlan
                       ipiTVar
                       pkg
                       pkgBuildStatus
+
+        -- Once the units are built, run their benchmarks.
+        -- See Note [Running benchmarks]
+        runDeferredBenchmarks keepGoing installPlan buildOutcomes
     where
       keepGoing = buildSettingKeepGoing
       withRepoCtx =
         projectConfigWithBuilderRepoContext
           verbosity
           buildSettings
-      packageDBsToUse =
-        -- all the package dbs we may need to create
-        (Set.toList . Set.fromList)
-          [ pkgdb
-          | InstallPlan.Configured elab <- InstallPlan.toList installPlan
-          , pkgdb <-
-              concat
-                [ elabBuildPackageDBStack elab
-                , elabRegisterPackageDBStack elab
-                , elabSetupPackageDBStack elab
-                ]
-          ]
+      -- All the package dbs we may need to create or read, grouped by the
+      -- stage whose toolchain owns them: a package's build and register
+      -- databases belong to its own stage, its setup databases to the
+      -- previous one. Without a distinct build stage everything is one
+      -- group, handled by the host toolchain.
+      packageDBsByStage :: [(Stage, Toolchain, [PackageDBCWD])]
+      packageDBsByStage =
+        [ (stage, pkgConfigStageToolchain sharedPackageConfig stage, Set.toList dbs)
+        | (stage, dbs) <- Map.toList dbsByStage
+        , not (Set.null dbs)
+        ]
+        where
+          toolchains = pkgConfigToolchains sharedPackageConfig
+          dbsByStage =
+            Map.fromListWith
+              Set.union
+              [ (stage, Set.fromList dbs)
+              | InstallPlan.Configured elab <- InstallPlan.toList installPlan
+              , (stage, dbs) <-
+                  [ (elabStage elab, elabBuildPackageDBStack elab ++ elabRegisterPackageDBStack elab)
+                  , (prevStage toolchains (elabStage elab), elabSetupPackageDBStack elab)
+                  ]
+              ]
 
       offlineError :: BuildOutcomes
       offlineError = Map.fromList . map makeBuildOutcome $ packagesToDownload
         where
-          makeBuildOutcome :: ElaboratedConfiguredPackage -> (UnitId, BuildOutcome)
+          makeBuildOutcome :: ElaboratedConfiguredPackage -> (WithStage UnitId, BuildOutcome)
           makeBuildOutcome
-            ElaboratedConfiguredPackage
-              { elabUnitId
-              , elabPkgSourceId = PackageIdentifier{pkgName, pkgVersion}
+            elab@ElaboratedConfiguredPackage
+              { elabPkgSourceId = PackageIdentifier{pkgName, pkgVersion}
               } =
-              ( elabUnitId
+              ( nodeKey elab
               , Left
                   ( BuildFailure
                       { buildFailureLogFile = Nothing
@@ -495,7 +528,72 @@ configuring individual packages.
     and pass it to Cabal's 'computePackageInfoFromIndex' instead of
     'computePackageInfo', skipping the expensive per-package @ghc-pkg dump@
     invocation.
+
+  (ProjIPI4)
+    The index is kept per build stage ('Staged'). Each stage has its own
+    package DBs and compiler, and the same package name (rts, base, ...) is
+    registered in both under a cross-compilation, so a single merged index
+    would answer lookups by name with units of the wrong stage (Cabal's
+    hsc2hs preprocessor, for one, looks the rts up by name and refuses an
+    ambiguous answer). A package reads and updates the index of its own
+    stage; in a non-cross build there is only the host index.
 -}
+
+{- Note [Running benchmarks]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Benchmarks must not run at the same time as other benchmarks, or while
+something else is being built: they would compete for resources, which skews
+their results (#7557).
+
+Yet 'InstallPlan.execute' builds the units of the plan in parallel. A unit is
+a single component of a package, or a whole package when it cannot be built
+per component (see 'NotPerComponentReason'). So the benchmark suites of a
+project, even those of the same package, are usually separate units. If each
+unit ran its benchmarks in its bench phase, right after it is built, they
+could run at the same time as each other, or while other units are still
+being built. (A whole-package unit runs all of its benchmarks with a single
+@Setup bench@ invocation, which runs them one at a time.)
+
+So, the bench phase of a unit (see 'buildAndRegisterUnpackedPackage') does not
+run its benchmarks, but returns them as a 'DeferredBenchmark', which is
+recorded in the 'BuildResult' of the unit. Once all the units are built,
+'rebuildTargets' runs them one at a time, in plan order, with
+'runDeferredBenchmarks', and records their failures in the 'BuildOutcomes'.
+
+Unless we keep going after failures, no benchmark is run if a unit failed to
+build, and no more benchmarks are run once one of them failed.
+-}
+
+-- | Run the deferred benchmarks of the units that were built successfully,
+-- one at a time, in plan order. See Note [Running benchmarks].
+runDeferredBenchmarks
+  :: Bool
+  -- ^ Keep going after failure
+  -> ElaboratedInstallPlan
+  -> BuildOutcomes
+  -> IO BuildOutcomes
+runDeferredBenchmarks keepGoing installPlan buildOutcomes
+  | not keepGoing && any isLeft buildOutcomes = return buildOutcomes
+  | otherwise = go buildOutcomes (InstallPlan.executionOrder installPlan)
+  where
+    -- Run the benchmarks of the given units, in order, and record their
+    -- failures. Unless we keep going, stop at the first failure.
+    go :: BuildOutcomes -> [ElaboratedReadyPackage] -> IO BuildOutcomes
+    go outcomes [] = return outcomes
+    go outcomes (pkg : pkgs)
+      | Just (Right result) <- Map.lookup uid outcomes
+      , Just bench <- buildResultBenchmark result = do
+          outcome <- try (runDeferredBenchmark bench)
+          case outcome of
+            Right () -> go outcomes pkgs
+            Left failure
+              | keepGoing -> go outcomes' pkgs
+              | otherwise -> return outcomes'
+              where
+                outcomes' = Map.insert uid (Left failure) outcomes
+      | otherwise = go outcomes pkgs
+      where
+        uid = nodeKey pkg
 
 -- | Create a package DB if it does not currently exist.
 createPackageDBIfMissing
@@ -538,10 +636,14 @@ rebuildTarget
   -> BuildTimeSettings
   -> AsyncFetchMap
   -> Lock
+  -- ^ Serialises package registration
   -> Lock
+  -- ^ Serialises access to the setup executable cache
+  -> Lock
+  -- ^ Serialises tarball unpacking
   -> ElaboratedSharedConfig
   -> ElaboratedInstallPlan
-  -> TVar InstalledPackageIndex
+  -> TVar (Staged InstalledPackageIndex)
   -> ElaboratedReadyPackage
   -> BuildStatus
   -> IO BuildResult
@@ -554,6 +656,7 @@ rebuildTarget
   downloadMap
   registerLock
   cacheLock
+  unpackLock
   sharedPackageConfig
   plan
   ipiTVar
@@ -572,7 +675,13 @@ rebuildTarget
           BuildStatusDownload ->
             void $ waitAsyncPackageDownload verbosity downloadMap pkg
           _ -> return ()
-        return $ BuildResult DocsNotTried TestsNotTried Nothing
+        return
+          BuildResult
+            { buildResultDocs = DocsNotTried
+            , buildResultTests = TestsNotTried
+            , buildResultLogFile = Nothing
+            , buildResultBenchmark = Nothing
+            }
     | otherwise =
         -- We rely on the 'BuildStatus' to decide which phase to start from:
         case pkgBuildStatus of
@@ -600,6 +709,7 @@ rebuildTarget
         withTarballLocalDirectory
           verbosity
           distDirLayout
+          unpackLock
           tarball
           (packageId pkg)
           (elabDistDirParams sharedPackageConfig pkg)
@@ -617,12 +727,13 @@ rebuildTarget
       --
       rebuildPhase :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> IO BuildResult
       rebuildPhase buildStatus srcdir =
-        assert
-          (isInplaceBuildStyle $ elabBuildStyle pkg)
-          buildInplace
-          buildStatus
-          srcdir
-          builddir
+        case elabBuildStyle pkg of
+          -- A local directory package that is installed into the store rather
+          -- than built in place (see 'inplace-builds: False'). Its source is
+          -- already where it will stay, so unlike a tarball it has no download
+          -- or unpack phase to be installed from.
+          BuildAndInstall -> buildAndInstall srcdir builddir
+          BuildInplaceOnly{} -> buildInplace buildStatus srcdir builddir
         where
           distdir = distBuildDirectory (elabDistDirParams sharedPackageConfig pkg)
           builddir =
@@ -699,8 +810,7 @@ asyncDownloadPackages verbosity withRepoCtx installPlan pkgsBuildStatus body
         [ elabPkgSourceLocation elab
         | InstallPlan.Configured elab <-
             InstallPlan.reverseTopologicalOrder installPlan
-        , let uid = installedUnitId elab
-              pkgBuildStatus = Map.findWithDefault (error "asyncDownloadPackages") uid pkgsBuildStatus
+        , let pkgBuildStatus = Map.findWithDefault (error "asyncDownloadPackages") (nodeKey elab) pkgsBuildStatus
         , BuildStatusDownload <- [pkgBuildStatus]
         ]
 
@@ -739,6 +849,8 @@ downloadedSourceLocation pkgloc =
 withTarballLocalDirectory
   :: Verbosity
   -> DistDirLayout
+  -> Lock
+  -- ^ serialises the check-and-unpack of the shared source directory
   -> FilePath
   -> PackageId
   -> DistDirParams
@@ -752,6 +864,7 @@ withTarballLocalDirectory
 withTarballLocalDirectory
   verbosity
   distDirLayout@DistDirLayout{..}
+  unpackLock
   tarball
   pkgid
   dparams
@@ -791,23 +904,31 @@ withTarballLocalDirectory
                 makeRelative (normalise srcdir) $
                   distBuildDirectory dparams
         -- TODO: [nice to have] ^^ do this relative stuff better
-        exists <- doesDirectoryExist srcdir
-        -- TODO: [nice to have] use a proper file monitor rather
-        -- than this dir exists test
-        unless exists $ do
-          createDirectoryIfMissingVerbose verbosity True srcrootdir
-          unpackPackageTarball
-            verbosity
-            tarball
-            srcrootdir
-            pkgid
-            pkgTextOverride
-          moveTarballShippedDistDirectory
-            verbosity
-            distDirLayout
-            srcrootdir
-            pkgid
-            dparams
+        --
+        -- The source directory is shared by every unit of this package: under
+        -- cross-compilation the build-stage and the host-stage copy of a
+        -- package are separate plan nodes that can be built concurrently, and
+        -- both would find the directory missing and unpack over each other
+        -- (the loser then sees a half-written tree: "No cabal file found").
+        -- So the check and the unpack are one critical section.
+        criticalSection unpackLock $ do
+          exists <- doesDirectoryExist srcdir
+          -- TODO: [nice to have] use a proper file monitor rather
+          -- than this dir exists test
+          unless exists $ do
+            createDirectoryIfMissingVerbose verbosity True srcrootdir
+            unpackPackageTarball
+              verbosity
+              tarball
+              srcrootdir
+              pkgid
+              pkgTextOverride
+            moveTarballShippedDistDirectory
+              verbosity
+              distDirLayout
+              srcrootdir
+              pkgid
+              dparams
         buildPkg (makeSymbolicPath srcdir) builddir
 
 unpackPackageTarball

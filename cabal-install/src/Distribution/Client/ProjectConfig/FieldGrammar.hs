@@ -11,7 +11,6 @@ module Distribution.Client.ProjectConfig.FieldGrammar
 import Data.Bool (bool)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Set as Set
-import Distribution.CabalSpecVersion (CabalSpecVersion (..))
 import Distribution.Client.CmdInstall.ClientInstallFlags (clientInstallFlagsGrammar)
 import qualified Distribution.Client.ProjectConfig.Lens as L
 import Distribution.Client.ProjectConfig.Types (PackageConfig (..), ProjectConfig (..), ProjectConfigBuildOnly (..), ProjectConfigProvenance (..), ProjectConfigShared (..))
@@ -36,6 +35,7 @@ projectConfigFieldGrammar source knownPrograms = do
   let projectConfigProvenance = Set.singleton (Explicit source)
       projectConfigAllPackages = mempty
       projectConfigSpecificPackage = mempty
+      projectConfigStagePackages = mempty
   projectConfigLocalPackages <- blurFieldGrammar L.projectConfigLocalPackages (packageConfigFieldGrammar knownPrograms)
   pure ProjectConfig{..}
 
@@ -77,6 +77,9 @@ projectConfigSharedFieldGrammar source = do
   projectConfigHcFlavor <- optionalFieldDef "compiler" L.projectConfigHcFlavor mempty
   projectConfigHcPath <- optionalFieldDefAla "with-compiler" (alaFlag FilePathNT) L.projectConfigHcPath mempty
   projectConfigHcPkg <- optionalFieldDefAla "with-hc-pkg" (alaFlag FilePathNT) L.projectConfigHcPkg mempty
+  projectConfigBuildHcFlavor <- optionalFieldDef "build-compiler" L.projectConfigBuildHcFlavor mempty
+  projectConfigBuildHcPath <- optionalFieldDefAla "with-build-compiler" (alaFlag FilePathNT) L.projectConfigBuildHcPath mempty
+  projectConfigBuildHcPkg <- optionalFieldDefAla "with-build-hc-pkg" (alaFlag FilePathNT) L.projectConfigBuildHcPkg mempty
   projectConfigHaddockIndex <- optionalFieldDef "doc-index-file" L.projectConfigHaddockIndex mempty
   projectConfigInstallDirs <- blurFieldGrammar L.projectConfigInstallDirs installDirsGrammar
   projectConfigPackageDBs <- monoidalFieldAla "package-dbs" (alaList' CommaFSep PackageDBNT) L.projectConfigPackageDBs
@@ -107,6 +110,7 @@ projectConfigSharedFieldGrammar source = do
   projectConfigPreferVersion <- packageConfigPreferVersion
   projectConfigProgPathExtra <- monoidalFieldAla "extra-prog-path-shared-only" (alaNubList' FSep FilePathNT) L.projectConfigProgPathExtra
   projectConfigMultiRepl <- optionalFieldDef "multi-repl" L.projectConfigMultiRepl mempty
+  projectConfigInplaceBuilds <- optionalFieldDef "inplace-builds" L.projectConfigInplaceBuilds mempty
   pure ProjectConfigShared{..}
 
 packageConfigFieldGrammar :: [String] -> ParsecFieldGrammar' PackageConfig
@@ -199,11 +203,9 @@ packageConfigCoverageGrammar =
   (<>)
     <$> optionalFieldDef "coverage" L.packageConfigCoverage mempty
     <*> optionalFieldDef "library-coverage" L.packageConfigCoverage mempty
-      ^^^ deprecatedSince CabalSpecV1_22 "Please use 'coverage' field instead."
 
 packageConfigPreferVersion :: ParsecFieldGrammar ProjectConfigShared (Flag PreferVersion)
 packageConfigPreferVersion =
   mappend . fmap (bool PreferInstalledOrLatest PreferOldest)
     <$> optionalFieldDef "prefer-oldest" L.projectConfigPreferOldest mempty
-      ^^^ deprecatedSince CabalSpecV3_20 "Please use 'prefer-version' field instead."
     <*> optionalFieldDef "prefer-version" L.projectConfigPreferVersion mempty

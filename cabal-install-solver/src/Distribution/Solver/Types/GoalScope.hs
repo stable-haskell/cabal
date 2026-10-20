@@ -1,0 +1,148 @@
+module Distribution.Solver.Types.GoalScope
+    ( GoalScope(..)
+    , Namespace(..)
+    , Qualifier(..)
+    , dispQualifier
+    , dispGoalScope
+    , Qualified(..)
+    , QPN
+    , dispQPN
+    , showQPN
+    ) where
+
+import Distribution.Solver.Compat.Prelude
+import Prelude ()
+import Distribution.Package (PackageName)
+import Distribution.Pretty (pretty, flatStyle)
+import Distribution.Solver.Types.Stage (Stage (..), showStage)
+import qualified Text.PrettyPrint as Disp
+
+-- | The scope a solver goal is solved in. Two goals for the same package name
+-- in different scopes are different goals and may resolve to different
+-- instances. A 'GoalScope' is a flat label, not a path: it records at most one
+-- qualifier, not the route by which the goal was reached (see 'QualSetup' for
+-- why nesting was ruled out).
+--
+-- The three fields answer three different questions:
+--
+-- * The 'Stage' says which toolchain the goal is solved against. It is set
+--   only where the solver crosses a tool boundary (a @build-tool-depends@ or
+--   @custom-setup@ dependency), dropping to the previous stage when a distinct
+--   build toolchain exists and staying put when it does not. It is therefore
+--   determined by the qualifier chain, not independent of it; it is stored
+--   because the qualifier is flattened ('QualBase' overwrites the qualifier
+--   it was reached through) and so cannot always be recovered.
+--
+-- * The 'Namespace' is fixed at the root of a top-level goal and inherited
+--   unchanged by every dependency. It is independent of the other two.
+--
+-- * The 'Qualifier' says why this goal is allowed to resolve differently from
+--   the top-level goal for the same package.
+--
+-- Consequently @'GoalScope' 'Host' ns ('QualSetup' p)@ is the custom-setup
+-- closure of @p@ solved against the host toolchain. That is every setup
+-- dependency of a non-cross build, where the host toolchain is the only one;
+-- a cross build never constructs it, because there tool scopes sit at 'Build'.
+data GoalScope = GoalScope Stage Namespace Qualifier
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary GoalScope
+instance Structured GoalScope
+
+-- | Top-level namespace
+--
+-- Package choices in different namespaces are considered completely independent
+-- by the solver.
+data Namespace =
+    -- | The default namespace
+    DefaultNamespace
+
+    -- | A namespace for a specific build target
+  | Independent PackageName
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary Namespace
+instance Structured Namespace
+
+-- | Pretty-prints a stage. The result is either empty (for the default 'Host'
+-- stage) or ends in a colon, so it can be prepended onto a namespace.
+dispStage :: Stage -> Disp.Doc
+dispStage Host = Disp.empty
+dispStage Build = Disp.text (showStage Build) <<>> Disp.text ":"
+
+-- | Pretty-prints a namespace. The result is either empty or
+-- ends in a period, so it can be prepended onto a qualifier.
+dispNamespace :: Namespace -> Disp.Doc
+dispNamespace DefaultNamespace = Disp.empty
+dispNamespace (Independent i) = pretty i <<>> Disp.text "."
+
+-- | Qualifier of a package within a namespace (see 'GoalScope')
+data Qualifier =
+    -- | Top-level dependency in this namespace
+    QualToplevel
+
+    -- | Any dependency on base is considered independent
+    --
+    -- This makes it possible to have base shims.
+  | QualBase PackageName
+
+    -- | Setup dependency
+    --
+    -- By rights setup dependencies ought to be nestable; after all, the setup
+    -- dependencies of a package might themselves have setup dependencies, which
+    -- are independent from everything else. However, this very quickly leads to
+    -- infinite search trees in the solver. Therefore we limit ourselves to
+    -- a single qualifier (within a given namespace).
+  | QualSetup PackageName
+
+    -- | If we depend on an executable from a package (via
+    -- @build-tools@), we should solve for the dependencies of that
+    -- package separately (since we're not going to actually try to
+    -- link it.)  We qualify for EACH package separately; e.g.,
+    -- @'Exe' pn1 pn2@ qualifies the @build-tools@ dependency on
+    -- @pn2@ from package @pn1@.  (If we tracked only @pn1@, that
+    -- would require a consistent dependency resolution for all
+    -- of the depended upon executables from a package; if we
+    -- tracked only @pn2@, that would require us to pick only one
+    -- version of an executable over the entire install plan.)
+  | QualExe PackageName PackageName
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary Qualifier
+instance Structured Qualifier
+
+-- | Pretty-prints a qualifier. The result is either empty or
+-- ends in a period, so it can be prepended onto a package name.
+--
+-- NOTE: the base qualifier is for a dependency _on_ base; the qualifier is
+-- there to make sure different dependencies on base are all independent.
+-- So we want to print something like @"A.base"@, where the @"A."@ part
+-- is the qualifier and @"base"@ is the actual dependency (which, for the
+-- 'Base' qualifier, will always be @base@).
+dispQualifier :: Qualifier -> Disp.Doc
+dispQualifier QualToplevel = Disp.empty
+dispQualifier (QualSetup pn)  = pretty pn <<>> Disp.text ":setup."
+dispQualifier (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
+                                 pretty pn2 <<>> Disp.text ":exe."
+dispQualifier (QualBase pn)  = pretty pn <<>> Disp.text "."
+
+-- | A qualified entity. Pairs a goal scope with the entity.
+data Qualified a = Q GoalScope a
+  deriving (Eq, Ord, Show)
+
+-- | Qualified package name.
+type QPN = Qualified PackageName
+
+-- | Pretty-prints a qualified package name.
+dispQPN :: QPN -> Disp.Doc
+dispQPN (Q gs pn) = dispGoalScope gs <<>> pretty pn
+
+-- | Pretty-prints a goal scope. The result is either empty or ends in a
+-- period, so it can be prepended onto a package name.
+dispGoalScope :: GoalScope -> Disp.Doc
+dispGoalScope (GoalScope stage ns qual) =
+  dispStage stage <<>> dispNamespace ns <<>> dispQualifier qual
+
+-- | String representation of a qualified package name.
+showQPN :: QPN -> String
+showQPN = Disp.renderStyle flatStyle . dispQPN

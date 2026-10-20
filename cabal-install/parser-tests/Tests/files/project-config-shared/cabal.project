@@ -5,9 +5,12 @@ store-dir: a/store/dir/path
 per-component: True
 independent-goals: True
 ignore-project: False
-compiler: ghcjs
+compiler: uhc
 with-compiler: /some/path/to/compiler
 with-hc-pkg: /some/path/to/ghc-pkg
+build-compiler: ghc
+with-build-compiler: /some/path/to/build-compiler
+with-build-hc-pkg: /some/path/to/build-ghc-pkg
 doc-index-file: /path/to/haddock-index
 package-dbs: clear, foo, clear, bar, baz
 active-repositories:
@@ -37,3 +40,4 @@ prefer-oldest: True
 extra-prog-path: /foo/bar, /baz/quux
 extra-prog-path-shared-only: /foo/bar, /baz/quux
 multi-repl: True
+inplace-builds: False

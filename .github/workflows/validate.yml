@@ -54,7 +54,9 @@ jobs:
         sys:
           - { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
           - { os: ubuntu-latest, shell: bash }
-          - { os: macos-latest, shell: bash }
+          # macos-15 rather than macos-latest until actions/runner-images#14940
+          # is fixed; see #12465.
+          - { os: macos-15, shell: bash }
         ghc:
           [
             # IMPORTANT: If you remove a version from this list, then add it to the old-ghcs job below.
@@ -99,7 +101,7 @@ jobs:
         id: setup-haskell
         with:
           ghc-version: ${{ matrix.ghc }}
-          cabal-version: 3.12.1.0 # see https://github.com/haskell/cabal/pull/10251
+          cabal-version: 3.18.1.0 # see https://github.com/haskell/cabal/pull/10251
           ghcup-release-channel: https://raw.githubusercontent.com/haskell/ghcup-metadata/master/ghcup-prereleases-0.0.9.yaml
 
       # runner.os isn't sufficient for binary compatible caches
@@ -331,7 +333,9 @@ jobs:
         id: setup-haskell
         with:
           ghc-version: ${{ env.GHC_FOR_RELEASE }}
-          cabal-version: latest # latest is mandatory for cabal-testsuite, see https://github.com/haskell/cabal/issues/8133
+          # must satisfy the setup-depends of cabal-testsuite, see PR #10251
+          # (issue #8133 asks for the latest release; this is it as of 2026-09)
+          cabal-version: 3.18.1.0
 
       #  See the following link for a breakdown of the following step
       #  https://github.com/haskell/actions/issues/7#issuecomment-745697160
@@ -374,13 +378,26 @@ jobs:
   dogfooding:
     name: Dogfooding ${{ matrix.sys.os }} ghc-${{ matrix.ghc }}
     runs-on: ${{ matrix.sys.os }}
+    # It builds with the executable produced by the validate job above.
+    # GHC 9.10 on Windows currently suffers from two unrelated problems:
+    #
+    #  * `ghc-pkg` intermittently fails with "package.cache: you don't
+    #    have permission to modify this file"
+    #
+    #  * The cli-suite MultiRepl tests fail with
+    #    "removePathForcibly: permission denied" because Windows keeps
+    #    the work tree locked for a moment after the multi-repl GHCi
+    #    test process terminates (see #11933).
+    continue-on-error: ${{ matrix.sys.os == 'windows-latest' && matrix.ghc == '9.10.3' }}
     needs: validate
     strategy:
       matrix:
         sys:
           - { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
           - { os: ubuntu-latest, shell: bash }
-          - { os: macos-latest, shell: bash }
+          # macos-15 rather than macos-latest until actions/runner-images#14940
+          # is fixed; see #12465.
+          - { os: macos-15, shell: bash }
         # We only use one ghc version the used one for the next release (defined at top of the workflow)
         # We need to build an array dynamically to inject the appropriate env var in a previous job,
         # see https://docs.github.com/en/actions/learn-github-actions/expressions#fromjson
@@ -432,7 +449,9 @@ jobs:
       # We dont use cache to force a build with a fresh store dir and build dir
       # This way we check cabal can build all its dependencies
       - name: Build using cabal HEAD
-        run: sh validate.sh ${{ env.COMMON_FLAGS }} --with-cabal ./cabal-head/cabal -s build
+        # Serialize registrations on Windows to avoid the package cache
+        # race described in the comment on this job.
+        run: sh validate.sh ${{ matrix.sys.os == 'windows-latest' && '-j 1 -v' || env.COMMON_FLAGS }} --with-cabal ./cabal-head/cabal -s build
 
   prerelease-head:
     name: Create a GitHub prerelease with the binary artifacts

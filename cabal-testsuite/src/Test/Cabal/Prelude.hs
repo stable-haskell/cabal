@@ -86,7 +86,7 @@ import Text.Regex.TDFA ((=~))
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (withAsync)
-import Control.Monad (foldM, forM_, liftM2, liftM4, unless, void, when)
+import Control.Monad (filterM, foldM, forM_, liftM2, liftM4, unless, void, when)
 import Control.Monad.Catch (bracket_)
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Reader (asks, runReaderT, withReaderT)
@@ -1264,8 +1264,8 @@ skipIfOSX why = skipIfIO ("OSX " <> why) isOSX
 skipIfCI :: IssueID -> IO ()
 skipIfCI ticket = skipIfIO ("CI, see #" <> show ticket) =<< isCI
 
-skipIfCIAndWindows :: IssueID -> IO ()
-skipIfCIAndWindows ticket = skipIfIO ("Windows CI, see #" <> show ticket) . (isWindows &&) =<< isCI
+skipIfCIAndWindows :: MonadIO m => IssueID -> m ()
+skipIfCIAndWindows ticket = liftIO $ skipIfIO ("Windows CI, see #" <> show ticket) . (isWindows &&) =<< isCI
 
 skipIfCIAndOSX :: IssueID -> IO ()
 skipIfCIAndOSX ticket = skipIfIO ("OSX CI, see #" <> show ticket) . (isOSX &&) =<< isCI
@@ -1435,8 +1435,11 @@ withShorterPathForNewBuildStore test =
     "cabal-test-store"
     (`withStoreDir` test)
 
--- | Find where a package locates in the store dir. This works only if there is exactly one 1 ghc version
--- and exactly 1 directory for the given package in the store dir.
+-- | Find where a package locates in the store dir. The store is laid out as
+-- @\<root\>\/\<stage\>\/\<platform\>\/lib\/\<unit-id\>@ and a package a test
+-- depends on is a host-stage artifact, so this works only if there is exactly 1
+-- platform directory under the host stage and exactly 1 directory for the given
+-- package under its @lib@.
 findDependencyInStore
   :: String
   -- ^ package name prefix
@@ -1445,8 +1448,16 @@ findDependencyInStore
 findDependencyInStore pkgName = do
   storeDir <- testStoreDir <$> getTestEnv
   liftIO $ do
-    storeDirForGhcVersion : _ <- listDirectory storeDir
-    packageDirs <- listDirectory (storeDir </> storeDirForGhcVersion)
+    -- The store is laid out store/<stage>/<platform>/lib/<unit>, with one
+    -- lib/ holding a directory per unit. These libs are host-stage artifacts.
+    let hostStoreDir = storeDir </> "host"
+    platformDir : _ <- listDirectory hostStoreDir
+    let storeLibDir = hostStoreDir </> platformDir </> "lib"
+    -- Shared objects live in this directory too, beside the per-unit
+    -- directories, and a package name is a prefix of its own library's file
+    -- name ("lib" matches "libHSlib-...so"), so only directories can match.
+    packageDirs <-
+      filterM (doesDirectoryExist . (storeLibDir </>)) =<< listDirectory storeLibDir
     -- Ideally, we should call 'hashedInstalledPackageId' from 'Distribution.Client.PackageHash'.
     -- But 'PackageHashInputs', especially 'PackageHashConfigInputs', is too hard to construct.
     let pkgName' =
@@ -1457,7 +1468,7 @@ findDependencyInStore pkgName = do
     let libDir = case filter (pkgName' `isPrefixOf`) packageDirs of
           [] -> error $ "Could not find " <> pkgName' <> " when searching for " <> pkgName' <> " in\n" <> show packageDirs
           (dir : _) -> dir
-    pure (storeDir </> storeDirForGhcVersion </> libDir)
+    pure (storeLibDir </> libDir)
 
 -- | It can be easier to paste expected output verbatim into a text file,
 -- especially if it is a multiline string, rather than encoding it as a multiline

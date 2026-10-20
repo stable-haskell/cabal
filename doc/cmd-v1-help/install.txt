@@ -27,7 +27,6 @@ Flags for v1-install:
  --cabal-file=PATH            # use this Cabal file
  --keep-temp-files            # Keep temporary files.
  -g, --ghc                    # Compile with GHC
- --ghcjs                      # Compile with GHCJS
  --uhc                        # Compile with UHC
  -w PATH or -wPATH, --with-compiler=PATH
                               # Give the path to a particular compiler
@@ -201,6 +200,11 @@ Flags for v1-install:
                                 any alterations
  --disable-backup             # Disable the backup of the config file before
                                 any alterations
+ -W PATH or -WPATH, --with-build-compiler=PATH
+                              # give the path to the compiler for the build
+                                stage (cross-compilation)
+ --with-build-hc-pkg=PATH     # give the path to the package tool for the
+                                build stage (cross-compilation)
  -c CONSTRAINT or -cCONSTRAINT, --constraint=CONSTRAINT
                               # Specify constraints on a package (version,
                                 installed/source, flags)
@@ -375,8 +379,8 @@ Flags for v1-install:
                                 $arch, $benchmark)
 
 The flags --with-PROG and --PROG-option(s) can be used with the following programs:
-  alex ar c2hs cpphs doctest gcc ghc ghc-pkg ghcjs ghcjs-pkg haddock happy hpc
-  hsc2hs hscolour jhc ld pkg-config runghc strip tar uhc
+  alex ar c2hs cpphs doctest gcc ghc ghc-pkg haddock happy hpc hsc2hs hscolour
+  jhc ld pkg-config runghc strip tar uhc
 
 Examples:
   cabal v1-install                     Package in the current directory

@@ -167,9 +167,7 @@ The following options govern the programs used to process the source
 files of a package:
 
 .. option:: -g, --ghc
-            --ghcjs
             --uhc
-            --haskell-suite
 
     Specify which Haskell implementation to use to build the package. At
     most one of these flags may be given. If none is given, the
@@ -203,9 +201,8 @@ files of a package:
     ``--with-cpphs=/usr/local/bin/cpphs``. The full list of accepted
     programs is as follows:
     ``alex``, ``ar``, ``c2hs``, ``cpphs``, ``doctest``, ``gcc``, ``ghc``,
-    ``ghc-pkg``, ``ghcjs``, ``ghcjs-pkg``, ``haddock``, ``happy``,
-    ``hpc``, ``hsc2hs``, ``hscolour``, ``jhc``, ``ld``, ``pkg-config``,
-    ``runghc``, ``strip``, ``tar``, ``uhc``.
+    ``ghc-pkg``, ``haddock``, ``happy``, ``hpc``, ``hsc2hs``, ``hscolour``,
+    ``jhc``, ``ld``, ``pkg-config``, ``runghc``, ``strip``, ``tar``, ``uhc``.
 
 .. option:: --PROG-options=OPTS
 
@@ -451,8 +448,9 @@ $arch
     e.g. ``i386``, ``x86_64``, ``ppc`` or ``sparc``
 $abitag
     An optional tag that a compiler can use for telling incompatible
-    ABI's on the same architecture apart. GHCJS encodes the underlying
-    GHC version in the ABI tag.
+    ABI's on the same architecture apart. GHC uses the part of its project
+    unit id that is not already in its version, e.g. ``inplace`` for an
+    in-tree build.
 $abi
     A shortcut for getting a path that completely identifies the
     platform in terms of binary compatibility. Expands to the same value
@@ -1040,10 +1038,29 @@ Miscellaneous options
         # dependency of the Setup.hs script of package foo.
         $ cabal install --constraint="foo:setup.bar == 1.0"
 
-    ..  TODO: Uncomment this example once we decide on a syntax for 'exe'.
-    ..  # Example use of the 'exe' (executable build tool)
-        # qualifier. This constraint applies to package baz when it
-        # is a dependency of the build tool bar being used to
+    When cross-compiling (see :cfg-field:`with-build-compiler`), a
+    constraint can additionally be restricted to the *build* stage, i.e.
+    to packages built with the build compiler, by prefixing it with
+    ``build:``. Without the prefix a constraint applies at every stage.
+    Since only setup and build-tool dependencies are solved for the build
+    stage, the prefix is only meaningful together with the ``any`` or
+    ``setup`` qualifiers:
+
+    ::
+
+        # Use the installed rts for every build-stage package.
+        $ cabal install --constraint="build:any.rts installed"
+
+    ::
+
+        # Example uses of 'exe' (executable build tool) qualifiers.
+
+        # This constraint applies to package bar wherever it is
+        # depended on as a build tool (build-tool-depends).
+        $ cabal install --constraint="exe.bar == 1.0"
+
+        # This constraint applies to package baz when it is a
+        # dependency of the build tool bar being used to
         # build package foo.
         $ cabal install --constraint="foo:bar:exe.baz == 1.0"
 
@@ -1436,13 +1453,18 @@ the package.
 
 .. option:: --test-options=TEMPLATES
 
-    Give extra options to the test executables.
+    Give extra options to the test executables. Options are split on
+    spaces; use ``""`` to prevent splitting. Template variables allowed
+    are: ``$pkgid``, ``$compiler``, ``$os``, ``$arch``, ``$abi``,
+    ``$abitag`` and ``$test-suite``.
 
 .. option:: --test-option=TEMPLATE
 
     Give an extra option to the test executables. There is no need to
     quote options containing spaces because a single option is assumed,
-    so options will not be split on spaces.
+    so options will not be split on spaces. Template variables allowed
+    are: ``$pkgid``, ``$compiler``, ``$os``, ``$arch``, ``$abi``,
+    ``$abitag`` and ``$test-suite``.
 
 .. option:: --test-wrapper=FILE
 
@@ -1464,13 +1486,18 @@ the package.
 
 .. option:: --benchmark-options=TEMPLATES
 
-    Give extra options to the benchmark executables.
+    Give extra options to the benchmark executables. Options are split
+    on spaces; use ``""`` to prevent splitting. Template variables
+    allowed are: ``$pkgid``, ``$compiler``, ``$os``, ``$arch``,
+    ``$abi``, ``$abitag`` and ``$benchmark``.
 
 .. option:: --benchmark-option=TEMPLATE
 
     Give an extra option to the benchmark executables. There is no need to
     quote options containing spaces because a single option is assumed,
-    so options will not be split on spaces.
+    so options will not be split on spaces. Template variables allowed
+    are: ``$pkgid``, ``$compiler``, ``$os``, ``$arch``, ``$abi``,
+    ``$abitag`` and ``$benchmark``.
 
 .. _setup-sdist:
 

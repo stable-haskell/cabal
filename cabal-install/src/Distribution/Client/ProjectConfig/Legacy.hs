@@ -112,6 +112,7 @@ import Distribution.Simple.Setup
   , HaddockFlags (..)
   , TestFlags (..)
   , benchmarkOptions'
+  , boolOpt
   , configureOptions
   , defaultBenchmarkFlags
   , defaultHaddockFlags
@@ -353,7 +354,13 @@ parseProjectSkeleton cacheDir httpTransport verbosity projectDir source (Project
         addWarnings x' = x'
     liftPR p _ (ParseFailed e) = pure $ projectParseFail Nothing (Just p) e
     modifiesCompiler :: ProjectConfig -> Bool
-    modifiesCompiler pc = isSet projectConfigHcFlavor || isSet projectConfigHcPath || isSet projectConfigHcPkg
+    modifiesCompiler pc =
+      isSet projectConfigHcFlavor
+        || isSet projectConfigHcPath
+        || isSet projectConfigHcPkg
+        || isSet projectConfigBuildHcFlavor
+        || isSet projectConfigBuildHcPath
+        || isSet projectConfigBuildHcPkg
       where
         isSet f = f (projectConfigShared pc) /= NoFlag
 
@@ -410,6 +417,7 @@ data LegacySharedConfig = LegacySharedConfig
   , legacyClientInstallFlags :: ClientInstallFlags
   , legacyProjectFlags :: ProjectFlags
   , legacyMultiRepl :: Flag Bool
+  , legacyInplaceBuilds :: Flag Bool
   }
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically LegacySharedConfig
@@ -447,6 +455,7 @@ commandLineFlagsToProjectConfig globalFlags NixStyleFlags{..} clientInstallFlags
           configExFlags
           installFlags
           projectFlags
+          NoFlag
           NoFlag
     , projectConfigLocalPackages = localConfig
     , projectConfigAllPackages = allConfig
@@ -551,6 +560,7 @@ convertLegacyGlobalConfig
           installFlags'
           projectFlags'
           replMulti
+          NoFlag
       configBuildOnly =
         convertLegacyBuildOnlyFlags
           globalFlags
@@ -580,6 +590,7 @@ convertLegacyProjectConfig
         clientInstallFlags
         projectFlags
         multiRepl
+        inplaceBuilds
     , legacyAllConfig
     , legacyLocalConfig =
       LegacyPackageConfig
@@ -601,6 +612,8 @@ convertLegacyProjectConfig
       , projectConfigAllPackages = configAllPackages
       , projectConfigLocalPackages = configLocalPackages
       , projectConfigSpecificPackage = fmap perPackage legacySpecificConfig
+      , -- The legacy format has no stage-qualified package stanzas.
+        projectConfigStagePackages = mempty
       }
     where
       configAllPackages = convertLegacyPerPackageFlags g i h t b
@@ -621,6 +634,7 @@ convertLegacyProjectConfig
           installSharedFlags
           projectFlags
           multiRepl
+          inplaceBuilds
       configBuildOnly =
         convertLegacyBuildOnlyFlags
           globalFlags
@@ -655,8 +669,9 @@ convertLegacyAllPackageFlags
   -> InstallFlags
   -> ProjectFlags
   -> Flag Bool
+  -> Flag Bool
   -> ProjectConfigShared
-convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags projectFlags projectConfigMultiRepl =
+convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags projectFlags projectConfigMultiRepl projectConfigInplaceBuilds =
   ProjectConfigShared{..}
   where
     GlobalFlags
@@ -696,6 +711,9 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       , configAllowNewer = projectConfigAllowNewer
       , configWriteGhcEnvironmentFilesPolicy =
         projectConfigWriteGhcEnvironmentFilesPolicy
+      , configBuildHcFlavor = projectConfigBuildHcFlavor
+      , configBuildHcPath = projectConfigBuildHcPath
+      , configBuildHcPkg = projectConfigBuildHcPkg
       } = configExFlags
 
     InstallFlags
@@ -933,6 +951,7 @@ convertToLegacySharedConfig
       , legacyClientInstallFlags = projectConfigClientInstallFlags
       , legacyProjectFlags = projectFlags
       , legacyMultiRepl = projectConfigMultiRepl
+      , legacyInplaceBuilds = projectConfigInplaceBuilds
       }
     where
       globalFlags =
@@ -979,6 +998,9 @@ convertToLegacySharedConfig
           , configAllowNewer = projectConfigAllowNewer
           , configWriteGhcEnvironmentFilesPolicy =
               projectConfigWriteGhcEnvironmentFilesPolicy
+          , configBuildHcFlavor = projectConfigBuildHcFlavor
+          , configBuildHcPath = projectConfigBuildHcPath
+          , configBuildHcPkg = projectConfigBuildHcPkg
           }
 
       installFlags =
@@ -1423,11 +1445,19 @@ legacySharedConfigFieldDescrs constraintSrc =
               (fmap Just parsec)
               (fmap unAllowNewer . configAllowNewer)
               (\v conf -> conf{configAllowNewer = fmap AllowNewer v})
+          , simpleFieldParsec
+              "build-compiler"
+              (fromFlagOrDefault Disp.empty . fmap pretty)
+              (toFlag <$> parsec <|> pure mempty)
+              configBuildHcFlavor
+              (\v conf -> conf{configBuildHcFlavor = v})
           ]
         . filterFields
           [ "cabal-lib-version"
           , "solver"
           , "write-ghc-environment-files"
+          , "with-build-compiler"
+          , "with-build-hc-pkg"
           -- not "constraint" or "preference", we use our own plural ones above
           ]
         . commandOptionsToFields
@@ -1483,7 +1513,21 @@ legacySharedConfigFieldDescrs constraintSrc =
         . commandOptionsToFields
         $ projectFlagsOptions ParseArgs
     , [liftField legacyMultiRepl (\flags conf -> conf{legacyMultiRepl = flags}) (commandOptionToField multiReplOption)]
+    , [liftField legacyInplaceBuilds (\flags conf -> conf{legacyInplaceBuilds = flags}) (commandOptionToField inplaceBuildsOption)]
     ]
+
+-- | Whether the project's own packages are built in place (the default) or
+-- installed into the store like any other dependency. See
+-- 'projectConfigInplaceBuilds'.
+inplaceBuildsOption :: OptionField (Flag Bool)
+inplaceBuildsOption =
+  option
+    []
+    ["inplace-builds"]
+    "build the project's own packages in place instead of installing them into the store"
+    id
+    (\v _ -> v)
+    (boolOpt [] [])
 
 legacyPackageConfigFieldDescrs :: [FieldDescr LegacyPackageConfig]
 legacyPackageConfigFieldDescrs =
