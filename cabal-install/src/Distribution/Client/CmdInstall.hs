@@ -43,7 +43,6 @@ import Distribution.Client.DistDirLayout
   ( CabalDirLayout (..)
   , DistDirLayout (..)
   , StoreDirLayout (..)
-  , cabalStoreDirLayout
   , mkCabalDirLayout
   )
 import Distribution.Client.IndexUtils
@@ -133,7 +132,6 @@ import Distribution.Simple.Compiler
   ( Compiler (..)
   , CompilerFlavor (..)
   , CompilerId (..)
-  , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
   )
@@ -161,8 +159,7 @@ import Distribution.Simple.Program.Db
   , userSpecifyPaths
   )
 import Distribution.Simple.Setup
-  ( Flag
-  , installDirsOptions
+  ( installDirsOptions
   , pattern Flag
   , pattern NoFlag
   )
@@ -453,7 +450,10 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags toolchainPlatform compilerVersion
   (usedExistingPkgEnvFile, existingEnvEntries) <-
     getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile
-  packageDbs <- getPackageDbStack Host toolchain projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
+  mstoreDir <- traverse makeAbsolute $ flagToMaybe projectConfigStoreDir
+  cabalLayout <- mkCabalDirLayout mstoreDir (flagToMaybe projectConfigLogsDir)
+  let installStoreDirLayout = cabalStoreDirLayout cabalLayout
+      packageDbs = storePackageDBStack installStoreDirLayout Host toolchain projectConfigPackageDBs
   installedIndex <- getInstalledPackages verbosity toolchainCompiler packageDbs toolchainProgramDb
 
   let
@@ -466,7 +466,11 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   globalTmp <- getTemporaryDirectory
 
   withTempDirectory globalTmp "cabal-install." $ \tmpDir -> do
-    distDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
+    scratchDistDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
+    -- Installations must outlive the temporary project and any --builddir
+    -- scratch directory. Use the configured persistent store for both the
+    -- planner's registration database and the environment written below.
+    let distDirLayout = scratchDistDirLayout{distStoreDirLayout = installStoreDirLayout}
 
     uriSpecs <-
       runRebuild tmpDir $
@@ -1334,20 +1338,6 @@ getLocalEnv dir platform compilerVersion =
   dir
     </> ".ghc.environment."
     <> ghcPlatformAndVersionString platform compilerVersion
-
-getPackageDbStack
-  :: Stage
-  -> Toolchain
-  -> Flag FilePath
-  -> Flag FilePath
-  -> [Maybe PackageDBCWD]
-  -> IO PackageDBStackCWD
-getPackageDbStack stage toolchain storeDirFlag logsDirFlag packageDbs = do
-  mstoreDir <- traverse makeAbsolute $ flagToMaybe storeDirFlag
-  let
-    mlogsDir = flagToMaybe logsDirFlag
-  cabalLayout <- mkCabalDirLayout mstoreDir mlogsDir
-  pure $ storePackageDBStack (cabalStoreDirLayout cabalLayout) stage toolchain packageDbs
 
 -- | This defines what a 'TargetSelector' means for the @bench@ command.
 -- It selects the 'AvailableTarget's that the 'TargetSelector' refers to,
