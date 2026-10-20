@@ -137,6 +137,7 @@ data CabalException
   | NoOSSupport OS String
   | NoCompilerSupport String
   | ProfilingRequiresTargetCompiler CompilerId
+  | UnsupportedTargetVariant String String [String]
   | InstallDirsNotPrefixRelative (InstallDirs FilePath)
   | ExplainErrors (Maybe (Either [Char] [Char])) [String]
   | CheckPackageProblems [String]
@@ -272,6 +273,7 @@ exceptionCode e = case e of
   NoOSSupport{} -> 3339
   NoCompilerSupport{} -> 2290
   ProfilingRequiresTargetCompiler{} -> 7342
+  UnsupportedTargetVariant{} -> 7351
   InstallDirsNotPrefixRelative{} -> 6000
   ExplainErrors{} -> 4345
   CheckPackageProblems{} -> 5559
@@ -630,9 +632,16 @@ exceptionMessage e = case e of
     "Profiling requires a separate profiling-target compiler; "
       ++ prettyShow comp
       ++ " does not report Target ABI: profiling. Select it with "
-      ++ "--with-compiler=<platform>-profiling-ghc and keep the ordinary "
+      ++ "--with-compiler=<machine>-prof-ghc and keep the ordinary "
       ++ "compiler for Setup and build tools with --with-build-compiler=ghc. "
       ++ "Legacy profiling ways on ordinary compilers are no longer supported."
+  UnsupportedTargetVariant target variant alternatives ->
+    "Target "
+      ++ target
+      ++ " does not support the requested "
+      ++ variant
+      ++ " variant. Supported alternatives: "
+      ++ intercalate ", " alternatives
   InstallDirsNotPrefixRelative installDirs -> "Installation directories are not prefix_relative:\n" ++ show installDirs
   ExplainErrors hdr libs ->
     unlines $

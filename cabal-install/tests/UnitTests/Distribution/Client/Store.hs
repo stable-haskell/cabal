@@ -6,6 +6,7 @@ module UnitTests.Distribution.Client.Store (tests) where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.List (isInfixOf)
 import System.Directory
 import System.FilePath
 
@@ -20,7 +21,10 @@ import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
 import Distribution.Client.RebuildMonad
+import Distribution.Client.DistDirLayout (DistDirParams (..), ProjectRoot (..), defaultDistDirLayout, distBuildDirectory)
+import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
 import Distribution.Client.Store
+import qualified Distribution.Client.Utils.Json as Json
 import Distribution.Solver.Types.Stage (Stage (..))
 import Distribution.Solver.Types.Toolchain (Toolchain (..))
 
@@ -45,7 +49,11 @@ testTargetAbi = do
           , compilerCompat = []
           , compilerLanguages = []
           , compilerExtensions = []
-          , compilerProperties = Map.singleton "Target platform" "aarch64-apple-darwin"
+          , compilerProperties =
+              Map.fromList
+                [ ("Target name", "aarch64-apple-darwin")
+                , ("Target platform", "aarch64-apple-darwin")
+                ]
           , compilerWiredInUnitIds = Nothing
           }
       native = Toolchain buildPlatform compiler emptyProgramDb []
@@ -53,14 +61,30 @@ testTargetAbi = do
         native
           { toolchainCompiler =
               compiler
-                { compilerProperties = Map.insert "Target ABI" "profiling" (compilerProperties compiler)
+                { compilerProperties =
+                    Map.insert "Target name" "aarch64-apple-darwin-prof" $
+                      Map.insert "Target ABI" "profiling" (compilerProperties compiler)
                 }
           }
       layout = defaultStoreDirLayout "store"
   storeDirectory layout Host native @?= "store" </> "host" </> "aarch64-apple-darwin"
-  storeDirectory layout Host profiled @?= "store" </> "host" </> "aarch64-apple-darwin-profiling"
+  storeDirectory layout Host profiled @?= "store" </> "host" </> "aarch64-apple-darwin-prof"
   assertBool "package databases must not alias" $
     storePackageDBPath layout Host native /= storePackageDBPath layout Host profiled
+  assertBool "incoming locks must use the selected target namespace" $
+    storeIncomingLock layout Host native (mkUnitId "foo-1.0-xyz")
+      /= storeIncomingLock layout Host profiled (mkUnitId "foo-1.0-xyz")
+  let distLayout = defaultDistDirLayout (ProjectRootImplicit "project") Nothing Nothing
+      nativeDist = distBuildDirectory distLayout (DistDirParams Host native (mkUnitId "foo-1.0-xyz"))
+      profiledDist = distBuildDirectory distLayout (DistDirParams Host profiled (mkUnitId "foo-1.0-xyz"))
+  assertBool "dist build paths must use the canonical target namespace" (nativeDist /= profiledDist)
+  assertBool "dist path must contain canonical prof target" ("aarch64-apple-darwin-prof" `isInfixOf` profiledDist)
+  case lookup "target-name" (toolchainJsonFields Host profiled) of
+    Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
+    _ -> assertFailure "plan JSON omitted the canonical target-name field"
+  case lookup "build-target-name" (toolchainJsonFields Build profiled) of
+    Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
+    _ -> assertFailure "build-stage plan JSON omitted the canonical target-name field"
   assertBool "the ABI crossing is independent of the architecture" (native /= profiled)
 
 testListEmpty :: Assertion

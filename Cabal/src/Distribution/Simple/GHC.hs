@@ -73,8 +73,10 @@ module Distribution.Simple.GHC
   , Internal.renderGhcEnvironmentFile
   , Internal.writeGhcEnvironmentFile
   , Internal.writeGhcEnvironmentFileWithAbi
+  , Internal.writeGhcEnvironmentFileWithTarget
   , Internal.ghcPlatformAndVersionString
   , Internal.ghcPlatformAndVersionStringWithAbi
+  , Internal.ghcPlatformAndVersionStringWithTarget
   , readGhcEnvironmentFile
   , parseGhcEnvironmentFile
   , ParseErrorExc (..)
@@ -207,6 +209,14 @@ configureCompiler verbosity hcPath conf0 = do
   extensions0 <- Internal.getExtensions verbosity ghcProg
 
   ghcInfo <- Internal.getGhcInfo verbosity implInfo ghcProg
+  let identityKeys = ["Target name", "Target platform", "Target ABI", "GHC Profiled"]
+      duplicateIdentityKeys =
+        [ key
+        | key <- identityKeys
+        , length (filter ((== key) . fst) ghcInfo) > 1
+        ]
+  unless (null duplicateIdentityKeys) $
+    die' verbosity ("GHC --info contains duplicate target identity fields: " ++ intercalate ", " duplicateIdentityKeys)
 
   let ghcInfoMap = Map.fromList ghcInfo
       filterJS = if ghcVersion < mkVersion [9, 8] then filterExt JavaScriptFFI else id
@@ -240,12 +250,7 @@ configureCompiler verbosity hcPath conf0 = do
       -- So, we need to be careful to only strip the /common/ prefix.
       -- In this example, @AbiTag@ is "inplace".
       compilerAbiTag :: AbiTag
-      compilerAbiTag =
-        case (projectAbiTag, Map.lookup "Target ABI" ghcInfoMap) of
-          (tag, Nothing) -> tag
-          (tag, Just "") -> tag
-          (NoAbiTag, Just abi) -> AbiTag abi
-          (AbiTag tag, Just abi) -> AbiTag (tag ++ "-" ++ abi)
+      compilerAbiTag = projectAbiTag
 
       projectAbiTag :: AbiTag
       projectAbiTag =
@@ -289,8 +294,23 @@ configureCompiler verbosity hcPath conf0 = do
           , compilerWiredInUnitIds = wiredInUnitIds
           }
       compPlatform = Internal.targetPlatform ghcInfo
+  case compPlatform of
+    Nothing ->
+      when (Map.member "Target name" ghcInfoMap) $
+        die' verbosity "Invalid GHC target metadata: Target platform is missing"
+    Just platform -> do
+      when (Map.member "Target name" ghcInfoMap && not (Map.member "Target ABI" ghcInfoMap)) $
+        die' verbosity "Invalid GHC target metadata: Target ABI is missing"
+      case compilerTargetName platform comp of
+        Left problem -> die' verbosity ("Invalid GHC target metadata: " ++ problem)
+        Right _ -> when (Map.member "Target name" ghcInfoMap) $
+          case Map.lookup "GHC Profiled" ghcInfoMap of
+            Nothing -> die' verbosity "Invalid GHC target metadata: GHC Profiled is missing"
+            Just profiled ->
+              unless (profiled `elem` ["YES", "NO"] && profiled == (if compilerTargetAbi comp == "profiling" then "YES" else "NO")) $
+                die' verbosity "Invalid GHC target metadata: GHC Profiled contradicts Target ABI"
   let ghcProgWithAbi =
-        ghcProg{programProperties = Map.insert "Target ABI" (compilerTargetAbi comp) (programProperties ghcProg)}
+        ghcProg{programProperties = Map.union ghcInfoMap (programProperties ghcProg)}
   return (comp, compPlatform, updateProgram ghcProgWithAbi progdb1)
 
 -- | Given a configured @ghc@ program, configure auxiliary programs such
@@ -360,6 +380,38 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
   when (ghcVersion /= ghcPkgVersion) $
     dieWithException verbosity $
       VersionMismatchGHC (programPath ghcProg) ghcVersion (programPath ghcPkgProg) ghcPkgVersion
+
+  -- New target metadata is a protocol opt-in. Ask the selected package tool
+  -- for its own settings so aliases, wrappers, and configured arguments are
+  -- checked rather than inferred from the ghc executable path.
+  when (Map.member "Target name" (compilerProperties comp)) $ do
+    output <- getProgramOutput verbosity ghcPkgProg ["--info"]
+    pkgPairs <- case reads output of
+      [(pairs, rest)] | all isSpace rest -> pure pairs
+      _ -> die' verbosity "ghc-pkg --info did not return a valid property list"
+    let identityFields = ["Project version", "Target platform", "Target name", "Target ABI", "LibDir", "Global Package DB"]
+        duplicateFields = [field | field <- identityFields, length (filter ((== field) . fst) pkgPairs) > 1]
+    unless (null duplicateFields) $
+      die' verbosity ("ghc-pkg --info contains duplicate identity fields: " ++ intercalate ", " duplicateFields)
+    let pkgInfo = Map.fromList pkgPairs
+    let expected = compilerProperties comp
+        fields = ["Project version", "Target platform", "Target name", "Target ABI"]
+    forM_ fields $ \field ->
+      case (Map.lookup field pkgInfo, Map.lookup field expected) of
+        (Just actual, Just compilerValue) ->
+          when (actual /= compilerValue) $
+            die' verbosity ("ghc-pkg target metadata mismatch for " ++ field)
+        _ -> die' verbosity ("ghc-pkg --info is missing " ++ field)
+    compilerLibDir <- dropWhileEndLE isSpace <$> getProgramOutput verbosity ghcProg ["--print-libdir"]
+    compilerGlobalDb <- dropWhileEndLE isSpace <$> getProgramOutput verbosity ghcProg ["--print-global-package-db"]
+    forM_ [("LibDir", compilerLibDir), ("Global Package DB", compilerGlobalDb)] $ \(field, compilerPathValue) ->
+      case Map.lookup field pkgInfo of
+        Just actual -> do
+          actualPath <- canonicalizePath actual
+          compilerPath <- canonicalizePath compilerPathValue
+          when (actualPath /= compilerPath) $
+            die' verbosity ("ghc-pkg installation mismatch for " ++ field)
+        Nothing -> die' verbosity ("ghc-pkg --info is missing " ++ field)
 
   return progdb4
 
@@ -606,9 +658,10 @@ getUserPackageDB _verbosity ghcProg platform = do
   return (appdir </> platformAndVersion </> packageConfFileName)
   where
     platformAndVersion =
-      Internal.ghcPlatformAndVersionStringWithAbi
+      Internal.ghcPlatformAndVersionStringWithTarget
         platform
         ghcVersion
+        (Map.lookup "Target name" (programProperties ghcProg))
         (Map.findWithDefault "" "Target ABI" (programProperties ghcProg))
     packageConfFileName = "package.conf.d"
     ghcVersion = fromMaybe (error "GHC.getUserPackageDB: no ghc version") $ programVersion ghcProg
@@ -1141,9 +1194,10 @@ pkgRoot verbosity lbi = fmap makeSymbolicPath . pkgRoot'
       appDir <- getGhcAppDir
       let ver = compilerVersion (compiler lbi)
           subdir =
-            Internal.ghcPlatformAndVersionStringWithAbi
+            Internal.ghcPlatformAndVersionStringWithTarget
               (hostPlatform lbi)
               ver
+              (Map.lookup "Target name" (compilerProperties (compiler lbi)))
               (compilerTargetAbi (compiler lbi))
           rootDir = appDir </> subdir
       -- We must create the root directory for the user package database if it

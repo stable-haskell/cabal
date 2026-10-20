@@ -149,7 +149,7 @@ import Distribution.Simple.GHC
   , ParseErrorExc
   , getGhcAppDir
   , getImplInfo
-  , ghcPlatformAndVersionStringWithAbi
+  , ghcPlatformAndVersionStringWithTarget
   , readGhcEnvironmentFile
   , renderGhcEnvironmentFile
   )
@@ -452,7 +452,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   let Compiler{compilerId = CompilerId compilerFlavor compilerVersion} = toolchainCompiler
       GhcImplInfo{supportsPkgEnvFiles} = getImplInfo toolchainCompiler
 
-  (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags toolchainPlatform compilerVersion (compilerTargetAbi toolchainCompiler)
+  (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags toolchainPlatform compilerVersion (compilerTargetAbi toolchainCompiler) (Map.lookup "Target name" (compilerProperties toolchainCompiler))
   (usedExistingPkgEnvFile, existingEnvEntries) <-
     getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile
   mstoreDir <- traverse makeAbsolute $ flagToMaybe projectConfigStoreDir
@@ -1280,26 +1280,26 @@ entriesForLibraryComponents = Map.foldrWithKey' (\k v -> mappend (go k v)) []
 -- | Gets the file path to the request environment file. The @Bool@ is @True@
 -- if we got an explicit instruction using @--package-env@, @False@ if we used
 -- the default.
-getEnvFile :: ClientInstallFlags -> Platform -> Version -> String -> IO (Bool, FilePath)
-getEnvFile clientInstallFlags platform compilerVersion abi = do
+getEnvFile :: ClientInstallFlags -> Platform -> Version -> String -> Maybe String -> IO (Bool, FilePath)
+getEnvFile clientInstallFlags platform compilerVersion abi targetName = do
   appDir <- getGhcAppDir
   case flagToMaybe (cinstEnvironmentPath clientInstallFlags) of
     Just spec
       -- Is spec a bare word without any "pathy" content, then it refers to
       -- a named global environment.
       | takeBaseName spec == spec ->
-          return (True, getGlobalEnv appDir platform compilerVersion abi spec)
+          return (True, getGlobalEnv appDir platform compilerVersion abi targetName spec)
       | otherwise -> do
           spec' <- makeAbsolute spec
           isDir <- doesDirectoryExist spec'
           if isDir
             then -- If spec is a directory, then make an ambient environment inside
             -- that directory.
-              return (True, getLocalEnv spec' platform compilerVersion abi)
+              return (True, getLocalEnv spec' platform compilerVersion abi targetName)
             else -- Otherwise, treat it like a literal file path.
               return (True, spec')
     Nothing ->
-      return (False, getGlobalEnv appDir platform compilerVersion abi "default")
+      return (False, getGlobalEnv appDir platform compilerVersion abi targetName "default")
 
 -- | Returns the list of @GhcEnvFilePackageId@ values already existing in the
 --   environment being operated on. The @Bool@ is @True@ if we took settings
@@ -1330,19 +1330,19 @@ getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile = do
 -- | Constructs the path to the global GHC environment file.
 --
 -- TODO(m-renaud): Create PkgEnvName newtype wrapper.
-getGlobalEnv :: FilePath -> Platform -> Version -> String -> String -> FilePath
-getGlobalEnv appDir platform compilerVersion abi name =
+getGlobalEnv :: FilePath -> Platform -> Version -> String -> Maybe String -> String -> FilePath
+getGlobalEnv appDir platform compilerVersion abi targetName name =
   appDir
-    </> ghcPlatformAndVersionStringWithAbi platform compilerVersion abi
+    </> ghcPlatformAndVersionStringWithTarget platform compilerVersion targetName abi
     </> "environments"
     </> name
 
 -- | Constructs the path to a local GHC environment file.
-getLocalEnv :: FilePath -> Platform -> Version -> String -> FilePath
-getLocalEnv dir platform compilerVersion abi =
+getLocalEnv :: FilePath -> Platform -> Version -> String -> Maybe String -> FilePath
+getLocalEnv dir platform compilerVersion abi targetName =
   dir
     </> ".ghc.environment."
-    <> ghcPlatformAndVersionStringWithAbi platform compilerVersion abi
+    <> ghcPlatformAndVersionStringWithTarget platform compilerVersion targetName abi
 
 -- | This defines what a 'TargetSelector' means for the @bench@ command.
 -- It selects the 'AvailableTarget's that the 'TargetSelector' refers to,

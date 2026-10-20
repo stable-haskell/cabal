@@ -41,11 +41,13 @@ module Distribution.Simple.GHC.Internal
   , ghcOsString
   , ghcPlatformAndVersionString
   , ghcPlatformAndVersionStringWithAbi
+  , ghcPlatformAndVersionStringWithTarget
 
     -- * Constructing GHC environment files
   , GhcEnvironmentFileEntry (..)
   , writeGhcEnvironmentFile
   , writeGhcEnvironmentFileWithAbi
+  , writeGhcEnvironmentFileWithTarget
   , simpleGhcEnvironmentFile
   , ghcEnvironmentFileName
   , renderGhcEnvironmentFile
@@ -746,6 +748,14 @@ ghcPlatformAndVersionStringWithAbi :: Platform -> Version -> String -> String
 ghcPlatformAndVersionStringWithAbi platform version abi =
   ghcPlatformAndVersionString platform version ++ if null abi then "" else "-" ++ abi
 
+-- | Namespace for compilers advertising the canonical target protocol.
+-- Legacy compilers continue to use the ABI-suffixed machine namespace above.
+ghcPlatformAndVersionStringWithTarget :: Platform -> Version -> Maybe String -> String -> String
+ghcPlatformAndVersionStringWithTarget platform version targetName abi =
+  case targetName of
+    Just target -> target ++ "-" ++ prettyShow version
+    Nothing -> ghcPlatformAndVersionStringWithAbi platform version abi
+
 -- -----------------------------------------------------------------------------
 -- Constructing GHC environment files
 
@@ -804,10 +814,23 @@ writeGhcEnvironmentFileWithAbi
   -> [GhcEnvironmentFileEntry FilePath]
   -> IO FilePath
 writeGhcEnvironmentFileWithAbi directory platform ghcversion abi entries = do
+  writeGhcEnvironmentFileWithTarget directory platform ghcversion abi Nothing entries
+
+-- | Write an environment file using the new logical target namespace when
+-- supplied, while retaining the legacy ABI suffix for older compilers.
+writeGhcEnvironmentFileWithTarget
+  :: FilePath
+  -> Platform
+  -> Version
+  -> String
+  -> Maybe String
+  -> [GhcEnvironmentFileEntry FilePath]
+  -> IO FilePath
+writeGhcEnvironmentFileWithTarget directory platform ghcversion abi targetName entries = do
   writeFileAtomic envfile . BS.pack . renderGhcEnvironmentFile $ entries
   return envfile
   where
-    envfile = directory </> ".ghc.environment." ++ ghcPlatformAndVersionStringWithAbi platform ghcversion abi
+    envfile = directory </> ".ghc.environment." ++ ghcPlatformAndVersionStringWithTarget platform ghcversion targetName abi
 
 -- | The @.ghc.environment-$arch-$os-$ver@ file name
 ghcEnvironmentFileName :: Platform -> Version -> FilePath

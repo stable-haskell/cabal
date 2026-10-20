@@ -4,6 +4,7 @@
 module Distribution.Client.ProjectPlanOutput
   ( -- * Plan output
     writePlanExternalRepresentation
+  , toolchainJsonFields
 
     -- * Project status
 
@@ -48,7 +49,7 @@ import Distribution.Simple.GHC
   , GhcImplInfo (supportsPkgEnvFiles)
   , getImplInfo
   , simpleGhcEnvironmentFile
-  , writeGhcEnvironmentFileWithAbi
+  , writeGhcEnvironmentFileWithTarget
   )
 import Distribution.Simple.Utils
 import Distribution.System
@@ -70,6 +71,23 @@ import System.IO
 
 import Distribution.Simple.Program.GHC (packageDbArgsDb)
 import GHC.Stack (HasCallStack)
+
+jdisplay :: Pretty a => a -> J.Value
+jdisplay = J.String . prettyShow
+
+-- | JSON fields for a compiler stage, including its canonical target name.
+toolchainJsonFields :: Stage.Stage -> Toolchain -> [(String, J.Value)]
+toolchainJsonFields stage Toolchain{toolchainCompiler, toolchainPlatform} =
+  [ prefixed "compiler-id" J..= J.String (showCompilerId toolchainCompiler)
+  , prefixed "target-name" J..= J.String (either error renderTargetName (compilerTargetName toolchainPlatform toolchainCompiler))
+  , prefixed "arch" J..= jdisplay arch
+  , prefixed "os" J..= jdisplay os
+  ]
+  where
+    Platform arch os = toolchainPlatform
+    prefixed s = case stage of
+      Stage.Build -> "build-" ++ s
+      Stage.Host -> s
 
 -----------------------------------------------------------------------------
 -- Writing plan.json files
@@ -109,15 +127,7 @@ encodePlanAsJson _distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
     toolchains = pkgConfigToolchains elaboratedSharedConfig
 
     toolchainJ stage =
-      [ prefixed "compiler-id" J..= J.String (showCompilerId toolchainCompiler)
-      , prefixed "arch" J..= (jdisplay arch)
-      , prefixed "os" J..= (jdisplay os)
-      ]
-      where
-        Toolchain{toolchainCompiler, toolchainPlatform = Platform arch os} = Stage.getStage toolchains stage
-        prefixed s = case stage of
-          Stage.Build -> "build-" ++ s
-          Stage.Host -> s
+      toolchainJsonFields stage (Stage.getStage toolchains stage)
 
     installPlanToJ :: ElaboratedInstallPlan -> [J.Value]
     installPlanToJ = map planPackageToJ . InstallPlan.toList
@@ -295,9 +305,6 @@ encodePlanAsJson _distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
 
     comp2str :: ComponentDeps.Component -> String
     comp2str = prettyShow
-
-    jdisplay :: Pretty a => a -> J.Value
-    jdisplay = J.String . prettyShow
 
 -----------------------------------------------------------------------------
 -- Project status
@@ -839,11 +846,12 @@ writePlanGhcEnvironment
       then -- TODO: check ghcjs compat
 
         fmap Just $
-          writeGhcEnvironmentFileWithAbi
+          writeGhcEnvironmentFileWithTarget
             path
             toolchainPlatform
             (compilerVersion toolchainCompiler)
             (compilerTargetAbi toolchainCompiler)
+            (Map.lookup "Target name" (compilerProperties toolchainCompiler))
             env
       else return Nothing
     where

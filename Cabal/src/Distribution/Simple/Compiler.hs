@@ -31,6 +31,10 @@ module Distribution.Simple.Compiler
   , compilerFlavor
   , compilerVersion
   , compilerTargetAbi
+  , TargetName
+  , parseTargetName
+  , renderTargetName
+  , compilerTargetName
   , compilerTargetsProfiling
   , compilerCompatFlavor
   , compilerCompatVersion
@@ -78,6 +82,7 @@ module Distribution.Simple.Compiler
   , profilingSupported
   , profilingDynamicSupported
   , profilingDynamicSupportedOrUnknown
+  , profilingDebugSupported
   , profilingVanillaSupported
   , profilingVanillaSupportedOrUnknown
   , dynamicSupported
@@ -105,6 +110,7 @@ import Prelude ()
 import Distribution.Compiler
 import Distribution.Package (PackageName)
 import Distribution.Simple.Utils
+import Distribution.System (Platform)
 import Distribution.Types.UnitId (UnitId)
 import Distribution.Utils.Path
 import Distribution.Version
@@ -112,7 +118,8 @@ import Distribution.Version
 import Language.Haskell.Extension
 
 import Data.Bool (bool)
-import qualified Data.Map as Map (findWithDefault, lookup)
+import Data.Char (isAscii)
+import qualified Data.Map as Map
 import System.Directory (canonicalizePath)
 
 data Compiler = Compiler
@@ -163,6 +170,64 @@ compilerVersion = (\(CompilerId _ v) -> v) . compilerId
 -- and OS. Older compilers omit this property and retain their existing ABI.
 compilerTargetAbi :: Compiler -> String
 compilerTargetAbi = Map.findWithDefault "" "Target ABI" . compilerProperties
+
+-- | A validated, opaque logical target identity. The value is kept as a
+-- string because the producer owns canonicalization; Cabal only validates
+-- that it is safe to use as a single path component.
+newtype TargetName = TargetName String
+  deriving (Eq, Ord, Show)
+
+renderTargetName :: TargetName -> String
+renderTargetName (TargetName name) = name
+
+parseTargetName :: String -> Either String TargetName
+parseTargetName name
+  | null name = Left "target name is empty"
+  | length name > 255 = Left "target name exceeds the 255-character filesystem component limit"
+  | not (all safeChar name) = Left "target name contains an unsafe character"
+  | not (hasAlphaNumEndpoints name) = Left "target name must begin and end with a letter or digit"
+  | any (`elem` ["", ".", ".."]) (splitOn "-" name) = Left "target name contains an empty or dot path component"
+  | otherwise = Right (TargetName name)
+  where
+    safeChar c = isAscii c && (isAlphaNum c || c `elem` "_.-")
+    hasAlphaNumEndpoints [] = False
+    hasAlphaNumEndpoints (firstChar:rest) = isAlphaNum firstChar && lastIsAlphaNum firstChar rest
+    lastIsAlphaNum lastChar [] = isAlphaNum lastChar
+    lastIsAlphaNum _ (nextChar:rest) = lastIsAlphaNum nextChar rest
+    splitOn sep = foldr step [""]
+      where
+        step c (x:xs) | [c] == sep = "" : x : xs
+        step c (x:xs) = (c:x) : xs
+        step _ [] = []
+
+-- | Return the canonical target identity, validating new-protocol metadata.
+-- Older compilers retain their full Target platform string where available,
+-- with the historical Platform rendering as the final fallback.
+compilerTargetName :: Platform -> Compiler -> Either String TargetName
+compilerTargetName platform comp =
+  case (Map.lookup "Target name" props, Map.lookup "Target platform" props, compilerTargetAbi comp) of
+    (Just name, Just machine, abi) -> do
+      target <- parseTargetName name
+      _ <- parseTargetName machine
+      let expected = machine ++ if abi == "profiling" then "-prof" else ""
+      if abi `notElem` ["", "profiling"]
+        then Left ("unsupported Target ABI: " ++ abi)
+        else if name /= expected
+          then Left "Target name contradicts Target platform and Target ABI"
+          else if length name + 1 + length (prettyShow (compilerVersion comp)) > 255
+            then Left "target name plus compiler version exceeds the 255-character filesystem component limit"
+          else Right target
+    (Just _, Nothing, _) -> Left "Target name requires Target platform"
+    (Nothing, Just machine, abi) -> do
+      _ <- parseTargetName machine
+      if abi `notElem` ["", "profiling"]
+        then Left ("unsupported Target ABI: " ++ abi)
+        else parseTargetName (machine ++ if abi == "profiling" then "-prof" else "")
+    (Nothing, Nothing, abi)
+      | abi `notElem` ["", "profiling"] -> Left ("unsupported Target ABI: " ++ abi)
+      | otherwise -> parseTargetName (prettyShow platform ++ if abi == "profiling" then "-prof" else "")
+  where
+    props = compilerProperties comp
 
 -- | Profiling is intrinsic to this target, rather than an additional library
 -- way. Its ordinary objects and interfaces already use the profiling ABI.
@@ -560,6 +625,18 @@ profilingDynamicSupported comp
 profilingDynamicSupportedOrUnknown :: Compiler -> Bool
 profilingDynamicSupportedOrUnknown comp =
   profilingDynamicSupported comp `elem` [Just True, Nothing]
+
+-- | Whether the selected profiling target includes a debug RTS variant.
+profilingDebugSupported :: Compiler -> Maybe Bool
+profilingDebugSupported comp
+  | compilerTargetsProfiling comp
+  , GHC <- compilerFlavor comp
+  , compilerVersion comp >= mkVersion [9, 10, 1] =
+      case Map.lookup "RTS ways" (compilerProperties comp) of
+        Just ways -> Just (any (`elem` words ways) ["debug", "thr_debug"])
+        Nothing -> Just False
+  | compilerTargetsProfiling comp = Nothing
+  | otherwise = Just False
 
 -- | Is the compiler distributed with dynamic libraries
 dynamicSupported :: Compiler -> Maybe Bool
