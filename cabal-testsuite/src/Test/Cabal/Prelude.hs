@@ -187,7 +187,11 @@ setup'' prefix cmd args = do
   when ((cmd == "register" || cmd == "copy") && not (testHavePackageDb env)) $
     error "Cannot register/copy without using 'withPackageDb'"
   ghc_path <- programPathM ghcProgram
-  haddock_path <- programPathM haddockProgram
+  let haddock_args =
+        maybe
+          []
+          (\program -> ["--with-haddock", programPath program])
+          (lookupProgram haddockProgram (testProgramDb env))
   let args' = case cmd of
         "configure" ->
           -- If the package database is empty, setting --global
@@ -199,9 +203,9 @@ setup'' prefix cmd args = do
             -- respect cabal.config
             "--with-ghc"
           , ghc_path
-          , "--with-haddock"
-          , haddock_path
-          , -- This avoids generating hashes in our package IDs,
+          ]
+            ++ haddock_args
+            ++ [ -- This avoids generating hashes in our package IDs,
             -- which helps the test suite's expect tests.
             "--enable-deterministic"
           , -- These flags make the test suite run faster

@@ -1,7 +1,5 @@
-import qualified Data.Map as Map
-import Distribution.Pretty (prettyShow)
 import Distribution.Simple.BuildPaths (exeExtension)
-import Distribution.Simple.Compiler (Compiler (compilerProperties), compilerTargetAbi)
+import Distribution.Simple.Compiler (compilerTargetName, renderTargetName)
 import System.Directory (createDirectoryIfMissing)
 import Test.Cabal.Prelude
 
@@ -11,13 +9,11 @@ import Test.Cabal.Prelude
 main = cabalTest $ recordMode DoNotRecord $ do
   env <- getTestEnv
   let compiler = testCompiler env
-      targetPlatform = Map.findWithDefault (prettyShow (testPlatform env)) "Target platform" (compilerProperties compiler)
-      targetAbi = compilerTargetAbi compiler
-      targetDirectory = targetPlatform ++ if null targetAbi then "" else "-" ++ targetAbi
       extraDb = testWorkDir env </> "extra-package-db"
       explicitStore = testWorkDir env </> "explicit-store"
       buildCompilerArgs = maybe [] (\bc -> ["--with-build-compiler=" ++ bc]) (testBuildCompilerPath env)
-      installAndUse name storeRoot storeArgs buildArgs = do
+  targetDirectory <- either fail (pure . renderTargetName) (compilerTargetName (testPlatform env) compiler)
+  let installAndUse name storeRoot storeArgs buildArgs = do
         let envDir = testCurrentDir env </> name
             packageDb = storeRoot </> "host" </> targetDirectory </> "package.conf.d"
             binaryName = "use-environment" <.> exeExtension (testPlatform env)
