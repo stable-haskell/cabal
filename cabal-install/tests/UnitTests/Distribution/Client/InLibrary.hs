@@ -43,30 +43,30 @@ checkToolchain stage = do
   InLibrary.platform inputs @?= toolchainPlatform toolchain
   fmap programPath configuredProgram @?= Just (programPath packageProgram)
   fmap programOverrideArgs configuredProgram @?= Just ["-package-specific-option"]
-  fmap (Map.findWithDefault "" "stage-marker" . programProperties) configuredProgram
-    @?= Just (Map.findWithDefault "" "stage-marker" (compilerProperties (InLibrary.compiler inputs)))
+  fmap (Map.findWithDefault "" "Target ABI" . programProperties) configuredProgram
+    @?= Just (compilerTargetAbi (InLibrary.compiler inputs))
 
 toolchains :: Staged Toolchain
 toolchains = Staged $ \stage -> case stage of
-  Build -> makeToolchain "build" "native-ghc" (Platform X86_64 Linux)
-  Host -> makeToolchain "host" "host-ghc" (Platform AArch64 OSX)
+  Build -> makeToolchain "" "native-ghc" (Platform X86_64 Linux)
+  Host -> makeToolchain "profiling" "profile-ghc" (Platform AArch64 OSX)
 
 makeToolchain :: String -> FilePath -> Platform -> Toolchain
-makeToolchain stageMarker path platform =
+makeToolchain abi path platform =
   Toolchain
     platform
     Compiler
-      { compilerId = CompilerId GHC (if stageMarker == "build" then mkVersion [9, 12] else mkVersion [9, 14])
-      , compilerAbiTag = AbiTag (stageMarker ++ "-abi")
+      { compilerId = CompilerId GHC (mkVersion [9, 14])
+      , compilerAbiTag = if null abi then NoAbiTag else AbiTag abi
       , compilerCompat = []
       , compilerLanguages = []
       , compilerExtensions = []
-      , compilerProperties = Map.singleton "stage-marker" stageMarker
+      , compilerProperties = Map.singleton "Target ABI" abi
       , compilerWiredInUnitIds = Nothing
       }
     ( updateProgram
         ( (simpleConfiguredProgram "ghc" (UserSpecified path))
-            { programProperties = Map.singleton "stage-marker" stageMarker
+            { programProperties = Map.singleton "Target ABI" abi
             }
         )
         emptyProgramDb

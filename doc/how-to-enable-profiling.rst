@@ -22,20 +22,44 @@ it is highly recommended to read in depth the
 Profiling CPU performance
 -------------------------
 
-Profiling requires a separate compiler whose ``ghc --info`` reports
+Profiling uses a separate compiler target whose ``ghc --info`` reports
 ``("Target ABI", "profiling")``. Select it for the application and an ordinary
 compiler for Setup scripts, preprocessors and other build tools:
 
 .. code-block:: console
 
-    $ cabal configure --with-compiler=<platform>-profiling-ghc --with-build-compiler=ghc --enable-profiling
+    $ cabal configure --with-compiler=<machine>-prof-ghc --with-build-compiler=ghc --enable-profiling
 
-Replace ``<platform>`` with the installed toolchain's platform prefix. The
-profiling compiler has its own package databases, Cabal store and package
+Replace ``<machine>`` with the installed toolchain's canonical machine target,
+for example ``aarch64-apple-darwin``. The compiler reports that machine target
+as ``Target platform`` and its complete logical identity as ``Target name``:
+ordinary targets use ``T = M`` and profiling targets use ``T = M-prof``.
+The ``-prof`` suffix is terminal; it is distinct from the semantic
+``Target ABI = profiling`` value. Use a Cabal release tested with the matching
+compiler metadata and package-tool protocol.
+
+For compilers advertising ``Target name``, the versioned compiler namespace is
+``T-<compiler-version>``. Cabal uses it for the compiler's user package
+database, package environments, stores and build directories. Native and
+profiling targets therefore remain separate even when they share a machine
+platform and compiler version. Older compilers without ``Target name`` keep
+their legacy namespace calculation. For Cabal's own identity, it uses
+``Target platform`` and ``Target ABI`` when available, and falls back to the
+compiler's Cabal ``Platform`` when full machine metadata is absent. This gives
+the best available hash and store identity, but cannot add database isolation
+that old compiler metadata does not provide. Do not mix or rename package
+databases between the legacy and new namespaces.
+
+The profiling compiler has its own package databases, Cabal store and package
 environments. Its objects, interfaces and archives use ordinary names such as
-``Module.o``, ``Module.hi`` and ``libHSpackage.a``. Shared libraries retain their
-ordinary dynamic naming. The compiler determines the profiling ABI;
-``profiling`` and the detail settings control instrumentation within it.
+``Module.o``, ``Module.hi`` and ``libHSpackage.a``; Cabal does not build a
+second ``_p`` artifact way. The compiler target determines the profiling ABI;
+profiling settings and detail options control instrumentation within it.
+Automatic shared-library and debug choices use supported static, nondebug
+output. An explicit request for an unavailable shared or debug variant (for
+example ``--enable-shared``, ``--enable-executable-dynamic``,
+``--enable-profiling-shared``, ``-dynamic`` or ``-debug``) fails with the
+selected target and supported alternatives.
 
 This command creates a ``cabal.project.local`` file with the following content:
 
@@ -135,9 +159,9 @@ Cabal no longer builds profiling variants alongside ordinary libraries.
 The ``ProfWay``/``ProfDynWay`` model and its ``.p_o``, ``.p_hi``, ``_p.a`` and
 ``p_dyn`` names have been removed. Profiling requests on an ordinary compiler,
 including older GHCs distributed with legacy profiling libraries, now produce
-a migration error. Install and select a profiling-target compiler instead of
-adding ``-prof`` to the ordinary compiler. Normal non-profiling builds with
-older GHCs remain supported.
+a migration error. Install and select a profiling-target compiler such as
+``<machine>-prof-ghc`` instead of adding ``-prof`` to the ordinary compiler.
+Normal non-profiling builds with older GHCs remain supported.
 
 ``--enable-library-profiling``, ``--enable-executable-profiling`` and
 ``--enable-profiling-shared`` remain accepted by profiling targets. They select

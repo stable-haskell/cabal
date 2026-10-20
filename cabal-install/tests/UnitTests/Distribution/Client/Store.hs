@@ -6,7 +6,7 @@ module UnitTests.Distribution.Client.Store (tests) where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, isSuffixOf, nub)
 import System.Directory
 import System.FilePath
 
@@ -86,6 +86,42 @@ testTargetAbi = do
     Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
     _ -> assertFailure "build-stage plan JSON omitted the canonical target-name field"
   assertBool "the ABI crossing is independent of the architecture" (native /= profiled)
+  let armMachines = ["arm-unknown-linux-gnueabi", "arm-unknown-linux-gnueabihf"]
+      armTargets = armMachines ++ map (++ "-prof") armMachines
+      armToolchains = map armToolchain armTargets
+      armStores = map (storeDirectory layout Host) armToolchains
+      armDatabases = map (storePackageDBPath layout Host) armToolchains
+      armLocks = map (\tc -> storeIncomingLock layout Host tc (mkUnitId "foo-1.0-xyz")) armToolchains
+      armDists = map (\tc -> distBuildDirectory distLayout (DistDirParams Host tc (mkUnitId "foo-1.0-xyz"))) armToolchains
+      armJsonTargets = map targetNameFromJson armToolchains
+      armBuildJsonTargets = map buildTargetNameFromJson armToolchains
+      armToolchain targetName =
+        let profiling = "-prof" `isSuffixOf` targetName
+            machine = if profiling then take (length targetName - length "-prof") targetName else targetName
+            targetCompiler =
+              compiler
+                { compilerProperties =
+                    Map.fromList
+                      [ ("Target name", targetName)
+                      , ("Target platform", machine)
+                      , ("Target ABI", if profiling then "profiling" else "")
+                      ]
+                }
+         in native{toolchainCompiler = targetCompiler}
+      targetNameFromJson toolchain =
+        case lookup "target-name" (toolchainJsonFields Host toolchain) of
+          Just (Json.String targetName) -> Just targetName
+          _ -> Nothing
+      buildTargetNameFromJson toolchain =
+        case lookup "build-target-name" (toolchainJsonFields Build toolchain) of
+          Just (Json.String targetName) -> Just targetName
+          _ -> Nothing
+  length (nub armStores) @?= 4
+  length (nub armDatabases) @?= 4
+  length (nub armLocks) @?= 4
+  length (nub armDists) @?= 4
+  armJsonTargets @?= map Just armTargets
+  armBuildJsonTargets @?= map Just armTargets
 
 testListEmpty :: Assertion
 testListEmpty =

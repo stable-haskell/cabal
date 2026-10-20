@@ -936,17 +936,32 @@ feature was added.
     ``--with-compiler=ghc-7.8``; there is also a short version
     ``-w ghc-7.8``.
 
-    GHC targets that report an intrinsic ``Target ABI`` in ``ghc --info``
-    have separate build directories, compiler ABI tags, stores and package
-    databases, even when they share an architecture and operating system.
+    GHC targets that advertise ``Target name`` in ``ghc --info`` have separate
+    build directories, stores and package databases, even when they share an
+    architecture, operating system and compiler version. ``Target platform``
+    remains the machine target ``M`` (including its C ABI environment), while
+    ``Target name`` is the logical identity ``T``: ``T = M`` for the ordinary
+    ABI and ``T = M-prof`` for the profiling ABI. The versioned namespace is
+    ``T-<compiler-version>``. Use a Cabal release tested with the matching GHC
+    and ``ghc-pkg`` metadata protocol.
+
     For ``Target ABI = profiling``, ordinary library objects, interfaces and
     archives already contain profiling code. Cabal uses ordinary filenames
     and applies profiling detail options without building an additional
-    ``_p`` library variant. Existing compilers retain the usual profiling ways.
+    ``_p`` library variant. Automatic linkage and debug choices use supported
+    static, nondebug output; explicit requests for an unavailable shared or
+    debug variant fail with the selected target and supported alternatives.
     Select an ordinary compiler with ``--with-build-compiler`` for Setup
-    scripts and build tools when using such a profiling target.
-    Unscoped profiling options then apply to the target. Explicit
+    scripts and build tools when using such a profiling target. Unscoped
+    profiling options then apply to the target. Explicit
     ``package build:*`` profiling settings still control build tools.
+
+    Compilers without ``Target name`` retain their legacy package-database
+    namespace calculation. Cabal uses ``Target platform`` and ``Target ABI``
+    when available for hashes and stores, falling back to Cabal's ``Platform``
+    when full machine metadata is absent. It cannot provide stronger isolation
+    for legacy compiler databases. Do not mix package databases or environments
+    between legacy and new namespaces.
 
 .. cfg-field:: with-hc-pkg: PATH
                --with-hc-pkg=PATH

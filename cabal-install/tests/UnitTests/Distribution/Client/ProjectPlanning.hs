@@ -4,7 +4,7 @@ module UnitTests.Distribution.Client.ProjectPlanning (tests) where
 
 import Data.Binary (decode, encode)
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, nub)
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import Distribution.Backpack (OpenUnitId (..))
@@ -16,18 +16,18 @@ import Distribution.Client.ProjectConfig.Types (MapMappend (..), PackageConfig (
 import Distribution.Client.ProjectPlanning (ComponentTarget (..), Stage (..), SubComponentTarget (..), normaliseUnscopedPackageConfig, nubComponentTargets, setupHsConfigureFlags)
 import Distribution.Client.ProjectPlanning.Types (ElaboratedComponent (..), ElaboratedConfiguredPackage (..), ElaboratedPackageOrComponent (..))
 import Distribution.Client.Types (ConfiguredId (..), GenericReadyPackage (..))
-import Distribution.Package (PackageIdentifier (..), mkComponentId, newSimpleUnitId, unsafeMkDefUnitId)
 import Distribution.Simple.Compiler
 import Distribution.Simple.Configure (computeEffectiveProfiling)
 import Distribution.Simple.Flag
 import Distribution.Simple.Setup (ConfigFlags (..), emptyConfigFlags)
 import Distribution.Types.ComponentName
+import Distribution.Package (PackageIdentifier (..), mkComponentId, newSimpleUnitId, unsafeMkDefUnitId)
 import Distribution.Types.Flag (mkFlagAssignment, mkFlagName)
 import Distribution.Types.LibraryName
+import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Version (mkVersion)
 import Distribution.System (buildPlatform)
-import qualified Distribution.Types.LocalBuildConfig as LBC
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -191,6 +191,16 @@ packageHashTargetTests =
       assertBool "build ABI must remain an independent package hash input" $
         "compilerabi: other-build-abi" `isInfixOf` LBS.unpack (renderPackageHashInputs otherBuildAbi)
           && hashPackageHashInputs machine /= hashPackageHashInputs otherBuildAbi
+      let armTargets =
+            [ "arm-unknown-linux-gnueabi"
+            , "arm-unknown-linux-gnueabihf"
+            , "arm-unknown-linux-gnueabi-prof"
+            , "arm-unknown-linux-gnueabihf-prof"
+            ]
+          armHashes = map (hashPackageHashInputs . (`packageHash` "build-abi")) armTargets
+          armInputs = map (renderPackageHashInputs . (`packageHash` "build-abi")) armTargets
+      length (nub armInputs) @?= 4
+      length (nub armHashes) @?= 4
   ]
   where
     packageHash targetName buildAbi =

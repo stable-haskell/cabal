@@ -185,15 +185,13 @@ parseTargetName name
   | null name = Left "target name is empty"
   | length name > 255 = Left "target name exceeds the 255-character filesystem component limit"
   | not (all safeChar name) = Left "target name contains an unsafe character"
-  | not (hasAlphaNumEndpoints name) = Left "target name must begin and end with a letter or digit"
+  | not (validBoundary name) = Left "target name must begin and end with a letter or digit"
   | any (`elem` ["", ".", ".."]) (splitOn "-" name) = Left "target name contains an empty or dot path component"
   | otherwise = Right (TargetName name)
   where
     safeChar c = isAscii c && (isAlphaNum c || c `elem` "_.-")
-    hasAlphaNumEndpoints [] = False
-    hasAlphaNumEndpoints (firstChar:rest) = isAlphaNum firstChar && lastIsAlphaNum firstChar rest
-    lastIsAlphaNum lastChar [] = isAlphaNum lastChar
-    lastIsAlphaNum _ (nextChar:rest) = lastIsAlphaNum nextChar rest
+    validBoundary (startChar:rest) = isAlphaNum startChar && isAlphaNum (foldl (\_ endChar -> endChar) startChar rest)
+    validBoundary [] = False
     splitOn sep = foldr step [""]
       where
         step c (x:xs) | [c] == sep = "" : x : xs

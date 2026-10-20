@@ -133,7 +133,6 @@ import Distribution.Simple.Compiler
   ( Compiler (..)
   , CompilerFlavor (..)
   , CompilerId (..)
-  , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
   , compilerTargetAbi

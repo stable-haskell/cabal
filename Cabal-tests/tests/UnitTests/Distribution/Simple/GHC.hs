@@ -4,6 +4,16 @@ import Data.List (isInfixOf)
 import Data.Either (isLeft)
 import Control.Exception (SomeException, displayException, try)
 import qualified Data.Map as Map
+import System.Directory
+  ( Permissions (executable)
+  , createDirectoryIfMissing
+  , createFileLink
+  , getPermissions
+  , setPermissions
+  )
+import System.FilePath ((</>))
+import System.Info (os)
+import System.IO.Temp (withSystemTempDirectory)
 import Distribution.Simple.BuildWay
 import Distribution.Simple.Compiler
 import Distribution.Simple.Configure (adjustBuildOptions, configureProfiling, profilingTargetError, profilingTargetVariantError)
@@ -11,7 +21,20 @@ import Distribution.Simple.Errors (CabalException (ProfilingRequiresTargetCompil
 import Distribution.Simple.Flag
 import Distribution.Simple.Setup (ConfigFlags (..), emptyConfigFlags)
 import qualified Distribution.Simple.GHC as GHC
-import Distribution.Simple.Program.Db (emptyProgramDb)
+import Distribution.Simple.Program.Builtin (ghcProgram, ghcPkgProgram, haddockProgram)
+import Distribution.Simple.Program.Db
+  ( addKnownProgram
+  , configureProgram
+  , emptyProgramDb
+  , lookupKnownProgram
+  , lookupProgram
+  , ProgramDb
+  , setProgramSearchPath
+  , userSpecifyPath
+  )
+import Distribution.Simple.Program.Find (ProgramSearchPathEntry (ProgramSearchPathDir))
+import Distribution.Simple.Program.Types (programPath)
+import Distribution.Pretty (prettyShow)
 import Distribution.System (Arch (X86_64), OS (Linux), Platform (..))
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Version (mkVersion)
@@ -143,6 +166,33 @@ tests =
         Right name -> assertFailure ("accepted overlong path component " ++ renderTargetName name)
   , testCase "target names reject path and whitespace characters" $ do
       mapM_ (assertBool "unsafe target name accepted" . isLeft . parseTargetName) ["", "a/b", "a b", "a--b", "../x", replicate 256 'a']
+  , testCase "new target protocol rejects duplicate handshake fields" $ do
+      let handshake =
+            [ ("Project version", "9.14.1")
+            , ("Target platform", "x86_64-unknown-linux")
+            , ("Target name", "x86_64-unknown-linux")
+            , ("Target ABI", "")
+            , ("LibDir", "/ghc/lib")
+            , ("Global Package DB", "/ghc/lib/package.conf.d")
+            , ("GHC Profiled", "NO")
+            ]
+      mapM_
+        (\(field, value) -> GHC.duplicateGhcInfoIdentityFields (handshake ++ [(field, value)]) @?= [field])
+        (take 6 handshake)
+      GHC.duplicateGhcInfoIdentityFields (handshake ++ [("GHC Profiled", "NO")])
+        @?= ["GHC Profiled"]
+  , testCase "legacy target metadata keeps only historical duplicate checks" $ do
+      let legacy =
+            [ ("Target ABI", "profiling")
+            , ("GHC Profiled", "YES")
+            , ("Project version", "9.14.1")
+            , ("LibDir", "/ghc/lib")
+            , ("Global Package DB", "/ghc/lib/package.conf.d")
+            ]
+      GHC.duplicateGhcInfoIdentityFields (legacy ++ [("Project version", "9.14.1")])
+        @?= []
+      GHC.duplicateGhcInfoIdentityFields (legacy ++ [("Target ABI", "profiling")])
+        @?= ["Target ABI"]
   , testCase "legacy target metadata keeps its platform ABI fallback" $ do
       let platform = Platform X86_64 Linux
           comp = withProperty "Target ABI" "profiling" $
@@ -152,6 +202,112 @@ tests =
   , testCase "new namespace uses canonical target and version" $ do
       GHC.ghcPlatformAndVersionStringWithTarget (Platform X86_64 Linux) (mkVersion [9, 14, 1]) (Just "arm-unknown-linux-gnueabihf-prof") "profiling"
         @?= "arm-unknown-linux-gnueabihf-prof-9.14.1"
+  , testCase "target companion discovery follows metadata across external symlinks" $ do
+      if os == "mingw32"
+        then pure ()
+        else withSystemTempDirectory "cabal-target-tools" $ \temp -> do
+          let version = mkVersion [9, 14, 1]
+              versionText = prettyShow version
+              machine = "arm-unknown-linux-gnueabihf"
+              target = machine ++ "-prof"
+              libDir = temp </> "lib"
+              globalDb = libDir </> "package.conf.d"
+              realDir = temp </> "real-bin"
+              givenDir = temp </> "external-bin"
+              compilerPath = realDir </> "internal-ghc"
+              givenCompiler = givenDir </> "arm-prof-ghc-" ++ versionText
+              pkgVersioned = realDir </> (target ++ "-ghc-pkg-" ++ versionText)
+              pkgUnversioned = givenDir </> (target ++ "-ghc-pkg")
+              haddockVersioned = realDir </> (target ++ "-haddock-" ++ versionText)
+              haddockUnversioned = givenDir </> (target ++ "-haddock")
+              wrongPkg = givenDir </> "wrong-ghc-pkg"
+              compiler =
+                ordinaryCompiler
+                  { compilerId = CompilerId GHC version
+                  , compilerProperties =
+                      Map.fromList
+                        [ ("Project version", versionText)
+                        , ("Target platform", machine)
+                        , ("Target name", target)
+                        , ("Target ABI", "profiling")
+                        , ("GHC Profiled", "YES")
+                        ]
+                  }
+              verbosity = mkVerbosity defaultVerbosityHandles silent
+              infoFields =
+                [ ("Project version", versionText)
+                , ("Target platform", machine)
+                , ("Target name", target)
+                , ("Target ABI", "profiling")
+                , ("LibDir", libDir)
+                , ("Global Package DB", globalDb)
+                ]
+          mapM_ (createDirectoryIfMissing True) [libDir, globalDb, realDir, givenDir]
+          writeExecutable compilerPath $ unlines
+            [ "#!/bin/sh"
+            , "for arg in \"$@\"; do"
+            , "case \"$arg\" in"
+            , "--numeric-version) echo " ++ versionText ++ ";;"
+            , "--print-libdir) echo " ++ shellQuote libDir ++ ";;"
+            , "--print-global-package-db) echo " ++ shellQuote globalDb ++ ";;"
+            , "*) : ;;"
+            , "esac"
+            , "done"
+            , "exit 0"
+            ]
+          writeExecutable pkgVersioned (ghcPkgScript versionText (show infoFields))
+          writeExecutable pkgUnversioned (ghcPkgScript versionText "[]")
+          writeExecutable wrongPkg (ghcPkgScript versionText "[]")
+          writeExecutable haddockVersioned "#!/bin/sh\necho 'Haddock version 3.0'\n"
+          writeExecutable haddockUnversioned "#!/bin/sh\necho 'Haddock version 3.1'\n"
+          createFileLink compilerPath givenCompiler
+          configuredCompiler <- configureProgram verbosity ghcProgram $
+            userSpecifyPath "ghc" givenCompiler (addKnownProgram ghcProgram emptyProgramDb)
+          db <- GHC.compilerProgramDb verbosity compiler configuredCompiler Nothing
+          case lookupProgram ghcPkgProgram db of
+            Nothing -> assertFailure "compilerProgramDb did not configure target ghc-pkg"
+            Just pkg -> programPath pkg @?= pkgVersioned
+          haddock <- maybe (assertFailure "compilerProgramDb did not retain target Haddock finder") pure (lookupKnownProgram "haddock" db)
+          dbWithHaddock <- configureProgram verbosity haddock db
+          case lookupProgram haddockProgram dbWithHaddock of
+            Nothing -> assertFailure "versioned target Haddock was not configured"
+            Just configuredHaddock -> programPath configuredHaddock @?= haddockVersioned
+          explicitWrong <- try (GHC.compilerProgramDb verbosity compiler configuredCompiler (Just wrongPkg)) :: IO (Either SomeException ProgramDb)
+          case explicitWrong of
+            Left err -> assertBool "explicit package-tool error omits its protocol failure" $
+              "missing Project version" `isInfixOf` displayException err
+            Right _ -> assertFailure "explicit wrong ghc-pkg was accepted"
+          let missingDir = temp </> "missing-real-bin"
+              missingGivenDir = temp </> "missing-external-bin"
+              missingCompilerPath = missingDir </> "ghc-wrapper"
+              missingGivenCompiler = missingGivenDir </> "ghc-short"
+              missingPkg = missingDir </> (target ++ "-ghc-pkg-" ++ versionText)
+              fallbackDir = temp </> "fallback-bin"
+          mapM_ (createDirectoryIfMissing True) [missingDir, missingGivenDir, fallbackDir]
+          writeExecutable missingCompilerPath $ unlines
+            [ "#!/bin/sh"
+            , "for arg in \"$@\"; do"
+            , "case \"$arg\" in"
+            , "--numeric-version) echo " ++ versionText ++ ";;"
+            , "--print-libdir) echo " ++ shellQuote libDir ++ ";;"
+            , "--print-global-package-db) echo " ++ shellQuote globalDb ++ ";;"
+            , "*) : ;;"
+            , "esac"
+            , "done"
+            , "exit 0"
+            ]
+          writeExecutable missingPkg (ghcPkgScript versionText (show infoFields))
+          writeExecutable (fallbackDir </> "haddock") "#!/bin/sh\necho 'Haddock version 3.2'\n"
+          createFileLink missingCompilerPath missingGivenCompiler
+          missingCompilerDb <- configureProgram verbosity ghcProgram $
+            userSpecifyPath "ghc" missingGivenCompiler (addKnownProgram ghcProgram emptyProgramDb)
+          missingDb <- GHC.compilerProgramDb verbosity compiler missingCompilerDb Nothing
+          missingHaddock <- maybe (assertFailure "target Haddock finder is absent") pure (lookupKnownProgram "haddock" missingDb)
+          missingDbWithPath <- configureProgram verbosity missingHaddock $
+            setProgramSearchPath [ProgramSearchPathDir fallbackDir] missingDb
+          case lookupProgram haddockProgram missingDbWithPath of
+            Nothing -> pure ()
+            Just configuredHaddock -> assertFailure ("fell back to native Haddock " ++ programPath configuredHaddock)
   ]
 
 profilingOptions :: LBC.BuildOptions
@@ -191,6 +347,29 @@ ordinaryCompiler =
     , compilerWiredInUnitIds = Nothing
     , compilerProperties = Map.fromList [("GHC Dynamic", "NO"), ("GHC Profiled", "NO")]
     }
+
+writeExecutable :: FilePath -> String -> IO ()
+writeExecutable path contents = do
+  writeFile path contents
+  permissions <- getPermissions path
+  setPermissions path permissions{executable = True}
+
+ghcPkgScript :: String -> String -> String
+ghcPkgScript version info =
+  unlines
+    [ "#!/bin/sh"
+    , "case \"$1\" in"
+    , "--version) echo 'GHC package manager version " ++ version ++ "';;"
+    , "--info) echo " ++ shellQuote info ++ ";;"
+    , "*) exit 0;;"
+    , "esac"
+    ]
+
+shellQuote :: String -> String
+shellQuote value = "'" ++ concatMap quoteCharacter value ++ "'"
+  where
+    quoteCharacter '\'' = "'\\''"
+    quoteCharacter c = [c]
 
 profilingCompiler :: Compiler
 profilingCompiler = withProperty "Target ABI" "profiling" ordinaryCompiler

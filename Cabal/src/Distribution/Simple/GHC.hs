@@ -43,6 +43,7 @@ module Distribution.Simple.GHC
   , configure
   , configureCompiler
   , compilerProgramDb
+  , duplicateGhcInfoIdentityFields
   , getInstalledPackages
   , getInstalledPackagesMonitorFiles
   , getPackageDBContents
@@ -91,7 +92,6 @@ import Prelude ()
 
 import Control.Arrow ((***))
 import Control.Monad (forM_)
-import Data.List (isSuffixOf)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
 import Distribution.CabalSpecVersion
@@ -133,8 +133,8 @@ import Distribution.Version
 import Language.Haskell.Extension
 import System.FilePath
   ( isRelative
-  , takeBaseName
   , takeDirectory
+  , takeFileName
   )
 #ifndef mingw32_HOST_OS
 import System.Posix (createSymbolicLink)
@@ -209,12 +209,7 @@ configureCompiler verbosity hcPath conf0 = do
   extensions0 <- Internal.getExtensions verbosity ghcProg
 
   ghcInfo <- Internal.getGhcInfo verbosity implInfo ghcProg
-  let identityKeys = ["Target name", "Target platform", "Target ABI", "GHC Profiled"]
-      duplicateIdentityKeys =
-        [ key
-        | key <- identityKeys
-        , length (filter ((== key) . fst) ghcInfo) > 1
-        ]
+  let duplicateIdentityKeys = duplicateGhcInfoIdentityFields ghcInfo
   unless (null duplicateIdentityKeys) $
     die' verbosity ("GHC --info contains duplicate target identity fields: " ++ intercalate ", " duplicateIdentityKeys)
 
@@ -330,23 +325,23 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
   -- Likewise we try to find the matching hsc2hs and haddock programs.
   let hsc2hsProgram' =
         hsc2hsProgram
-          { programFindLocation = guessHsc2hsFromGhcPath ghcProg
+          { programFindLocation = guessHsc2hsFromGhcPath (compilerTargetAlias comp) ghcProg
           }
       haddockProgram' =
         haddockProgram
-          { programFindLocation = guessHaddockFromGhcPath ghcProg
+          { programFindLocation = guessHaddockFromGhcPath (compilerTargetAlias comp) ghcProg
           }
       hpcProgram' =
         hpcProgram
-          { programFindLocation = guessHpcFromGhcPath ghcProg
+          { programFindLocation = guessHpcFromGhcPath (compilerTargetAlias comp) ghcProg
           }
       runghcProgram' =
         runghcProgram
-          { programFindLocation = guessRunghcFromGhcPath ghcProg
+          { programFindLocation = guessRunghcFromGhcPath (compilerTargetAlias comp) ghcProg
           }
       ghcPkgProgram' =
         ghcPkgProgram
-          { programFindLocation = guessGhcPkgFromGhcPath ghcProg
+          { programFindLocation = guessGhcPkgFromGhcPath (compilerTargetAlias comp) ghcProg
           }
       progdb2 =
         -- The knownPrograms are populated before userMaybeSpecifyPath
@@ -400,7 +395,7 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
       case (Map.lookup field pkgInfo, Map.lookup field expected) of
         (Just actual, Just compilerValue) ->
           when (actual /= compilerValue) $
-            die' verbosity ("ghc-pkg target metadata mismatch for " ++ field)
+            die' verbosity ("ghc-pkg target metadata mismatch for " ++ field ++ ": expected " ++ show compilerValue ++ ", got " ++ show actual ++ " from " ++ programPath ghcPkgProg ++ " (compiler " ++ programPath ghcProg ++ ")")
         _ -> die' verbosity ("ghc-pkg --info is missing " ++ field)
     compilerLibDir <- dropWhileEndLE isSpace <$> getProgramOutput verbosity ghcProg ["--print-libdir"]
     compilerGlobalDb <- dropWhileEndLE isSpace <$> getProgramOutput verbosity ghcProg ["--print-global-package-db"]
@@ -410,10 +405,36 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
           actualPath <- canonicalizePath actual
           compilerPath <- canonicalizePath compilerPathValue
           when (actualPath /= compilerPath) $
-            die' verbosity ("ghc-pkg installation mismatch for " ++ field)
+            die' verbosity
+              ( "ghc-pkg installation mismatch for " ++ field
+                  ++ ": expected " ++ show compilerPathValue ++ " (" ++ show compilerPath ++ ")"
+                  ++ ", got " ++ show actual ++ " (" ++ show actualPath ++ ") from " ++ programPath ghcPkgProg
+              )
         Nothing -> die' verbosity ("ghc-pkg --info is missing " ++ field)
 
   return progdb4
+
+-- | Find duplicate identity fields in GHC's @--info@ output. The six-field
+-- target handshake is checked only when the compiler opts into the new
+-- protocol, preserving the historical duplicate checks for legacy compilers.
+duplicateGhcInfoIdentityFields :: [(String, String)] -> [String]
+duplicateGhcInfoIdentityFields infoPairs =
+  [ field
+  | field <- identityFields
+  , length (filter ((== field) . fst) infoPairs) > 1
+  ]
+  where
+    identityFields
+      | any ((== "Target name") . fst) infoPairs =
+          [ "Project version"
+          , "Target platform"
+          , "Target name"
+          , "Target ABI"
+          , "LibDir"
+          , "Global Package DB"
+          , "GHC Profiled"
+          ]
+      | otherwise = ["Target name", "Target platform", "Target ABI", "GHC Profiled"]
 
 -- | Given something like /usr/local/bin/ghc-6.6.1(.exe) we try and find
 -- the corresponding tool; e.g. if the tool is ghc-pkg, we try looking
@@ -422,13 +443,22 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
 -- > /usr/local/bin/ghc-pkg-ghc-6.6.1(.exe)
 -- > /usr/local/bin/ghc-pkg-6.6.1(.exe)
 -- > /usr/local/bin/ghc-pkg(.exe)
+compilerTargetAlias :: Compiler -> Maybe (String, Bool, String)
+compilerTargetAlias comp
+  | Map.member "Target name" (compilerProperties comp) = do
+      target <- Map.lookup "Target name" (compilerProperties comp)
+      machine <- Map.lookup "Target platform" (compilerProperties comp)
+      pure (target, target /= machine, prettyShow (compilerVersion comp))
+  | otherwise = Nothing
+
 guessToolFromGhcPath
-  :: Program
+  :: Maybe (String, Bool, String)
+  -> Program
   -> ConfiguredProgram
   -> Verbosity
   -> ProgramSearchPath
   -> IO (Maybe (FilePath, [FilePath]))
-guessToolFromGhcPath tool ghcProg verbosity searchpath =
+guessToolFromGhcPath targetName tool ghcProg verbosity searchpath =
   do
     let toolname = programName tool
         given_path = programPath ghcProg
@@ -445,7 +475,7 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
         -- the "ghc<suf>" tail and prepend to the toolname.
         -- Example: /opt/ghc/bin/wasm32-unknown-wasi-ghc  -> wasm32-unknown-wasi-ghc-pkg
         targetPrefixOf p =
-          let base = takeBaseName p   -- strip dir + extension
+          let base = takeFileName (dropExeExtension p)
               -- find "ghc<suf>" at the end of base
               ghcMarker = "ghc" ++ versionSuffix base
           in if ghcMarker `isSuffixOf` base
@@ -462,7 +492,7 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
           dir
             </> (toolname ++ suf)
               <.> exeExtension buildPlatform
-        guessTargetPrefixed dir Nothing = []
+        guessTargetPrefixed _ Nothing = []
         guessTargetPrefixed dir (Just pref)
           | null pref = []
           | otherwise = [dir </> (pref ++ toolname) <.> exeExtension buildPlatform]
@@ -474,13 +504,32 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
               , guessVersioned dir suf
               , guessNormal dir
               ]
+        canonicalTargetGuesses versionedOnly dir =
+          case targetName of
+            Nothing -> []
+            Just (target, _, version) ->
+              let base = dir </> (target ++ "-" ++ toolname)
+                  versioned =
+                    [ (base ++ "-" ++ version) <.> exeExtension buildPlatform
+                    , dir </> (toolname ++ "-" ++ target ++ "-" ++ version) <.> exeExtension buildPlatform
+                    ]
+              in if versionedOnly then versioned else [base <.> exeExtension buildPlatform]
+        strictTargetTool = maybe False (\(_, strict, _) -> strict) targetName
+        canonicalDirs
+          | real_dir == given_dir = [given_dir]
+          | otherwise = [given_dir, real_dir]
         -- order matters here, see https://github.com/haskell/cabal/issues/7390
         guesses =
-          ( if real_path == given_path
+          concatMap (canonicalTargetGuesses True) canonicalDirs
+            ++ concatMap (canonicalTargetGuesses False) canonicalDirs
+            ++
+          ( if strictTargetTool
+              then []
+              else if real_path == given_path
               then []
               else mkGuesses real_dir real_suf real_prefix
           )
-            ++ mkGuesses given_dir given_suf given_prefix
+            ++ if strictTargetTool then [] else mkGuesses given_dir given_suf given_prefix
     info verbosity $
       "looking for tool "
         ++ toolname
@@ -491,7 +540,13 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
     case [file | (file, True) <- zip guesses exists] of
       -- If we can't find it near ghc, fall back to the usual
       -- method.
-      [] -> programFindLocation tool verbosity searchpath
+      []
+        | strictTargetTool && toolname == "ghc-pkg" ->
+            die' verbosity $
+              "Could not find target-prefixed " ++ toolname ++ " for target " ++ maybe "<unknown>" (\(target, _, _) -> show target) targetName
+                ++ " next to compiler " ++ given_path ++ "; tried " ++ show guesses
+        | strictTargetTool -> pure Nothing
+        | otherwise -> programFindLocation tool verbosity searchpath
       (fp : _) -> do
         info verbosity $ "found " ++ toolname ++ " in " ++ fp
         let lookedAt =
@@ -514,11 +569,12 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
 -- > /usr/local/bin/ghc-pkg-6.6.1(.exe)
 -- > /usr/local/bin/ghc-pkg(.exe)
 guessGhcPkgFromGhcPath
-  :: ConfiguredProgram
+  :: Maybe (String, Bool, String)
+  -> ConfiguredProgram
   -> Verbosity
   -> ProgramSearchPath
   -> IO (Maybe (FilePath, [FilePath]))
-guessGhcPkgFromGhcPath = guessToolFromGhcPath ghcPkgProgram
+guessGhcPkgFromGhcPath identity = guessToolFromGhcPath identity ghcPkgProgram
 
 -- | Given something like /usr/local/bin/ghc-6.6.1(.exe) we try and find a
 -- corresponding hsc2hs, we try looking for both a versioned and unversioned
@@ -528,11 +584,12 @@ guessGhcPkgFromGhcPath = guessToolFromGhcPath ghcPkgProgram
 -- > /usr/local/bin/hsc2hs-6.6.1(.exe)
 -- > /usr/local/bin/hsc2hs(.exe)
 guessHsc2hsFromGhcPath
-  :: ConfiguredProgram
+  :: Maybe (String, Bool, String)
+  -> ConfiguredProgram
   -> Verbosity
   -> ProgramSearchPath
   -> IO (Maybe (FilePath, [FilePath]))
-guessHsc2hsFromGhcPath = guessToolFromGhcPath hsc2hsProgram
+guessHsc2hsFromGhcPath identity = guessToolFromGhcPath identity hsc2hsProgram
 
 -- | Given something like /usr/local/bin/ghc-6.6.1(.exe) we try and find a
 -- corresponding haddock, we try looking for both a versioned and unversioned
@@ -542,25 +599,28 @@ guessHsc2hsFromGhcPath = guessToolFromGhcPath hsc2hsProgram
 -- > /usr/local/bin/haddock-6.6.1(.exe)
 -- > /usr/local/bin/haddock(.exe)
 guessHaddockFromGhcPath
-  :: ConfiguredProgram
+  :: Maybe (String, Bool, String)
+  -> ConfiguredProgram
   -> Verbosity
   -> ProgramSearchPath
   -> IO (Maybe (FilePath, [FilePath]))
-guessHaddockFromGhcPath = guessToolFromGhcPath haddockProgram
+guessHaddockFromGhcPath identity = guessToolFromGhcPath identity haddockProgram
 
 guessHpcFromGhcPath
-  :: ConfiguredProgram
+  :: Maybe (String, Bool, String)
+  -> ConfiguredProgram
   -> Verbosity
   -> ProgramSearchPath
   -> IO (Maybe (FilePath, [FilePath]))
-guessHpcFromGhcPath = guessToolFromGhcPath hpcProgram
+guessHpcFromGhcPath identity = guessToolFromGhcPath identity hpcProgram
 
 guessRunghcFromGhcPath
-  :: ConfiguredProgram
+  :: Maybe (String, Bool, String)
+  -> ConfiguredProgram
   -> Verbosity
   -> ProgramSearchPath
   -> IO (Maybe (FilePath, [FilePath]))
-guessRunghcFromGhcPath = guessToolFromGhcPath runghcProgram
+guessRunghcFromGhcPath identity = guessToolFromGhcPath identity runghcProgram
 
 getGhcInfo :: Verbosity -> ConfiguredProgram -> IO [(String, String)]
 getGhcInfo verbosity ghcProg = Internal.getGhcInfo verbosity implInfo ghcProg
