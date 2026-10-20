@@ -55,6 +55,7 @@ import Distribution.Client.CmdInstall.ClientInstallFlags
   )
 
 import Distribution.Solver.Types.ConstraintSource
+import Distribution.Solver.Types.Machine (Machine)
 import Distribution.Solver.Types.Settings
 
 import Distribution.Package
@@ -154,6 +155,12 @@ data ProjectConfig = ProjectConfig
   -- ^ Configuration to be applied to *local* packages; i.e.,
   -- any packages which are explicitly named in `cabal.project`.
   , projectConfigSpecificPackage :: MapMappend PackageName PackageConfig
+  , projectConfigMachinePackages :: MapMappend Machine PackageConfig
+  -- ^ Configuration to be applied to every package built for a given
+  -- machine: @package build:*@ or @package host:*@. Under cross-compilation
+  -- the same package can be built for both machines, which plain @package *@
+  -- cannot tell apart. It sits between the local-package and the named
+  -- layer: @package *@ < local packages < @package <machine>:*@ < @package name@.
   }
   deriving (Eq, Show, Generic)
   deriving (Semigroup, Monoid) via Generically ProjectConfig
@@ -200,6 +207,12 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigHcFlavor :: Flag CompilerFlavor
   , projectConfigHcPath :: Flag FilePath
   , projectConfigHcPkg :: Flag FilePath
+  , projectConfigBuildHcFlavor :: Flag CompilerFlavor
+  -- ^ Compiler flavour for the build machine (cross-compilation).
+  , projectConfigBuildHcPath :: Flag FilePath
+  -- ^ Path to the compiler for the build machine (cross-compilation).
+  , projectConfigBuildHcPkg :: Flag FilePath
+  -- ^ Path to the package tool for the build machine (cross-compilation).
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!
@@ -236,6 +249,18 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigPreferVersion :: Flag PreferVersion
   , projectConfigProgPathExtra :: NubList FilePath
   , projectConfigMultiRepl :: Flag Bool
+  , projectConfigInplaceBuilds :: Flag Bool
+  -- ^ Build the project's own packages in place (the default), or install
+  -- every one of them into the store like any other dependency.
+  --
+  -- A build system driving @cabal@ over a source tree may need the whole
+  -- result in a single relocatable store directory -- one library directory
+  -- and one package database it can copy wholesale -- rather than split
+  -- between the store and each package's in-place build directory. GHC's
+  -- @Makefile@ assembles its binary distribution that way.
+  --
+  -- Turning this off costs what in-place builds buy: each edit reinstalls the
+  -- package into the store under a fresh hash instead of rebuilding in situ.
   -- More things that only make sense for manual mode, not --local mode
   -- too much control!
   -- projectConfigShadowPkgs        :: Flag Bool,
@@ -281,6 +306,13 @@ data ProjectConfigProvenance
 data PackageConfig = PackageConfig
   { packageConfigProgramPaths :: MapLast String FilePath
   , packageConfigProgramArgs :: MapMappend String [String]
+  , packageConfigBuildProgramPaths :: MapLast String FilePath
+  -- ^ Like 'packageConfigProgramPaths', for packages built for the build
+  -- machine of a cross-compiling plan. 'packageConfigProgramPaths' then applies
+  -- to the host machine only; neither machine inherits the other's.
+  , packageConfigBuildProgramArgs :: MapMappend String [String]
+  -- ^ Like 'packageConfigProgramArgs', for the build machine. See
+  -- 'packageConfigBuildProgramPaths'.
   , packageConfigProgramPathExtra :: NubList FilePath
   , packageConfigFlagAssignment :: FlagAssignment
   , packageConfigVanillaLib :: Flag Bool

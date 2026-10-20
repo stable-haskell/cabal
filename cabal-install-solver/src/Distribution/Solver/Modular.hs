@@ -16,14 +16,12 @@ import Distribution.Solver.Compat.Prelude
 
 import qualified Data.Map as M
 import Data.Set (isSubsetOf)
-import Distribution.Compat.Graph
-         ( IsNode(..) )
 import Distribution.Compiler
          ( CompilerInfo )
 import Distribution.Solver.Modular.Assignment
          ( Assignment, toCPs )
 import Distribution.Solver.Modular.ConfiguredConversion
-         ( convCP )
+         ( convCPs )
 import qualified Distribution.Solver.Modular.ConflictSet as CS
 import Distribution.Solver.Modular.Dependency
     ( Var(..),
@@ -55,7 +53,7 @@ import Distribution.Solver.Types.LabeledPackageConstraint
     ( LabeledPackageConstraint, unlabelPackageConstraint )
 import Distribution.Solver.Types.PackageConstraint
     ( PackageConstraint(..), scopeToPackageName )
-import Distribution.Solver.Types.PackagePath ( QPN )
+import Distribution.Solver.Types.GoalScope ( QPN )
 import Distribution.Solver.Types.PackagePreferences
     ( PackagePreferences )
 import Distribution.Solver.Types.PkgConfigDb
@@ -64,35 +62,40 @@ import Distribution.Solver.Types.Progress
     ( Progress(..), foldProgress )
 import Distribution.Solver.Types.SummarizedMessage
     ( SummarizedMessage(StringMsg) )
+import Distribution.Solver.Types.Machine
+         ( PerMachine )
 import Distribution.Solver.Types.Variable ( Variable(..) )
-import Distribution.System
-         ( Platform(..) )
 import Distribution.Simple.Setup
          ( BooleanFlag(..) )
-import Distribution.Simple.Utils
-    ( ordNubBy )
 import Distribution.Verbosity
 import Distribution.Solver.Modular.Message ( renderSummarizedMessage )
 
 -- | Ties the two worlds together: classic cabal-install vs. the modular
 -- solver. Performs the necessary translations before and after.
 modularResolver :: SolverConfig -> DependencyResolver loc
-modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns =
+modularResolver sc toolchains pkgConfigDbs iidxs sidx pprefs pcs pns =
   uncurry postprocess <$> -- convert install plan
   solve' sc cinfo idx pkgConfigDB pprefs gcs pns
     where
-      -- Indices have to be converted into solver-specific uniform index.
-      idx    = convPIs os arch cinfo gcs (shadowPkgs sc) (strongFlags sc) (solveExecutables sc) iidx sidx
+      -- Flag/dependency choices are validated against the compiler and
+      -- pkg-config database of the machine each goal is solved for.
+      cinfo = fmap fst toolchains
+      pkgConfigDB = pkgConfigDbs
+      -- Indices have to be converted into solver-specific uniform index. Which
+      -- machines are solved separately is intrinsic to the per-machine toolchains (a
+      -- non-cross build has no build machine), so 'convPIs' derives it directly.
+      idx    = convPIs toolchains gcs (shadowPkgs sc) (strongFlags sc) (solveExecutables sc) iidxs sidx
       -- Constraints have to be converted into a finite map indexed by PN.
       gcs    = M.fromListWith (++) (map pair pcs)
         where
           pair lpc = (pcName $ unlabelPackageConstraint lpc, [lpc])
 
-      -- Results have to be converted into an install plan. 'convCP' removes
-      -- package qualifiers, which means that linked packages become duplicates
-      -- and can be removed.
-      postprocess a rdm = ordNubBy nodeKey $
-                          map (convCP iidx sidx) (toCPs a rdm)
+      -- Results have to be converted into an install plan. 'convCPs' removes
+      -- package qualifiers, so that goals resolving to the same package
+      -- instance (in particular linked goals) become a single package. Each
+      -- pre-existing package is resolved against the installed-package index
+      -- of its own machine (see 'convCPs').
+      postprocess a rdm = convCPs iidxs sidx (toCPs a rdm)
 
       -- Helper function to extract the PN from a constraint.
       pcName :: PackageConstraint -> PN
@@ -132,9 +135,9 @@ modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns
 -- complete, i.e., it shows the whole chain of dependencies from the user
 -- targets to the conflicting packages.
 solve' :: SolverConfig
-       -> CompilerInfo
+       -> PerMachine CompilerInfo
        -> Index
-       -> Maybe PkgConfigDb
+       -> PerMachine (Maybe PkgConfigDb)
        -> (PN -> PackagePreferences)
        -> Map PN [LabeledPackageConstraint]
        -> Set PN
