@@ -13,6 +13,8 @@ main = cabalTest $ recordMode DoNotRecord $ do
       explicitStore = testWorkDir env </> "explicit-store"
       buildCompilerArgs = maybe [] (\bc -> ["--with-build-compiler=" ++ bc]) (testBuildCompilerPath env)
   targetDirectory <- either fail (pure . renderTargetName) (compilerTargetName (testPlatform env) compiler)
+  hostHcPkg <- programPathM ghcPkgProgram
+  let hostHcPkgArgs = ["--with-hc-pkg=" ++ hostHcPkg]
   let installAndUse name storeRoot storeArgs buildArgs = do
         let envDir = testCurrentDir env </> name
             packageDb = storeRoot </> "host" </> targetDirectory </> "package.conf.d"
@@ -30,6 +32,7 @@ main = cabalTest $ recordMode DoNotRecord $ do
                    , "library-environment"
                    ]
                 ++ buildCompilerArgs
+                ++ hostHcPkgArgs
                 ++ buildArgs
             )
             Nothing

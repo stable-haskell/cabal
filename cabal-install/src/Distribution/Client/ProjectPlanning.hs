@@ -568,7 +568,14 @@ configureToolchains
       -- Use the host compiler if a separate build compiler is not specified
       buildHcFlavor = flagToMaybe projectConfigBuildHcFlavor <|> flagToMaybe projectConfigHcFlavor
       buildHcPath = flagToMaybe projectConfigBuildHcPath <|> flagToMaybe projectConfigHcPath
-      buildHcPkg = flagToMaybe projectConfigBuildHcPkg <|> flagToMaybe projectConfigHcPkg
+      buildHcPkg =
+        flagToMaybe projectConfigBuildHcPkg
+          <|> if isSeparateBuildCompiler
+            then Nothing
+            else flagToMaybe projectConfigHcPkg
+      isSeparateBuildCompiler =
+        isJust (flagToMaybe projectConfigBuildHcFlavor)
+          || isJust (flagToMaybe projectConfigBuildHcPath)
 
 {- Note [Caching the result of configuring the compiler]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
