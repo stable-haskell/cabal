@@ -145,12 +145,12 @@ import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.DependencyResolver
+import Distribution.Solver.Types.GoalScope
 import Distribution.Solver.Types.InstalledPreference as Preference
 import Distribution.Solver.Types.LabeledPackageConstraint
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PackageConstraint
 import qualified Distribution.Solver.Types.PackageIndex as PackageIndex
-import Distribution.Solver.Types.PackagePath
 import Distribution.Solver.Types.PackagePreferences
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb)
 import Distribution.Solver.Types.Progress
@@ -161,6 +161,12 @@ import Distribution.Solver.Types.SolverPackage
   ( SolverPackage (SolverPackage)
   )
 import Distribution.Solver.Types.SourcePackage
+import Distribution.Solver.Types.Stage
+  ( Stage (..)
+  , Staged
+  , getStage
+  , overStage
+  )
 import Distribution.Solver.Types.Variable
 
 import Control.Exception
@@ -187,7 +193,12 @@ data DepResolverParams = DepResolverParams
   , depResolverConstraints :: [LabeledPackageConstraint]
   , depResolverPreferences :: [PackagePreference]
   , depResolverPreferenceDefault :: PackagesPreferenceDefault
-  , depResolverInstalledPkgIndex :: InstalledPackageIndex
+  , depResolverInstalledPkgIndex :: Staged InstalledPackageIndex
+  -- ^ The installed-package index the solver works against, per build
+  -- 'Distribution.Solver.Types.Stage.Stage'. Policies that hide installed
+  -- packages so they get rebuilt (see 'hideInstalledPackagesAllVersions',
+  -- 'reinstallTargets') edit the host stage only; the build stage keeps its
+  -- installed packages (they are reused from the build compiler, not rebuilt).
   , depResolverSourcePkgIndex :: PackageIndex.PackageIndex UnresolvedSourcePackage
   , depResolverReorderGoals :: ReorderGoals
   , depResolverCountConflicts :: CountConflicts
@@ -283,7 +294,7 @@ showPackagePreference (PackageStanzasPreference pn st) =
   prettyShow pn ++ " " ++ show st
 
 basicDepResolverParams
-  :: InstalledPackageIndex
+  :: Staged InstalledPackageIndex
   -> PackageIndex.PackageIndex UnresolvedSourcePackage
   -> DepResolverParams
 basicDepResolverParams installedPkgIndex sourcePkgIndex =
@@ -450,20 +461,49 @@ dependOnWiredIns compiler params =
     Nothing -> params
     Just wiredInUnitIds -> addConstraints (extraConstraints wiredInUnitIds) params
   where
+    -- A wired-in package ("ghc", "ghc-internal") is supplied pre-built by
+    -- the compiler, so we pin it to the exact unit id the compiler already
+    -- has installed. The unit ids come from the /host/ compiler, so the pins
+    -- are scoped to the Host stage: a Build-stage goal is resolved against
+    -- the build compiler's own wired-in units, and pinning it to the host's
+    -- would be unsatisfiable.
     extraConstraints wiredInUnitIds =
       [ LabeledPackageConstraint
-        (PackageConstraint (ScopeAnyQualifier pkgName) (PackagePropertyInstalledSpecificUnitId unitId))
+        (PackageConstraint (ConstraintScope (Just Host) (ScopeAnyQualifier pkgName)) (PackagePropertyInstalledSpecificUnitId unitId))
         ConstraintSourceNonReinstallablePackage
       | (pkgName, unitId) <- wiredInUnitIds
+      , not (rebuiltFromSource pkgName)
       ]
         ++
         -- Old versions of `base` must be excluded from build plans still as they do not depend on any version of a wired-in unit.
         -- If we do not do this then we will get confusing error messages about old versions of `base` being unbuildable.
         -- Newer versions of `base` will be handled gracefully as they were designed to be reinstallable.
+        --
+        -- Scoped to the Host stage only: a Build-stage/Setup component is
+        -- compiled and run by the fixed boot toolchain (e.g. an older
+        -- external GHC via --with-build-compiler), which supplies its own,
+        -- older `base` and was never going to satisfy this bound anyway.
+        -- Applying it there too (as a stage-blind constraint previously did)
+        -- forces Setup dependencies onto the new, reinstallable `base`
+        -- source package -- which then requires `ghc-internal`, which the
+        -- old boot toolchain can never have installed.
         [ LabeledPackageConstraint
-            (PackageConstraint (ScopeAnyQualifier $ mkPackageName "base") (PackagePropertyVersion (orLaterVersion (mkVersion [4, 22]))))
+            (PackageConstraint (ConstraintScope (Just Host) (ScopeAnyQualifier $ mkPackageName "base")) (PackagePropertyVersion (orLaterVersion (mkVersion [4, 22]))))
             ConstraintSourceNonReinstallablePackage
         ]
+
+    -- A wired-in unit id pins a package to the copy the compiler was built
+    -- with. That is the right default even with --allow-boot-library-installs:
+    -- reinstalling ghc or ghc-internal under a compiler gives a broken
+    -- toolchain. The one legitimate exception is a project that provides such
+    -- a package itself, as a target: GHC's own source tree building its
+    -- libraries with the stage1 compiler. That package will be built from the
+    -- project's source whatever the pin says, so with
+    -- --allow-boot-library-installs the pin would only make the plan
+    -- unsolvable. Dependencies that are not targets stay pinned.
+    rebuiltFromSource pkgName =
+      asBool (depResolverAllowBootLibInstalls params)
+        && pkgName `Set.member` depResolverTargets params
 
 -- | Some packages are specific to a given compiler version and should never be
 -- reinstalled.
@@ -473,7 +513,7 @@ dontInstallNonReinstallablePackages params =
   where
     extraConstraints =
       [ LabeledPackageConstraint
-        (PackageConstraint (ScopeAnyQualifier pkgname) PackagePropertyInstalled)
+        (PackageConstraint (ConstraintScope Nothing (ScopeAnyQualifier pkgname)) PackagePropertyInstalled)
         ConstraintSourceNonReinstallablePackage
       | pkgname <- nonReinstallablePackages
       ]
@@ -526,10 +566,10 @@ hideInstalledPackagesSpecificBySourcePackageId pkgids params =
   -- TODO: this should work using exclude constraints instead
   params
     { depResolverInstalledPkgIndex =
-        foldl'
-          (flip InstalledPackageIndex.deleteSourcePackageId)
+        overStage
+          Host
+          (\idx -> foldl' (flip InstalledPackageIndex.deleteSourcePackageId) idx pkgids)
           (depResolverInstalledPkgIndex params)
-          pkgids
     }
 
 hideInstalledPackagesAllVersions
@@ -540,10 +580,10 @@ hideInstalledPackagesAllVersions pkgnames params =
   -- TODO: this should work using exclude constraints instead
   params
     { depResolverInstalledPkgIndex =
-        foldl'
-          (flip InstalledPackageIndex.deletePackageName)
+        overStage
+          Host
+          (\idx -> foldl' (flip InstalledPackageIndex.deletePackageName) idx pkgnames)
           (depResolverInstalledPkgIndex params)
-          pkgnames
     }
 
 -- | Remove upper bounds in dependencies using the policy specified by the
@@ -726,7 +766,7 @@ addSetupCabalMinVersionConstraint minVersion =
   addConstraints
     [ LabeledPackageConstraint
         ( PackageConstraint
-            (ScopeAnySetupQualifier cabalPkgname)
+            (ConstraintScope Nothing (ScopeAnySetupQualifier cabalPkgname))
             (PackagePropertyVersion $ orLaterVersion minVersion)
         )
         ConstraintSetupCabalMinVersion
@@ -744,7 +784,7 @@ addSetupCabalMaxVersionConstraint maxVersion =
   addConstraints
     [ LabeledPackageConstraint
         ( PackageConstraint
-            (ScopeAnySetupQualifier cabalPkgname)
+            (ConstraintScope Nothing (ScopeAnySetupQualifier cabalPkgname))
             (PackagePropertyVersion $ earlierVersion maxVersion)
         )
         ConstraintSetupCabalMaxVersion
@@ -760,7 +800,7 @@ addSetupCabalProfiledDynamic =
   addConstraints
     [ LabeledPackageConstraint
         ( PackageConstraint
-            (ScopeAnySetupQualifier cabalPkgname)
+            (ConstraintScope Nothing (ScopeAnySetupQualifier cabalPkgname))
             (PackagePropertyVersion $ orLaterVersion (mkVersion [3, 13, 0]))
         )
         ConstraintSourceProfiledDynamic
@@ -777,7 +817,7 @@ reinstallTargets params =
 
 -- | A basic solver policy on which all others are built.
 basicInstallPolicy
-  :: InstalledPackageIndex
+  :: Staged InstalledPackageIndex
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
@@ -806,7 +846,7 @@ basicInstallPolicy
 --
 -- It extends the 'basicInstallPolicy' with a policy on setup deps.
 standardInstallPolicy
-  :: InstalledPackageIndex
+  :: Staged InstalledPackageIndex
   -> SourcePackageDb
   -> [PackageSpecifier UnresolvedSourcePackage]
   -> DepResolverParams
@@ -859,12 +899,11 @@ runSolver = modularResolver
 -- a 'Progress' structure that can be unfolded to provide progress information,
 -- logging messages and the final result or an error.
 resolveDependencies
-  :: Platform
-  -> CompilerInfo
-  -> Maybe PkgConfigDb
+  :: Staged (CompilerInfo, Platform)
+  -> Staged (Maybe PkgConfigDb)
   -> DepResolverParams
   -> Progress String String SolverInstallPlan
-resolveDependencies platform comp pkgConfigDB params = do
+resolveDependencies toolchains pkgConfigDbs params = do
   step (showDepResolverParams finalparams)
   pkgs <-
     formatProgress $
@@ -886,16 +925,17 @@ resolveDependencies platform comp pkgConfigDB params = do
             verbosity
             (PruneAfterFirstSuccess False)
         )
-        platform
-        comp
+        toolchains
+        pkgConfigDbs
         installedPkgIndex
         sourcePkgIndex
-        pkgConfigDB
         preferences
         constraints
         targets
-  validateSolverResult platform comp indGoals pkgs
+  validateSolverResult toolchains indGoals pkgs
   where
+    -- The wired-in units come from the host compiler.
+    comp = fst (getStage toolchains Host)
     finalparams@( DepResolverParams
                     targets
                     constraints
@@ -991,13 +1031,12 @@ interpretPackagesPreference selected defaultPref prefs =
 -- | Make an install plan from the output of the dep resolver.
 -- It checks that the plan is valid, or it's an error in the dep resolver.
 validateSolverResult
-  :: Platform
-  -> CompilerInfo
+  :: Staged (CompilerInfo, Platform)
   -> IndependentGoals
   -> [ResolverPackage UnresolvedPkgLoc]
   -> Progress String String SolverInstallPlan
-validateSolverResult platform comp indepGoals pkgs =
-  case planPackagesProblems platform comp pkgs of
+validateSolverResult toolchains indepGoals pkgs =
+  case planPackagesProblems toolchains pkgs of
     [] -> case SolverInstallPlan.new indepGoals graph of
       Right plan -> return plan
       Left problems -> fail (formatPlanProblems problems)
@@ -1042,14 +1081,13 @@ showPlanPackageProblem (DuplicatePackageSolverId pid dups) =
     ++ " duplicate instances."
 
 planPackagesProblems
-  :: Platform
-  -> CompilerInfo
+  :: Staged (CompilerInfo, Platform)
   -> [ResolverPackage UnresolvedPkgLoc]
   -> [PlanPackageProblem]
-planPackagesProblems platform cinfo pkgs =
+planPackagesProblems toolchains pkgs =
   [ InvalidConfiguredPackage pkg packageProblems
   | Configured pkg <- pkgs
-  , let packageProblems = configuredPackageProblems platform cinfo pkg
+  , let packageProblems = configuredPackageProblems toolchains pkg
   , not (null packageProblems)
   ]
     ++ [ DuplicatePackageSolverId (Graph.nodeKey aDup) dups
@@ -1098,14 +1136,12 @@ showPackageProblem (InvalidDep dep pkgid) =
 -- in the configuration given by the flag assignment, all the package
 -- dependencies are satisfied by the specified packages.
 configuredPackageProblems
-  :: Platform
-  -> CompilerInfo
+  :: Staged (CompilerInfo, Platform)
   -> SolverPackage UnresolvedPkgLoc
   -> [PackageProblem]
 configuredPackageProblems
-  platform
-  cinfo
-  (SolverPackage pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps') =
+  toolchains
+  (SolverPackage stage pkg specifiedFlags stanzas specifiedDeps0 _specifiedExeDeps' _qualifier) =
     [ DuplicateFlag flag
     | flag <- PD.findDuplicateFlagAssignments specifiedFlags
     ]
@@ -1130,6 +1166,10 @@ configuredPackageProblems
       thisPkgName = packageName (srcpkgDescription pkg)
 
       specifiedDeps1 :: ComponentDeps [PackageId]
+      -- Finalise the package against the compiler and platform of the stage
+      -- it was solved for.
+      (cinfo, platform) = getStage toolchains stage
+
       specifiedDeps1 = fmap (map solverSrcId) specifiedDeps0
 
       mergedFlags :: [MergeResult PD.FlagName PD.FlagName]
@@ -1211,8 +1251,10 @@ configuredPackageProblems
 -- It is suitable for tasks such as selecting packages to download for user
 -- inspection. It is not suitable for selecting packages to install.
 --
--- Note: if no installed package index is available, it is OK to pass 'mempty'.
--- It simply means preferences for installed packages will be ignored.
+-- Note: if no installed package index is available, it is OK to build the
+-- params with an empty one (e.g. @'always' 'mempty'@). It simply means
+-- preferences for installed packages will be ignored. Only the host stage of
+-- the params' installed index is consulted here.
 resolveWithoutDependencies
   :: DepResolverParams
   -> Either [ResolveNoDepsError] [UnresolvedSourcePackage]
@@ -1272,7 +1314,7 @@ resolveWithoutDependencies
               not
                 . null
                 . InstalledPackageIndex.lookupSourcePackageId
-                  installedPkgIndex
+                  (getStage installedPkgIndex Host)
                 . packageId
           versionPref :: Package a => a -> Int
           versionPref pkg =

@@ -411,6 +411,7 @@ instance Arbitrary ProjectConfig where
       <*> ( MapMappend . fmap getNonMEmpty . Map.fromList
               <$> shortListOf 3 arbitrary
           )
+      <*> pure mempty -- projectConfigStagePackages: neither legacy nor printer support
 
   -- package entries with no content are equivalent to
   -- the entry not existing at all, so exclude empty
@@ -427,6 +428,7 @@ instance Arbitrary ProjectConfig where
       , projectConfigLocalPackages = x7
       , projectConfigSpecificPackage = x8
       , projectConfigAllPackages = x9
+      , projectConfigStagePackages = _x10
       } =
       [ ProjectConfig
         { projectPackages = x0'
@@ -441,6 +443,7 @@ instance Arbitrary ProjectConfig where
             MapMappend
               (fmap getNonMEmpty x8')
         , projectConfigAllPackages = x9'
+        , projectConfigStagePackages = mempty
         }
       | ((x0', x1', x2', x3'), (x4', x5', x6', x7', x8', x9')) <-
           shrink
@@ -593,6 +596,9 @@ instance Arbitrary ProjectConfigShared where
     projectConfigHcFlavor <- arbitrary
     projectConfigHcPath <- arbitraryFlag arbitraryShortToken
     projectConfigHcPkg <- arbitraryFlag arbitraryShortToken
+    projectConfigBuildHcFlavor <- arbitrary
+    projectConfigBuildHcPath <- arbitraryFlag arbitraryShortToken
+    projectConfigBuildHcPkg <- arbitraryFlag arbitraryShortToken
     projectConfigHaddockIndex <- arbitrary
     projectConfigInstallDirs <- fixInstallDirs <$> arbitrary
     projectConfigPackageDBs <- shortListOf 2 arbitrary
@@ -621,6 +627,7 @@ instance Arbitrary ProjectConfigShared where
     projectConfigPreferVersion <- arbitrary
     projectConfigProgPathExtra <- toNubList <$> listOf arbitraryShortToken
     projectConfigMultiRepl <- arbitrary
+    projectConfigInplaceBuilds <- arbitrary
     return ProjectConfigShared{..}
     where
       arbitraryConstraints :: Gen [(UserConstraint, ConstraintSource)]
@@ -640,6 +647,9 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigHcFlavor
         <*> shrinkerAla (fmap NonEmpty) projectConfigHcPath
         <*> shrinkerAla (fmap NonEmpty) projectConfigHcPkg
+        <*> shrinker projectConfigBuildHcFlavor
+        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPath
+        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPkg
         <*> shrinker projectConfigHaddockIndex
         <*> shrinker projectConfigInstallDirs
         <*> shrinker projectConfigPackageDBs
@@ -668,6 +678,7 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigPreferVersion
         <*> shrinker projectConfigProgPathExtra
         <*> shrinker projectConfigMultiRepl
+        <*> shrinker projectConfigInplaceBuilds
     where
       preShrink_Constraints = map fst
       postShrink_Constraints = map (,projectConfigConstraintSource)
@@ -691,6 +702,22 @@ instance Arbitrary PackageConfig where
               <*> arbitraryShortToken
           )
     )
+      <*> ( MapMappend . Map.fromList
+              <$> shortListOf
+                10
+                ( (,)
+                    <$> arbitraryProgramName
+                    <*> listOf arbitraryShortToken
+                )
+          )
+      <*> ( MapLast . Map.fromList
+              <$> shortListOf
+                10
+                ( (,)
+                    <$> arbitraryProgramName
+                    <*> arbitraryShortToken
+                )
+          )
       <*> ( MapMappend . Map.fromList
               <$> shortListOf
                 10
@@ -773,6 +800,8 @@ instance Arbitrary PackageConfig where
     PackageConfig
       { packageConfigProgramPaths = x00
       , packageConfigProgramArgs = x01
+      , packageConfigBuildProgramPaths = x60
+      , packageConfigBuildProgramArgs = x61
       , packageConfigProgramPathExtra = x02
       , packageConfigFlagAssignment = x03
       , packageConfigVanillaLib = x04
@@ -839,6 +868,8 @@ instance Arbitrary PackageConfig where
       [ PackageConfig
         { packageConfigProgramPaths = postShrink_Paths x00'
         , packageConfigProgramArgs = postShrink_Args x01'
+        , packageConfigBuildProgramPaths = postShrink_Paths x60'
+        , packageConfigBuildProgramArgs = postShrink_Args x61'
         , packageConfigProgramPathExtra = x02'
         , packageConfigFlagAssignment = x03'
         , packageConfigVanillaLib = x04'
@@ -902,7 +933,7 @@ instance Arbitrary PackageConfig where
         , packageConfigTestTestOptions = x51'
         , packageConfigBenchmarkOptions = x52'
         }
-      | ( ( (x00', x01', x02', x03', x04')
+      | ( ( (x00', x01', x60', x61', x02', x03', x04')
             , (x05', x42', x43', x06', x50', x07', x08', x08_1', x09')
             , (x10', x11', x12', x13', x14')
             , (x15', x16', x53', x17', x18', x19')
@@ -920,7 +951,7 @@ instance Arbitrary PackageConfig where
           ) <-
           shrink
             (
-              ( (preShrink_Paths x00, preShrink_Args x01, x02, x03, x04)
+              ( (preShrink_Paths x00, preShrink_Args x01, preShrink_Paths x60, preShrink_Args x61, x02, x03, x04)
               , (x05, x42, x43, x06, x50, x07, x08, x08_1, x09)
               , (x10, x11, map NonEmpty x12, x13, x14)
               ,

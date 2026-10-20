@@ -1,8 +1,9 @@
-module Distribution.Solver.Types.PackagePath
-    ( PackagePath(..)
+module Distribution.Solver.Types.GoalScope
+    ( GoalScope(..)
     , Namespace(..)
     , Qualifier(..)
     , dispQualifier
+    , dispGoalScope
     , Qualified(..)
     , QPN
     , dispQPN
@@ -13,12 +14,40 @@ import Distribution.Solver.Compat.Prelude
 import Prelude ()
 import Distribution.Package (PackageName)
 import Distribution.Pretty (pretty, flatStyle)
+import Distribution.Solver.Types.Stage (Stage (..), showStage)
 import qualified Text.PrettyPrint as Disp
 
--- | A package path consists of a namespace and a package path inside that
--- namespace.
-data PackagePath = PackagePath Namespace Qualifier
-  deriving (Eq, Ord, Show)
+-- | The scope a solver goal is solved in. Two goals for the same package name
+-- in different scopes are different goals and may resolve to different
+-- instances. A 'GoalScope' is a flat label, not a path: it records at most one
+-- qualifier, not the route by which the goal was reached (see 'QualSetup' for
+-- why nesting was ruled out).
+--
+-- The three fields answer three different questions:
+--
+-- * The 'Stage' says which toolchain the goal is solved against. It is set
+--   only where the solver crosses a tool boundary (a @build-tool-depends@ or
+--   @custom-setup@ dependency), dropping to the previous stage when a distinct
+--   build toolchain exists and staying put when it does not. It is therefore
+--   determined by the qualifier chain, not independent of it; it is stored
+--   because the qualifier is flattened ('QualBase' overwrites the qualifier
+--   it was reached through) and so cannot always be recovered.
+--
+-- * The 'Namespace' is fixed at the root of a top-level goal and inherited
+--   unchanged by every dependency. It is independent of the other two.
+--
+-- * The 'Qualifier' says why this goal is allowed to resolve differently from
+--   the top-level goal for the same package.
+--
+-- Consequently @'GoalScope' 'Host' ns ('QualSetup' p)@ is the custom-setup
+-- closure of @p@ solved against the host toolchain. That is every setup
+-- dependency of a non-cross build, where the host toolchain is the only one;
+-- a cross build never constructs it, because there tool scopes sit at 'Build'.
+data GoalScope = GoalScope Stage Namespace Qualifier
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary GoalScope
+instance Structured GoalScope
 
 -- | Top-level namespace
 --
@@ -30,7 +59,16 @@ data Namespace =
 
     -- | A namespace for a specific build target
   | Independent PackageName
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary Namespace
+instance Structured Namespace
+
+-- | Pretty-prints a stage. The result is either empty (for the default 'Host'
+-- stage) or ends in a colon, so it can be prepended onto a namespace.
+dispStage :: Stage -> Disp.Doc
+dispStage Host = Disp.empty
+dispStage Build = Disp.text (showStage Build) <<>> Disp.text ":"
 
 -- | Pretty-prints a namespace. The result is either empty or
 -- ends in a period, so it can be prepended onto a qualifier.
@@ -38,7 +76,7 @@ dispNamespace :: Namespace -> Disp.Doc
 dispNamespace DefaultNamespace = Disp.empty
 dispNamespace (Independent i) = pretty i <<>> Disp.text "."
 
--- | Qualifier of a package within a namespace (see 'PackagePath')
+-- | Qualifier of a package within a namespace (see 'GoalScope')
 data Qualifier =
     -- | Top-level dependency in this namespace
     QualToplevel
@@ -68,7 +106,10 @@ data Qualifier =
     -- tracked only @pn2@, that would require us to pick only one
     -- version of an executable over the entire install plan.)
   | QualExe PackageName PackageName
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary Qualifier
+instance Structured Qualifier
 
 -- | Pretty-prints a qualifier. The result is either empty or
 -- ends in a period, so it can be prepended onto a package name.
@@ -85,8 +126,8 @@ dispQualifier (QualExe pn pn2) = pretty pn <<>> Disp.text ":" <<>>
                                  pretty pn2 <<>> Disp.text ":exe."
 dispQualifier (QualBase pn)  = pretty pn <<>> Disp.text "."
 
--- | A qualified entity. Pairs a package path with the entity.
-data Qualified a = Q PackagePath a
+-- | A qualified entity. Pairs a goal scope with the entity.
+data Qualified a = Q GoalScope a
   deriving (Eq, Ord, Show)
 
 -- | Qualified package name.
@@ -94,8 +135,13 @@ type QPN = Qualified PackageName
 
 -- | Pretty-prints a qualified package name.
 dispQPN :: QPN -> Disp.Doc
-dispQPN (Q (PackagePath ns qual) pn) =
-  dispNamespace ns <<>> dispQualifier qual <<>> pretty pn
+dispQPN (Q gs pn) = dispGoalScope gs <<>> pretty pn
+
+-- | Pretty-prints a goal scope. The result is either empty or ends in a
+-- period, so it can be prepended onto a package name.
+dispGoalScope :: GoalScope -> Disp.Doc
+dispGoalScope (GoalScope stage ns qual) =
+  dispStage stage <<>> dispNamespace ns <<>> dispQualifier qual
 
 -- | String representation of a qualified package name.
 showQPN :: QPN -> String

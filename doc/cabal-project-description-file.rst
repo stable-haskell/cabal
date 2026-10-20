@@ -486,6 +486,28 @@ Environment options
 
     Specifies the name of the directory of the global package store.
 
+.. cfg-field:: inplace-builds: boolean
+               --inplace-builds
+    :synopsis: Build the project's own packages in place
+    :default: ``True``
+
+    By default the packages that make up the project are built in place, in the
+    build directory, and only their dependencies are installed into the store.
+    Setting this to ``False`` installs the project's own packages into the store
+    as well, so that the entire build ends up in one relocatable directory with
+    a single library tree and a single package database.
+
+    This is aimed at build systems that drive ``cabal`` over a source tree and
+    then copy the result elsewhere. It costs what in-place builds buy: each edit
+    reinstalls the package into the store instead of rebuilding it in situ.
+
+    A package built from a local directory has no source hash, so its store
+    entry cannot be named after one. Such packages are installed under their
+    package id (for example ``mylib-0.1.0.0``) rather than a content hash, and
+    no ``cabal-hash.txt`` is written for them. Two builds of the same package id
+    with different flags therefore share a store entry, so a store populated
+    this way belongs to one project and one configuration.
+
 .. cfg-field:: package-dbs: package DB stack (comma separated)
                --package-db=[clear, global, user, PATH]
     :synopsis: PackageDB stack manipulation
@@ -1036,6 +1058,39 @@ feature was added.
     Program options are not extensively described in this documentation but a
     good amount of them can be found in the :ref:`build-info` section.
 
+    When cross-compiling (see :cfg-field:`build-compiler`), a package can be
+    built twice, once for the build machine and once for the host, and
+    ``package *`` applies to both. ``package build:*`` and ``package host:*``
+    apply to every package built for that stage only. They take precedence
+    over ``package *`` and over the fields given outside any stanza for local
+    packages, and are overridden by a stanza naming the package:
+
+    ::
+
+        package build:*
+          shared: False
+          executable-dynamic: False
+
+        package host:*
+          shared: True
+
+    Program locations and options are the exception to ``package *``
+    applying to both stages: ``PROG-location`` and ``PROG-options`` apply to
+    the host stage and ``build-PROG-location`` and ``build-PROG-options`` to
+    the build stage (see :ref:`build-stage-programs`). A stage stanza already
+    names its stage, so there the plain ``PROG-location`` and ``PROG-options``
+    fields apply to that stage.
+
+    Program locations given in a stage stanza also select the tools ``cabal``
+    itself runs for that stage, such as ``pkg-config``. This is how a
+    cross-compilation points the host stage at the tools that know its target
+    without handing them to the build stage:
+
+    ::
+
+        package host:*
+          pkg-config-location: aarch64-linux-gnu-pkg-config
+
 .. cfg-section:: None
 
 .. cfg-field:: flags: list of +flagname or -flagname (space separated)
@@ -1111,6 +1166,61 @@ feature was added.
 
     The command line variant of this flag is
     ``--with-hc-pkg=ghc-pkg-7.8``.
+
+.. cfg-field:: build-compiler: ghc, ghcjs, jhc, lhc, or uhc
+    :synopsis: Compiler flavour for the build stage (cross-compilation).
+
+    :default: the value of :cfg-field:`compiler`
+
+    When cross-compiling, the flavour of the compiler used for the *build*
+    stage: the compiler that produces the programs which have to run on the
+    machine doing the build (custom ``Setup.hs`` scripts and their
+    dependencies, ``build-tool-depends``). The *host* stage, i.e. everything
+    else, keeps using :cfg-field:`compiler`.
+
+    There is no command line variant of this field.
+
+.. cfg-field:: with-build-compiler: PATH
+               -W PATH or -WPATH, --with-build-compiler=PATH
+    :synopsis: Path to the build-stage compiler executable (cross-compilation).
+
+    Specify the compiler to use for the *build* stage when cross-compiling,
+    in the same way :cfg-field:`with-compiler` specifies the compiler for the
+    *host* stage. Setting this (or :cfg-field:`build-compiler`) to something
+    other than the host compiler is what turns a build into a cross build:
+    custom ``Setup.hs`` scripts, their dependencies and packages reached via
+    ``build-tool-depends`` are then built with the build compiler, while all
+    other packages are built with :cfg-field:`with-compiler`.
+
+    When neither this field nor :cfg-field:`build-compiler` is set, or when
+    they resolve to the same compiler as the host, there is no separate build
+    stage and the build proceeds exactly as a normal (non-cross) build.
+
+    The default value of :cfg-field:`with-build-hc-pkg` is derived from this
+    path with the same heuristic :cfg-field:`with-compiler` uses.
+
+    Like :cfg-field:`with-compiler`, this cannot be set on a per-package
+    basis, and it cannot be set inside a conditional block.
+
+    The command line variant of this flag is
+    ``--with-build-compiler=ghc-9.10.3``; there is also a short version
+    ``-W ghc-9.10.3``.
+
+.. cfg-field:: with-build-hc-pkg: PATH
+               --with-build-hc-pkg=PATH
+    :synopsis: Path to the build-stage package tool (cross-compilation).
+
+    Specify the path to the package tool (e.g. ``ghc-pkg``) that goes with
+    :cfg-field:`with-build-compiler`. If omitted, it is determined from
+    :cfg-field:`with-build-compiler`. Unlike the compiler path, it does *not*
+    fall back to :cfg-field:`with-hc-pkg`, since a package tool belongs to
+    one particular compiler installation.
+
+    The command line variant of this flag is
+    ``--with-build-hc-pkg=ghc-pkg-9.10.3``.
+
+    The other programs of the build stage are configured separately from the
+    host stage's: see :ref:`build-stage-programs`.
 
 .. cfg-field:: optimization: nat
                -O[n], --enable-optimization[=n]
@@ -1918,6 +2028,52 @@ built. On the other hand, the following snippet:
 
 will apply ``-Werror`` to all packages, local and remote.
 
+.. _build-stage-programs:
+
+Build-stage programs
+^^^^^^^^^^^^^^^^^^^^
+
+.. cfg-section:: build-program-options
+
+When cross-compiling (see :cfg-field:`with-build-compiler`) the program
+locations and options given with ``--with-PROG``, ``--PROG-options``,
+``program-locations`` and ``program-options`` apply to the *host* stage only,
+just as :cfg-field:`with-compiler` does. The programs used for the *build*
+stage are configured with their own settings:
+
+- on the command line, ``--with-build-PROG=PATH``,
+  ``--build-PROG-option=OPT`` and ``--build-PROG-options=OPTS``;
+- at the top level of the project file, the ``build-program-locations`` and
+  ``build-program-options`` stanzas, which take the same fields as
+  ``program-locations`` and ``program-options``;
+- in a ``package`` stanza, the ``build-PROG-location`` and
+  ``build-PROG-options`` fields.
+
+For example:
+
+::
+
+    program-locations
+        ar-location: /opt/cross/bin/aarch64-linux-gnu-ar
+
+    build-program-locations
+        ar-location: /usr/bin/ar
+
+    build-program-options
+        ghc-options: -O0
+
+Neither stage inherits the other's settings: ``ar-location`` above is the
+``ar`` used for host binaries and is never used to produce build-machine
+binaries. A build-stage program that is not given a location is found as
+usual, from the build compiler's own configuration and the program search
+path.
+
+Without cross-compilation there is no build stage, so these settings have no
+effect and ``cabal`` warns that they are ignored.
+
+The :cfg-field:`extra-prog-path` entries are not per stage: both stages search
+the same extra directories.
+
 Advanced global options
 -----------------------
 
@@ -2093,6 +2249,13 @@ Most users generally won't need these.
     ``ghc-prim``, ``integer-simple``, ``integer-gmp``, and
     ``template-haskell`` to be installed or upgraded. This flag
     removes the restriction.
+
+    Packages the compiler reports as *wired in* (``ghc`` and
+    ``ghc-internal`` on GHC 9.14 and later) are always taken from the
+    compiler's own installation, even with this flag, unless the project
+    provides such a package itself as a local package. In that case it is
+    built from the project's source, as when GHC's own source tree is built
+    with a stage1 compiler.
 
     The command line variant of this field is
     ``--(no-)allow-boot-library-installs``.

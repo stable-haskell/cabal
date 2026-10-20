@@ -38,9 +38,15 @@ import Distribution.Client.ProjectPlanning
   , ElaboratedInstallPlan
   , ElaboratedSharedConfig (..)
   , TargetAction (..)
+  , pkgConfigCompiler
+  , pkgConfigCompilerProgs
+  , pkgConfigPlatform
+  , setPkgConfigCompilerProgs
   )
+import Distribution.Client.ProjectPlanning.Stage (withoutStage)
 import Distribution.Client.ProjectPlanning.Types
   ( elabDistDirParams
+  , elabToolchain
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -183,7 +189,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
           . addKnownProgram haddockProgram
           . pkgConfigCompilerProgs
           $ sharedConfig
-      let sharedConfig' = sharedConfig{pkgConfigCompilerProgs = progs}
+      let sharedConfig' = setPkgConfigCompilerProgs progs sharedConfig
 
       _ <-
         requireProgramVersion
@@ -309,7 +315,8 @@ haddockProjectAction flags _extraArgs globalFlags = do
                       packageDir =
                         storePackageDirectory
                           (cabalStoreDirLayout cabalLayout)
-                          (pkgConfigCompiler sharedConfig')
+                          (elabStage package)
+                          (elabToolchain sharedConfig' package)
                           (elabUnitId package)
                       -- TODO: use `InstallDirTemplates`
                       docDir = packageDir </> "share" </> "doc" </> "html"
@@ -450,5 +457,5 @@ haddockProjectAction flags _extraArgs globalFlags = do
       :: ElaboratedInstallPlan
       -> [Either InstalledPackageInfo ElaboratedConfiguredPackage]
     matchingPackages =
-      fmap (foldPlanPackage Left Right)
+      fmap (foldPlanPackage (Left . withoutStage) Right)
         . InstallPlan.toList

@@ -1,3 +1,5 @@
+{-# LANGUAGE PatternSynonyms #-}
+
 -- |
 -- Module      :  Distribution.Client.Targets
 -- Copyright   :  (c) Duncan Coutts 2011
@@ -30,7 +32,8 @@ module Distribution.Client.Targets
     -- * User constraints
   , UserQualifier (..)
   , UserConstraintScope (..)
-  , UserConstraint (..)
+  , UserConstraintQualifier (..)
+  , UserConstraint (UserConstraint, UserConstraintStaged)
   , userConstraintPackageName
   , readUserConstraint
   , userToPackageConstraint
@@ -53,11 +56,11 @@ import Distribution.Package
   , unPackageName
   )
 
+import Distribution.Solver.Types.GoalScope
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PackageConstraint
 import Distribution.Solver.Types.PackageIndex (PackageIndex)
 import qualified Distribution.Solver.Types.PackageIndex as PackageIndex
-import Distribution.Solver.Types.PackagePath
 import Distribution.Solver.Types.SourcePackage
 
 import qualified Codec.Archive.Tar as Tar
@@ -96,6 +99,7 @@ import qualified Data.Map as Map
 import Distribution.Client.Errors
 import qualified Distribution.Client.GZipUtils as GZipUtils
 import qualified Distribution.Compat.CharParsing as P
+import Distribution.Solver.Types.Stage (Stage (..))
 import Distribution.Utils.Path (makeSymbolicPath)
 import Network.URI
   ( URI (..)
@@ -603,19 +607,31 @@ instance NFData UserQualifier
 instance Structured UserQualifier
 
 -- | Version of 'ConstraintScope' that a user may specify on the
--- command line.
-data UserConstraintScope
-  = -- | Scope that applies to the package when it has the specified qualifier.
-    UserQualified UserQualifier PackageName
-  | -- | Scope that applies to the package when it has a setup qualifier.
-    UserAnySetupQualifier PackageName
-  | -- | Scope that applies to the package when it has any qualifier.
-    UserAnyQualifier PackageName
+-- command line. Pairs an optional build 'Stage' (parsed from a leading
+-- @stage:@ prefix, e.g. @build:@) with a 'UserConstraintQualifier'.
+data UserConstraintScope = UserConstraintScope (Maybe Stage) UserConstraintQualifier
   deriving (Eq, Show, Generic)
 
 instance Binary UserConstraintScope
 instance NFData UserConstraintScope
 instance Structured UserConstraintScope
+
+-- | The qualifier part of a 'UserConstraintScope', independent of the stage.
+data UserConstraintQualifier
+  = -- | Scope that applies to the package when it has the specified qualifier.
+    UserQualified UserQualifier PackageName
+  | -- | Scope that applies to the package when it has a setup qualifier.
+    UserAnySetupQualifier PackageName
+  | -- | Scope that applies to the package when it has an executable
+    -- (build-tool) qualifier.
+    UserAnyExeQualifier PackageName
+  | -- | Scope that applies to the package when it has any qualifier.
+    UserAnyQualifier PackageName
+  deriving (Eq, Show, Generic)
+
+instance Binary UserConstraintQualifier
+instance NFData UserConstraintQualifier
+instance Structured UserConstraintQualifier
 
 fromUserQualifier :: UserQualifier -> Qualifier
 fromUserQualifier UserQualToplevel = QualToplevel
@@ -623,30 +639,46 @@ fromUserQualifier (UserQualSetup name) = QualSetup name
 fromUserQualifier (UserQualExe name1 name2) = QualExe name1 name2
 
 fromUserConstraintScope :: UserConstraintScope -> ConstraintScope
-fromUserConstraintScope (UserQualified q pn) =
-  ScopeQualified (fromUserQualifier q) pn
-fromUserConstraintScope (UserAnySetupQualifier pn) = ScopeAnySetupQualifier pn
-fromUserConstraintScope (UserAnyQualifier pn) = ScopeAnyQualifier pn
+fromUserConstraintScope (UserConstraintScope mstage (UserQualified q pn)) =
+  ConstraintScope mstage (ScopeQualified (fromUserQualifier q) pn)
+fromUserConstraintScope (UserConstraintScope mstage (UserAnySetupQualifier pn)) =
+  ConstraintScope mstage (ScopeAnySetupQualifier pn)
+fromUserConstraintScope (UserConstraintScope mstage (UserAnyExeQualifier pn)) =
+  ConstraintScope mstage (ScopeAnyExeQualifier pn)
+fromUserConstraintScope (UserConstraintScope mstage (UserAnyQualifier pn)) =
+  ConstraintScope mstage (ScopeAnyQualifier pn)
 
 -- | Version of 'PackageConstraint' that the user can specify on
 -- the command line.
 data UserConstraint
-  = UserConstraint UserConstraintScope PackageProperty
+  = UserConstraintX UserConstraintScope PackageProperty
   deriving (Eq, Show, Generic)
 
 instance Binary UserConstraint
 instance NFData UserConstraint
 instance Structured UserConstraint
 
+-- | An unstaged user constraint: applies at every stage. This is the common
+-- case, so it keeps the plain @'UserConstraint' qualifier prop@ shape.
+pattern UserConstraint :: UserConstraintQualifier -> PackageProperty -> UserConstraint
+pattern UserConstraint qualifier prop = UserConstraintX (UserConstraintScope Nothing qualifier) prop
+
+-- | A user constraint pinned to a specific build 'Stage'.
+pattern UserConstraintStaged :: Stage -> UserConstraintQualifier -> PackageProperty -> UserConstraint
+pattern UserConstraintStaged stage qualifier prop = UserConstraintX (UserConstraintScope (Just stage) qualifier) prop
+
+{-# COMPLETE UserConstraint, UserConstraintStaged #-}
+
 userConstraintPackageName :: UserConstraint -> PackageName
-userConstraintPackageName (UserConstraint scope _) = scopePN scope
+userConstraintPackageName (UserConstraintX (UserConstraintScope _stage qualifier) _) = scopePN qualifier
   where
     scopePN (UserQualified _ pn) = pn
     scopePN (UserAnyQualifier pn) = pn
     scopePN (UserAnySetupQualifier pn) = pn
+    scopePN (UserAnyExeQualifier pn) = pn
 
 userToPackageConstraint :: UserConstraint -> PackageConstraint
-userToPackageConstraint (UserConstraint scope prop) =
+userToPackageConstraint (UserConstraintX scope prop) =
   PackageConstraint (fromUserConstraintScope scope) prop
 
 readUserConstraint :: String -> Either String UserConstraint
@@ -661,7 +693,7 @@ readUserConstraint str =
         ++ "'source', 'test', 'bench', or flags. "
 
 instance Pretty UserConstraint where
-  pretty (UserConstraint scope prop) =
+  pretty (UserConstraintX scope prop) =
     pretty $ PackageConstraint (fromUserConstraintScope scope) prop
 
 instance Parsec UserConstraint where
@@ -677,25 +709,50 @@ instance Parsec UserConstraint where
         , PackagePropertyStanzas [TestStanzas] <$ P.string "test"
         , PackagePropertyStanzas [BenchStanzas] <$ P.string "bench"
         ]
-    return (UserConstraint scope prop)
+    return (UserConstraintX scope prop)
     where
       parseConstraintScope :: forall m. CabalParsing m => m UserConstraintScope
-      parseConstraintScope = do
-        pn <- parsec
-        P.choice
-          [ P.char '.' *> withDot pn
-          , P.char ':' *> withColon pn
-          , return (UserQualified UserQualToplevel pn)
-          ]
+      parseConstraintScope =
+        -- Try the package-qualified forms (@pkg:setup.dep@) before looking for
+        -- a stage prefix, so that a package literally named @build@ keeps its
+        -- pre-existing meaning: @build:setup.foo@ is the setup dependency of
+        -- the package @build@, not a build-stage constraint on @setup.foo@.
+        P.try packageQualifiedScope <|> stagedScope
         where
-          withDot :: PackageName -> m UserConstraintScope
+          packageQualifiedScope :: m UserConstraintScope
+          packageQualifiedScope = do
+            pn <- parsec
+            _ <- P.char ':'
+            UserConstraintScope Nothing <$> withColon pn
+
+          stagedScope :: m UserConstraintScope
+          stagedScope = do
+            -- An optional @build:@ prefix restricts the constraint to goals
+            -- solved for the build stage. Absence means the constraint applies
+            -- at every stage; there is no @host:@ prefix, since 'Host' is the
+            -- invisible default stage and could not be rendered back.
+            mstage <- P.optional (P.try (Build <$ P.string "build:"))
+            pn <- parsec
+            qualifier <-
+              P.choice
+                [ P.char '.' *> withDot pn
+                , P.char ':' *> withColon pn
+                , return (UserQualified UserQualToplevel pn)
+                ]
+            return (UserConstraintScope mstage qualifier)
+
+          withDot :: PackageName -> m UserConstraintQualifier
           withDot pn
             | pn == mkPackageName "any" = UserAnyQualifier <$> parsec
             | pn == mkPackageName "setup" = UserAnySetupQualifier <$> parsec
+            | pn == mkPackageName "exe" = UserAnyExeQualifier <$> parsec
             | otherwise = P.unexpected $ "constraint scope: " ++ unPackageName pn
 
-          withColon :: PackageName -> m UserConstraintScope
+          withColon :: PackageName -> m UserConstraintQualifier
           withColon pn =
-            UserQualified (UserQualSetup pn)
-              <$ P.string "setup."
-              <*> parsec
+            P.choice
+              [ UserQualified (UserQualSetup pn) <$> (P.try (P.string "setup.") *> parsec)
+              , -- @pkg:tool:exe.dep@, the form 'dispQualifier' prints for
+                -- 'QualExe', so that written constraints parse back.
+                UserQualified . UserQualExe pn <$> P.try (parsec <* P.string ":exe.") <*> parsec
+              ]

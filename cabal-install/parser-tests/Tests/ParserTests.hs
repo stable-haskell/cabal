@@ -48,6 +48,7 @@ import Distribution.Solver.Types.Settings
   , ReorderGoals (..)
   , StrongFlags (..)
   )
+import Distribution.Solver.Types.Stage (Stage (..))
 import Distribution.System (OS (..), buildOS)
 import Distribution.Types.CondTree (CondTree (..))
 import Distribution.Types.Flag (mkFlagAssignment)
@@ -85,6 +86,7 @@ parserTests =
     , testCase "read project-config-local-packages" testProjectConfigLocalPackages
     , testCase "read project-config-all-packages" testProjectConfigAllPackages
     , testCase "read project-config-specific-packages" testProjectConfigSpecificPackages
+    , testCase "read project-config-stage-packages" testProjectConfigStagePackages
     , testCase "test projectConfigAllPackages concatenation" testAllPackagesConcat
     , testCase "test projectConfigSpecificPackages concatenation" testSpecificPackagesConcat
     , testCase "test program-locations concatenation" testProgramLocationsConcat
@@ -191,6 +193,9 @@ testProjectConfigShared = do
     projectConfigHcFlavor = toFlag UHC
     projectConfigHcPath = toFlag "/some/path/to/compiler"
     projectConfigHcPkg = toFlag "/some/path/to/ghc-pkg"
+    projectConfigBuildHcFlavor = toFlag GHC
+    projectConfigBuildHcPath = toFlag "/some/path/to/build-compiler"
+    projectConfigBuildHcPkg = toFlag "/some/path/to/build-ghc-pkg"
     projectConfigHaddockIndex = toFlag $ toPathTemplate "/path/to/haddock-index"
     projectConfigInstallDirs = mempty -- tested below in testInstallDirs
     projectConfigPackageDBs = [Nothing, Just (SpecificPackageDB "foo"), Nothing, Just (SpecificPackageDB "bar"), Just (SpecificPackageDB "baz")]
@@ -232,6 +237,7 @@ testProjectConfigShared = do
     projectConfigPreferVersion = Flag PreferOldest
     projectConfigProgPathExtra = toNubList ["/foo/bar", "/baz/quux"]
     projectConfigMultiRepl = toFlag True
+    projectConfigInplaceBuilds = toFlag False
 
 testInstallDirs :: Assertion
 testInstallDirs = do
@@ -333,6 +339,8 @@ testProjectConfigLocalPackages = do
     expected = PackageConfig{..}
     packageConfigProgramPaths = MapLast $ Map.fromList [("ghc", "/tmp/bin/ghc"), ("gcc", "/tmp/bin/gcc")]
     packageConfigProgramArgs = MapMappend $ Map.fromList [("ghc", ["-fno-state-hack", "-foo"]), ("gcc", ["-baz", "-quux"])]
+    packageConfigBuildProgramPaths = MapLast $ Map.fromList [("ghc", "/tmp/build/bin/ghc"), ("ar", "/tmp/build/bin/ar")]
+    packageConfigBuildProgramArgs = MapMappend $ Map.fromList [("ghc", ["-fno-state-hack", "-bar"]), ("ld", ["-qux"])]
     packageConfigProgramPathExtra = toNubList ["/tmp/bin/extra", "/usr/local/bin"]
     packageConfigFlagAssignment = mkFlagAssignment [("foo", True), ("bar", False)]
     packageConfigVanillaLib = Flag False
@@ -428,9 +436,35 @@ testProjectConfigSpecificPackages = do
         { packageConfigProfDetail = Flag ProfDetailTopLate
         , packageConfigProfLibDetail = Flag ProfDetailNone
         , packageConfigProgPrefix = Flag $ toPathTemplate "prefix/path"
+        , packageConfigProgramArgs = MapMappend $ Map.fromList [("ghc", ["-O2"])]
+        , packageConfigBuildProgramArgs = MapMappend $ Map.fromList [("ghc", ["-O0"])]
+        , packageConfigBuildProgramPaths = MapLast $ Map.fromList [("gcc", "/tmp/build/bin/gcc")]
         }
     expectedBaz :: PackageConfig
     expectedBaz =
+      mempty
+        { packageConfigSharedLib = Flag True
+        }
+
+testProjectConfigStagePackages :: Assertion
+testProjectConfigStagePackages = do
+  -- The legacy parser has no stage-qualified package stanzas (it rejects the
+  -- 'build:*' argument), so read with the parsec parser only.
+  config <- readConfigParsec "project-config-stage-packages"
+  assertEqual
+    "Parsed Config does not match expected"
+    expected
+    (projectConfigStagePackages (snd (condTreeData config)))
+  where
+    expected = MapMappend $ Map.fromList [(Build, expectedBuild), (Host, expectedHost)]
+    expectedBuild :: PackageConfig
+    expectedBuild =
+      mempty
+        { packageConfigSharedLib = Flag False
+        , packageConfigDynExe = Flag False
+        }
+    expectedHost :: PackageConfig
+    expectedHost =
       mempty
         { packageConfigSharedLib = Flag True
         }
@@ -562,6 +596,18 @@ verbosity = mkVerbosity defaultVerbosityHandles normal
 
 readConfigDefault :: FilePath -> IO (ProjectConfigSkeleton, ProjectConfigSkeleton)
 readConfigDefault testSubDir = readConfig testSubDir "cabal.project"
+
+-- | Read a project config with the parsec parser only, for syntax the legacy
+-- parser does not know (stage-qualified package stanzas).
+readConfigParsec :: FilePath -> IO ProjectConfigSkeleton
+readConfigParsec testSubDir = do
+  (TestDir testRootFp projectConfigFp distDirLayout) <- testDirInfo testSubDir "cabal.project"
+  exists <- liftIO $ doesFileExist projectConfigFp
+  assertBool ("projectConfig does not exist: " <> projectConfigFp) exists
+  httpTransport <- liftIO $ configureTransport verbosity [] Nothing
+  liftIO $
+    runRebuild testRootFp $
+      readProjectFileSkeletonParsec verbosity httpTransport distDirLayout ProjectFileKeyMain
 
 readConfig :: FilePath -> FilePath -> IO (ProjectConfigSkeleton, ProjectConfigSkeleton)
 readConfig testSubDir projectFileName = do

@@ -23,9 +23,9 @@ import Prelude ()
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.RebuildMonad
+import Distribution.Client.Toolchain (Stage, Toolchain)
 
 import Distribution.Package (UnitId, mkUnitId)
-import Distribution.Simple.Compiler (Compiler (..))
 
 import Distribution.Simple.Utils
   ( debug
@@ -114,25 +114,48 @@ import System.FilePath
 -- or replace, i.e. not failing if the db entry already exists.
 
 -- | Check if a particular 'UnitId' exists in the store.
-doesStoreEntryExist :: StoreDirLayout -> Compiler -> UnitId -> IO Bool
-doesStoreEntryExist StoreDirLayout{storePackageDirectory} compiler unitid =
-  doesDirectoryExist (storePackageDirectory compiler unitid)
+doesStoreEntryExist :: StoreDirLayout -> Stage -> Toolchain -> UnitId -> IO Bool
+doesStoreEntryExist StoreDirLayout{storePackageDirectory} stage toolchain unitid =
+  doesDirectoryExist (storePackageDirectory stage toolchain unitid)
 
 -- | Return the 'UnitId's of all packages\/components already installed in the
 -- store.
-getStoreEntries :: StoreDirLayout -> Compiler -> Rebuild (Set UnitId)
-getStoreEntries StoreDirLayout{storeDirectory} compiler = do
-  paths <- getDirectoryContentsMonitored (storeDirectory compiler)
+getStoreEntries :: StoreDirLayout -> Stage -> Toolchain -> Rebuild (Set UnitId)
+getStoreEntries StoreDirLayout{storeDirectory} stage toolchain = do
+  paths <- getDirectoryContentsMonitored (storeDirectory stage toolchain)
   return $! mkEntries paths
   where
     mkEntries =
-      Set.delete (mkUnitId "package.db")
+      Set.delete (mkUnitId "package.conf.d")
         . Set.delete (mkUnitId "incoming")
         . Set.fromList
         . map mkUnitId
         . filter valid
     valid ('.' : _) = False
     valid _ = True
+
+-- Note [Store reuse is disabled under this layout]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- 'getStoreEntries' above reads the store directory expecting a directory per
+-- unit. Since units moved into a shared @lib@ (see
+-- 'storePackageInstallDirs''), what it actually finds is @lib@, @bin@ and the
+-- incoming directory, so the set it returns never matches a real unit and
+-- 'improveInstallPlanWithUpToDatePackages' never marks anything up to date
+-- from the store. Every build therefore reinstalls what it already has.
+--
+-- This is deliberately left as it is, because fixing it is not enough on its
+-- own: reading @lib@, or reading the unit ids out of the package database,
+-- both make the improvement start firing, and it then trips
+-- @InstallPlan.installed@'s invariant ("the package must have all of its
+-- dependencies already installed too") during stage2 of a GHC build. The
+-- store is closed under library dependencies but not under /setup/ and
+-- build-tool dependencies, which belong to the previous stage and live in a
+-- different store: the host store here holds 45 units and the build store 21,
+-- so a host package can be present while the build-stage dependency that
+-- 'directDeps' reports for it is not.
+--
+-- So the improvement needs to be made stage-aware before the enumeration is
+-- fixed, and the two have to land together.
 
 -- | The outcome of 'newStoreEntry': either the store entry was newly created
 -- or it existed already. The latter case happens if there was a race between
@@ -159,7 +182,8 @@ data NewStoreEntryOutcome
 newStoreEntry
   :: Verbosity
   -> StoreDirLayout
-  -> Compiler
+  -> Stage
+  -> Toolchain
   -> UnitId
   -> (FilePath -> IO (FilePath, [FilePath]))
   -- ^ Action to place files.
@@ -169,20 +193,21 @@ newStoreEntry
 newStoreEntry
   verbosity
   storeDirLayout@StoreDirLayout{..}
-  compiler
+  stage
+  toolchain
   unitid
   copyFiles
   register =
     -- See $concurrency above for an explanation of the concurrency protocol
 
-    withTempIncomingDir storeDirLayout compiler $ \incomingTmpDir -> do
+    withTempIncomingDir storeDirLayout stage toolchain $ \incomingTmpDir -> do
       -- Write all store entry files within the temp dir and return the prefix.
       (incomingEntryDir, otherFiles) <- copyFiles incomingTmpDir
 
       -- Take a lock named after the 'UnitId' in question.
-      withIncomingUnitIdLock verbosity storeDirLayout compiler unitid $ do
+      withIncomingUnitIdLock verbosity storeDirLayout stage toolchain unitid $ do
         -- Check for the existence of the final store entry directory.
-        exists <- doesStoreEntryExist storeDirLayout compiler unitid
+        exists <- doesStoreEntryExist storeDirLayout stage toolchain unitid
 
         if exists
           then -- If the entry exists then we lost the race and we must abandon,
@@ -191,8 +216,7 @@ newStoreEntry
             info verbosity $
               "Concurrent build race: abandoning build in favour of existing "
                 ++ "store entry "
-                ++ prettyShow compid
-                </> prettyShow unitid
+                ++ finalEntryDir
             return UseExistingStoreEntry
           else -- If the entry does not exist then we won the race and can proceed.
           do
@@ -202,46 +226,44 @@ newStoreEntry
             -- Atomically rename the temp dir to the final store entry location.
             renameDirectory incomingEntryDir finalEntryDir
             for_ otherFiles $ \file -> do
-              let finalStoreFile = storeDirectory compiler </> makeRelative (normalise $ incomingTmpDir </> dropDrive (storeDirectory compiler)) file
+              let storeDir = storeDirectory stage toolchain
+                  finalStoreFile = storeDir </> makeRelative (normalise $ incomingTmpDir </> dropDrive storeDir) file
               createDirectoryIfMissing True (takeDirectory finalStoreFile)
               renameFile file finalStoreFile
 
-            debug verbosity $
-              "Installed store entry " ++ prettyShow compid </> prettyShow unitid
+            debug verbosity $ "Installed store entry " ++ finalEntryDir
             return UseNewStoreEntry
     where
-      compid = compilerId compiler
-
-      finalEntryDir = storePackageDirectory compiler unitid
+      finalEntryDir = storePackageDirectory stage toolchain unitid
 
 withTempIncomingDir
   :: StoreDirLayout
-  -> Compiler
+  -> Stage
+  -> Toolchain
   -> (FilePath -> IO a)
   -> IO a
-withTempIncomingDir StoreDirLayout{storeIncomingDirectory} compiler action = do
+withTempIncomingDir StoreDirLayout{storeIncomingDirectory} stage toolchain action = do
   createDirectoryIfMissing True incomingDir
   withTempDirectory incomingDir "new" action
   where
-    incomingDir = storeIncomingDirectory compiler
+    incomingDir = storeIncomingDirectory stage toolchain
 
 withIncomingUnitIdLock
   :: Verbosity
   -> StoreDirLayout
-  -> Compiler
+  -> Stage
+  -> Toolchain
   -> UnitId
   -> IO a
   -> IO a
 withIncomingUnitIdLock
   verbosity
   StoreDirLayout{storeIncomingLock}
-  compiler
+  stage
+  toolchain
   unitid
   action =
-    withFileLock verbosity (storeIncomingLock compiler unitid) waitMsg action
+    withFileLock verbosity lockFile waitMsg action
     where
-      compid = compilerId compiler
-      waitMsg =
-        "Waiting for file lock on store entry "
-          ++ prettyShow compid
-          </> prettyShow unitid
+      lockFile = storeIncomingLock stage toolchain unitid
+      waitMsg = "Waiting for file lock on store entry " ++ lockFile
