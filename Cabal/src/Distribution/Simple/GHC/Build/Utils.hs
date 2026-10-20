@@ -50,18 +50,11 @@ supportsDynamicToo = Internal.ghcLookupProperty "Support dynamic-too"
 
 compilerBuildWay :: Compiler -> BuildWay
 compilerBuildWay c =
-  case (isDynamic c, isProfiled c) of
-    (True, True) -> ProfDynWay
-    (True, False) -> DynWay
-    (False, True) -> ProfWay
-    (False, False) -> StaticWay
+  if isDynamic c then DynWay else StaticWay
 
 -- | Is this compiler's RTS dynamically linked?
 isDynamic :: Compiler -> Bool
 isDynamic = Internal.ghcLookupProperty "GHC Dynamic"
-
-isProfiled :: Compiler -> Bool
-isProfiled = Internal.ghcLookupProperty "GHC Profiled"
 
 -- | Should we dynamically link the foreign library, based on its 'foreignLibType'?
 withDynFLib :: ForeignLib -> Bool
@@ -121,7 +114,7 @@ getObjectFileName mbWorkDir filename opts = oname
 -- | Target name for a foreign library (the actual file name)
 --
 -- We do not use mkLibName and co here because the naming for foreign libraries
--- is slightly different (we don't use "_p" or compiler version suffices, and we
+-- is slightly different (we don't use compiler version suffixes, and we
 -- don't want the "lib" prefix on Windows).
 --
 -- TODO: We do use `dllExtension` and co here, but really that's wrong: they

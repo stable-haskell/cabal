@@ -136,6 +136,7 @@ data CabalException
   | NoWorkingGcc
   | NoOSSupport OS String
   | NoCompilerSupport String
+  | ProfilingRequiresTargetCompiler CompilerId
   | InstallDirsNotPrefixRelative (InstallDirs FilePath)
   | ExplainErrors (Maybe (Either [Char] [Char])) [String]
   | CheckPackageProblems [String]
@@ -270,6 +271,7 @@ exceptionCode e = case e of
   NoWorkingGcc{} -> 1088
   NoOSSupport{} -> 3339
   NoCompilerSupport{} -> 2290
+  ProfilingRequiresTargetCompiler{} -> 7342
   InstallDirsNotPrefixRelative{} -> 6000
   ExplainErrors{} -> 4345
   CheckPackageProblems{} -> 5559
@@ -624,6 +626,13 @@ exceptionMessage e = case e of
     "Compiler: "
       ++ comp
       ++ ", does not support relocatable builds"
+  ProfilingRequiresTargetCompiler comp ->
+    "Profiling requires a separate profiling-target compiler; "
+      ++ prettyShow comp
+      ++ " does not report Target ABI: profiling. Select it with "
+      ++ "--with-compiler=<platform>-profiling-ghc and keep the ordinary "
+      ++ "compiler for Setup and build tools with --with-build-compiler=ghc. "
+      ++ "Legacy profiling ways on ordinary compilers are no longer supported."
   InstallDirsNotPrefixRelative installDirs -> "Installation directories are not prefix_relative:\n" ++ show installDirs
   ExplainErrors hdr libs ->
     unlines $

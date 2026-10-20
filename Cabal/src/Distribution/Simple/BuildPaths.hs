@@ -38,10 +38,8 @@ module Distribution.Simple.BuildPaths
   , haddockLibraryPath
   , mkGenericStaticLibName
   , mkLibName
-  , mkProfLibName
   , mkGenericSharedLibName
   , mkSharedLibName
-  , mkProfSharedLibName
   , mkStaticLibName
   , mkBytecodeLibName
   , mkGenericSharedBundledLibName
@@ -389,9 +387,6 @@ mkGenericStaticLibName lib = "lib" ++ lib <.> "a"
 mkLibName :: UnitId -> String
 mkLibName lib = mkGenericStaticLibName (getHSLibraryName lib)
 
-mkProfLibName :: UnitId -> String
-mkProfLibName lib = mkGenericStaticLibName (getHSLibraryName lib ++ "_p")
-
 -- | Create a library name for a shared library from a given name.
 -- Prepends @lib@ and appends the @-\<compilerFlavour\>\<compilerVersion\>@
 -- as well as the shared library extension.
@@ -407,10 +402,6 @@ mkGenericSharedLibName platform (CompilerId compilerFlavor compilerVersion) lib 
 mkSharedLibName :: Platform -> CompilerId -> UnitId -> String
 mkSharedLibName platform comp lib =
   mkGenericSharedLibName platform comp (getHSLibraryName lib)
-
-mkProfSharedLibName :: Platform -> CompilerId -> UnitId -> String
-mkProfSharedLibName platform comp lib =
-  mkGenericSharedLibName platform comp (getHSLibraryName lib ++ "_p")
 
 -- Static libs are named the same as shared libraries, only with
 -- a different extension.

@@ -277,13 +277,14 @@ lookupLocalPackageConfig
   ProjectConfig
     { projectConfigLocalPackages
     , projectConfigSpecificPackage
+    , projectConfigInstallPackages
     }
   pkgname =
     field projectConfigLocalPackages
       <> maybe
         mempty
         field
-        (Map.lookup pkgname (getMapMappend projectConfigSpecificPackage))
+        (Map.lookup pkgname (getMapMappend (projectConfigSpecificPackage <> projectConfigInstallPackages)))
 
 -- | Use a 'RepoContext' based on the 'BuildTimeSettings'.
 projectConfigWithBuilderRepoContext
@@ -337,12 +338,15 @@ resolveSolverSettings
     { projectConfigShared
     , projectConfigLocalPackages
     , projectConfigSpecificPackage
+    , projectConfigInstallPackages
     } =
     SolverSettings{..}
     where
       -- TODO: [required eventually] some of these settings need validation, e.g.
       -- the flag assignments need checking.
       cabalPkgname = mkPackageName "Cabal"
+
+      specificPackages = getMapMappend (projectConfigSpecificPackage <> projectConfigInstallPackages)
 
       profilingDynamicConstraint =
         ( UserConstraint
@@ -356,7 +360,7 @@ resolveSolverSettings
       profDynEnabledAnyLocally =
         or
           [ fromFlagOrDefault False (packageConfigProfShared ppc)
-          | (_, ppc) <- Map.toList (getMapMappend projectConfigSpecificPackage)
+          | (_, ppc) <- Map.toList specificPackages
           ]
 
       -- Add a setup.Cabal >= 3.13 constraint if prof+dyn is enabled globally
@@ -375,7 +379,7 @@ resolveSolverSettings
       solverSettingFlagAssignments =
         fmap
           packageConfigFlagAssignment
-          (getMapMappend projectConfigSpecificPackage)
+          specificPackages
       solverSettingCabalVersion = flagToMaybe projectConfigCabalVersion
       solverSettingSolver = fromFlag projectConfigSolver
       solverSettingAllowOlder = fromMaybe mempty projectConfigAllowOlder

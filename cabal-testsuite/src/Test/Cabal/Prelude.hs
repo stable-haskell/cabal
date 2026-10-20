@@ -31,7 +31,7 @@ import Test.Cabal.TestCode
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.Parsec (eitherParsec, simpleParsec)
-import Distribution.Simple.Compiler (PackageDBCWD, PackageDBStackCWD, PackageDBX (..))
+import Distribution.Simple.Compiler (PackageDBCWD, PackageDBStackCWD, PackageDBX (..), compilerTargetsProfiling)
 import Distribution.Simple.Configure
   ( getPersistBuildConfig
   )
@@ -1100,8 +1100,12 @@ testCompilerWithArgs args = do
   return (resultExitCode r == ExitSuccess)
 
 hasProfiledLibraries, hasProfiledSharedLibraries, hasSharedLibraries :: TestM Bool
-hasProfiledLibraries = testCompilerWithArgs ["-prof"]
-hasProfiledSharedLibraries = testCompilerWithArgs ["-prof", "-dynamic"]
+hasProfiledLibraries = do
+  env <- getTestEnv
+  pure (compilerTargetsProfiling (testCompiler env))
+hasProfiledSharedLibraries = do
+  intrinsic <- hasProfiledLibraries
+  if intrinsic then hasSharedLibraries else pure False
 hasSharedLibraries = testCompilerWithArgs ["-dynamic"]
 
 skipIfNoSharedLibraries :: TestM ()

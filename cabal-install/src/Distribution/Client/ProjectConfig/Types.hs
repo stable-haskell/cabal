@@ -162,6 +162,12 @@ data ProjectConfig = ProjectConfig
   -- target the build-stage and host-stage packages independently, which
   -- plain @package *@ cannot since the same package can be built in both
   -- stages.
+  , projectConfigInstallPackages :: MapMappend PackageName PackageConfig
+  -- ^ Local options promoted onto selected install targets after they become
+  -- source distributions. Keep their origin separate from explicit package
+  -- stanzas so target profiling options do not configure a native Build copy.
+  -- Internal only: tracked in plan caches, but not read from or written to
+  -- project files.
   }
   deriving (Eq, Show, Generic)
 

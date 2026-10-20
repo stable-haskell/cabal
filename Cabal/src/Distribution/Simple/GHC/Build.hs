@@ -8,6 +8,8 @@ import Prelude ()
 import Control.Monad.IO.Class
 import Distribution.PackageDescription as PD hiding (buildInfo)
 import Distribution.Simple.Build.Inputs
+import Distribution.Simple.Compiler
+import Distribution.Simple.Errors (CabalException (ProfilingRequiresTargetCompiler))
 import Distribution.Simple.Flag (Flag)
 import Distribution.Simple.GHC.Build.ExtraSources
 import Distribution.Simple.GHC.Build.Link
@@ -16,6 +18,7 @@ import Distribution.Simple.GHC.Build.Utils (compilerBuildWay, isHaskell, withDyn
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program.Builtin (ghcProgram)
 import Distribution.Simple.Program.Db (requireProgram)
+import Distribution.Simple.Program.Types (ConfiguredProgram (programDefaultArgs, programOverrideArgs))
 import Distribution.Simple.Utils
 
 import Distribution.Types.ComponentLocalBuildInfo
@@ -113,6 +116,12 @@ build numJobs verbHandles pkg_descr pbci = do
   -- can now fix after the refactor lands.
 
   (ghcProg, _) <- liftIO $ requireProgram verbosity ghcProgram (withPrograms lbi)
+  when
+    ( not (compilerTargetsProfiling (buildCompiler pbci))
+        && "-prof" `elem` (hcOptions GHC bi ++ programDefaultArgs ghcProg ++ programOverrideArgs ghcProg)
+    )
+    $ liftIO
+    $ dieWithException verbosity (ProfilingRequiresTargetCompiler (compilerId (buildCompiler pbci)))
 
   -- Ways which are wanted from configuration flags
   let wantedWays@(wantedLibWays, wantedFLibWay, wantedExeWay) = buildWays lbi
