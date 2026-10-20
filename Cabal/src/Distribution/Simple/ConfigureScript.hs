@@ -96,7 +96,6 @@ runConfigureScript verbHandles cfg flags programDb hp = do
   -- 'configureArgs' would only pass the flavour name.
   let hcPrograms = case flagToMaybe (configHcFlavor cfg) of
         Just GHC -> Just (ghcProgram, ghcPkgProgram)
-        Just GHCJS -> Just (ghcjsProgram, ghcjsPkgProgram)
         _ -> Nothing
       configuredPath prog = programPath <$> lookupProgram prog programDb
   mHcPath <- traverse getShortPathName (hcPrograms >>= configuredPath . fst)
