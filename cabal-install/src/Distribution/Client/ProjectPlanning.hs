@@ -4111,9 +4111,26 @@ setupHsConfigureFlags
             Just _ -> error "non-library dependency"
             Nothing -> LMainLibName
 
-      -- FIXME: whatever
-      -- configCoverageFor = determineCoverageFor elab plan
-      configCoverageFor = NoFlag
+      -- Per-component configure cannot infer sibling libraries from its LBI.
+      -- Pass their registered unit IDs in the same stage for coverage markup.
+      configCoverageFor = case elabPkgOrComp of
+        ElabPackage _ -> NoFlag
+        ElabComponent _
+          | not (LBC.exeCoverage elabBuildOptions || LBC.libCoverage elabBuildOptions) -> NoFlag
+        ElabComponent comp ->
+          toFlag
+            [ uid
+            | (WithStage stage cid, False) <- elabLibDependencies elab
+            , stage == elabStage
+            , confSrcId cid == elabPkgSourceId
+            , let uid = newSimpleUnitId (confInstId cid)
+            , any (isCanonicalDependency uid) (compLinkedLibDependencies comp)
+            ]
+
+      -- A component ID alone does not identify a Backpack instantiation.
+      -- Preserve the existing behavior for those unsupported coverage targets.
+      isCanonicalDependency uid (DefiniteUnitId defUid) = uid == unDefUnitId defUid
+      isCanonicalDependency uid (IndefFullUnitId cid insts) = Map.null insts && uid == newSimpleUnitId cid
 
       cidToPromisedComponent :: ConfiguredId -> PromisedComponent
       cidToPromisedComponent (ConfiguredId srcid mb_cn cid) =

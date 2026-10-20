@@ -3,16 +3,63 @@
 module UnitTests.Distribution.Client.ProjectPlanning (tests) where
 
 import Data.List.NonEmpty
-import Distribution.Client.ProjectPlanning (ComponentTarget (..), SubComponentTarget (..), nubComponentTargets)
+import qualified Data.Map as Map
+import Distribution.Backpack (OpenUnitId (..))
+import Distribution.Client.ProjectPlanning (ComponentTarget (..), SubComponentTarget (..), nubComponentTargets, setupHsConfigureFlags)
+import Distribution.Client.ProjectPlanning.Types
+import Distribution.Client.Types (ConfiguredId (..), GenericReadyPackage (..))
+import Distribution.Package (PackageIdentifier (..), mkComponentId, mkPackageName, newSimpleUnitId, unsafeMkDefUnitId)
+import qualified Distribution.Simple.Setup as Cabal
+import Distribution.Simple.Flag (flagToMaybe)
+import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.ComponentName
 import Distribution.Types.LibraryName
+import Distribution.Version (mkVersion)
 import Test.Tasty
 import Test.Tasty.HUnit
 
 tests :: [TestTree]
 tests =
   [ testGroup "Build Target Tests" buildTargetTests
+  , testCase "coverage configure flags include canonical sibling unit ids" testCoverageDependencies
   ]
+
+testCoverageDependencies :: Assertion
+testCoverageDependencies = do
+  let sourceId = PackageIdentifier (mkPackageName "coverage-fixture") (mkVersion [1])
+      siblingId = mkComponentId "coverage-fixture-library"
+      externalId = PackageIdentifier (mkPackageName "coverage-dependency") (mkVersion [1])
+      externalComponentId = mkComponentId "coverage-dependency-library"
+      siblingUnitId = newSimpleUnitId siblingId
+      externalUnitId = newSimpleUnitId externalComponentId
+      component =
+        (undefined :: ElaboratedComponent)
+          { compLibDependencies =
+              [ (ConfiguredId sourceId Nothing siblingId, False)
+              , (ConfiguredId externalId Nothing externalComponentId, False)
+              ]
+          , compLinkedLibDependencies =
+              [ DefiniteUnitId (unsafeMkDefUnitId siblingUnitId)
+              , DefiniteUnitId (unsafeMkDefUnitId externalUnitId)
+              , IndefFullUnitId siblingId Map.empty
+              ]
+          }
+      elab =
+        (undefined :: ElaboratedConfiguredPackage)
+          { elabPkgOrComp = ElabComponent component
+          , elabPkgSourceId = sourceId
+          , elabStage = Host
+          , elabBuildPackageDBStack = []
+          , elabBuildOptions = (undefined :: LBC.BuildOptions){LBC.exeCoverage = True}
+          }
+  config <-
+    setupHsConfigureFlags
+      (\_ -> pure (error "unexpected package database path"))
+      (ReadyPackage elab)
+      mempty
+  case flagToMaybe (Cabal.configCoverageFor config) of
+    Just unitIds -> unitIds @?= [siblingUnitId]
+    Nothing -> assertFailure "component coverage omitted its canonical sibling library id"
 
 -- ----------------------------------------------------------------------------
 -- Build Target Tests
