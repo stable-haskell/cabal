@@ -291,7 +291,13 @@ runTest SolverTest{..} = withFrozenCallStack $ askOption $ \(OptionShowSolverLog
         assertBool
           ("Unexpected error:\n" ++ err)
           (checkErrorMsg testResult err)
-      Right plan -> assertEqual "" (toMaybe testResult) (Just (extractInstallPlan plan))
+      -- The install plan is a dependency graph, not an ordered list. Compare
+      -- package/version multiplicity while ignoring traversal order.
+      Right plan ->
+        assertEqual
+          ""
+          (fmap sort $ toMaybe testResult)
+          (Just $ sort $ extractInstallPlan plan)
   where
     toMaybe :: SolverResult -> Maybe [(String, Int)]
     toMaybe = either (const Nothing) Just . resultErrorMsgPredicateOrPlan
@@ -324,10 +330,11 @@ runTest SolverTest{..} = withFrozenCallStack $ askOption $ \(OptionShowSolverLog
     toQPN q pn = P.Q pp (C.mkPackageName pn)
       where
         pp = case q of
-          QualNone -> P.PackagePath Host P.QualToplevel
+          QualNone -> P.PackagePath Host P.DefaultNamespace P.QualToplevel
+          QualIndep root -> P.PackagePath Host (P.Independent (C.mkPackageName root)) P.QualToplevel
           QualSetup s ->
-            P.PackagePath Host (P.QualSetup (C.mkPackageName s))
-          QualIndepSetup _ s ->
-            P.PackagePath Host (P.QualSetup (C.mkPackageName s))
+            P.PackagePath Build P.DefaultNamespace (P.QualSetup (C.mkPackageName s))
+          QualIndepSetup root s ->
+            P.PackagePath Build (P.Independent (C.mkPackageName root)) (P.QualSetup (C.mkPackageName s))
           QualExe p1 p2 ->
-            P.PackagePath Host (P.QualExe (C.mkPackageName p1) (C.mkPackageName p2))
+            P.PackagePath Build P.DefaultNamespace (P.QualExe (C.mkPackageName p1) (C.mkPackageName p2))

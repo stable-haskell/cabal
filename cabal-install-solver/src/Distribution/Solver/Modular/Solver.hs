@@ -251,5 +251,5 @@ _removeGR = trav go
    dummy =
        DependencyGoal $
        DependencyReason
-           (Q (PackagePath Host QualToplevel) (mkPackageName "$"))
+           (Q (PackagePath Host DefaultNamespace QualToplevel) (mkPackageName "$"))
            M.empty S.empty

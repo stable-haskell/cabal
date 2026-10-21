@@ -59,7 +59,7 @@ data I = I Stage Ver Loc
 -- | String representation of an instance.
 showI :: I -> String
 showI (I s v (InRepo pn)) = intercalate ":" [showStage s, "source", prettyShow (PackageIdentifier pn v)]
-showI (I s _v (Inst uid)) = intercalate ":" [showStage s, "installed", prettyShow uid]
+showI (I s v (Inst uid)) = intercalate ":" [showStage s, "installed", showVer v ++ "/" ++ prettyShow uid]
 
 -- | Package instance. A package name and an instance.
 data PI qpn = PI qpn I
@@ -85,7 +85,7 @@ instUid _ _ = False
 -- as setup deps.
 --
 primaryPP :: PackagePath -> Bool
-primaryPP (PackagePath _ns q) = go q
+primaryPP (PackagePath _stage _namespace q) = go q
   where
     go QualToplevel    = True
     go (QualBase  _)   = True
@@ -97,6 +97,6 @@ primaryPP (PackagePath _ns q) = go q
 -- dependency (grep 'setupPP' to see the use sites).
 --
 setupPP :: PackagePath -> Bool
-setupPP (PackagePath _ns (QualSetup _)) = True
-setupPP (PackagePath _ns _)         = False
+setupPP (PackagePath _stage _namespace (QualSetup _)) = True
+setupPP (PackagePath _stage _namespace _)             = False
 

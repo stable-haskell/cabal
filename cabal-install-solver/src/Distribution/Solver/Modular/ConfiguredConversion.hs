@@ -57,7 +57,7 @@ convCP iidx sidx (CP qpi fa es ds) =
     ds' = fmap (partitionEithers . map convConfId) ds
 
 convConfId :: PI QPN -> Either SolverId {- is lib -} SolverId {- is exe -}
-convConfId (PI (Q (PackagePath _stage q) pn) (I stage v loc)) =
+convConfId (PI (Q (PackagePath _stage _namespace q) pn) (I stage v loc)) =
     case loc of
         Inst pi -> Left (PreExistingId stage sourceId pi)
         _otherwise

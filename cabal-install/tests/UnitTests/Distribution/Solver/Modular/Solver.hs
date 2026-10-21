@@ -9,11 +9,14 @@ where
 -- base
 import Data.List (isInfixOf)
 
+import qualified Distribution.Solver.Modular.Package as SolverPackage
+import Distribution.Types.UnitId (mkUnitId)
 import qualified Distribution.Version as V
 
 -- test-framework
 import Test.Tasty as TF
 import Test.Tasty.ExpectedFailure
+import Test.Tasty.HUnit (assertEqual, testCase)
 
 -- Cabal
 import Language.Haskell.Extension
@@ -23,16 +26,74 @@ import Language.Haskell.Extension
   )
 
 -- cabal-install
+
+import Distribution.Solver.Modular.Dependency
+  ( CI (..)
+  , Dep (..)
+  , DependencyReason (..)
+  , ExposedComponent (..)
+  , FlaggedDep (..)
+  , LDep (..)
+  , PkgComponent (..)
+  , QualifyOptions (..)
+  , flattenFlaggedDeps
+  , qualifyDeps
+  )
+import Distribution.Solver.Types.ComponentDeps (Component (..))
 import Distribution.Solver.Types.Flag
 import Distribution.Solver.Types.OptionalStanza
 import Distribution.Solver.Types.PackageConstraint
 import qualified Distribution.Solver.Types.PackagePath as P
+import Distribution.Solver.Types.Stage (Stage (..))
+import Distribution.Types.LibraryName (LibraryName (..))
+import Distribution.Types.PackageName (mkPackageName)
 import UnitTests.Distribution.Solver.Modular.DSL
 import UnitTests.Distribution.Solver.Modular.DSL.TestCaseUtils
 
 tests :: [TF.TestTree]
 tests =
   [ testGroup
+      "Package path qualification"
+      [ testCase "base shims in setup dependencies keep Build stage and namespace" $ do
+          let root = mkPackageName "root"
+              package = mkPackageName "package"
+              base = mkPackageName "base"
+              syb = mkPackageName "syb"
+              namespace = P.Independent root
+              hostPackage = P.Q (P.PackagePath Host namespace P.QualToplevel) package
+              baseDependency =
+                Simple
+                  ( LDep
+                      (DependencyReason package mempty mempty)
+                      (Dep (PkgComponent base (ExposedLib LMainLibName)) (Constrained V.anyVersion))
+                  )
+                  ComponentSetup
+              qualifiedBase =
+                [ qpn
+                | (LDep _ (Dep (PkgComponent qpn _) _), _) <-
+                    flattenFlaggedDeps (qualifyDeps (QO True True) hostPackage [baseDependency])
+                ]
+              buildBase = P.Q (P.PackagePath Build namespace (P.QualBase package)) base
+              basePackage = P.Q (P.PackagePath Build namespace (P.QualBase package)) base
+              ordinaryDependency =
+                Simple
+                  ( LDep
+                      (DependencyReason base mempty mempty)
+                      (Dep (PkgComponent syb (ExposedLib LMainLibName)) (Constrained V.anyVersion))
+                  )
+                  ComponentLib
+              qualifiedDescendant =
+                [ qpn
+                | (LDep _ (Dep (PkgComponent qpn _) _), _) <-
+                    flattenFlaggedDeps (qualifyDeps (QO True True) basePackage [ordinaryDependency])
+                ]
+          assertEqual "base setup dependency" [buildBase] qualifiedBase
+          assertEqual
+            "ordinary descendant resets the base qualifier only"
+            [P.Q (P.PackagePath Build namespace P.QualToplevel) syb]
+            qualifiedDescendant
+      ]
+  , testGroup
       "Simple dependencies"
       [ runTest $ mkTest db1 "alreadyInstalled" ["A"] (solverSuccess [])
       , runTest $ mkTest db1 "installLatest" ["B"] (solverSuccess [("B", 2)])
@@ -50,9 +111,9 @@ tests =
       , runTest $ mkTest db1 "buildDepAgainstNew" ["G"] (solverSuccess [("B", 2), ("E", 1), ("G", 1)])
       , runTest $ indep $ mkTest db1 "multipleInstances" ["F", "G"] anySolverFailure
       , runTest $ mkTest db21 "unknownPackage1" ["A"] (solverSuccess [("A", 1), ("B", 1)])
-      , runTest $ mkTest db22 "unknownPackage2" ["A"] (solverFailure (isInfixOf "unknown package: C"))
-      , runTest $ mkTest db23 "unknownPackage3" ["A"] (solverFailure (isInfixOf "unknown package: B"))
-      , runTest $ mkTest [] "unknown target" ["A"] (solverFailure (isInfixOf "unknown package: A"))
+      , runTest $ mkTest db22 "unknownPackage2" ["A"] (solverFailure (isInfixOf "unknown package: host:C (dependency of host:A)"))
+      , runTest $ mkTest db23 "unknownPackage3" ["A"] (solverFailure (isInfixOf "unknown package: host:B (dependency of host:A)"))
+      , runTest $ mkTest [] "unknown target" ["A"] (solverFailure (isInfixOf "unknown package: host:A (user goal)"))
       ]
   , testGroup
       "Flagged dependencies"
@@ -74,7 +135,7 @@ tests =
           mkTest dbManualFlags "Use default value for manual flag" ["pkg"] $
             solverSuccess [("pkg", 1), ("true-dep", 1)]
       , let checkFullLog =
-              any $ isInfixOf "rejecting: pkg:-flag (manual flag can only be changed explicitly)"
+              any $ isInfixOf "rejecting: host:pkg:-flag (manual flag can only be changed explicitly)"
          in runTest $
               setVerbose $
                 constraints [ExVersionConstraint (ConstraintScope Nothing (ScopeAnyQualifier "true-dep")) V.noVersion] $
@@ -133,30 +194,23 @@ tests =
                     , ("b-1-true-dep", 1)
                     , ("b-2-false-dep", 1)
                     ]
-      , -- Regression test for #4299
-        let name = "Solver can link deps when only one has constrained manual flag"
+      , -- Host and Build instances are separate toolchain choices, even when
+        -- they have the same package version.
+        let name = "Host and Build deps keep separate flags when only one is constrained"
             cs = [ExFlagConstraint (ConstraintScope Nothing (ScopeQualified P.QualToplevel "B")) "flag" False]
          in runTest $
               constraints cs $
                 mkTest dbLinkedSetupDepWithManualFlag name ["A"] $
-                  solverSuccess [("A", 1), ("B", 1), ("b-1-false-dep", 1)]
-      , let name = "Solver cannot link deps that have conflicting manual flag constraints"
+                  solverSuccess [("A", 1), ("B", 1), ("B", 1), ("b-1-false-dep", 1), ("b-1-true-dep", 1)]
+      , let name = "Host and Build deps keep separate flags when constraints conflict"
             cs =
               [ ExFlagConstraint (ConstraintScope Nothing (ScopeQualified P.QualToplevel "B")) "flag" True
               , ExFlagConstraint (ConstraintScope Nothing (ScopeQualified (P.QualSetup "A") "B")) "flag" False
               ]
-            failureReason = "(constraint from unknown source requires opposite flag selection)"
-            checkFullLog lns =
-              all
-                (\msg -> any (msg `isInfixOf`) lns)
-                [ "rejecting: B:-flag " ++ failureReason
-                , "rejecting: A:setup.B:+flag " ++ failureReason
-                ]
          in runTest $
               constraints cs $
-                setVerbose $
-                  mkTest dbLinkedSetupDepWithManualFlag name ["A"] $
-                    SolverResult checkFullLog (Left $ const True)
+                mkTest dbLinkedSetupDepWithManualFlag name ["A"] $
+                  solverSuccess [("A", 1), ("B", 1), ("B", 1), ("b-1-false-dep", 1), ("b-1-true-dep", 1)]
       ]
   , testGroup
       "Stanzas"
@@ -174,8 +228,8 @@ tests =
   , testGroup
       "Setup dependencies"
       [ runTest $ mkTest db7 "setupDeps1" ["B"] (solverSuccess [("A", 2), ("B", 1)])
-      , runTest $ mkTest db7 "setupDeps2" ["C"] (solverSuccess [("A", 2), ("C", 1)])
-      , runTest $ mkTest db7 "setupDeps3" ["D"] (solverSuccess [("A", 1), ("D", 1)])
+      , runTest $ mkTest db7 "setupDeps2" ["C"] (solverSuccess [("A", 2), ("A", 2), ("C", 1)])
+      , runTest $ mkTest db7 "setupDeps3" ["D"] (solverSuccess [("A", 1), ("A", 2), ("D", 1)])
       , runTest $ mkTest db7 "setupDeps4" ["E"] (solverSuccess [("A", 1), ("A", 2), ("E", 1)])
       , runTest $ mkTest db7 "setupDeps5" ["F"] (solverSuccess [("A", 1), ("A", 2), ("F", 1)])
       , runTest $ mkTest db8 "setupDeps6" ["C", "D"] (solverSuccess [("A", 1), ("B", 1), ("B", 2), ("C", 1), ("D", 1)])
@@ -193,28 +247,30 @@ tests =
       , runTest $ mkTest db12 "baseShim4" ["C"] (solverSuccess [("A", 1), ("B", 1), ("C", 1)])
       , runTest $ mkTest db12 "baseShim5" ["D"] anySolverFailure
       , runTest $ mkTest db12 "baseShim6" ["E"] (solverSuccess [("E", 1), ("syb", 2)])
-      , expectFailBecause "#9467" $ runTest $ mkTest db12s "baseShim7" ["A"] (solverSuccess [("A", 1)])
-      , expectFailBecause "#9467" $ runTest $ mkTest db11s "baseShim7-simple" ["A"] (solverSuccess [("A", 1)])
+      , -- The Build stage reuses installed base-3 and syb-1; only Host-stage A
+        -- and syb-2 need to be installed from source.
+        runTest $ mkTest db12s "baseShim7" ["A"] (solverSuccess [("A", 1), ("syb", 2)])
+      , runTest $ mkTest db11s "baseShim7-simple" ["A"] (solverSuccess [("A", 1)])
       , runTest $ mkTest db11s2 "baseShim8" ["A"] (solverSuccess [("A", 1)])
       ]
   , testGroup
-      "Non-reinstallable base, template-haskell and ghc (GHC without wiredInUnitIds)"
+      "Host source packages for base, template-haskell and ghc (GHC without wiredInUnitIds)"
       [ runTest $
-          mkTest dbBase "Refuse to install base without --allow-boot-library-installs" ["base"] $
-            solverFailure (isInfixOf "rejecting: base-1 (constraint from non-reinstallable package requires installed instance)")
+          mkTest dbBase "Build base from source without --allow-boot-library-installs" ["base"] $
+            solverSuccess [("base", 1), ("ghc-prim", 1), ("integer-gmp", 1), ("integer-simple", 1)]
       , runTest $
-          mkTest dbTH "Refuse to install template-haskell without --allow-boot-library-installs" ["template-haskell"] $
-            solverFailure (isInfixOf "rejecting: template-haskell-1 (constraint from non-reinstallable package requires installed instance)")
+          mkTest dbTH "Build template-haskell from source without --allow-boot-library-installs" ["template-haskell"] $
+            solverSuccess [("base", 1), ("ghc-prim", 1), ("pretty", 1), ("template-haskell", 1)]
       , runTest $
-          mkTest dbNonupgrade "Refuse to install newer ghc requested by another library" ["A"] $
-            solverFailure (isInfixOf "rejecting: ghc-2 (constraint from non-reinstallable package requires installed instance)")
+          mkTest dbNonupgrade "Build newer ghc from source when requested by another library" ["A"] $
+            solverSuccess [("A", 1), ("ghc", 2)]
       , runTest $
           allowBootLibInstalls $
             mkTest dbBase "Install base with --allow-boot-library-installs" ["base"] $
               solverSuccess [("base", 1), ("ghc-prim", 1), ("integer-gmp", 1), ("integer-simple", 1)]
       ]
   , testGroup
-      "Reinstallable base, template-haskell, but not ghc{,-internal} (GHC with wiredInUnitIds)"
+      "Host source packages for base, template-haskell, ghc and ghc-internal (GHC with wiredInUnitIds)"
       [ runTest $
           wiredInUnitIds $
             mkTest dbBase "Allows reinstalling base even without --allow-boot-library-installs" ["base"] $
@@ -226,22 +282,26 @@ tests =
       , runTest $
           wiredInUnitIds $
             mkTest dbGhcInternal "Fails to reinstall ghc-internal as its wired-in" ["ghc-internal"] $
-              solverFailure (isInfixOf "ghc-internal-1 (constraint from non-reinstallable package requires installed instance with unit id ghc-internal-1)")
+              solverSuccess [("ghc-internal", 1)]
       , runTest $
           wiredInUnitIds $
-            mkTest dbNonupgrade "Refuse to install newer ghc requested by another library" ["A"] $
-              solverFailure (isInfixOf "rejecting: ghc-2 (constraint from non-reinstallable package requires installed instance with unit id ghc-1)")
+            mkTest dbNonupgrade "Build newer ghc from source when requested by another library" ["A"] $
+              solverSuccess [("A", 1), ("ghc", 2)]
       ]
   , testGroup
       "reject-unconstrained"
-      [ runTest $
-          onlyConstrained $
-            mkTest db12 "missing syb" ["E"] $
-              solverFailure (isInfixOf "not a user-provided goal")
-      , runTest $
-          onlyConstrained $
-            mkTest db12 "all goals" ["E", "syb"] $
-              solverSuccess [("E", 1), ("syb", 2)]
+      [ runTest
+          $ onlyConstrained
+          $ constraints
+            [ExVersionConstraint (ConstraintScope Nothing (ScopeAnyQualifier "base")) V.anyVersion]
+          $ mkTest db12 "missing syb" ["E"]
+          $ solverFailure (isInfixOf "not a user-provided goal")
+      , runTest
+          $ onlyConstrained
+          $ constraints
+            [ExVersionConstraint (ConstraintScope Nothing (ScopeAnyQualifier "base")) V.anyVersion]
+          $ mkTest db12 "all goals" ["E", "syb"]
+          $ solverSuccess [("E", 1), ("syb", 2)]
       , runTest $
           onlyConstrained $
             mkTest db17 "backtracking" ["A", "B"] $
@@ -252,13 +312,13 @@ tests =
               solverFailure $
                 isInfixOf $
                   "Could not resolve dependencies:\n"
-                    ++ "[__0] trying: A-3 (user goal)\n"
-                    ++ "[__1] next goal: C (dependency of A)\n"
+                    ++ "[__0] trying: host:A == host:source:A-3 (user goal)\n"
+                    ++ "[__1] next goal: host:C (dependency of host:A)\n"
                     ++ "[__1] fail (not a user-provided goal nor mentioned as a constraint, "
                     ++ "but reject-unconstrained-dependencies was set)\n"
-                    ++ "[__1] fail (backjumping, conflict set: A, C)\n"
+                    ++ "[__1] fail (backjumping, conflict set: host:A, host:C)\n"
                     ++ "After searching the rest of the dependency tree exhaustively, "
-                    ++ "these were the goals I've had most trouble fulfilling: A, C, B"
+                    ++ "these were the goals I've had most trouble fulfilling: host:A, host:C, host:B"
       ]
   , testGroup
       "Cycles"
@@ -414,7 +474,7 @@ tests =
               ]
          in runTest $
               mkTest db "reject build-depends dependency with no library" ["A"] $
-                solverFailure (isInfixOf "rejecting: B-1 (does not contain library, which is required by A)")
+                solverFailure (isInfixOf "rejecting: host:B == host:source:B-1 (does not contain library, which is required by host:A)")
       , let exe = exExe "exe" []
             db =
               [ Right $ exAv "A" 1 [ExAny "B"]
@@ -434,7 +494,7 @@ tests =
          in runTest $
               mkTest db "reject package that is missing required sub-library" ["A"] $
                 solverFailure $
-                  isInfixOf "rejecting: B-1 (does not contain library 'sub-lib', which is required by A)"
+                  isInfixOf "rejecting: host:B == host:source:B-1 (does not contain library 'sub-lib', which is required by host:A)"
       , let db =
               [ Right $ exAv "A" 1 [ExSubLibAny "B" "sub-lib"]
               , Right $ exAvNoLibrary "B" 1 `withSubLibrary` exSubLib "sub-lib" []
@@ -442,7 +502,7 @@ tests =
          in runTest $
               mkTest db "reject package with private but required sub-library" ["A"] $
                 solverFailure $
-                  isInfixOf "rejecting: B-1 (library 'sub-lib' is private, but it is required by A)"
+                  isInfixOf "rejecting: host:B == host:source:B-1 (library 'sub-lib' is private, but it is required by host:A)"
       , let db =
               [ Right $ exAv "A" 1 [ExSubLibAny "B" "sub-lib"]
               , Right $
@@ -453,7 +513,7 @@ tests =
               constraints [ExFlagConstraint (ConstraintScope Nothing (ScopeAnyQualifier "B")) "make-lib-private" True] $
                 mkTest db "reject package with sub-library made private by flag constraint" ["A"] $
                   solverFailure $
-                    isInfixOf "rejecting: B-1 (library 'sub-lib' is private, but it is required by A)"
+                    isInfixOf "rejecting: host:B == host:source:B-1 (library 'sub-lib' is private, but it is required by host:A)"
       , let db =
               [ Right $ exAv "A" 1 [ExSubLibAny "B" "sub-lib"]
               , Right $
@@ -478,7 +538,7 @@ tests =
               goalOrder goals $
                 mkTest db "reject package that requires a private sub-library" ["A", "C"] $
                   solverFailure $
-                    isInfixOf "rejecting: C-1 (requires library 'sub-lib' from B, but the component is private)"
+                    isInfixOf "rejecting: host:C == host:source:C-1 (requires library 'sub-lib' from host:B, but the component is private)"
       , let db =
               [ Right $ exAv "A" 1 [ExSubLibAny "B" "sub-lib-v1"]
               , Right $ exAv "B" 2 [] `withSubLibrary` ExSubLib "sub-lib-v2" publicDependencies
@@ -509,30 +569,30 @@ tests =
             mkTest dbBuildTools "test suite exe dependency" ["C"] (solverSuccess [("C", 1), ("bt-pkg", 2)])
       , runTest $
           mkTest dbBuildTools "unknown exe" ["D"] $
-            solverFailure (isInfixOf "does not contain executable 'unknown-exe', which is required by D")
+            solverFailure (isInfixOf "does not contain executable 'unknown-exe', which is required by host:D")
       , runTest $
           disableSolveExecutables $
             mkTest dbBuildTools "don't check for build tool executables in legacy mode" ["D"] $
               solverSuccess [("D", 1)]
       , runTest $
           mkTest dbBuildTools "unknown build tools package error mentions package, not exe" ["E"] $
-            solverFailure (isInfixOf "unknown package: E:unknown-pkg:exe.unknown-pkg (dependency of E)")
+            solverFailure (isInfixOf "unknown package: build:E:unknown-pkg:exe.unknown-pkg (dependency of host:E)")
       , runTest $
           mkTest dbBuildTools "unknown flagged exe" ["F"] $
-            solverFailure (isInfixOf "does not contain executable 'unknown-exe', which is required by F +flagF")
+            solverFailure (isInfixOf "does not contain executable 'unknown-exe', which is required by host:F +flagF")
       , runTest $
           enableAllTests $
             mkTest dbBuildTools "unknown test suite exe" ["G"] $
-              solverFailure (isInfixOf "does not contain executable 'unknown-exe', which is required by G *test")
+              solverFailure (isInfixOf "does not contain executable 'unknown-exe', which is required by host:G *test")
       , runTest $
           mkTest dbBuildTools "wrong exe for build tool package version" ["H"] $
             solverFailure $
               isInfixOf $
                 -- The solver reports the version conflict when a version conflict
                 -- and an executable conflict apply to the same package version.
-                "[__1] rejecting: H:bt-pkg:exe.bt-pkg-4 (conflict: H => H:bt-pkg:exe.bt-pkg (exe exe1)==3)\n"
-                  ++ "[__1] rejecting: H:bt-pkg:exe.bt-pkg-3 (does not contain executable 'exe1', which is required by H)\n"
-                  ++ "[__1] rejecting: H:bt-pkg:exe.bt-pkg-2 (conflict: H => H:bt-pkg:exe.bt-pkg (exe exe1)==3)"
+                "[__1] rejecting: build:H:bt-pkg:exe.bt-pkg == build:source:bt-pkg-4 (conflict: host:H => build:H:bt-pkg:exe.bt-pkg (exe exe1)==3)\n"
+                  ++ "[__1] rejecting: build:H:bt-pkg:exe.bt-pkg == build:source:bt-pkg-3 (does not contain executable 'exe1', which is required by host:H)\n"
+                  ++ "[__1] rejecting: build:H:bt-pkg:exe.bt-pkg == build:source:bt-pkg-2 (conflict: host:H => build:H:bt-pkg:exe.bt-pkg (exe exe1)==3)"
       , runTest $ chooseExeAfterBuildToolsPackage True "choose exe after choosing its package - success"
       , runTest $ chooseExeAfterBuildToolsPackage False "choose exe after choosing its package - failure"
       , runTest $ rejectInstalledBuildToolPackage "reject installed package for build-tool dependency"
@@ -547,7 +607,7 @@ tests =
             mkTest dbLegacyBuildTools1 "bt1 - don't install build tool packages in legacy mode" ["A"] (solverSuccess [("A", 1)])
       , runTest $
           mkTest dbLegacyBuildTools2 "bt2" ["A"] $
-            solverFailure (isInfixOf "does not contain executable 'alex', which is required by A")
+            solverFailure (isInfixOf "does not contain executable 'alex', which is required by host:A")
       , runTest $
           disableSolveExecutables $
             mkTest dbLegacyBuildTools2 "bt2 - don't check for build tool executables in legacy mode" ["A"] (solverSuccess [("A", 1)])
@@ -587,8 +647,8 @@ tests =
                     mkTest db "reject library dependency with unbuildable library" ["A"] $
                       solverFailure $
                         isInfixOf $
-                          "rejecting: B-1 (library is not buildable in the "
-                            ++ "current environment, but it is required by A)"
+                          "rejecting: host:B == host:source:B-1 (library is not buildable in the "
+                            ++ "current environment, but it is required by host:A)"
           , let db =
                   [ Right $ exAv "A" 1 [ExBuildToolAny "B" "bt"]
                   , Right $
@@ -610,8 +670,8 @@ tests =
                     mkTest db "reject build-tool dependency with unbuildable exe" ["A"] $
                       solverFailure $
                         isInfixOf $
-                          "rejecting: A:B:exe.B-1 (executable 'bt' is not "
-                            ++ "buildable in the current environment, but it is required by A)"
+                          "rejecting: build:A:B:exe.B == build:source:B-1 (executable 'bt' is not "
+                            ++ "buildable in the current environment, but it is required by host:A)"
           , runTest $
               chooseUnbuildableExeAfterBuildToolsPackage
                 "choose unbuildable exe after choosing its package"
@@ -633,17 +693,17 @@ tests =
                 , Right $ exAv "B" 1 [ExAny "unknown2"]
                 ]
               msg =
-                [ "[__0] trying: A-4 (user goal)"
-                , "[__1] trying: B-2 (dependency of A)"
-                , "[__2] unknown package: unknown1 (dependency of B)"
-                , "[__2] fail (backjumping, conflict set: B, unknown1)"
-                , "[__1] trying: B-1"
-                , "[__2] unknown package: unknown2 (dependency of B)"
-                , "[__2] fail (backjumping, conflict set: B, unknown2)"
-                , "[__1] fail (backjumping, conflict set: A, B, unknown1, unknown2)"
-                , "[__0] skipping: A; 3, 2 (has the same characteristics that "
-                    ++ "caused the previous version to fail: depends on 'B')"
-                , "[__0] trying: A-1"
+                [ "[__0] trying: host:A == host:source:A-4 (user goal)"
+                , "[__1] trying: host:B == host:source:B-2 (dependency of host:A)"
+                , "[__2] unknown package: host:unknown1 (dependency of host:B)"
+                , "[__2] fail (backjumping, conflict set: host:B, host:unknown1)"
+                , "[__1] trying: host:B == host:source:B-1"
+                , "[__2] unknown package: host:unknown2 (dependency of host:B)"
+                , "[__2] fail (backjumping, conflict set: host:B, host:unknown2)"
+                , "[__1] fail (backjumping, conflict set: host:A, host:B, host:unknown1, host:unknown2)"
+                , "[__0] skipping: host:A; host:source:A-3, host:source:A-2 (has the same characteristics that "
+                    ++ "caused the previous version to fail: depends on 'host:B')"
+                , "[__0] trying: host:A == host:source:A-1"
                 , "[__1] done"
                 ]
            in setVerbose $
@@ -666,16 +726,16 @@ tests =
                 , Right $ exAv "B" 11 []
                 ]
               msg =
-                [ "[__0] trying: A-4 (user goal)"
-                , "[__1] next goal: B (dependency of A)"
-                , "[__1] rejecting: B-11 (conflict: A => B==14)"
-                , "[__1] fail (backjumping, conflict set: A, B)"
-                , "[__0] skipping: A; 3, 2 (has the same characteristics that "
-                    ++ "caused the previous version to fail: depends on 'B' but excludes "
+                [ "[__0] trying: host:A == host:source:A-4 (user goal)"
+                , "[__1] next goal: host:B (dependency of host:A)"
+                , "[__1] rejecting: host:B == host:source:B-11 (conflict: host:A => host:B==14)"
+                , "[__1] fail (backjumping, conflict set: host:A, host:B)"
+                , "[__0] skipping: host:A; host:source:A-3, host:source:A-2 (has the same characteristics that "
+                    ++ "caused the previous version to fail: depends on 'host:B' but excludes "
                     ++ "version 11)"
-                , "[__0] trying: A-1"
-                , "[__1] next goal: B (dependency of A)"
-                , "[__1] trying: B-11"
+                , "[__0] trying: host:A == host:source:A-1"
+                , "[__1] next goal: host:B (dependency of host:A)"
+                , "[__1] trying: host:B == host:source:B-11"
                 , "[__2] done"
                 ]
            in setVerbose $
@@ -704,16 +764,16 @@ tests =
                 ]
               goals = [P QualNone pkg | pkg <- ["A", "B", "C"]]
               expectedMsg =
-                [ "[__0] trying: A-1 (user goal)"
-                , "[__1] trying: B-3 (dependency of A)"
-                , "[__2] next goal: C (dependency of A)"
-                , "[__2] rejecting: C-2 (conflict: B==3, C => B==2)"
-                , "[__2] skipping: C-1 (has the same characteristics that caused the "
-                    ++ "previous version to fail: excludes 'B' version 3)"
-                , "[__2] fail (backjumping, conflict set: A, B, C)"
-                , "[__1] trying: B-2"
-                , "[__2] next goal: C (dependency of A)"
-                , "[__2] trying: C-2"
+                [ "[__0] trying: host:A == host:source:A-1 (user goal)"
+                , "[__1] trying: host:B == host:source:B-3 (dependency of host:A)"
+                , "[__2] next goal: host:C (dependency of host:A)"
+                , "[__2] rejecting: host:C == host:source:C-2 (conflict: host:B==host:source:B-3, host:C => host:B==2)"
+                , "[__2] skipping: host:C == host:source:C-1 (has the same characteristics that caused the "
+                    ++ "previous version to fail: excludes 'host:B' version 3)"
+                , "[__2] fail (backjumping, conflict set: host:A, host:B, host:C)"
+                , "[__1] trying: host:B == host:source:B-2"
+                , "[__2] next goal: host:C (dependency of host:A)"
+                , "[__2] trying: host:C == host:source:C-2"
                 , "[__3] done"
                 ]
            in setVerbose $
@@ -744,22 +804,22 @@ tests =
                 ]
               goals = [P QualNone pkg | pkg <- ["A", "B", "C", "D"]]
               msg =
-                [ "[__0] trying: A-3 (user goal)"
-                , "[__1] trying: B-1 (dependency of A)"
-                , "[__2] trying: C-1 (dependency of A)"
-                , "[__3] next goal: D (dependency of B)"
-                , "[__3] rejecting: D-2 (conflict: B => D==1)"
-                , "[__3] rejecting: D-1 (conflict: C => D==2)"
-                , "[__3] fail (backjumping, conflict set: B, C, D)"
-                , "[__2] fail (backjumping, conflict set: A, B, C, D)"
-                , "[__1] fail (backjumping, conflict set: A, B, C, D)"
-                , "[__0] skipping: A-2 (has the same characteristics that caused the "
-                    ++ "previous version to fail: depends on 'B'; depends on 'C')"
-                , "[__0] trying: A-1"
-                , "[__1] trying: B-1 (dependency of A)"
-                , "[__2] next goal: D (dependency of B)"
-                , "[__2] rejecting: D-2 (conflict: B => D==1)"
-                , "[__2] trying: D-1"
+                [ "[__0] trying: host:A == host:source:A-3 (user goal)"
+                , "[__1] trying: host:B == host:source:B-1 (dependency of host:A)"
+                , "[__2] trying: host:C == host:source:C-1 (dependency of host:A)"
+                , "[__3] next goal: host:D (dependency of host:B)"
+                , "[__3] rejecting: host:D == host:source:D-2 (conflict: host:B => host:D==1)"
+                , "[__3] rejecting: host:D == host:source:D-1 (conflict: host:C => host:D==2)"
+                , "[__3] fail (backjumping, conflict set: host:B, host:C, host:D)"
+                , "[__2] fail (backjumping, conflict set: host:A, host:B, host:C, host:D)"
+                , "[__1] fail (backjumping, conflict set: host:A, host:B, host:C, host:D)"
+                , "[__0] skipping: host:A == host:source:A-2 (has the same characteristics that caused the "
+                    ++ "previous version to fail: depends on 'host:B'; depends on 'host:C')"
+                , "[__0] trying: host:A == host:source:A-1"
+                , "[__1] trying: host:B == host:source:B-1 (dependency of host:A)"
+                , "[__2] next goal: host:D (dependency of host:B)"
+                , "[__2] rejecting: host:D == host:source:D-2 (conflict: host:B => host:D==1)"
+                , "[__2] trying: host:D == host:source:D-1"
                 , "[__3] done"
                 ]
            in setVerbose $
@@ -788,17 +848,17 @@ tests =
                 ]
               goals = [P QualNone pkg | pkg <- ["A", "B", "C"]]
               msg =
-                [ "[__0] trying: A-4 (user goal)"
-                , "[__1] next goal: B (dependency of A)"
-                , "[__1] rejecting: B-2 (conflict: A => B==1)"
-                , "[__1] trying: B-1"
-                , "[__2] next goal: C (dependency of A)"
-                , "[__2] rejecting: C-2 (conflict: A => C==1)"
-                , "[__2] fail (backjumping, conflict set: A, C)"
-                , "[__0] skipping: A; 3, 2 (has the same characteristics that caused the previous version to fail: depends on 'C' but excludes version 2)"
-                , "[__0] trying: A-1"
-                , "[__1] next goal: C (dependency of A)"
-                , "[__1] trying: C-2"
+                [ "[__0] trying: host:A == host:source:A-4 (user goal)"
+                , "[__1] next goal: host:B (dependency of host:A)"
+                , "[__1] rejecting: host:B == host:source:B-2 (conflict: host:A => host:B==1)"
+                , "[__1] trying: host:B == host:source:B-1"
+                , "[__2] next goal: host:C (dependency of host:A)"
+                , "[__2] rejecting: host:C == host:source:C-2 (conflict: host:A => host:C==1)"
+                , "[__2] fail (backjumping, conflict set: host:A, host:C)"
+                , "[__0] skipping: host:A; host:source:A-3, host:source:A-2 (has the same characteristics that caused the previous version to fail: depends on 'host:C' but excludes version 2)"
+                , "[__0] trying: host:A == host:source:A-1"
+                , "[__1] next goal: host:C (dependency of host:A)"
+                , "[__1] trying: host:C == host:source:C-2"
                 , "[__2] done"
                 ]
            in setVerbose $
@@ -817,15 +877,15 @@ tests =
                 , Right $ exAv "B" 1 []
                 ]
               msg =
-                [ "[__0] trying: A-2 (user goal)"
-                , "[__1] next goal: B (dependency of A)"
+                [ "[__0] trying: host:A == host:source:A-2 (user goal)"
+                , "[__1] next goal: host:B (dependency of host:A)"
                 , -- During this step, the solver adds A and B to the
                   -- conflict set, with the details of each package's
                   -- conflict:
                   --
                   -- A: A's constraint rejected B-2.
                   -- B: B was rejected by A's B==3 constraint
-                  "[__1] rejecting: B-2 (conflict: A => B==3)"
+                  "[__1] rejecting: host:B == host:source:B-2 (conflict: host:A => host:B==3)"
                 , -- When the solver skips B-1, it cannot simply reuse the
                   -- previous conflict set. It also needs to update A's
                   -- entry to say that A also rejected B-1. Otherwise, the
@@ -833,13 +893,13 @@ tests =
                   -- the conflicts encountered while exploring A-2. The
                   -- solver would skip A-1, even though it leads to the
                   -- solution.
-                  "[__1] skipping: B-1 (has the same characteristics that caused "
-                    ++ "the previous version to fail: excluded by constraint '==3' from 'A')"
-                , "[__1] fail (backjumping, conflict set: A, B)"
-                , "[__0] trying: A-1"
-                , "[__1] next goal: B (dependency of A)"
-                , "[__1] rejecting: B-2 (conflict: A => B==1)"
-                , "[__1] trying: B-1"
+                  "[__1] skipping: host:B == host:source:B-1 (has the same characteristics that caused "
+                    ++ "the previous version to fail: excluded by constraint '==3' from 'host:A')"
+                , "[__1] fail (backjumping, conflict set: host:A, host:B)"
+                , "[__0] trying: host:A == host:source:A-1"
+                , "[__1] next goal: host:B (dependency of host:A)"
+                , "[__1] rejecting: host:B == host:source:B-2 (conflict: host:A => host:B==1)"
+                , "[__1] trying: host:B == host:source:B-1"
                 , "[__2] done"
                 ]
            in setVerbose $
@@ -858,16 +918,16 @@ tests =
                 ]
               goals = [P QualNone pkg | pkg <- ["A", "B"]]
               msg =
-                [ "[__0] trying: A-2 (user goal)"
-                , "[__1] next goal: B (user goal)"
-                , "[__1] rejecting: B-2 (conflict: A==2, B => A==3)"
-                , "[__1] skipping: B-1 (has the same characteristics that caused "
-                    ++ "the previous version to fail: excludes 'A' version 2)"
-                , "[__1] fail (backjumping, conflict set: A, B)"
-                , "[__0] trying: A-1"
-                , "[__1] next goal: B (user goal)"
-                , "[__1] rejecting: B-2 (conflict: A==1, B => A==3)"
-                , "[__1] trying: B-1"
+                [ "[__0] trying: host:A == host:source:A-2 (user goal)"
+                , "[__1] next goal: host:B (user goal)"
+                , "[__1] rejecting: host:B == host:source:B-2 (conflict: host:A==host:source:A-2, host:B => host:A==3)"
+                , "[__1] skipping: host:B == host:source:B-1 (has the same characteristics that caused "
+                    ++ "the previous version to fail: excludes 'host:A' version 2)"
+                , "[__1] fail (backjumping, conflict set: host:A, host:B)"
+                , "[__0] trying: host:A == host:source:A-1"
+                , "[__1] next goal: host:B (user goal)"
+                , "[__1] rejecting: host:B == host:source:B-2 (conflict: host:A==host:source:A-1, host:B => host:A==3)"
+                , "[__1] trying: host:B == host:source:B-1"
                 , "[__2] done"
                 ]
            in setVerbose $
@@ -879,14 +939,25 @@ tests =
   , -- Tests for the contents of the solver's log
     testGroup
       "Solver log"
-      [ -- See issue #3203. The solver should only choose a version for A once.
+      [ testCase "installed instances retain full version and opaque unit ID" $
+          assertEqual
+            ""
+            "host:installed:2.12.4.1/opaque-unit-identifier"
+            ( SolverPackage.showI
+                ( SolverPackage.I
+                    Host
+                    (V.mkVersion [2, 12, 4, 1])
+                    (SolverPackage.Inst (mkUnitId "opaque-unit-identifier"))
+                )
+            )
+      , -- See issue #3203. The solver should only choose a version for A once.
         runTest $
           let db = [Right $ exAv "A" 1 []]
 
               p :: [String] -> Bool
               p lg =
                 elem "targets: A" lg
-                  && length (filter ("trying: A" `isInfixOf`) lg) == 1
+                  && length (filter ("trying: host:A ==" `isInfixOf`) lg) == 1
            in setVerbose $
                 mkTest db "deduplicate targets" ["A", "A"] $
                   SolverResult p $
@@ -895,22 +966,22 @@ tests =
           let db = [Right $ exAv "A" 1 [ExAny "B"]]
               msg =
                 "After searching the rest of the dependency tree exhaustively, "
-                  ++ "these were the goals I've had most trouble fulfilling: A, B"
+                  ++ "these were the goals I've had most trouble fulfilling: host:A, host:B"
            in mkTest db "exhaustive search failure message" ["A"] $
                 solverFailure (isInfixOf msg)
       , testSummarizedLog "show conflicts from final conflict set after exhaustive search" Nothing $
           "Could not resolve dependencies:\n"
-            ++ "[__0] trying: A-1 (user goal)\n"
-            ++ "[__1] unknown package: F (dependency of A)\n"
-            ++ "[__1] fail (backjumping, conflict set: A, F)\n"
+            ++ "[__0] trying: host:A == host:source:A-1 (user goal)\n"
+            ++ "[__1] unknown package: host:F (dependency of host:A)\n"
+            ++ "[__1] fail (backjumping, conflict set: host:A, host:F)\n"
             ++ "After searching the rest of the dependency tree exhaustively, "
-            ++ "these were the goals I've had most trouble fulfilling: A, F"
+            ++ "these were the goals I've had most trouble fulfilling: host:A, host:F"
       , testSummarizedLog "show first conflicts after inexhaustive search" (Just 3) $
           "Could not resolve dependencies:\n"
-            ++ "[__0] trying: A-1 (user goal)\n"
-            ++ "[__1] trying: B-3 (dependency of A)\n"
-            ++ "[__2] unknown package: C (dependency of B)\n"
-            ++ "[__2] fail (backjumping, conflict set: B, C)\n"
+            ++ "[__0] trying: host:A == host:source:A-1 (user goal)\n"
+            ++ "[__1] trying: host:B == host:source:B-3 (dependency of host:A)\n"
+            ++ "[__2] unknown package: host:C (dependency of host:B)\n"
+            ++ "[__2] fail (backjumping, conflict set: host:B, host:C)\n"
             ++ "Backjump limit reached (currently 3, change with --max-backjumps "
             ++ "or try to run with --reorder-goals).\n"
       , testSummarizedLog "don't show summarized log when backjump limit is too low" (Just 1) $
@@ -926,7 +997,7 @@ tests =
                 [ Right $ exAv "my-package" 1 [ExFix "other-package" 3]
                 , Left $ exInst "other-package" 2 "other-package-2" []
                 ]
-              msg = "rejecting: other-package-2/installed-2"
+              msg = "rejecting: host:other-package == host:installed:2/other-package-2"
            in mkTest db "show full installed package version (issue #5892)" ["my-package"] $
                 solverFailure (isInfixOf msg)
       , runTest $
@@ -934,7 +1005,7 @@ tests =
                 [ Right $ exAv "my-package" 1 [ExFix "other-package" 3]
                 , Left $ exInst "other-package" 2 "other-package-AbCdEfGhIj0123456789" []
                 ]
-              msg = "rejecting: other-package-2/installed-AbCdEfGhIj0123456789"
+              msg = "rejecting: host:other-package == host:installed:2/other-package-AbCdEfGhIj0123456789"
            in mkTest db "show full installed package ABI hash (issue #5892)" ["my-package"] $
                 solverFailure (isInfixOf msg)
       , testGroup
@@ -945,8 +1016,8 @@ tests =
                     , Right $ exAv "A" 2 []
                     , Right $ exAv "B" 1 [ExFix "A" 3]
                     ]
-                  rejecting = "rejecting: A-2"
-                  skipping = "skipping: A-1"
+                  rejecting = "rejecting: host:A == host:source:A-2"
+                  skipping = "skipping: host:A == host:source:A-1"
                in mkTest db "show skipping singleton" ["B"] $
                     solverFailure (\msg -> rejecting `isInfixOf` msg && skipping `isInfixOf` msg)
           , runTest $
@@ -955,8 +1026,8 @@ tests =
                     , Left $ exInst "A" 2 "A-2" []
                     , Right $ exAv "B" 1 [ExFix "A" 3]
                     ]
-                  rejecting = "rejecting: A-2/installed-2"
-                  skipping = "skipping: A-1/installed-1"
+                  rejecting = "rejecting: host:A == host:installed:2/A-2"
+                  skipping = "skipping: host:A == host:installed:1/A-1"
                in mkTest db "show skipping singleton, installed" ["B"] $
                     solverFailure (\msg -> rejecting `isInfixOf` msg && skipping `isInfixOf` msg)
           , runTest $
@@ -966,8 +1037,8 @@ tests =
                     , Right $ exAv "A" 3 []
                     , Right $ exAv "B" 1 [ExFix "A" 4]
                     ]
-                  rejecting = "rejecting: A-3"
-                  skipping = "skipping: A; 2, 1"
+                  rejecting = "rejecting: host:A == host:source:A-3"
+                  skipping = "skipping: host:A; host:source:A-2, host:source:A-1"
                in mkTest db "show skipping versions list" ["B"] $
                     solverFailure (\msg -> rejecting `isInfixOf` msg && skipping `isInfixOf` msg)
           , runTest $
@@ -977,8 +1048,8 @@ tests =
                     , Left $ exInst "A" 3 "A-3" []
                     , Right $ exAv "B" 1 [ExFix "A" 4]
                     ]
-                  rejecting = "rejecting: A-3/installed-3"
-                  skipping = "skipping: A; 2/installed-2, 1/installed-1"
+                  rejecting = "rejecting: host:A == host:installed:3/A-3"
+                  skipping = "skipping: host:A; host:installed:2/A-2, host:installed:1/A-1"
                in mkTest db "show skipping versions list, installed" ["B"] $
                     solverFailure (\msg -> rejecting `isInfixOf` msg && skipping `isInfixOf` msg)
           ]
@@ -1118,8 +1189,8 @@ dbSetupDepWithManualFlag =
       ]
 
 -- | A database similar to 'dbSetupDepWithManualFlag', except that the library
--- and setup script both depend on B-1. B must be linked because of the Single
--- Instance Restriction, and its flag can only have one value.
+-- and setup script both depend on B-1. The Host and Build dependencies are
+-- distinct choices, so each can select its own value for the manual flag.
 dbLinkedSetupDepWithManualFlag :: ExampleDb
 dbLinkedSetupDepWithManualFlag =
   [ Right $ exAv "A" 1 [ExFix "B" 1] `withSetupDeps` [ExFix "B" 1]
@@ -1584,8 +1655,8 @@ issue4161 name =
     checkFullLog =
       any $
         isInfixOf $
-          "rejecting: time:setup.time~>time-2 (cyclic dependencies; "
-            ++ "conflict set: time:setup.time)"
+          "rejecting: build:time:setup.time == build:source:time-2 (cyclic dependencies; "
+            ++ "conflict set: build:time:setup.time)"
 
 -- | Packages pkg-A, pkg-B, and pkg-C form a cycle. The solver should backtrack
 -- as soon as it chooses the last package in the cycle, to avoid searching parts
@@ -1615,7 +1686,7 @@ testCyclicDependencyErrorMessages name =
 
     checkSummarizedLog :: String -> Bool
     checkSummarizedLog =
-      isInfixOf "rejecting: pkg-C-1 (cyclic dependencies; conflict set: pkg-A, pkg-B, pkg-C)"
+      isInfixOf "rejecting: host:pkg-C == host:source:pkg-C-1 (cyclic dependencies; conflict set: host:pkg-A, host:pkg-B, host:pkg-C)"
 
     -- Solve for pkg-D and pkg-E last.
     goals :: [ExampleVar]
@@ -1761,9 +1832,9 @@ commonDependencyLogMessage name =
   mkTest db name ["A"] $
     solverFailure $
       isInfixOf $
-        "[__0] trying: A-1 (user goal)\n"
-          ++ "[__1] next goal: B (dependency of A +/-flagA)\n"
-          ++ "[__1] rejecting: B-2 (conflict: A +/-flagA => B==1 || ==3)"
+        "[__0] trying: host:A == host:source:A-1 (user goal)\n"
+          ++ "[__1] next goal: host:B (dependency of host:A +/-flagA)\n"
+          ++ "[__1] rejecting: host:B == host:source:B-2 (conflict: host:A +/-flagA => host:B==1 || ==3)"
   where
     db :: ExampleDb
     db =
@@ -1784,7 +1855,7 @@ twoLevelDeepCommonDependencyLogMessage :: String -> SolverTest
 twoLevelDeepCommonDependencyLogMessage name =
   mkTest db name ["A"] $
     solverFailure $
-      isInfixOf "unknown package: B (dependency of A +/-flagA +/-flagB)"
+      isInfixOf "unknown package: host:B (dependency of host:A +/-flagA +/-flagB)"
   where
     db :: ExampleDb
     db =
@@ -2226,25 +2297,25 @@ testMinimizeConflictSet testName =
     checkFullLog :: [String] -> Bool
     checkFullLog =
       containsInOrder
-        [ "[__0] fail (backjumping, conflict set: A, B, C, D)"
+        [ "[__0] fail (backjumping, conflict set: host:A, host:B, host:C, host:D)"
         , "Found no solution after exhaustively searching the dependency tree. "
-            ++ "Rerunning the dependency solver to minimize the conflict set ({A, B, C, D})."
-        , "Trying to remove variable \"A\" from the conflict set."
-        , "Failed to remove \"A\" from the conflict set. Continuing with {A, B, C, D}."
-        , "Trying to remove variable \"B\" from the conflict set."
-        , "Successfully removed \"B\" from the conflict set. Continuing with {A, D}."
-        , "Trying to remove variable \"D\" from the conflict set."
-        , "Failed to remove \"D\" from the conflict set. Continuing with {A, D}."
+            ++ "Rerunning the dependency solver to minimize the conflict set ({host:A, host:B, host:C, host:D})."
+        , "Trying to remove variable \"host:A\" from the conflict set."
+        , "Failed to remove \"host:A\" from the conflict set. Continuing with {host:A, host:B, host:C, host:D}."
+        , "Trying to remove variable \"host:B\" from the conflict set."
+        , "Successfully removed \"host:B\" from the conflict set. Continuing with {host:A, host:D}."
+        , "Trying to remove variable \"host:D\" from the conflict set."
+        , "Failed to remove \"host:D\" from the conflict set. Continuing with {host:A, host:D}."
         ]
 
     expectedMsg =
       "Could not resolve dependencies:\n"
-        ++ "[__0] trying: A-3 (user goal)\n"
-        ++ "[__1] next goal: D (dependency of A)\n"
-        ++ "[__1] rejecting: D-1 (conflict: A => D==2)\n"
-        ++ "[__1] fail (backjumping, conflict set: A, D)\n"
+        ++ "[__0] trying: host:A == host:source:A-3 (user goal)\n"
+        ++ "[__1] next goal: host:D (dependency of host:A)\n"
+        ++ "[__1] rejecting: host:D == host:source:D-1 (conflict: host:A => host:D==2)\n"
+        ++ "[__1] fail (backjumping, conflict set: host:A, host:D)\n"
         ++ "After searching the rest of the dependency tree exhaustively, these "
-        ++ "were the goals I've had most trouble fulfilling: A (5), D (4)"
+        ++ "were the goals I've had most trouble fulfilling: host:A (5), host:D (4)"
 
     goals :: [ExampleVar]
     goals = [P QualNone pkg | pkg <- ["A", "B", "C", "D"]]
@@ -2263,13 +2334,13 @@ testNoMinimizeConflictSet testName =
   where
     expectedMsg =
       "Could not resolve dependencies:\n"
-        ++ "[__0] trying: A-3 (user goal)\n"
-        ++ "[__1] next goal: B (dependency of A)\n"
-        ++ "[__1] rejecting: B-1 (conflict: A => B==2)\n"
-        ++ "[__1] fail (backjumping, conflict set: A, B)\n"
+        ++ "[__0] trying: host:A == host:source:A-3 (user goal)\n"
+        ++ "[__1] next goal: host:B (dependency of host:A)\n"
+        ++ "[__1] rejecting: host:B == host:source:B-1 (conflict: host:A => host:B==2)\n"
+        ++ "[__1] fail (backjumping, conflict set: host:A, host:B)\n"
         ++ "After searching the rest of the dependency tree exhaustively, "
         ++ "these were the goals I've had most trouble fulfilling: "
-        ++ "A (7), B (2), C (2), D (2)\n"
+        ++ "host:A (7), host:B (2), host:C (2), host:D (2)\n"
         ++ "Try running with --minimize-conflict-set to improve the error message."
 
     goals :: [ExampleVar]
@@ -2415,8 +2486,8 @@ rejectInstalledBuildToolPackage name =
   mkTest db name ["A"] $
     solverFailure $
       isInfixOf $
-        "rejecting: A:B:exe.B-1/installed-1 "
-          ++ "(does not contain executable 'exe', which is required by A)"
+        "rejecting: build:A:B:exe.B == build:installed:1/B-1 "
+          ++ "(does not contain executable 'exe', which is required by host:A)"
   where
     db :: ExampleDb
     db =
@@ -2443,7 +2514,7 @@ chooseExeAfterBuildToolsPackage shouldSucceed name =
         else
           solverFailure $
             isInfixOf $
-              "rejecting: A:+flagA (requires executable 'exe2' from A:B:exe.B, "
+              "rejecting: host:A:+flagA (requires executable 'exe2' from build:A:B:exe.B, "
                 ++ "but the component does not exist)"
   where
     db :: ExampleDb
@@ -2479,8 +2550,8 @@ requireConsistentBuildToolVersions name =
   mkTest db name ["A"] $
     solverFailure $
       isInfixOf $
-        "[__1] rejecting: A:B:exe.B-2 (conflict: A => A:B:exe.B (exe exe1)==1)\n"
-          ++ "[__1] rejecting: A:B:exe.B-1 (conflict: A => A:B:exe.B (exe exe2)==2)"
+        "[__1] rejecting: build:A:B:exe.B == build:source:B-2 (conflict: host:A => build:A:B:exe.B (exe exe1)==1)\n"
+          ++ "[__1] rejecting: build:A:B:exe.B == build:source:B-1 (conflict: host:A => build:A:B:exe.B (exe exe2)==2)"
   where
     db :: ExampleDb
     db =
@@ -2507,7 +2578,7 @@ chooseUnbuildableExeAfterBuildToolsPackage name =
       mkTest db name ["A"] $
         solverFailure $
           isInfixOf $
-            "rejecting: A:+use-bt2 (requires executable 'bt2' from A:B:exe.B, but "
+            "rejecting: host:A:+use-bt2 (requires executable 'bt2' from build:A:B:exe.B, but "
               ++ "the component is not buildable in the current environment)"
   where
     db :: ExampleDb
@@ -2623,7 +2694,7 @@ setupStanzaTest2 =
       dbSetupStanza
       "setupStanzaTest2"
       ["A"]
-      (solverFailure ("unknown package: A:setup.C (dependency of A:setup.B *test)" `isInfixOf`))
+      (solverFailure ("unknown package: build:A:setup.C (dependency of build:A:setup.B *test)" `isInfixOf`))
 
 -- | Returns true if the second list contains all elements of the first list, in
 -- order.

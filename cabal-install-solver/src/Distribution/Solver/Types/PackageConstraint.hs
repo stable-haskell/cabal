@@ -80,7 +80,7 @@ scopeToPackageName (ConstraintScope _stage (ScopeAnyExeQualifier pn)) = pn
 scopeToPackageName (ConstraintScope _stage (ScopeAnyQualifier pn)) = pn
 
 constraintScopeMatches :: ConstraintScope -> QPN -> Bool
-constraintScopeMatches (ConstraintScope mstage qualifier) (Q (PackagePath stage' q) pn') =
+constraintScopeMatches (ConstraintScope mstage qualifier) (Q (PackagePath stage' _namespace q) pn') =
   maybe True (== stage') mstage && constraintQualifierMatches qualifier q pn'
 
 constraintQualifierMatches :: ConstraintQualifier -> Qualifier -> PackageName -> Bool

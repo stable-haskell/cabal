@@ -272,17 +272,17 @@ showOption qpn@(Q _pp pn) (POption i linkedTo) =
 -- >>> showOptions foobarQPN [v0]
 -- "build:foo-bar == build:source:foo-bar-0"
 -- >>> showOptions foobarQPN [i0, i1]
--- "build:foo-bar; build:installed:foo-bar-0-inplace, build:installed:foo-bar-1-inplace"
+-- "build:foo-bar; build:installed:0/foo-bar-0-inplace, build:installed:1/foo-bar-1-inplace"
 -- >>> showOptions foobarQPN [i0, v1]
--- "build:foo-bar; build:installed:foo-bar-0-inplace, build:source:foo-bar-1"
+-- "build:foo-bar; build:installed:0/foo-bar-0-inplace, build:source:foo-bar-1"
 -- >>> showOptions foobarQPN [v0, i1]
--- "build:foo-bar; build:source:foo-bar-0, build:installed:foo-bar-1-inplace"
+-- "build:foo-bar; build:source:foo-bar-0, build:installed:1/foo-bar-1-inplace"
 -- >>> showOptions foobarQPN []
 -- "unexpected empty list of versions"
 -- >>> showOptions foobarQPN [k1, k2]
 -- "build:foo-bar; to reuse host:foo-bar for build:foo-bar, to reuse host:foo-bar for build:foo-bar"
 -- >>> showOptions foobarQPN [v0, i1, k2]
--- "build:foo-bar; build:source:foo-bar-0, build:installed:foo-bar-1-inplace, to reuse host:foo-bar for build:foo-bar"
+-- "build:foo-bar; build:source:foo-bar-0, build:installed:1/foo-bar-1-inplace, to reuse host:foo-bar for build:foo-bar"
 showOptions :: QPN -> [POption] -> String
 showOptions _ [] = "unexpected empty list of versions"
 showOptions q [x] = showOption q x
@@ -362,8 +362,8 @@ showConflictingDep (ConflictingDep dr (PkgComponent qpn comp) ci) =
 -- >>> import Distribution.Types.PackageName
 -- >>> import Distribution.Types.Version
 -- >>> import Distribution.Types.UnitId
--- >>> let foobarPN = PackagePath Build QualToplevel
--- >>> let bazquxPN = PackagePath Host QualToplevel
+-- >>> let foobarPN = PackagePath Build DefaultNamespace QualToplevel
+-- >>> let bazquxPN = PackagePath Host DefaultNamespace QualToplevel
 -- >>> let foobarQPN = Q foobarPN (mkPackageName "foo-bar")
 -- >>> let v0 = POption (I Build (mkVersion [0]) (InRepo $ mkPackageName "foo-bar")) Nothing
 -- >>> let v1 = POption (I Build (mkVersion [1]) (InRepo $ mkPackageName "foo-bar")) Nothing
