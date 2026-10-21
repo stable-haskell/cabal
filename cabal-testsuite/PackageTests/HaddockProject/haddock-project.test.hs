@@ -20,6 +20,8 @@ main = cabalTest . withRepo "repo" $ do
     -- is indexed through MyLib, whose links must resolve to the copied docs.
     assertFileDoesContain (testDir </> "haddocks" </> "doc-index.html")
       "a/MyLib.html#t:Async"
+    -- Haddock index URLs must use `/` even when the native path separator is
+    -- `\\` (Windows).
     assertFileDoesContain (testDir </> "haddocks" </> "doc-index.html")
       "a/nested/Nested.html"
     assertFileDoesContain (testDir </> "haddocks" </> "doc-index.html")

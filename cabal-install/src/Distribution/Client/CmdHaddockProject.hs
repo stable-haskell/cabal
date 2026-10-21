@@ -3,6 +3,7 @@
 module Distribution.Client.CmdHaddockProject
   ( haddockProjectCommand
   , haddockProjectAction
+  , haddockProjectDirectoryUrlPath
   ) where
 
 import Control.Monad (forM_, mapM)
@@ -335,7 +336,8 @@ haddockProjectAction flags _extraArgs globalFlags = do
               { haddockProjectDir = Flag outputDir
               , haddockProjectInterfaces =
                   Flag
-                    [ (interfacePath, Just url, Just url, visibility)
+                    [ let urlPath = haddockProjectDirectoryUrlPath url
+                       in (interfacePath, Just urlPath, Just urlPath, visibility)
                     | (url, interfacePath, visibility) <- packageInfos'
                     ]
               , haddockProjectUseUnicode = NoFlag
@@ -442,3 +444,10 @@ haddockProjectAction flags _extraArgs globalFlags = do
     matchingPackages =
       fmap (foldPlanPackage Left Right)
         . InstallPlan.toList
+
+-- Haddock interprets the first fields of --read-interface as URLs. The paths
+-- here are generated from package/component names, which cannot contain literal
+-- backslashes. Convert Windows separators for the URL fields without changing
+-- the native interface path used for filesystem access.
+haddockProjectDirectoryUrlPath :: FilePath -> FilePath
+haddockProjectDirectoryUrlPath = map (\c -> if c == '\\' then '/' else c)
