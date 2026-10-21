@@ -156,16 +156,17 @@ addChildren bs@(BS { rdeps, index, next = OneGoal goal }) =
     PkgGoal qpn@(Q (PackagePath s _ _) pn) gr ->
       -- For a package goal, we look up the instances available in the global
       -- info, and then handle each instance in turn.
-      case M.lookup pn index of
-        Nothing  -> FailF
-                    (varToConflictSet (P qpn) `CS.union` goalReasonToConflictSetWithConflict qpn gr)
-                    UnknownPackage
-        Just pis -> PChoiceF qpn rdeps gr $ W.fromList
-                      [ ([], POption i Nothing, bs { next = Instance qpn info })
-                      | (i@(I s' _ver _loc), info) <- M.toList pis
-                      -- Only instances belonging to the same stage are allowed.
-                      , s == s'
-                      ]
+      let options =
+            [ ([], POption i Nothing, bs { next = Instance qpn info })
+            | (i@(I s' _ver _loc), info) <- maybe [] M.toList (M.lookup pn index)
+            -- Only instances belonging to the same stage are allowed.
+            , s == s'
+            ]
+      in case options of
+        [] -> FailF
+                (varToConflictSet (P qpn) `CS.union` goalReasonToConflictSetWithConflict qpn gr)
+                UnknownPackage
+        _ -> PChoiceF qpn rdeps gr (W.fromList options)
     -- For a flag, we create only two subtrees, and we create them in the order
     -- that is indicated by the flag default.
     FlagGoal qfn@(FN qpn _) (FInfo b m w) t f gr ->

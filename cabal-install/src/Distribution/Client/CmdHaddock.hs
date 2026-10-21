@@ -217,8 +217,8 @@ haddockAction relFlags targetStrings globalFlags = do
       $ getStage toolchains Host
 
   let toolchains' = Staged $ \case
-        Host -> (getStage toolchains' Host){toolchainProgramDb = progs}
-        Build -> getStage toolchains' Build
+        Host -> (getStage toolchains Host){toolchainProgramDb = progs}
+        Build -> getStage toolchains Build
 
   let buildCtx' =
         buildCtx

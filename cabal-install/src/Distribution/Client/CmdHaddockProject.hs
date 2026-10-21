@@ -12,11 +12,7 @@ import Prelude ()
 import qualified Distribution.Client.CmdBuild as CmdBuild
 import qualified Distribution.Client.CmdHaddock as CmdHaddock
 
-import Distribution.Client.DistDirLayout
-  ( CabalDirLayout (..)
-  , StoreDirLayout (..)
-  , distBuildDirectory
-  )
+import Distribution.Client.DistDirLayout (distBuildDirectory)
 import Distribution.Client.InstallPlan (foldPlanPackage)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import qualified Distribution.Client.NixStyleOptions as NixStyleOptions
@@ -38,8 +34,10 @@ import Distribution.Client.ProjectPlanning
   , ElaboratedInstalledPackageInfo
   , TargetAction (..)
   , WithStage (..)
+  , elabAbsoluteInstallDirs
   , elabDistDirParams
   )
+import Distribution.Client.ProjectPlanning.Types (ElaboratedSharedConfig (..), Stage (Host), Toolchain (..), getStage)
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
   , TargetContext (..)
@@ -71,10 +69,12 @@ import Distribution.Simple.Flag
   , pattern NoFlag
   )
 
--- import Distribution.Simple.Haddock (createHaddockIndex)
+import Distribution.Simple.Haddock (createHaddockIndex)
 import Distribution.Simple.InstallDirs
-  ( toPathTemplate
+  ( haddockdir
+  , toPathTemplate
   )
+import Distribution.Simple.Program (addKnownProgram, haddockProgram, reconfigurePrograms, requireProgramVersion)
 import Distribution.Simple.Setup
   ( HaddockFlags (..)
   , HaddockProjectFlags (..)
@@ -101,6 +101,7 @@ import Distribution.Verbosity as Verbosity
   , mkVerbosity
   , normal
   )
+import Distribution.Version (mkVersion, orLaterVersion)
 
 import Distribution.Client.Errors
 import System.Directory (doesDirectoryExist, doesFileExist)
@@ -133,7 +134,6 @@ haddockProjectAction flags _extraArgs globalFlags = do
         GlobalContext -> return ctx
         ScriptContext path exemeta -> updateContextAndWriteProjectFile ctx path exemeta
       let distLayout = distDirLayout baseCtx
-          cabalLayout = cabalDirLayout baseCtx
       buildCtx <-
         runProjectPreBuildPhase verbosity baseCtx $ \elaboratedPlan -> do
           -- Interpret the targets on the command line as build targets
@@ -161,25 +161,17 @@ haddockProjectAction flags _extraArgs globalFlags = do
           pkgs :: [Either ElaboratedInstalledPackageInfo ElaboratedConfiguredPackage]
           pkgs = matchingPackages elaboratedPlan
 
-      -- TODO
-      -- progs <-
-      --   reconfigurePrograms
-      --     verbosity
-      --     (haddockProjectProgramPaths flags)
-      --     (haddockProjectProgramArgs flags)
-      --     -- we need to insert 'haddockProgram' before we reconfigure it,
-      --     -- otherwise 'set
-      --     . addKnownProgram haddockProgram
-      --     . pkgConfigCompilerProgs
-      --     $ sharedConfig
-      -- let sharedConfig' = sharedConfig{pkgConfigCompilerProgs = progs}
-
-      -- _ <-
-      --   requireProgramVersion
-      --     verbosity
-      --     haddockProgram
-      --     (orLaterVersion (mkVersion [2, 26, 1]))
-      --     progs
+      -- The interfaces belong to Host libraries. Haddock checks that its GHC
+      -- version matches the compiler which produced them, independently of
+      -- the compiler used for Build-stage Setup programs.
+      let hostToolchain = getStage (pkgConfigToolchains (elaboratedShared buildCtx)) Host
+      programs <-
+        reconfigurePrograms
+          verbosity
+          (haddockProjectProgramPaths flags)
+          (haddockProjectProgramArgs flags)
+          (addKnownProgram haddockProgram (toolchainProgramDb hostToolchain))
+      _ <- requireProgramVersion verbosity haddockProgram (orLaterVersion (mkVersion [2, 26, 1])) programs
 
       --
       -- Build project; we need to build dependencies.
@@ -294,15 +286,9 @@ haddockProjectAction flags _extraArgs globalFlags = do
               False -> do
                 let pkg_descr = elabPkgDescription package
                     unitId = unUnitId (elabUnitId package)
-                    packageDir =
-                      storePackageDirectory
-                        (cabalStoreDirLayout cabalLayout)
-                        (elabStage package)
-                        (elabToolchain package)
-                        (elabUnitId package)
-                    -- TODO: use `InstallDirTemplates`
-                    docDir = packageDir </> "share" </> "doc" </> "html"
-                    destDir = outputDir </> haddockDirName ForDevelopment pkg_descr
+                    docDir = haddockdir (elabAbsoluteInstallDirs package)
+                    packageDir = haddockDirName ForDevelopment pkg_descr
+                    destDir = outputDir </> packageDir
                     interfacePath = destDir </> haddockPath pkg_descr
                 a <- doesDirectoryExist docDir
                 case a of
@@ -310,7 +296,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
                     copyDirectoryRecursive verbosity docDir destDir
                     -- non local packages will be hidden in haddock's
                     -- generated contents page
-                    return [Right (unitId, interfacePath, Hidden)]
+                    return [Right (packageDir, interfacePath, Hidden)]
                   False -> do
                     return [Left unitId]
 
@@ -318,7 +304,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
       -- generate index, content, etc.
       --
 
-      let (missingHaddocks, _packageInfos') = partitionEithers packageInfos
+      let (missingHaddocks, packageInfos') = partitionEithers packageInfos
       unless (null missingHaddocks) $ do
         warn verbosity "missing haddocks for some packages from the store"
         -- Show the package list if `-v1` is passed; it's usually a long list.
@@ -327,31 +313,24 @@ haddockProjectAction flags _extraArgs globalFlags = do
         -- `documentation: True` in the global config).
         info verbosity (intercalate "\n" missingHaddocks)
 
-      warn verbosity "createHaddockIndex not implemented"
+      let indexFlags =
+            flags
+              { haddockProjectDir = Flag outputDir
+              , haddockProjectInterfaces =
+                  Flag
+                    [ (interfacePath, Just url, Just url, visibility)
+                    | (url, interfacePath, visibility) <- packageInfos'
+                    ]
+              , haddockProjectUseUnicode = NoFlag
+              }
+      createHaddockIndex
+        verbosity
+        programs
+        (toolchainCompiler hostToolchain)
+        (toolchainPlatform hostToolchain)
+        Nothing
+        indexFlags
   where
-    -- let flags' =
-    --       flags
-    --         { haddockProjectDir = Flag outputDir
-    --         , haddockProjectInterfaces =
-    --             Flag
-    --               [ ( interfacePath
-    --                 , Just url
-    --                 , Just url
-    --                 , visibility
-    --                 )
-    --               | (url, interfacePath, visibility) <- packageInfos'
-    --               ]
-    --         , haddockProjectUseUnicode = NoFlag
-    --         }
-    -- -- NOTE: this lives in Cabal
-    -- createHaddockIndex
-    --   verbosity
-    --   (toolchainProgramDb $ buildToolchain $ pkgConfigToolchains sharedConfig')
-    --   (toolchainCompiler $ buildToolchain $ pkgConfigToolchains sharedConfig')
-    --   (toolchainPlatform $ buildToolchain $ pkgConfigToolchains sharedConfig')
-    --   Nothing
-    --   flags'
-
     -- build all packages with appropriate haddock flags
     commonFlags = haddockProjectCommonFlags flags
 

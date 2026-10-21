@@ -142,6 +142,7 @@ import Distribution.Client.ProjectConfig.Types (defaultProjectFileParser)
 import Distribution.Client.ProjectPlanOutput
 import Distribution.Client.ProjectPlanning.SetupPolicy
   ( NonSetupLibDepSolverPlanPackage (..)
+  , mkDefaultSetupDeps
   , packageSetupScriptSpecVersion
   , packageSetupScriptStyle
   )
@@ -152,7 +153,7 @@ import Distribution.Client.SetupWrapper
 import Distribution.Client.Targets (userToPackageConstraint)
 import Distribution.Client.Toolchain
 import Distribution.Client.Types
-import Distribution.Client.Utils (concatMapM)
+import Distribution.Client.Utils (concatMapM, incVersion)
 
 import qualified Distribution.Client.BuildReports.Storage as BuildReports
 import qualified Distribution.Client.IndexUtils as IndexUtils
@@ -1324,17 +1325,16 @@ planPackages
           . removeLowerBounds solverSettingAllowOlder
           . removeUpperBounds solverSettingAllowNewer
           --
-          -- TODO: These need to be per compiler. We should be able to do that
-          -- when we can use the stage as a solver scope
-          --
-          -- . addDefaultSetupDependencies
-          --   ( mkDefaultSetupDeps compiler platform
-          --       . PD.packageDescription
-          --       . srcpkgDescription
-          --   )
-          -- . addSetupCabalMinVersionConstraint setupMinCabalVersionConstraint
-          -- . addSetupCabalMaxVersionConstraint setupMaxCabalVersionConstraint
-          --
+          . addSetupCabalMaxVersionConstraint setupMaxCabalVersionConstraint
+          . addSetupCabalMinVersionConstraint (setupMinCabalVersionConstraint buildCompilerInfo)
+          . addDefaultSetupDependencies
+            setImplicitSetupInfo
+            ( \srcpkg ->
+                mkDefaultSetupDeps
+                  buildCompilerInfo
+                  buildStagePlatform
+                  (PD.packageDescription (srcpkgDescription srcpkg))
+            )
           . addPreferences
             -- preferences from the config file or command line
             [ PackageVersionPreference name ver
@@ -1403,6 +1403,8 @@ planPackages
             , let pkgname = pkgSpecifierTarget pkg
             ]
           $ stdResolverParams
+
+      (buildCompilerInfo, buildStagePlatform) = getStage toolchains Build
 
       stdResolverParams :: DepResolverParams
       stdResolverParams =
@@ -1578,7 +1580,7 @@ elaborateInstallPlan
               return [InstallPlan.PreExisting (WithStage (instSolverStage pkg) (instSolverPkgIPI pkg))]
             SolverInstallPlan.Configured pkg ->
               let inplace_doc
-                    | inProjectSourcePackagesClosure pkg = text "is local"
+                    | inProjectSourcePackagesClosure pkg = text "local"
                     | otherwise = Disp.empty
                in addProgressCtx
                     ( text "In the"
@@ -1794,6 +1796,7 @@ elaborateInstallPlan
                       [ WithStage (stageOf pkg) confId
                       | pkg <- external_exe_dep_pkgs
                       , let confId = configuredId pkg
+                      , confId `elem` map annotatedIdToConfiguredId (cc_exe_deps cc0)
                       , confSrcId confId /= pkgid
                       , -- only executables
                       Just (CExeName _) <- [confCompName confId]
@@ -1813,6 +1816,7 @@ elaborateInstallPlan
                       [ (WithStage (stageOf pkg) confId, path)
                       | pkg <- external_exe_dep_pkgs
                       , let confId = configuredId pkg
+                      , confId `elem` map annotatedIdToConfiguredId (cc_exe_deps cc0)
                       , confSrcId confId /= pkgid
                       , -- only executables
                       Just (CExeName _) <- [confCompName confId]
@@ -4638,6 +4642,7 @@ packageHashConfigInputs pkg =
 -- respective major Cabal version bundled with the respective GHC
 -- release).
 --
+-- GHC 9.10  needs  Cabal >= 3.12
 -- GHC 9.2   needs  Cabal >= 3.6
 -- GHC 9.0   needs  Cabal >= 3.4
 -- GHC 8.10  needs  Cabal >= 3.2
@@ -4654,25 +4659,54 @@ packageHashConfigInputs pkg =
 -- TODO: long-term, this compatibility matrix should be
 --       stored as a field inside 'Distribution.Compiler.Compiler'
 --
--- setupMinCabalVersionConstraint :: Compiler -> Version
--- setupMinCabalVersionConstraint compiler
---   | isGHC, compVer >= mkVersion [9, 10] = mkVersion [3, 12]
---   | isGHC, compVer >= mkVersion [9, 6] = mkVersion [3, 10]
---   | isGHC, compVer >= mkVersion [9, 4] = mkVersion [3, 8]
---   | isGHC, compVer >= mkVersion [9, 2] = mkVersion [3, 6]
---   | isGHC, compVer >= mkVersion [9, 0] = mkVersion [3, 4]
---   | isGHC, compVer >= mkVersion [8, 10] = mkVersion [3, 2]
---   | isGHC, compVer >= mkVersion [8, 8] = mkVersion [3, 0]
---   | isGHC, compVer >= mkVersion [8, 6] = mkVersion [2, 4]
---   | isGHC, compVer >= mkVersion [8, 4] = mkVersion [2, 2]
---   | isGHC, compVer >= mkVersion [8, 2] = mkVersion [2, 0]
---   | isGHC, compVer >= mkVersion [8, 0] = mkVersion [1, 24]
---   | isGHC, compVer >= mkVersion [7, 10] = mkVersion [1, 22]
---   | otherwise = mkVersion [1, 20]
---   where
---     isGHC = compFlav `elem` [GHC, GHCJS]
---     compFlav = compilerFlavor compiler
---     compVer = compilerVersion compiler
+setupMinCabalVersionConstraint :: CompilerInfo -> Version
+setupMinCabalVersionConstraint cinfo
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 10] =
+      mkVersion [3, 12]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 6] =
+      mkVersion [3, 10]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 4] =
+      mkVersion [3, 8]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 2] =
+      mkVersion [3, 6]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 0] =
+      mkVersion [3, 4]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 10] =
+      mkVersion [3, 2]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 8] =
+      mkVersion [3, 0]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 6] =
+      mkVersion [2, 4]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 4] =
+      mkVersion [2, 2]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 2] =
+      mkVersion [2, 0]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 0] =
+      mkVersion [1, 24]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [7, 10] =
+      mkVersion [1, 22]
+  | otherwise = mkVersion [1, 20]
+  where
+    ghcCompatibleVersion =
+      case compilerInfoId cinfo of
+        CompilerId GHC version -> Just version
+        _ ->
+          listToMaybe
+            [ version
+            | CompilerId GHC version <- fromMaybe [] (compilerInfoCompat cinfo)
+            ]
 
 -- As we can't predict the future, we also place a global upper
 -- bound on the lib:Cabal version we know how to interact with:
@@ -4690,6 +4724,6 @@ packageHashConfigInputs pkg =
 -- bound is `setup.Cabal < 2.4`. This gives us enough flexibility
 -- when dealing with development snapshots of Cabal and cabal-install.
 --
--- setupMaxCabalVersionConstraint :: Version
--- setupMaxCabalVersionConstraint =
---   alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion
+setupMaxCabalVersionConstraint :: Version
+setupMaxCabalVersionConstraint =
+  alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion

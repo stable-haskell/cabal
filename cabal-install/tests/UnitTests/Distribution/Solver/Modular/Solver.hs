@@ -8,15 +8,21 @@ where
 
 -- base
 import Data.List (isInfixOf)
+import qualified Data.Map as Map
 
+import Distribution.Solver.Modular.Builder (buildTree)
+import Distribution.Solver.Modular.Index (PInfo (..), mkIndex)
 import qualified Distribution.Solver.Modular.Package as SolverPackage
+import qualified Distribution.Solver.Modular.PSQ as PSQ
+import qualified Distribution.Solver.Modular.Tree as Tree
+import Distribution.Solver.Types.Settings (IndependentGoals (..))
 import Distribution.Types.UnitId (mkUnitId)
 import qualified Distribution.Version as V
 
 -- test-framework
 import Test.Tasty as TF
 import Test.Tasty.ExpectedFailure
-import Test.Tasty.HUnit (assertEqual, testCase)
+import Test.Tasty.HUnit (assertEqual, assertFailure, testCase)
 
 -- Cabal
 import Language.Haskell.Extension
@@ -54,7 +60,17 @@ tests :: [TF.TestTree]
 tests =
   [ testGroup
       "Package path qualification"
-      [ testCase "base shims in setup dependencies keep Build stage and namespace" $ do
+      [ testCase "a package available only for Build is unknown to Host" $ do
+          let package = mkPackageName "build-only-package"
+              instance' = SolverPackage.I Build (V.mkVersion [1]) (SolverPackage.InRepo package)
+              info = PInfo [] Map.empty Map.empty Nothing
+              index = mkIndex [(package, instance', info)]
+          case buildTree index (IndependentGoals False) [package] of
+            Tree.GoalChoice _ goals -> case PSQ.toList goals of
+              [(_, Tree.Fail _ Tree.UnknownPackage)] -> pure ()
+              _ -> assertFailure "missing Host package did not report UnknownPackage"
+            _ -> assertFailure "expected the Host goal choice"
+      , testCase "base shims in setup dependencies keep Build stage and namespace" $ do
           let root = mkPackageName "root"
               package = mkPackageName "package"
               base = mkPackageName "base"

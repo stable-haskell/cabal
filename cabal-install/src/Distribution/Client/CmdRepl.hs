@@ -57,7 +57,7 @@ import Distribution.Client.ProjectPlanning
   ( ElaboratedInstallPlan
   , ElaboratedSharedConfig (..)
   , Stage (..)
-  , WithStage
+  , WithStage (..)
   , getStage
   )
 import Distribution.Client.ProjectPlanning.Types
@@ -561,13 +561,15 @@ targetedRepl
             active_unit_fp = do
               -- Get the first target selectors from the cli
               activeTarget <- safeHead targetSelectors
-              -- Lookup the targets :: Map UnitId [(ComponentTarget, NonEmpty TargetSelector)]
-              unitId <-
+              -- Lookup the targets :: Map (WithStage UnitId) [(ComponentTarget, NonEmpty TargetSelector)]
+              WithStage _ unitId <-
                 Map.toList targets
                   -- Keep the UnitId matching the desired target selector
                   & find (\(_, xs) -> any (\(_, selectors) -> activeTarget `elem` selectors) xs)
                   & fmap fst
-              -- Convert to filename (adapted from 'storePackageDirectory')
+              -- Multi-repl response files use the unqualified component
+              -- UnitId as their filename. The target map key also carries a
+              -- stage, which is not part of that filename.
               pure (prettyShow unitId)
             unit_files_ordered :: [FilePath]
             unit_files_ordered =
@@ -751,8 +753,9 @@ generateReplFlags includeTransitive elaboratedPlan OriginalComponentInfo{..} = f
 
     flags :: [String]
     flags =
-      fmap (("-package-id " ++) . prettyShow) . (\\ exeDeps) $
-        if includeTransitive then trans' else deps'
+      [ "-package-id " ++ prettyShow unitId
+      | WithStage Host unitId <- (if includeTransitive then trans' else deps') \\ exeDeps
+      ]
 
 -- | Add repl options to ensure the repl actually starts in the current working directory.
 --

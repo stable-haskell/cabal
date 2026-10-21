@@ -26,19 +26,24 @@ import Distribution.Simple.Command (CommandParse (..), CommandUI (commandDefault
 import Distribution.Simple.Compiler
 import Distribution.Simple.Configure (computeEffectiveProfiling)
 import Distribution.Simple.Flag
-import Distribution.Simple.Program.Db (defaultProgramDb)
+import Distribution.Simple.InstallDirs (defaultInstallDirs)
+import Distribution.Simple.Program.Db (defaultProgramDb, updateProgram)
+import Distribution.Simple.Program.Types (ConfiguredProgram (..), ProgramLocation (..), simpleConfiguredProgram)
 import Distribution.Simple.Setup (CommonSetupFlags (setupWorkingDir), ConfigFlags (..), configureCommand, emptyConfigFlags)
 import qualified Distribution.Simple.SetupHooks.Internal as SetupHooks
 import Distribution.System (buildPlatform)
 import Distribution.Types.ComponentName
+import Distribution.Types.ComponentRequestedSpec (defaultComponentRequestedSpec)
 import Distribution.Types.Flag (mkFlagAssignment, mkFlagName)
 import Distribution.Types.LibraryName
 import Distribution.Types.LocalBuildConfig (PackageBuildDescr (..))
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageName (mkPackageName)
+import Distribution.Types.PackageDescription (emptyPackageDescription)
 import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Version (mkVersion)
 import System.Directory (createDirectory, getTemporaryDirectory, removeFile, removePathForcibly)
+import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import System.IO (hClose, openTempFile)
 import System.Info (os)
@@ -231,9 +236,19 @@ runSyntheticConfigure config selectedCompiler expectedArgs = do
   hClose handle
   removeFile marker
   createDirectory marker
+  installDirs <- defaultInstallDirs GHC False False
+  cflags <- lookupEnv "CFLAGS"
+  cxxflags <- lookupEnv "CXXFLAGS"
   let cleanup = removePathForcibly marker
       captureDir = marker </> "dist" </> "build"
       configurePath = marker </> "configure"
+      ccPath = marker </> "selected C compiler"
+      cxxPath = marker </> "selected C++ compiler"
+      configuredTool name path arg =
+        (simpleConfiguredProgram name (UserSpecified path)){programOverrideArgs = [arg]}
+      programs =
+        updateProgram (configuredTool "gcc" ccPath "-Dselected_c") $
+          updateProgram (configuredTool "gpp" cxxPath "-Dselected_cxx") defaultProgramDb
       configured =
         config
           { configCommonFlags =
@@ -245,18 +260,23 @@ runSyntheticConfigure config selectedCompiler expectedArgs = do
         PackageBuildDescr
           { configFlags = configured
           , flagAssignment = mempty
-          , componentEnabledSpec = undefined
+          , componentEnabledSpec = defaultComponentRequestedSpec
           , compiler = selectedCompiler
           , hostPlatform = buildPlatform
-          , pkgDescrFile = undefined
-          , localPkgDescr = undefined
-          , installDirTemplates = undefined
-          , withPackageDB = undefined
-          , extraCoverageFor = undefined
+          , pkgDescrFile = Nothing
+          , localPkgDescr = emptyPackageDescription
+          , installDirTemplates = installDirs
+          , withPackageDB = [GlobalPackageDB]
+          , extraCoverageFor = []
           }
       hookInputs =
         SetupHooks.PostConfPackageInputs
-          { SetupHooks.localBuildConfig = undefined
+          { SetupHooks.localBuildConfig =
+              LBC.LocalBuildConfig
+                { LBC.extraConfigArgs = []
+                , LBC.withPrograms = programs
+                , LBC.withBuildOptions = testBuildOptions
+                }
           , SetupHooks.packageBuildDescr = packageBuild
           }
   ( do
@@ -264,12 +284,16 @@ runSyntheticConfigure config selectedCompiler expectedArgs = do
         unlines
           [ "#!/bin/sh"
           , "printf '%s\\n' \"$@\" > captured-target-args"
+          , "printf '%s\\n' \"$CC\" \"$CXX\" \"$CFLAGS\" \"$CXXFLAGS\" > captured-tools"
           ]
       case SetupHooks.postConfPackageHook $ SetupHooks.configureHooks autoconfSetupHooks of
         Nothing -> assertFailure "autoconfSetupHooks omitted its post-configure hook"
         Just hook -> hook hookInputs
       args <- lines <$> readFile (captureDir </> "captured-target-args")
-      args @?= expectedArgs
+      args @?= expectedArgs ++ ["CC=" ++ ccPath, "CXX=" ++ cxxPath]
+      tools <- lines <$> readFile (captureDir </> "captured-tools")
+      let withFlag ambient flag = maybe flag (\value -> value ++ " " ++ flag) ambient
+      tools @?= [ccPath, cxxPath, withFlag cflags "-Dselected_c", withFlag cxxflags "-Dselected_cxx"]
     )
     `finally` cleanup
 

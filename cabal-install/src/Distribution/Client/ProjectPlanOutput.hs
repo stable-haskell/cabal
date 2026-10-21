@@ -40,7 +40,8 @@ import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import Distribution.Package
 import qualified Distribution.PackageDescription as PD
 import Distribution.Simple.BuildPaths
-  ( dllExtension
+  ( buildInfoPref
+  , dllExtension
   , exeExtension
   )
 import Distribution.Simple.Compiler
@@ -53,7 +54,9 @@ import Distribution.Simple.GHC
   )
 import Distribution.Simple.Utils
 import Distribution.System
+import Distribution.Utils.Path (getSymbolicPath, makeSymbolicPath)
 import Distribution.Verbosity
+import Distribution.Version (mkVersion)
 
 import Distribution.Client.Compat.Prelude
 import Prelude ()
@@ -113,7 +116,7 @@ writePlanExternalRepresentation
 -- | Renders a subset of the elaborated install plan in a semi-stable JSON
 -- format.
 encodePlanAsJson :: DistDirLayout -> ElaboratedInstallPlan -> ElaboratedSharedConfig -> J.Value
-encodePlanAsJson _distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
+encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
   -- TODO: [nice to have] include all of the sharedPackageConfig and all of
   --      the parts of the elaboratedInstallPlan
   J.object $
@@ -170,6 +173,8 @@ encodePlanAsJson _distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               )
         , "id" J..= (jdisplay . Graph.nodeKey) elab
         , "stage" J..= jdisplay (elabStage elab)
+        , "dist-dir" J..= J.String distDir
+        , "build-info" J..= buildInfoLocation
         , "pkg-name" J..= (jdisplay . pkgName . packageId) elab
         , "pkg-version" J..= (jdisplay . pkgVersion . packageId) elab
         , -- The `x-revision` field is a feature of repos (not cabal itself),
@@ -217,6 +222,13 @@ encodePlanAsJson _distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
       where
         Toolchain{toolchainPlatform = plat} =
           Stage.getStage toolchains (elabStage elab)
+
+        -- Build locations remain useful to editors and the testsuite even
+        -- though every component is now installed into a project-local store.
+        distDir = distBuildDirectory distDirLayout (elabDistDirParams elab)
+        buildInfoLocation
+          | elabSetupScriptCliVersion elab < mkVersion [3, 7, 0, 0] = J.Null
+          | otherwise = J.String (getSymbolicPath (buildInfoPref (makeSymbolicPath distDir)))
 
         packageLocationToJ :: PackageLocation (Maybe FilePath) -> J.Value
         packageLocationToJ pkgloc =

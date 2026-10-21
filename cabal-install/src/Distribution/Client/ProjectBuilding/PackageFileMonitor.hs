@@ -184,27 +184,26 @@ checkPackageFileMonitorChanged
                         -- manually deleted. We don't want to bother with another
                         -- phase just for this, so we'll reregister by doing a build.
                         return (Left (BuildStatusBuild (BuildReasonFilesChanged monitorReason)))
-                      MonitorUnchanged _ _
-                        | pkgHasEphemeralBuildTargets pkg ->
-                            return (Left (BuildStatusBuild BuildReasonEphemeralTargets))
-                        | otherwise ->
-                            return $
-                              Right
-                                BuildResult
-                                  { buildResultDocs = docsResult
-                                  , buildResultTests = testsResult
-                                  , buildResultLogFile = Nothing
-                                  }
-                  else
-                    return $
-                      Right
-                        BuildResult
-                          { buildResultDocs = docsResult
-                          , buildResultTests = testsResult
-                          , buildResultLogFile = Nothing
-                          }
+                      MonitorUnchanged _ _ ->
+                        finishBuildStatus docsResult testsResult
+                  else finishBuildStatus docsResult testsResult
     where
       (pkgconfig, buildComponents) = packageFileMonitorKeyValues pkg
+
+      -- Running a test, benchmark, or REPL is an action, even when its build
+      -- artifacts are unchanged. This also applies to executable components,
+      -- which have no library registration to monitor.
+      finishBuildStatus docsResult testsResult
+        | pkgHasEphemeralBuildTargets pkg =
+            return (Left (BuildStatusBuild BuildReasonEphemeralTargets))
+        | otherwise =
+            return $
+              Right
+                BuildResult
+                  { buildResultDocs = docsResult
+                  , buildResultTests = testsResult
+                  , buildResultLogFile = Nothing
+                  }
 
 updatePackageConfigFileMonitor
   :: PackageFileMonitor

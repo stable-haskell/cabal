@@ -316,9 +316,8 @@ runAction flags targetAndArgs globalFlags = do
         , let pkg_descr = elabPkgDescription pkg
         , thisExe : _ <- filter ((== exeName) . unUnqualComponentName . PD.exeName) $ PD.executables pkg_descr
         , let thisExeBI = PD.buildInfo thisExe =
-            [ elabBinDir pkg </> depExeNm
-            | depExe <- getAllInternalToolDependencies pkg_descr thisExeBI
-            , let depExeNm = unUnqualComponentName depExe
+            [ elabBinDir pkg
+            | not (null (getAllInternalToolDependencies pkg_descr thisExeBI))
             ]
         | otherwise =
             []

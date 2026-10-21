@@ -45,6 +45,7 @@ module Distribution.Client.ProjectBuilding
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+import Distribution.Client.HashValue (HashValue, hashValue, readFileHashValue, showHashValue)
 import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectConfig.Types
@@ -79,6 +80,8 @@ import Distribution.Utils.Path hiding
   )
 import Distribution.Version
 
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -95,6 +98,22 @@ import Distribution.Simple.Flag (fromFlagOrDefault)
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 import Distribution.Client.ProjectBuilding.UnpackedPackage (annotateFailureNoLog, buildAndInstallUnpackedPackage)
 import qualified Distribution.Compat.Graph as Graph
+
+------------------------------------------------------------------------------
+
+unpackHashForTarball :: ElaboratedConfiguredPackage -> FilePath -> IO HashValue
+unpackHashForTarball pkg tarball = do
+  tarballHash <- readFileHashValue tarball
+  pure $ case elabPkgDescriptionOverride pkg of
+    Nothing -> tarballHash
+    Just cabalFile ->
+      hashValue $ LBS.fromStrict (BS.pack (showHashValue tarballHash ++ "\0")) <> cabalFile
+
+unpackedSrcDirectory :: DistDirLayout -> PackageId -> HashValue -> FilePath
+unpackedSrcDirectory distDirLayout pkgid unpackHash =
+  distUnpackedSrcRootDirectory distDirLayout
+    </> showHashValue unpackHash
+    </> prettyShow pkgid
 
 ------------------------------------------------------------------------------
 
@@ -206,12 +225,12 @@ rebuildTargetsDryRun distDirLayout =
       -> FilePath
       -> IO BuildStatus
     dryRunTarballPkg pkg depsBuildStatus tarball = do
+      unpackHash <- unpackHashForTarball pkg tarball
+      let srcdir = unpackedSrcDirectory distDirLayout (packageId pkg) unpackHash
       exists <- doesDirectoryExist srcdir
       if exists
         then dryRunLocalPkg pkg depsBuildStatus srcdir
-        else return (BuildStatusUnpack tarball)
-      where
-        srcdir = distUnpackedSrcDirectory distDirLayout (packageId pkg)
+        else return (BuildStatusUnpack tarball unpackHash)
 
     dryRunLocalPkg
       :: ElaboratedConfiguredPackage
@@ -551,7 +570,7 @@ rebuildTarget
         -- We rely on the 'BuildStatus' to decide which phase to start from:
         case pkgBuildStatus of
           BuildStatusDownload -> downloadPhase
-          BuildStatusUnpack tarball -> unpackTarballPhase tarball
+          BuildStatusUnpack tarball unpackHash -> unpackTarballPhase tarball unpackHash
           BuildStatusRebuild srcdir status -> rebuildPhase status (makeSymbolicPath srcdir)
           -- TODO: perhaps re-nest the types to make these impossible
           BuildStatusPreExisting{} -> unexpectedState
@@ -566,17 +585,20 @@ rebuildTarget
           annotateFailureNoLog DownloadFailed $
             waitAsyncPackageDownload verbosity downloadMap pkg
         case downsrcloc of
-          DownloadedTarball tarball -> unpackTarballPhase tarball
+          DownloadedTarball tarball -> do
+            unpackHash <- unpackHashForTarball pkg tarball
+            unpackTarballPhase tarball unpackHash
       -- TODO: [nice to have] git/darcs repos etc
 
-      unpackTarballPhase :: FilePath -> IO BuildResult
-      unpackTarballPhase tarball =
+      unpackTarballPhase :: FilePath -> HashValue -> IO BuildResult
+      unpackTarballPhase tarball unpackHash =
         withTarballLocalDirectory
           verbosity
           distDirLayout
           unpackLock
           tarball
           (packageId pkg)
+          unpackHash
           (elabDistDirParams pkg)
           (elabPkgDescriptionOverride pkg)
           buildAndInstall
@@ -589,8 +611,7 @@ rebuildTarget
           builddir = distBuildDirectory (elabDistDirParams pkg)
 
       buildAndInstall :: BuildStatusRebuild -> SymbolicPath CWD (Dir Pkg) -> SymbolicPath Pkg (Dir Dist) -> IO BuildResult
-      buildAndInstall buildStatus srcdir builddir = do
-        info verbosity $ "[buildAndInstall] Building and installing " ++ prettyShow (nodeKey pkg)
+      buildAndInstall buildStatus srcdir builddir =
         buildAndInstallUnpackedPackage
           verbosity
           distDirLayout
@@ -698,6 +719,7 @@ withTarballLocalDirectory
   -> Lock
   -> FilePath
   -> PackageId
+  -> HashValue
   -> DistDirParams
   -> Maybe CabalFileText
   -> ( BuildStatusRebuild
@@ -712,6 +734,7 @@ withTarballLocalDirectory
   unpackLock
   tarball
   pkgid
+  unpackHash
   dparams
   pkgTextOverride
   buildPkg = do
@@ -738,8 +761,8 @@ withTarballLocalDirectory
           dparams
     buildPkg (BuildStatusConfigure MonitorFirstRun) (makeSymbolicPath srcdir) builddir
     where
-      srcrootdir = distUnpackedSrcRootDirectory distDirLayout
-      srcdir = distUnpackedSrcDirectory distDirLayout pkgid
+      srcrootdir = distUnpackedSrcRootDirectory distDirLayout </> showHashValue unpackHash
+      srcdir = srcrootdir </> prettyShow pkgid
       builddir =
         makeSymbolicPath $
           makeRelative (normalise srcdir) $

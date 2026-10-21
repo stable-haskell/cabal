@@ -77,7 +77,6 @@ import Distribution.Simple.Program
 import Distribution.Simple.Utils
   ( die'
   , dieWithException
-  , warn
   , withOutputMarker
   , wrapText
   )
@@ -249,7 +248,9 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags'} cliTargetStrings globalF
       else do
         let projectRoot = distProjectRootDirectory (distDirLayout baseCtx)
         toolchains <- runRebuild projectRoot $ configureToolchains verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
-        warn verbosity "WIP: Assuming host toolchain, result might be wrong"
+        -- The project compiler produces Host artifacts; Build is reserved for
+        -- tools run while building them. Query the same configured Host
+        -- toolchain and store layout used by the build plan.
         let Toolchain{..} = getStage toolchains Host
         compilerProg <- requireCompilerProg verbosity toolchainCompiler
         (configuredCompilerProg, _) <- requireProgram verbosity compilerProg toolchainProgramDb
