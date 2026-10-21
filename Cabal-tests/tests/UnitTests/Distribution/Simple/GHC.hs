@@ -192,7 +192,7 @@ tests =
                 target
             case platform of
               Platform arch Linux -> arch @?= expectedArch
-              Platform _ os -> assertFailure ("GHC --info target " ++ machine ++ " classified as " ++ show os)
+              Platform _ otherOS -> assertFailure ("GHC --info target " ++ machine ++ " classified as " ++ show otherOS)
             Map.lookup "Target platform" (compilerProperties compiler) @?= Just machine
             actual <- either assertFailure (pure . renderTargetName) (compilerTargetName platform compiler)
             actual @?= machine
