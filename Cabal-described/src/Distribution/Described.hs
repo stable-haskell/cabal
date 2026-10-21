@@ -409,13 +409,13 @@ instance Described Extension where
 
 instance Described (ExtraSource Build) where
     describe _ = REAppend
-        [ describe (Proxy :: Proxy (SymbolicPath Build File))
+        [ describe (Proxy :: Proxy (SymbolicPath Build 'File))
         , REOpt (reChar '(' <> reSpacedList (describe (Proxy :: Proxy Token')) <> reChar ')')
         ]
 
 instance Described (ExtraSource Pkg) where
     describe _ = REAppend
-        [ describe (Proxy :: Proxy (SymbolicPath Pkg File))
+        [ describe (Proxy :: Proxy (SymbolicPath Pkg 'File))
         , REOpt (reChar '(' <> reSpacedList (describe (Proxy :: Proxy Token')) <> reChar ')')
         ]
 
