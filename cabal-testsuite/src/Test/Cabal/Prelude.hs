@@ -1575,8 +1575,8 @@ findDependencyInStoreInStage stage pkgName = do
         then case testBuildCompilerPath env of
           Nothing -> pure (either error renderTargetName (compilerTargetName (testPlatform env) (testCompiler env)))
           Just compilerPath -> do
-            (compiler, platform, _) <- configCompilerEx (Just GHC) (Just compilerPath) Nothing defaultProgramDb (mkVerbosity defaultVerbosityHandles normal)
-            pure (either error renderTargetName (compilerTargetName platform compiler))
+            (selectedCompiler, platform, _) <- configCompilerEx (Just GHC) (Just compilerPath) Nothing defaultProgramDb (mkVerbosity defaultVerbosityHandles normal)
+            pure (either error renderTargetName (compilerTargetName platform selectedCompiler))
         else pure (either error renderTargetName (compilerTargetName (testPlatform env) (testCompiler env)))
     let
         storeDirs =

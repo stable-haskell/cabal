@@ -193,10 +193,12 @@ testProjectConfigShared = do
     projectConfigHcPath = toFlag "/some/path/to/compiler"
     projectConfigHcPkg = toFlag "/some/path/to/ghc-pkg"
     projectConfigPackageDBs = [Nothing, Just (SpecificPackageDB "foo"), Nothing, Just (SpecificPackageDB "bar"), Just (SpecificPackageDB "baz")]
-    projectConfigBuildHcFlavor = toFlag (OtherCompiler "ghcjs")
-    projectConfigBuildHcPath = toFlag "/some/path/to/compiler"
-    projectConfigBuildHcPkg = toFlag "/some/path/to/ghc-pkg"
-    projectConfigBuildPackageDBs = [Nothing, Just (SpecificPackageDB "foo"), Nothing, Just (SpecificPackageDB "bar"), Just (SpecificPackageDB "baz")]
+    -- This Host-only input must preserve the absence of Build selections.
+    -- Toolchain inheritance happens after configuration layers are merged.
+    projectConfigBuildHcFlavor = mempty
+    projectConfigBuildHcPath = mempty
+    projectConfigBuildHcPkg = mempty
+    projectConfigBuildPackageDBs = []
     projectConfigHaddockIndex = toFlag $ toPathTemplate "/path/to/haddock-index"
     projectConfigInstallDirs = mempty -- tested below in testInstallDirs
     projectConfigRemoteRepos = mempty -- tested below in testRemoteRepos
