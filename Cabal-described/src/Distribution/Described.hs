@@ -36,6 +36,7 @@ module Distribution.Described (
     csNotSpaceOrComma,
     -- * tasty
     testDescribed,
+    prettyMatchesDescription,
     ) where
 
 import Prelude
@@ -306,11 +307,8 @@ testDescribed _ = testGroup name
         res :: Either String a
         res = eitherParsec str
 
-    rr :: RE.RE Void
-    rr = convert $ describe (Proxy :: Proxy a)
-
     propPretty :: a -> Property
-    propPretty x = counterexample str $ RE.matchR rr str
+    propPretty x = counterexample str $ prettyMatchesDescription x
       where
         str = prettyShow x
 
@@ -321,6 +319,12 @@ testDescribed _ = testGroup name
       where
         str = prettyShow x
         res = eitherParsec str
+
+-- | Check that the pretty-printed value belongs to its described grammar.
+prettyMatchesDescription :: forall a. Described a => a -> Bool
+prettyMatchesDescription x = RE.matchR rr (prettyShow x)
+  where
+    rr = convert $ describe (Proxy :: Proxy a)
 
 newtype Ex a = Example String
   deriving (Show)

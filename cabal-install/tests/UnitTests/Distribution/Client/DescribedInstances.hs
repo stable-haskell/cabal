@@ -161,12 +161,14 @@ instance Described UserConstraint where
     where
       describeConstraintScope :: GrammarRegex void
       describeConstraintScope =
-        REUnion
-          [ "any." <> describePN
-          , "setup." <> describePN
-          , describePN
-          , describePN <> ":setup." <> describePN
-          ]
+        REOpt (REUnion ["build:", "host:"])
+          <> REUnion
+            [ "any." <> describePN
+            , "setup." <> describePN
+            , "exe." <> describePN
+            , describePN
+            , describePN <> ":setup." <> describePN
+            ]
 
       describeConstraintProperty :: GrammarRegex void
       describeConstraintProperty =
