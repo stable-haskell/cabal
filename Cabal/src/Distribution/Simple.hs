@@ -116,7 +116,7 @@ import Distribution.License
 import Distribution.Pretty
 import Distribution.Simple.Bench
 import Distribution.Simple.BuildPaths
-import Distribution.Simple.ConfigureScript (runConfigureScriptWithCompiler)
+import Distribution.Simple.ConfigureScript (runConfigureScriptWithCompilerAndProgramDb)
 import Distribution.Simple.Errors
 import Distribution.Simple.Haddock
 import Distribution.Simple.Install
@@ -997,8 +997,9 @@ autoconfUserHooks =
         let common = configCommonFlags flags
             verbosity = mkVerbosity defaultVerbosityHandles (fromFlag $ setupVerbosity common)
             mbWorkDir = flagToMaybe $ setupWorkingDir common
-        runConfigureScriptWithCompiler
+        runConfigureScriptWithCompilerAndProgramDb
           (Just $ compiler lbi)
+          (withPrograms lbi)
           defaultVerbosityHandles
           flags
           (flagAssignment lbi)
@@ -1071,8 +1072,9 @@ autoconfSetupHooks =
               , LBC.compiler = comp
               , LBC.hostPlatform = plat
               }
+          , SetupHooks.localBuildConfig = lbc
           }
-        ) = runConfigureScriptWithCompiler (Just comp) defaultVerbosityHandles cfg flags plat
+        ) = runConfigureScriptWithCompilerAndProgramDb (Just comp) (LBC.withPrograms lbc) defaultVerbosityHandles cfg flags plat
 
     pre_conf_comp
       :: SetupHooks.PreConfComponentInputs

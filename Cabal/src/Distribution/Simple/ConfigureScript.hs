@@ -16,6 +16,7 @@
 module Distribution.Simple.ConfigureScript
   ( runConfigureScript
   , runConfigureScriptWithCompiler
+  , runConfigureScriptWithCompilerAndProgramDb
   ) where
 
 import Distribution.Compat.Prelude
@@ -31,6 +32,7 @@ import Distribution.Simple.Configure (findDistPrefOrDefault)
 import Distribution.Simple.Errors
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program
+import Distribution.Simple.Program.Db (prependProgramSearchPath)
 import Distribution.Simple.Setup.Common
 import Distribution.Simple.Setup.Config
 import Distribution.Simple.Utils
@@ -40,6 +42,8 @@ import Distribution.Utils.Path
 import Distribution.Verbosity
 
 -- Base
+import Distribution.Compat.Environment (getEnvironment)
+import Distribution.Compat.GetShortPathName (getShortPathName)
 import System.Directory (createDirectoryIfMissing, doesFileExist, makeAbsolute)
 #ifdef mingw32_HOST_OS
 import System.FilePath    (normalise, splitDrive)
@@ -69,6 +73,32 @@ runConfigureScriptWithCompiler
 runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags hp = do
   let commonCfg = configCommonFlags cfg
       verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity commonCfg)
+      extraPath = fromNubList $ configProgramPathExtra cfg
+  programDb <- prependProgramSearchPath verbosity extraPath [] $ addKnownProgram gppProgram defaultProgramDb
+  let programDb' =
+        userSpecifyArgss (configProgramArgs cfg)
+          . userSpecifyPaths (configProgramPaths cfg)
+          $ programDb
+  runConfigureScriptWithCompilerAndProgramDb
+    mbCompiler
+    programDb'
+    verbHandles
+    cfg
+    flags
+    hp
+
+-- | Run a configure script with Cabal's selected C and C++ tools.
+runConfigureScriptWithCompilerAndProgramDb
+  :: Maybe Compiler
+  -> ProgramDb
+  -> VerbosityHandles
+  -> ConfigFlags
+  -> FlagAssignment
+  -> Platform
+  -> IO ()
+runConfigureScriptWithCompilerAndProgramDb mbCompiler programDb verbHandles cfg flags hp = do
+  let commonCfg = configCommonFlags cfg
+      verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity commonCfg)
 
   dist_dir <- findDistPrefOrDefault $ setupDistPref commonCfg
 
@@ -76,10 +106,7 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags hp = do
       mbWorkDir = flagToMaybe $ setupWorkingDir commonCfg
       build_in = interpretSymbolicPath mbWorkDir build_dir
 
-  putStrLn $ "[runConfigureScript] commonCfg= " ++ show commonCfg
   let configureScriptPath = packageRoot commonCfg </> "configure"
-
-  putStrLn $ "[runConfigureScript] configureScriptPath = " ++ configureScriptPath
 
   confExists <- doesFileExist configureScriptPath
   unless confExists $
@@ -90,16 +117,41 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags hp = do
   validateTargetArg verbosity "--build" args
 
   configureFile <- toUnix <$> makeAbsolute configureScriptPath
-  putStrLn $ "[runConfigureScript] configureFile = " ++ configureFile
-  putStrLn $ "[runConfigureScript] arg = " ++ unwords args
+
+  env <- getEnvironment
+  (ccProg, ccFlags) <- configureCCompiler verbosity programDb
+  ccProgShort <- getShortPathName ccProg
+  (mcxxProgShort, mcxxFlags) <- do
+    mprog <- needProgram verbosity gppProgram programDb
+    case mprog of
+      Just (p, _) -> do
+        let pInv = programInvocation p []
+        cxxProgShort <- getShortPathName $ progInvokePath pInv
+        return (Just cxxProgShort, Just $ progInvokeArgs pInv)
+      Nothing -> return (Nothing, Nothing)
+
+  let mkFlagsEnv fs var = maybe (unwords fs) (++ (" " ++ unwords fs)) (lookup var env)
+      compilerEnv =
+        [("CC", Just ccProgShort), ("CFLAGS", Just $ mkFlagsEnv ccFlags "CFLAGS")]
+          ++ [ ("CXX", Just cxxProgShort)
+             | Just cxxProgShort <- [mcxxProgShort]
+             ]
+          ++ [ ("CXXFLAGS", Just $ mkFlagsEnv cxxFlags "CXXFLAGS")
+             | Just cxxFlags <- [mcxxFlags]
+             ]
+      compilerArgs =
+        ["CC=" ++ ccProgShort]
+          ++ ["CXX=" ++ cxxProgShort | Just cxxProgShort <- [mcxxProgShort]]
+
+  let args' = configureFile : args ++ compilerArgs
 
   createDirectoryIfMissing True build_in
   withExtraPathEnv verbosity extraPath $
-    withEnvOverrides verbosity envOverrides $ do
+    withEnvOverrides verbosity (cabalFlagMap ++ cabalFlagEnv ++ progEnv ++ compilerEnv) $ do
       runProgramInvocation verbosity $
         -- We call `sh configure` rather than `configure` because on Windows you
         -- cannot run a shell script (there is no such thing as she-bang)
-        (simpleProgramInvocation "sh" (configureFile : args))
+        (simpleProgramInvocation "sh" args')
           { progInvokeCwd = Just build_in
           }
   where
@@ -128,14 +180,6 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags hp = do
 
     progEnv =
       [
-        ( "CC"
-        , canonicalisePathSeparator <$> lookup "gcc" (configProgramPaths cfg)
-        )
-      ,
-        ( "CXX"
-        , canonicalisePathSeparator <$> lookup "gpp" (configProgramPaths cfg)
-        )
-      ,
         ( "GHC"
         , canonicalisePathSeparator <$> lookup "ghc" (configProgramPaths cfg)
         )
@@ -146,7 +190,6 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags hp = do
       ]
 
     extraPath = fromNubList $ configProgramPathExtra cfg
-    envOverrides = cabalFlagMap ++ cabalFlagEnv ++ progEnv
 
 configureScriptArgs :: Maybe Compiler -> Platform -> String -> [String] -> [String]
 configureScriptArgs mbCompiler selectedPlatform buildTriple userArgs =
