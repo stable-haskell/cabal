@@ -12,6 +12,8 @@ module Distribution.Client.CmdRun
     -- * Internals exposed for testing
   , matchesMultipleProblem
   , noExesProblem
+  , collectRuntimeLibraryDirs
+  , sameStageDependencies
   , selectPackageTargets
   , selectComponentTarget
   ) where
@@ -39,6 +41,7 @@ import Distribution.Client.InstallPlan
   ( foldPlanPackage
   , toList
   )
+import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.NixStyleOptions
   ( NixStyleFlags (..)
   , cfgVerbosity
@@ -55,9 +58,14 @@ import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
   , ElaboratedPackageOrComponent (..)
+  , ElaboratedPlanPackage
+  , Stage
+  , Toolchain (..)
   , WithStage (..)
+  , elabAbsoluteInstallDirs
   , elabBinDir
   , elabExeDependencyPaths
+  , elabOrderLibDependencies
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -96,7 +104,8 @@ import Distribution.Simple.Program.Run
   , runProgramInvocation
   )
 import Distribution.Simple.Utils
-  ( dieWithException
+  ( addLibraryPath
+  , dieWithException
   , info
   , notice
   , sortNub
@@ -104,6 +113,20 @@ import Distribution.Simple.Utils
   , wrapText
   )
 
+import qualified Distribution.InstalledPackageInfo as IPI
+  ( libraryDynDirs
+  )
+import qualified Distribution.Simple.InstallDirs as InstallDirs
+  ( dynlibdir
+  )
+import Distribution.System
+  ( OS (..)
+  , Platform (..)
+  )
+
+import Distribution.Package
+  ( installedDepends
+  )
 import Distribution.Types.ComponentName
   ( componentNameRaw
   )
@@ -135,9 +158,13 @@ import GHC.Environment
 import System.Directory
   ( doesFileExist
   )
+import System.Environment
+  ( getEnvironment
+  )
 import System.FilePath
   ( isPathSeparator
   , isValid
+  , searchPathSeparator
   , (</>)
   )
 
@@ -330,9 +357,34 @@ runAction flags targetAndArgs globalFlags = do
                 $ baseCtx
              )
           ++ internalToolDepsOfThisExe
+      -- Libraries used by a stored executable must be found from their
+      -- installed locations. Its linker paths may still point into the
+      -- build tree, which is no longer where 'cabal run' executes it from.
+      -- 'elabOrderLibDependencies' includes setup dependencies too; keeping
+      -- only this component's stage prevents Build-toolchain libraries from
+      -- leaking into a Host executable's runtime environment.
+      runtimeLibraryDirs =
+        planDynamicLibraryDependencyDirs elaboratedPlan pkg
+      (Platform _ targetOS) = toolchainPlatform (elabToolchain pkg)
 
     logExtraProgramSearchPath verbosity extraPath
     progPath <- programSearchPathAsPATHVar (map ProgramSearchPathDir extraPath ++ defaultProgramSearchPath)
+    let progInvokePathValue =
+          if targetOS == Windows && not (null runtimeLibraryDirs)
+            then progPath ++ [searchPathSeparator] ++ intercalate [searchPathSeparator] runtimeLibraryDirs
+            else progPath
+
+    runtimeLibraryEnv <-
+      if null runtimeLibraryDirs || targetOS == Windows
+        then return []
+        else do
+          env <- getEnvironment
+          let libraryPathVariable = if targetOS == OSX then "DYLD_LIBRARY_PATH" else "LD_LIBRARY_PATH"
+          return $
+            maybeToList
+              ( (libraryPathVariable,) . Just
+                  <$> lookup libraryPathVariable (addLibraryPath targetOS runtimeLibraryDirs env)
+              )
 
     if dryRun
       then notice verbosity "Running of executable suppressed by flag(s)"
@@ -342,8 +394,51 @@ runAction flags targetAndArgs globalFlags = do
           emptyProgramInvocation
             { progInvokePath = exePath
             , progInvokeArgs = args
-            , progInvokeEnv = [("PATH", Just progPath)]
+            , progInvokeEnv = ("PATH", Just progInvokePathValue) : runtimeLibraryEnv
             }
+
+planDynamicLibraryDependencyDirs :: ElaboratedInstallPlan -> ElaboratedConfiguredPackage -> [FilePath]
+planDynamicLibraryDependencyDirs plan pkg =
+  collectRuntimeLibraryDirs lookupPackage [WithStage (elabStage pkg) (elabUnitId pkg)]
+  where
+    lookupPackage key = do
+      planPkg <- InstallPlan.lookup plan key
+      return (planPackageDynamicLibraryDirs planPkg, sameStageLibraryDependencies planPkg)
+
+collectRuntimeLibraryDirs :: Ord key => (key -> Maybe ([FilePath], [key])) -> [key] -> [FilePath]
+collectRuntimeLibraryDirs lookupPackage = go Set.empty Set.empty
+  where
+    go _ _ [] = []
+    go seenPackages seenDirs (key : pending)
+      | Set.member key seenPackages = go seenPackages seenDirs pending
+      | otherwise =
+          case lookupPackage key of
+            Nothing -> go (Set.insert key seenPackages) seenDirs pending
+            Just (libraryDirs, dependencies) ->
+              filter (`Set.notMember` seenDirs) libraryDirs
+                ++ go
+                  (Set.insert key seenPackages)
+                  (Set.union seenDirs (Set.fromList libraryDirs))
+                  (dependencies ++ pending)
+
+sameStageDependencies :: Stage -> [WithStage a] -> [WithStage a]
+sameStageDependencies stage = filter isSelectedStage
+  where
+    isSelectedStage (WithStage dependencyStage _) = dependencyStage == stage
+
+sameStageLibraryDependencies :: ElaboratedPlanPackage -> [WithStage UnitId]
+sameStageLibraryDependencies =
+  foldPlanPackage
+    (\(WithStage stage pkg) -> map (WithStage stage) (installedDepends pkg))
+    (\pkg -> sameStageDependencies (elabStage pkg) (elabOrderLibDependencies pkg))
+
+planPackageDynamicLibraryDirs :: ElaboratedPlanPackage -> [FilePath]
+planPackageDynamicLibraryDirs =
+  foldPlanPackage
+    (IPI.libraryDynDirs . unwrapStage)
+    (\pkg -> [InstallDirs.dynlibdir (elabAbsoluteInstallDirs pkg)])
+  where
+    unwrapStage (WithStage _ pkg) = pkg
 
 -- | Split @cabal run@ arguments (@exe cmd@ arguments in the examples) into
 -- target selectors and target executable arguments.
