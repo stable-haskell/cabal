@@ -631,6 +631,7 @@ instance Arbitrary Stage where
 instance ArbitraryOrd pn => ArbitraryOrd (Variable pn)
 instance ArbitraryOrd a => ArbitraryOrd (P.Qualified a)
 instance ArbitraryOrd P.PackagePath
+instance ArbitraryOrd P.Namespace
 instance ArbitraryOrd P.Qualifier
 instance ArbitraryOrd OptionalStanza
 instance ArbitraryOrd FlagName
