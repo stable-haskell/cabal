@@ -90,6 +90,7 @@ import Data.Bool (bool)
 import Data.Either (lefts, rights)
 import System.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath (isAbsolute, normalise)
+import qualified System.FilePath.Posix as Posix
 import System.IO (hClose, hPutStrLn, hSetEncoding, utf8)
 
 -- ------------------------------------------------------------------------------
@@ -784,13 +785,13 @@ fromLibrary verbosity haddockArtifactsDirs lbi clbi htmlTemplate haddockTarget p
           , argComponentName = toFlag (haddockPackageLibraryName' (pkgName (package pkg_descr)) (libName lib))
           , -- we need to accommodate for `argOutputDir`, see `haddockLibraryPath`
             argBaseUrl = case (libName lib, argBaseUrl args') of
-              (LSubLibName _, Flag url) -> Flag $ ".." </> url
+              (LSubLibName _, Flag url) -> Flag $ ".." Posix.</> url
               (_, a) -> a
           , argContents = case (libName lib, argContents args') of
-              (LSubLibName _, Flag url) -> Flag $ ".." </> url
+              (LSubLibName _, Flag url) -> Flag $ ".." Posix.</> url
               (_, a) -> a
           , argIndex = case (libName lib, argIndex args') of
-              (LSubLibName _, Flag url) -> Flag $ ".." </> url
+              (LSubLibName _, Flag url) -> Flag $ ".." Posix.</> url
               (_, a) -> a
           }
   return args''
@@ -834,13 +835,13 @@ fromExecutable verbosity haddockArtifactsDirs lbi clbi htmlTemplate haddockTarge
       { argTitle = Flag $ unUnqualComponentName $ exeName exe
       , -- we need to accommodate `argOutputDir`
         argBaseUrl = case argBaseUrl args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argContents = case argContents args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argIndex = case argIndex args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       }
 
@@ -884,13 +885,13 @@ fromTest verbosity haddockArtifactsDirs lbi clbi htmlTemplate haddockTarget pkg_
       , argComponentName = Flag $ prettyShow (packageName pkg_descr) ++ ":" ++ unUnqualComponentName (testName test)
       , -- we need to accommodate `argOutputDir`
         argBaseUrl = case argBaseUrl args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argContents = case argContents args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argIndex = case argIndex args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       }
 
@@ -934,13 +935,13 @@ fromBenchmark verbosity haddockArtifactsDirs lbi clbi htmlTemplate haddockTarget
       , argComponentName = Flag $ prettyShow (packageName pkg_descr) ++ ":" ++ unUnqualComponentName (benchmarkName bench)
       , -- we need to accommodate `argOutputDir`
         argBaseUrl = case argBaseUrl args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argContents = case argContents args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argIndex = case argIndex args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       }
 
@@ -983,13 +984,13 @@ fromForeignLib verbosity haddockArtifactsDirs lbi clbi htmlTemplate haddockTarge
       { argTitle = Flag $ unUnqualComponentName $ foreignLibName flib
       , -- we need to accommodate `argOutputDir`
         argBaseUrl = case argBaseUrl args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argContents = case argContents args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       , argIndex = case argIndex args' of
-          Flag url -> Flag $ ".." </> url
+          Flag url -> Flag $ ".." Posix.</> url
           NoFlag -> NoFlag
       }
 

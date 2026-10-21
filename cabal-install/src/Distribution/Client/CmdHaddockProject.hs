@@ -5,7 +5,7 @@ module Distribution.Client.CmdHaddockProject
   , haddockProjectAction
   ) where
 
-import Control.Monad (mapM)
+import Control.Monad (forM_, mapM)
 import Distribution.Client.Compat.Prelude hiding (get)
 import Prelude ()
 
@@ -91,7 +91,7 @@ import Distribution.Simple.Utils
   , warn
   )
 import Distribution.Types.InstalledPackageInfo (InstalledPackageInfo (..))
-import Distribution.Types.PackageDescription (PackageDescription (benchmarks, subLibraries, testSuites))
+import Distribution.Types.PackageDescription (PackageDescription (benchmarks, library, subLibraries, testSuites))
 import Distribution.Types.PackageId (pkgName)
 import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.UnitId (unUnitId)
@@ -197,6 +197,22 @@ haddockProjectAction flags _extraArgs globalFlags = do
       -- Copy haddocks to the destination folder
       --
 
+      -- Copy every source component's documentation before checking interface
+      -- paths. A package description lists all of its libraries, while each
+      -- component has a separate output directory; checking sibling interfaces
+      -- before their output has been copied would report them as missing.
+      forM_ pkgs $ \pkg ->
+        case pkg of
+          Right package | elabIsSourcePackage package -> do
+            let pkg_descr = elabPkgDescription package
+                packageDir = haddockDirName ForDevelopment pkg_descr
+                destDir = outputDir </> packageDir
+                buildDir = distBuildDirectory distLayout (elabDistDirParams package)
+                docDir = buildDir </> "doc" </> "html" </> packageDir
+            hasDocs <- doesDirectoryExist docDir
+            when hasDocs $ copyDirectoryRecursive verbosity docDir destDir
+          _ -> return ()
+
       packageInfos <- fmap (nub . concat) $ for pkgs $ \pkg ->
         case pkg of
           Left (WithStage _ package) | localStyle -> do
@@ -233,18 +249,19 @@ haddockProjectAction flags _extraArgs globalFlags = do
                 a <- doesDirectoryExist docDir
                 if a
                   then do
-                    copyDirectoryRecursive verbosity docDir destDir
                     let infos :: [(String, FilePath, Visibility)]
                         infos =
-                          (unPackageName packageName, interfacePath, Visible)
-                            : [ (sublibDirPath, sublibInterfacePath, Visible)
-                              | lib <- subLibraries pkg_descr
-                              , let sublibDirPath = haddockLibraryDirPath ForDevelopment pkg_descr lib
-                                    sublibInterfacePath =
+                          [ (unPackageName packageName, interfacePath, Visible)
+                          | isJust (library pkg_descr)
+                          ]
+                            ++ [ (sublibDirPath, sublibInterfacePath, Visible)
+                               | lib <- subLibraries pkg_descr
+                               , let sublibDirPath = haddockLibraryDirPath ForDevelopment pkg_descr lib
+                                     sublibInterfacePath =
                                       outputDir
                                         </> sublibDirPath
                                         </> haddockLibraryPath pkg_descr lib
-                              ]
+                               ]
                             ++ [ (testPath, testInterfacePath, Visible)
                                | test <- testSuites pkg_descr
                                , let testPath = haddockTestDirPath ForDevelopment pkg_descr test
@@ -346,7 +363,9 @@ haddockProjectAction flags _extraArgs globalFlags = do
           -- `--haddock-html-location`.
           haddockBaseUrl =
             if localStyle
-              then Flag ".."
+              then -- A directory URL needs its trailing slash: older Haddock
+              -- versions otherwise insert native Windows separators.
+                Flag "../"
               else NoFlag
         , haddockProgramPaths = haddockProjectProgramPaths flags
         , haddockProgramArgs = haddockProjectProgramArgs flags

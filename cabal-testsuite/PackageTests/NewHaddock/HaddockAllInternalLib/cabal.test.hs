@@ -16,4 +16,8 @@ main = cabalTest $ do
         _ -> fail "expected exactly one installed internal-library Haddock interface"
     registered <- runProgramM ghcPkgProgram
       ["--package-db=" ++ packageDb, "field", "--ipid", "haddock-internal-0.1.0.0-internal", "haddock-interfaces"] Nothing
-    assertOutputContains interfaceFile registered
+    -- ghc-pkg may print a package path with mixed separators on Windows.
+    -- Compare path components using the platform's separator convention.
+    assertOutputContains
+      (normalizePathSeparators interfaceFile)
+      registered{resultOutput = normalizePathSeparators (resultOutput registered)}
