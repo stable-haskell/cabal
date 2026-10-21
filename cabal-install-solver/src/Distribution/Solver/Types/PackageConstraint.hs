@@ -102,7 +102,7 @@ constraintQualifierMatches (ScopeAnyQualifier pn) _ pn' = pn == pn'
 
 instance Pretty ConstraintScope where
   pretty (ConstraintScope mstage qualifier) =
-    maybe mempty pretty mstage <+> pretty qualifier
+    maybe mempty (\stage -> pretty stage <<>> Disp.colon) mstage <<>> pretty qualifier
 
 instance Pretty ConstraintQualifier where
   pretty (ScopeTarget pn) = pretty pn <<>> Disp.text "." <<>> pretty pn
