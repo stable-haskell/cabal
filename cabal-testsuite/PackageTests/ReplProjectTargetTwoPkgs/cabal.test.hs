@@ -7,7 +7,7 @@ main = cabalTest . recordMode RecordMarked $ do
 
   log "checking repl command with a 'cabal.project' and --ignore-project"
   ignored <- cabalWithStdin "repl" ["--ignore-project"] ""
-  assertOutputContains "fake-package-0 (interactive) (lib) (first run)" ignored
+  assertOutputContains "host fake-package-0 (lib) (first run)" ignored
 
   log "checking repl command with a 'cabal.project' and no project options"
   defaultProject <- fails $ cabalWithStdin "repl" [] ""

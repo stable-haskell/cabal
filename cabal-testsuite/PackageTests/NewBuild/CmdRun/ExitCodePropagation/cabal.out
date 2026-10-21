@@ -1,8 +1,13 @@
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - ExitCodePropagation-1.0 (exe:foo) (first run)
+ - host ExitCodePropagation-1.0 (exe:foo) (first run)
 Configuring executable 'foo' for ExitCodePropagation-1.0...
 Preprocessing executable 'foo' for ExitCodePropagation-1.0...
 Building executable 'foo' for ExitCodePropagation-1.0...
+Installing executable foo in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

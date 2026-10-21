@@ -1,10 +1,13 @@
 # cabal clean
 # cabal v2-repl
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - cabal-repl-options-0.1 (interactive) (lib) (first run)
+ - host cabal-repl-options-0.1 (lib) (first run)
 Configuring library for cabal-repl-options-0.1...
 Preprocessing library for cabal-repl-options-0.1...
 Error: [Cabal-7125]
-repl failed for cabal-repl-options-0.1-inplace.
+repl failed for cabal-repl-options-0.1.

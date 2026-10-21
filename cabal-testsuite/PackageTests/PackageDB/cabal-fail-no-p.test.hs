@@ -6,4 +6,4 @@ main = cabalTest $ do
 
         withDirectory "q" $ do
             res <- fails $ cabal' "v2-build" []
-            assertOutputContains "unknown package: p" res
+            assertOutputContains "unknown package: host:p" res

@@ -1,15 +1,35 @@
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - Single-1.0 (exe:foo) (first run)
+ - host Single-1.0 (exe:foo) (first run)
 Configuring executable 'foo' for Single-1.0...
 Preprocessing executable 'foo' for Single-1.0...
 Building executable 'foo' for Single-1.0...
+Installing executable foo in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Error: [Cabal-7070]
 Cannot run the package bar, it is not in this project (either directly or indirectly). If you want to add it to the project then edit the cabal.project file.

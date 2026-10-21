@@ -1,6 +1,9 @@
 # cabal list-bin
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - fake-package-0 (exe:script-script.hs) (first run)
-<ROOT>/cabal.dist/work/./dist/build/<ARCH>/ghc-<GHCVER>/fake-package-0/x/script-script.hs/bin/cabal-script-script.hs
+ - host fake-package-0 (exe:script-script.hs) (first run)
+<ROOT>/cabal.dist/work/./dist/build/host/<ARCH>/fake-package-0-inplace-script-script.hs/bin/cabal-script-script.hs

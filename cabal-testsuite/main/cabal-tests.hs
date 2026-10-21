@@ -9,6 +9,9 @@ import Test.Cabal.Monad
 import Test.Cabal.TestCode
 
 import Distribution.Verbosity
+import Distribution.Compiler (CompilerFlavor (GHC))
+import Distribution.Simple.Compiler (compilerTargetName, compilerVersion, renderTargetName)
+import Distribution.Simple.Configure (configCompilerEx)
 import Distribution.Simple.Utils     (getDirectoryContentsRecursive)
 import Distribution.Simple.Program
 import Distribution.Utils.Path       (getSymbolicPath)
@@ -146,10 +149,12 @@ buildCabalLibsProject projString verb mbGhc dir = do
   let prog_db = userSpecifyPaths [("ghc", path) | Just path <- [mbGhc] ]  defaultProgramDb
   (cabal, _) <- requireProgram verb (simpleProgram "cabal") prog_db
   (ghc, _) <- requireProgram verb ghcProgram prog_db
+  (compiler, platform, _) <- configCompilerEx (Just GHC) (Just (programPath ghc)) Nothing prog_db verb
 
   let storeRoot = dir </> "store"
-  let pv = fromMaybe (error "no ghc version") (programVersion ghc)
-  let final_package_db = dir </> "dist-newstyle" </> "packagedb" </> "ghc-" ++ prettyShow pv
+  let pv = compilerVersion compiler
+      final_package_db = dir </> "dist-newstyle" </> "packagedb" </> "ghc-" ++ prettyShow pv
+      hostTarget = either error renderTargetName (compilerTargetName platform compiler)
   createDirectoryIfMissing True dir
   writeFile (dir </> "cabal.project-test") projString
 
@@ -162,13 +167,44 @@ buildCabalLibsProject projString verb mbGhc dir = do
       , "Cabal", "Cabal-syntax", "Cabal-hooks", "hooks-exe"
       ] ) { progInvokeCwd = Just dir })
 
-  -- Determine the path to the packagedb in the store for this ghc version
-  storesByGhc <- listDirectory storeRoot
-  case filter (prettyShow pv `isInfixOf`) storesByGhc of
-    [] -> return [final_package_db]
-    storeForGhc:_ -> do
-      let storePackageDB = (storeRoot </> storeForGhc </> "package.conf.d")
-      return [storePackageDB, final_package_db]
+  -- New stores are keyed by stage and the compiler's logical target. Older
+  -- Cabal versions used a compiler-version directory, so keep that exact
+  -- Host-only layout as a fallback.
+  let hostStoreDir = storeRoot </> "host" </> hostTarget
+  hostStorePackageDBs <- filterM doesDirectoryExist [hostStoreDir </> "package.conf.d", hostStoreDir </> "package.db"]
+  storePackageDBs <-
+    case hostStorePackageDBs of
+      _ : _ -> selectPackageDBs "Host" hostStorePackageDBs
+      [] -> do
+        storeRootExists <- doesDirectoryExist storeRoot
+        if not storeRootExists
+          then pure []
+          else do
+            storesByGhc <- listDirectory storeRoot
+            legacyCandidates <- fmap concat $ forM (filter (`elem` legacyCompilerStoreDirNames compiler) storesByGhc) $ \storeForGhc -> do
+              let storeDir = storeRoot </> storeForGhc
+              filterM doesDirectoryExist [storeDir </> "package.conf.d", storeDir </> "package.db"]
+            selectPackageDBs "legacy Host" legacyCandidates
+  pure (storePackageDBs ++ [final_package_db])
+
+-- Multiple package DB directory names can remain after a store is moved
+-- between GHC package DB layouts. Select the one with registered packages
+-- when that choice is unambiguous; if both are populated, fail rather than
+-- silently choosing a potentially different compiler environment. If both
+-- are empty, prefer the canonical package.conf.d layout (the first candidate).
+selectPackageDBs :: String -> [FilePath] -> IO [FilePath]
+selectPackageDBs _ [] = pure []
+selectPackageDBs _ [packageDB] = pure [packageDB]
+selectPackageDBs description packageDBs = do
+  populated <- filterM hasPackageConf packageDBs
+  case populated of
+    [packageDB] -> pure [packageDB]
+    [] -> pure (take 1 packageDBs)
+    _ -> ioError $ userError $ "Ambiguous " ++ description ++ " package DBs: " ++ show populated
+  where
+    hasPackageConf packageDB = do
+      entries <- listDirectory packageDB
+      pure (any ((== ".conf") . takeExtension) entries)
 
 
 

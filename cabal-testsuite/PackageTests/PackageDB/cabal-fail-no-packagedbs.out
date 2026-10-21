@@ -1,3 +1,6 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Error: [Cabal-2300]
 No package databases have been specified. If you use --package-db=clear, you must follow it with --package-db= with 'global', 'user' or a specific file.

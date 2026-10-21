@@ -1,17 +1,23 @@
 # checking repl command with no project and --ignore-project
 # cabal repl
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - fake-package-0 (interactive) (lib) (first run)
+ - host fake-package-0 (lib) (first run)
 Configuring library for fake-package-0...
 Warning: No exposed modules
 # checking repl command with no project and no project options
 # cabal repl
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - fake-package-0 (interactive) (lib) (configuration changed)
+ - host fake-package-0 (lib) (configuration changed)
 Configuring library for fake-package-0...
 Warning: No exposed modules
 # checking repl command with a missing project

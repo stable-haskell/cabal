@@ -1,7 +1,10 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - custom-setup-without-cabal-1.0 (lib:custom-setup-without-cabal) (first run)
+ - host custom-setup-without-cabal-1.0 (lib:custom-setup-without-cabal) (first run)
 Error: [Cabal-7125]
-Failed to build custom-setup-without-cabal-1.0-inplace. The failure occurred during the configure step.
+Failed to configure custom-setup-without-cabal-1.0. The failure occurred during the configure step.

@@ -1,9 +1,12 @@
 # checking repl command with a 'cabal.project' and --ignore-project
 # cabal repl
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - fake-package-0 (interactive) (lib) (first run)
+ - host fake-package-0 (lib) (first run)
 Configuring library for fake-package-0...
 Warning: No exposed modules
 # checking repl command with a 'cabal.project' and no project options
@@ -34,11 +37,14 @@ The project config '<ROOT>/empty.project' requires at least one of the fields 'p
 # cabal repl
 # checking multi-repl command with the 'all' target
 # cabal repl
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - pkg-one-0.1 (interactive) (first run)
- - pkg-two-0.1 (interactive) (first run)
+ - host pkg-one-0.1 (first run)
+ - host pkg-two-0.1 (first run)
 Configuring pkg-one-0.1...
 Preprocessing library for pkg-one-0.1...
 Configuring pkg-two-0.1...
@@ -47,11 +53,14 @@ Preprocessing library for pkg-two-0.1...
 # cabal clean
 # cabal repl
 No target specified, using 'all' as the target for the REPL.
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - pkg-one-0.1 (interactive) (first run)
- - pkg-two-0.1 (interactive) (first run)
+ - host pkg-one-0.1 (first run)
+ - host pkg-two-0.1 (first run)
 Configuring pkg-one-0.1...
 Preprocessing library for pkg-one-0.1...
 Configuring pkg-two-0.1...

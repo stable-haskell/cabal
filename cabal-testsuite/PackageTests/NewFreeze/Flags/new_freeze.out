@@ -1,19 +1,28 @@
 # cabal v2-update
 Downloading the latest package list from test-local-repo
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following would be built:
- - true-dep-1.0 (lib) (requires build)
- - my-library-dep-1.0 (lib) (requires build)
- - my-local-package-1.0 (lib) (first run)
+ - host true-dep-1.0 (lib) (requires build)
+ - host my-library-dep-1.0 (lib) (requires build)
+ - host my-local-package-1.0 (lib) (first run)
 # cabal v2-freeze
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Wrote freeze file: <ROOT>/cabal.project.freeze
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following would be built:
- - false-dep-1.0 (lib) (requires build)
- - my-library-dep-1.0 (lib) (requires build)
- - my-local-package-1.0 (lib) (first run)
+ - host false-dep-1.0 (lib) (requires build)
+ - host my-library-dep-1.0 (lib) (requires build)
+ - host my-local-package-1.0 (lib) (first run)

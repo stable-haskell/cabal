@@ -1,13 +1,22 @@
 # cabal v2-target
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Fully qualified target forms:
  - a:exe:a-exe
 Found 1 target matching a:exe:a-exe.
 # cabal v2-target
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Fully qualified target forms:
  - a:exe:a-exe
 Found 1 target matching exe:a-exe.
 # cabal v2-target
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Fully qualified target forms:
  - a:exe:a-exe
 Found 1 target matching a:a-exe.

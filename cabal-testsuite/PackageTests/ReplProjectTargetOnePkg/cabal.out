@@ -1,30 +1,42 @@
 # checking repl command with a 'cabal.project' and --ignore-project
 # cabal repl
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - fake-package-0 (interactive) (lib) (first run)
+ - host fake-package-0 (lib) (first run)
 Configuring library for fake-package-0...
 Warning: No exposed modules
 # checking repl command with a 'cabal.project' and no project options
 # cabal repl
 No target specified, using package 'pkg-one' as the target for the REPL.
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - pkg-one-0.1 (interactive) (first run)
+ - host pkg-one-0.1 (first run)
 Configuring pkg-one-0.1...
 Preprocessing library for pkg-one-0.1...
 # checking repl command with a single package in 'cabal.project'
 # cabal repl
 No target specified, using package 'pkg-one' as the target for the REPL.
-Build profile: -w ghc-<GHCVER> -O1
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - pkg-one-0.1 (interactive) (first run)
+ - host pkg-one-0.1 (first run)
 Preprocessing library for pkg-one-0.1...
 # checking repl command with the 'all' target
 # cabal repl
-Build profile: -w ghc-<GHCVER> -O1
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - pkg-one-0.1 (interactive) (first run)
+ - host pkg-one-0.1 (first run)
 Preprocessing library for pkg-one-0.1...

@@ -1,7 +1,17 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Error:
     Dependency cycle between the following components:
         library bar
         library foo
-    In the inplace package 'DepCycle-1.0'
+    In the local package 'DepCycle-1.0'
+    CallStack (from HasCallStack):
+  dieProgress, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  elaborateSolverToComponents, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  elaboratedInstallPlan, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  elaborateInstallPlan, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  phaseElaboratePlan, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  rebuildInstallPlan, called at src/Distribution/Client/ProjectOrchestration.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectOrchestration

@@ -1,12 +1,23 @@
 # cabal run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Warning: Your RTS options are applied to cabal, not the executable. Use '--' to separate cabal options from your executable options. For example, use 'cabal run -- +RTS -N to pass the '-N' RTS option to your executable.
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - WarningRTS-1.0 (exe:foo) (first run)
+ - host WarningRTS-1.0 (exe:foo) (first run)
 Configuring executable 'foo' for WarningRTS-1.0...
 Preprocessing executable 'foo' for WarningRTS-1.0...
 Building executable 'foo' for WarningRTS-1.0...
+Installing executable foo in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
 # cabal run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Warning: Your RTS options are applied to cabal, not the executable. Use '--' to separate cabal options from your executable options. For example, use 'cabal run -- +RTS -N to pass the '-N' RTS option to your executable.
 # cabal run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>

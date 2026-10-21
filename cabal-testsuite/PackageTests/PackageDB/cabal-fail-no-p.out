@@ -8,10 +8,13 @@ Installing library in <PATH>
 # Setup register
 Registering library for p-1.0...
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Error: [Cabal-7107]
 Could not resolve dependencies:
-[__0] trying: q-1.0 (user goal)
-[__1] unknown package: p (dependency of q)
-[__1] fail (backjumping, conflict set: p, q)
-After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: q (2), p (1)
+[__0] trying: host:q == host:source:q-1.0 (user goal)
+[__1] unknown package: host:p (dependency of host:q)
+[__1] fail (backjumping, conflict set: host:p, host:q)
+After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: host:q (2), host:p (1)

@@ -1,10 +1,15 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - foreign-opts-c-0.1 (exe:foreign-opts-c-exe) (first run)
+ - host foreign-opts-c-0.1 (exe:foreign-opts-c-exe) (first run)
 Configuring executable 'foreign-opts-c-exe' for foreign-opts-c-0.1...
 Preprocessing executable 'foreign-opts-c-exe' for foreign-opts-c-0.1...
 Building executable 'foreign-opts-c-exe' for foreign-opts-c-0.1...
+Installing executable foreign-opts-c-exe in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
 # foreign-opts-c foreign-opts-c-exe
 The secret is 11

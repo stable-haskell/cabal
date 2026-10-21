@@ -1,4 +1,11 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
+Warning: cannot determine version of <ROOT>/scripts/pkg-config :
+""
+Warning: cannot determine version of <ROOT>/scripts/pkg-config :
+""
 Warning: cannot determine version of <ROOT>/scripts/pkg-config :
 ""
 Warning: cannot determine version of <ROOT>/scripts/pkg-config :
@@ -6,7 +13,7 @@ Warning: cannot determine version of <ROOT>/scripts/pkg-config :
 Resolving dependencies...
 Error: [Cabal-7107]
 Could not resolve dependencies:
-[__0] next goal: CheckExtraProgPathGlobal (user goal)
-[__0] rejecting: CheckExtraProgPathGlobal-0.1 (pkg-config package zlib-any is needed but no pkg-config executable was found or querying it failed)
-[__0] fail (backjumping, conflict set: CheckExtraProgPathGlobal)
-After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: CheckExtraProgPathGlobal (2)
+[__0] next goal: host:CheckExtraProgPathGlobal (user goal)
+[__0] rejecting: host:CheckExtraProgPathGlobal == host:source:CheckExtraProgPathGlobal-0.1 (pkg-config package zlib-any is needed but no pkg-config executable was found or querying it failed)
+[__0] fail (backjumping, conflict set: host:CheckExtraProgPathGlobal)
+After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: host:CheckExtraProgPathGlobal (2)

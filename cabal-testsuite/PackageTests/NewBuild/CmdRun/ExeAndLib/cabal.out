@@ -1,11 +1,19 @@
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - ExeAndLib-1.0 (exe:foo) (first run)
+ - host ExeAndLib-1.0 (exe:foo) (first run)
 Configuring executable 'foo' for ExeAndLib-1.0...
 Preprocessing executable 'foo' for ExeAndLib-1.0...
 Building executable 'foo' for ExeAndLib-1.0...
+Installing executable foo in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Error: [Cabal-7070]
 The run command is for running executables, but the target 'ExeAndLib' refers to the library ExeAndLib from the package ExeAndLib-1.0.

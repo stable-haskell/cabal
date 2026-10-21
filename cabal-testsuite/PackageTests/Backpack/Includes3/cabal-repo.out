@@ -1,13 +1,16 @@
 # cabal v2-update
 Downloading the latest package list from test-local-repo
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - sigs-0.1.0.0 (lib) (requires build)
- - indef-0.1.0.0 (lib) (requires build)
- - indef-0.1.0.0 (lib with Data.Map=containers-<VERSION>:Data.Map) (requires build)
- - exe-0.1.0.0 (exe:exe) (first run)
+ - host sigs-0.1.0.0 (lib) (requires build)
+ - host indef-0.1.0.0 (lib) (requires build)
+ - host indef-0.1.0.0 (lib with Data.Map=containers-<VERSION>:Data.Map) (requires build)
+ - host exe-0.1.0.0 (exe:exe) (first run)
 Configuring library for sigs-0.1.0.0...
 Preprocessing library for sigs-0.1.0.0...
 Building library instantiated with Data.Map = <Data.Map>
@@ -28,3 +31,5 @@ Installing library in <PATH>
 Configuring executable 'exe' for exe-0.1.0.0...
 Preprocessing executable 'exe' for exe-0.1.0.0...
 Building executable 'exe' for exe-0.1.0.0...
+Installing executable exe in <PATH>
+Warning: The directory <ROOT>/cabal-repo.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

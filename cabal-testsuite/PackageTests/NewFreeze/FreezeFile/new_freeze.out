@@ -1,24 +1,39 @@
 # cabal v2-update
 Downloading the latest package list from test-local-repo
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following would be built:
- - my-library-dep-2.0 (lib) (requires build)
- - my-local-package-1.0 (exe:my-exe) (first run)
+ - host my-library-dep-2.0 (lib) (requires build)
+ - host my-local-package-1.0 (exe:my-exe) (first run)
 # cabal v2-freeze
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Freeze file not written due to flag(s)
 # cabal v2-freeze
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Freeze file not written due to flag(s)
 # cabal v2-freeze
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Wrote freeze file: <ROOT>/cabal.project.freeze
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - my-library-dep-1.0 (lib) (requires build)
- - my-local-package-1.0 (exe:my-exe) (first run)
+ - host my-library-dep-1.0 (lib) (requires build)
+ - host my-local-package-1.0 (exe:my-exe) (first run)
 Configuring library for my-library-dep-1.0...
 Preprocessing library for my-library-dep-1.0...
 Building library for my-library-dep-1.0...
@@ -26,13 +41,24 @@ Installing library in <PATH>
 Configuring executable 'my-exe' for my-local-package-1.0...
 Preprocessing executable 'my-exe' for my-local-package-1.0...
 Building executable 'my-exe' for my-local-package-1.0...
+Installing executable my-exe in <PATH>
+Warning: The directory <ROOT>/new_freeze.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
 # cabal v2-freeze
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Wrote freeze file: <ROOT>/cabal.project.freeze
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following would be built:
- - my-library-dep-2.0 (lib) (requires build)
- - my-local-package-1.0 (exe:my-exe) (configuration changed)
+ - host my-library-dep-2.0 (lib) (requires build)
+ - host my-local-package-1.0 (exe:my-exe) (configuration changed)
 # cabal v2-freeze
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Wrote freeze file: <ROOT>/cabal.project.freeze

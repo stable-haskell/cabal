@@ -1,25 +1,32 @@
 # cabal build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - CompileFail-0.1.0.0 (lib) (first run)
- - CompileFail-0.1.0.0 (test:CompileFail-test) (first run)
+ - host CompileFail-0.1.0.0 (lib) (first run)
+ - host CompileFail-0.1.0.0 (test:CompileFail-test) (first run)
 Configuring library for CompileFail-0.1.0.0...
 Preprocessing library for CompileFail-0.1.0.0...
 Building library for CompileFail-0.1.0.0...
+Installing library in <PATH>
 Configuring test suite 'CompileFail-test' for CompileFail-0.1.0.0...
 Preprocessing test suite 'CompileFail-test' for CompileFail-0.1.0.0...
 Building test suite 'CompileFail-test' for CompileFail-0.1.0.0...
 Error: [Cabal-7125]
-Failed to build CompileFail-0.1.0.0-inplace-CompileFail-test.
+Failed to build CompileFail-0.1.0.0-CompileFail-test.
 # cabal build
-Build profile: -w ghc-<GHCVER> -O1
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - CompileFail-0.1.0.0 (lib:failing) (first run)
- - CompileFail-0.1.0.0 (exe:CompileFail-exe) (first run)
+ - host CompileFail-0.1.0.0 (lib:failing) (first run)
+ - host CompileFail-0.1.0.0 (exe:CompileFail-exe) (first run)
 Configuring library 'failing' for CompileFail-0.1.0.0...
 Preprocessing library 'failing' for CompileFail-0.1.0.0...
 Building library 'failing' for CompileFail-0.1.0.0...
 Error: [Cabal-7125]
-Failed to build CompileFail-0.1.0.0 because it depends on CompileFail-0.1.0.0 which itself failed to build.
-Failed to build CompileFail-0.1.0.0-inplace-failing.
+Failed to build host:CompileFail-0.1.0.0-CompileFail-exe because it depends on host:CompileFail-0.1.0.0-CompileFail-exe which itself failed to build.
+Failed to build CompileFail-0.1.0.0-failing.

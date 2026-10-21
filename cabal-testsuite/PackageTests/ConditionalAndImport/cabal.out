@@ -1,15 +1,18 @@
 # cabal v2-update
 Downloading the latest package list from test-local-repo
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - some-exe-0.0.1.0 (exe:some-exe) (requires build)
+ - host some-exe-0.0.1.0 (exe:some-exe) (requires build)
 Configuring some-exe-0.0.1.0...
 Preprocessing executable 'some-exe' for some-exe-0.0.1.0...
 Building executable 'some-exe' for some-exe-0.0.1.0...
 Installing executable some-exe in <PATH>
-Warning: The directory <ROOT>/cabal.dist/home/.cabal/store/ghc-<GHCVER>/incoming/new-<RAND><ROOT>/cabal.dist/home/.cabal/store/ghc-<GHCVER>/<PACKAGE>-<HASH>/bin is not in the system search path.
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
 # checking cyclical loopback of a project importing itself
 # cabal v2-build
 Error: [Cabal-7167]
@@ -108,15 +111,22 @@ cyclical-2-out-out-self-b.config:1:1: error:
 
 # checking that cyclical check doesn't false-positive on same file names in different folders; hoping within a folder and then into a subfolder
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - my-0.1 (lib:my) (first run)
+ - host my-0.1 (lib:my) (first run)
 Configuring my-0.1...
 Preprocessing library for my-0.1...
 Building library for my-0.1...
+Installing library in <PATH>
 # checking that cyclical check doesn't false-positive on same file names in different folders; hoping into a subfolder and then back out again
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Up to date
 # checking that cyclical check catches a same file name that imports itself
 # cabal v2-build
@@ -171,15 +181,21 @@ same-filename/cyclical-same-filename-out-out-back.config:1:1: error:
 
 # checking that imports work skipping into a subfolder and then back out again and again
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Up to date
 # checking conflicting constraints skipping into a subfolder and then back out again and again
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Error: [Cabal-7107]
 Could not resolve dependencies:
-[__0] trying: oops-0.1 (user goal)
-[__1] next goal: hashable (dependency of oops)
-[__1] rejecting: hashable-1.4.3.0
+[__0] trying: host:oops == host:source:oops-0.1 (user goal)
+[__1] next goal: host:hashable (dependency of host:oops)
+[__1] rejecting: host:hashable == host:source:hashable-1.4.3.0
       (constraint from oops/oops-9.config requires ==1.4.2.0)
         imported by: oops-8.config
         imported by: oops/oops-7.config
@@ -190,12 +206,15 @@ Could not resolve dependencies:
         imported by: oops-2.config
         imported by: oops/oops-1.config
         imported by: oops-0.project
-[__1] rejecting: hashable-1.4.2.0
+[__1] rejecting: host:hashable == host:source:hashable-1.4.2.0
       (constraint from oops-0.project requires ==1.4.3.0)
-[__1] fail (backjumping, conflict set: hashable, oops)
-After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: hashable (3), oops (2)
+[__1] fail (backjumping, conflict set: host:hashable, host:oops)
+After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: host:hashable (3), host:oops (2)
 # checking if we detect when the same config is imported via many different paths (we don't)
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Up to date
 # checking bad conditional
 # cabal v2-build

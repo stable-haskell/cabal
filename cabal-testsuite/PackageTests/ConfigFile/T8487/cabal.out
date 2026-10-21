@@ -1,8 +1,12 @@
 # cabal build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O2
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O2
 In order, the following will be built:
- - test-0.1.0.0 (lib) (first run)
+ - host test-0.1.0.0 (lib) (first run)
 Configuring library for test-0.1.0.0...
 Preprocessing library for test-0.1.0.0...
 Building library for test-0.1.0.0...
+Installing library in <PATH>
