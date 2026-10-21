@@ -962,11 +962,11 @@ testTargetProblemsBuild config reportSubCase = do
       CmdBuild.selectPackageTargets
       CmdBuild.selectComponentTarget
       [mkTargetPackage "p-0.1"]
-      [ (WithStage Host "p-0.1-inplace", (CLibName LMainLibName))
-      , (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-      , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
-      , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
-      , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
+      [ (WithStage Host "p-0.1", (CLibName LMainLibName))
+      , (WithStage Host "p-0.1-a-benchmark", CBenchName "a-benchmark")
+      , (WithStage Host "p-0.1-a-testsuite", CTestName "a-testsuite")
+      , (WithStage Host "p-0.1-an-exe", CExeName "an-exe")
+      , (WithStage Host "p-0.1-libp", CFLibName "libp")
       ]
 
   reportSubCase "disabled component kinds"
@@ -988,9 +988,9 @@ testTargetProblemsBuild config reportSubCase = do
       CmdBuild.selectPackageTargets
       CmdBuild.selectComponentTarget
       [mkTargetPackage "p-0.1"]
-      [ (WithStage Host "p-0.1-inplace", (CLibName LMainLibName))
-      , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
-      , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
+      [ (WithStage Host "p-0.1", (CLibName LMainLibName))
+      , (WithStage Host "p-0.1-an-exe", CExeName "an-exe")
+      , (WithStage Host "p-0.1-libp", CFLibName "libp")
       ]
 
   reportSubCase "requested component kinds"
@@ -1005,8 +1005,8 @@ testTargetProblemsBuild config reportSubCase = do
       [ TargetPackage TargetExplicitNamed ["p-0.1"] (Just TestKind)
       , TargetPackage TargetExplicitNamed ["p-0.1"] (Just BenchKind)
       ]
-      [ (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-      , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
+      [ (WithStage Host "p-0.1-a-benchmark", CBenchName "a-benchmark")
+      , (WithStage Host "p-0.1-a-testsuite", CTestName "a-testsuite")
       ]
 
 testTargetProblemsRepl :: ProjectConfig -> (String -> IO ()) -> Assertion
@@ -1093,8 +1093,8 @@ testTargetProblemsRepl config reportSubCase = do
       [ mkTargetComponent "p-0.1" (CExeName "p1")
       , mkTargetComponent "p-0.1" (CExeName "p2")
       ]
-      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
-      , (WithStage Host "p-0.1-inplace-p2", CExeName "p2")
+      [ (WithStage Host "p-0.1-p1", CExeName "p1")
+      , (WithStage Host "p-0.1-p2", CExeName "p2")
       ]
 
   reportSubCase "libs-disabled"
@@ -1163,7 +1163,7 @@ testTargetProblemsRepl config reportSubCase = do
       (CmdRepl.selectPackageTargets (CmdRepl.MultiReplDecision Nothing False))
       CmdRepl.selectComponentTarget
       [TargetPackage TargetExplicitNamed ["p-0.1"] Nothing]
-      [(WithStage Host "p-0.1-inplace", (CLibName LMainLibName))]
+      [(WithStage Host "p-0.1", (CLibName LMainLibName))]
     -- When we select the package with an explicit filter then we get those
     -- components even though we did not explicitly enable tests/benchmarks
     assertProjectDistinctTargets
@@ -1171,13 +1171,13 @@ testTargetProblemsRepl config reportSubCase = do
       (CmdRepl.selectPackageTargets (CmdRepl.MultiReplDecision Nothing False))
       CmdRepl.selectComponentTarget
       [TargetPackage TargetExplicitNamed ["p-0.1"] (Just TestKind)]
-      [(WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")]
+      [(WithStage Host "p-0.1-a-testsuite", CTestName "a-testsuite")]
     assertProjectDistinctTargets
       elaboratedPlan
       (CmdRepl.selectPackageTargets (CmdRepl.MultiReplDecision Nothing False))
       CmdRepl.selectComponentTarget
       [TargetPackage TargetExplicitNamed ["p-0.1"] (Just BenchKind)]
-      [(WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")]
+      [(WithStage Host "p-0.1-a-benchmark", CBenchName "a-benchmark")]
 
 testTargetProblemsListBin :: ProjectConfig -> (String -> IO ()) -> Assertion
 testTargetProblemsListBin config reportSubCase = do
@@ -1190,7 +1190,7 @@ testTargetProblemsListBin config reportSubCase = do
       CmdListBin.selectComponentTarget
       [ TargetPackage TargetExplicitNamed ["p-0.1"] Nothing
       ]
-      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
+      [ (WithStage Host "p-0.1-p1", CExeName "p1")
       ]
 
   reportSubCase "multiple-exes"
@@ -1227,8 +1227,8 @@ testTargetProblemsListBin config reportSubCase = do
       [ mkTargetComponent "p-0.1" (CExeName "p1")
       , mkTargetComponent "p-0.1" (CExeName "p2")
       ]
-      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
-      , (WithStage Host "p-0.1-inplace-p2", CExeName "p2")
+      [ (WithStage Host "p-0.1-p1", CExeName "p1")
+      , (WithStage Host "p-0.1-p2", CExeName "p2")
       ]
 
   reportSubCase "exes-disabled"
@@ -1275,7 +1275,7 @@ testTargetProblemsRun config reportSubCase = do
       CmdRun.selectComponentTarget
       [ TargetPackage TargetExplicitNamed ["p-0.1"] Nothing
       ]
-      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
+      [ (WithStage Host "p-0.1-p1", CExeName "p1")
       ]
 
   reportSubCase "multiple-exes"
@@ -1312,8 +1312,8 @@ testTargetProblemsRun config reportSubCase = do
       [ mkTargetComponent "p-0.1" (CExeName "p1")
       , mkTargetComponent "p-0.1" (CExeName "p2")
       ]
-      [ (WithStage Host "p-0.1-inplace-p1", CExeName "p1")
-      , (WithStage Host "p-0.1-inplace-p2", CExeName "p2")
+      [ (WithStage Host "p-0.1-p1", CExeName "p1")
+      , (WithStage Host "p-0.1-p2", CExeName "p2")
       ]
 
   reportSubCase "exes-disabled"
@@ -1716,11 +1716,11 @@ testTargetProblemsHaddock config reportSubCase = do
         (CmdHaddock.selectPackageTargets haddockFlags)
         CmdHaddock.selectComponentTarget
         [mkTargetPackage "p-0.1"]
-        [ (WithStage Host "p-0.1-inplace", (CLibName LMainLibName))
-        , (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-        , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
-        , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
-        , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
+        [ (WithStage Host "p-0.1", (CLibName LMainLibName))
+        , (WithStage Host "p-0.1-a-benchmark", CBenchName "a-benchmark")
+        , (WithStage Host "p-0.1-a-testsuite", CTestName "a-testsuite")
+        , (WithStage Host "p-0.1-an-exe", CExeName "an-exe")
+        , (WithStage Host "p-0.1-libp", CFLibName "libp")
         ]
 
   reportSubCase "disabled component kinds"
@@ -1732,7 +1732,7 @@ testTargetProblemsHaddock config reportSubCase = do
         (CmdHaddock.selectPackageTargets haddockFlags)
         CmdHaddock.selectComponentTarget
         [mkTargetPackage "p-0.1"]
-        [(WithStage Host "p-0.1-inplace", (CLibName LMainLibName))]
+        [(WithStage Host "p-0.1", (CLibName LMainLibName))]
 
   reportSubCase "requested component kinds"
   -- When we selecting the package with an explicit filter then it does not
@@ -1747,10 +1747,10 @@ testTargetProblemsHaddock config reportSubCase = do
         , TargetPackage TargetExplicitNamed ["p-0.1"] (Just TestKind)
         , TargetPackage TargetExplicitNamed ["p-0.1"] (Just BenchKind)
         ]
-        [ (WithStage Host "p-0.1-inplace-a-benchmark", CBenchName "a-benchmark")
-        , (WithStage Host "p-0.1-inplace-a-testsuite", CTestName "a-testsuite")
-        , (WithStage Host "p-0.1-inplace-an-exe", CExeName "an-exe")
-        , (WithStage Host "p-0.1-inplace-libp", CFLibName "libp")
+        [ (WithStage Host "p-0.1-a-benchmark", CBenchName "a-benchmark")
+        , (WithStage Host "p-0.1-a-testsuite", CTestName "a-testsuite")
+        , (WithStage Host "p-0.1-an-exe", CExeName "an-exe")
+        , (WithStage Host "p-0.1-libp", CFLibName "libp")
         ]
   where
     mkHaddockFlags flib exe test bench =
@@ -2554,6 +2554,16 @@ testConfigOptionComments = do
     assertHasCommentLine :: String -> String -> Assertion
     assertHasCommentLine = assertHasLine' True
 
+    assertNoSetting :: String -> Assertion
+    assertNoSetting settingName =
+      assertBool
+        ( "Unexpected setting "
+            <> show settingName
+            <> " in configuration file "
+            <> configFile
+        )
+        (null (findLinesWith False settingName defaultConfigFile))
+
   "  url" `assertHasLine` "url"
   "  -- secure" `assertHasCommentLine` "secure"
   "  -- root-keys" `assertHasCommentLine` "root-keys"
@@ -2722,7 +2732,9 @@ testConfigOptionComments = do
   "  -- happy-location" `assertHasCommentLine` "happy-location"
   "  -- hpc-location" `assertHasCommentLine` "hpc-location"
   "  -- hscolour-location" `assertHasCommentLine` "hscolour-location"
-  "  -- jhc-location" `assertHasCommentLine` "jhc-location"
+  -- JHC was removed from Cabal's built-in program list, so neither of its
+  -- generated config fields should appear.
+  assertNoSetting "jhc-location"
   "  -- ld-location" `assertHasCommentLine` "ld-location"
   "  -- pkg-config-location" `assertHasCommentLine` "pkg-config-location"
   "  -- runghc-location" `assertHasCommentLine` "runghc-location"
@@ -2744,7 +2756,7 @@ testConfigOptionComments = do
   "  -- hpc-options" `assertHasCommentLine` "hpc-options"
   "  -- hsc2hs-options" `assertHasCommentLine` "hsc2hs-options"
   "  -- hscolour-options" `assertHasCommentLine` "hscolour-options"
-  "  -- jhc-options" `assertHasCommentLine` "jhc-options"
+  assertNoSetting "jhc-options"
   "  -- ld-options" `assertHasCommentLine` "ld-options"
   "  -- pkg-config-options" `assertHasCommentLine` "pkg-config-options"
   "  -- runghc-options" `assertHasCommentLine` "runghc-options"
