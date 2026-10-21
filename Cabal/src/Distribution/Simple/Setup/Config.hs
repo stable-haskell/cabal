@@ -73,9 +73,9 @@ import Distribution.Utils.NubList
 import Distribution.Utils.Path
 import Distribution.Verbosity
 
-import qualified Text.PrettyPrint as Disp
 import qualified System.FilePath as FP.Native
 import qualified System.FilePath.Posix as FP.Posix
+import qualified Text.PrettyPrint as Disp
 
 -- ------------------------------------------------------------
 
@@ -1083,7 +1083,7 @@ instance Semigroup ConfigFlags where
 -- @autoconf@.
 configureArgs :: ConfigFlags -> [String]
 configureArgs flags =
-    optFlag "with-compiler" configHcPath
+  optFlag "with-compiler" configHcPath
     ++ optFlag "with-hc-pkg" configHcPkg
     ++ optFlag' "prefix" prefix
     ++ optFlag' "bindir" bindir

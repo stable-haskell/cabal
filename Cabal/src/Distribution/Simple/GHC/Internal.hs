@@ -123,10 +123,11 @@ configureToolchain verbosity _implInfo ghcProg ghcInfo db = do
   -- ghc to compile a _test_ c program. So we configure `gcc`
   -- first and then use `gcc` (the generic c compiler in cabal
   -- terminology) to compile the test program.
-  let gccProgram' = gccProgram
-        { programFindLocation = findProg gccProgramName extraGccPath
-        , programPostConf = configureGcc
-        }
+  let gccProgram' =
+        gccProgram
+          { programFindLocation = findProg gccProgramName extraGccPath
+          , programPostConf = configureGcc
+          }
   let db' = addKnownProgram gccProgram' db
   (gccProg, db'') <- requireProgram verbosity gccProgram' db'
   return $

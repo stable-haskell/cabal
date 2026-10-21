@@ -209,7 +209,6 @@ module Distribution.Simple.Utils
   , isAbsoluteOnAnyPlatform
   , isRelativeOnAnyPlatform
   , exceptionWithCallStackPrefix
-
   , withEnv
   , withEnvOverrides
   , withExtraPathEnv
@@ -243,10 +242,10 @@ import Prelude ()
 import qualified Paths_Cabal (version)
 #endif
 
+import Control.Monad (zipWithM_)
+import Distribution.Compat.Environment
 import Distribution.Parsec
 import Distribution.Pretty
-import Distribution.Compat.Environment
-import Control.Monad (zipWithM_)
 
 import qualified Data.ByteString.Lazy as BS
 import Data.Typeable

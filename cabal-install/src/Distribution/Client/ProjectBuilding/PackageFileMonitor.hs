@@ -174,34 +174,35 @@ checkPackageFileMonitorChanged
                 where
                   buildReason = BuildReasonFilesChanged monitorReason'
                   monitorReason' = fmap (const ()) monitorReason
-              MonitorUnchanged (docsResult, testsResult) _ -> 
-                if elabRequiresRegistration pkg then do
-                  regChanged <- checkFileMonitorChanged pkgFileMonitorReg srcdir ()
-                  case regChanged of
-                    MonitorChanged monitorReason ->
-                      -- this should only happen if the file is corrupt or been
-                      -- manually deleted. We don't want to bother with another
-                      -- phase just for this, so we'll reregister by doing a build.
-                      return (Left (BuildStatusBuild (BuildReasonFilesChanged monitorReason)))
-                    MonitorUnchanged _ _
-                      | pkgHasEphemeralBuildTargets pkg ->
-                        return (Left (BuildStatusBuild BuildReasonEphemeralTargets))
-                      | otherwise ->
-                        return $
-                          Right
-                            BuildResult
-                              { buildResultDocs = docsResult
-                              , buildResultTests = testsResult
-                              , buildResultLogFile = Nothing
-                              }
-                else
-                  return $
-                    Right
-                      BuildResult
-                        { buildResultDocs = docsResult
-                        , buildResultTests = testsResult
-                        , buildResultLogFile = Nothing
-                        }
+              MonitorUnchanged (docsResult, testsResult) _ ->
+                if elabRequiresRegistration pkg
+                  then do
+                    regChanged <- checkFileMonitorChanged pkgFileMonitorReg srcdir ()
+                    case regChanged of
+                      MonitorChanged monitorReason ->
+                        -- this should only happen if the file is corrupt or been
+                        -- manually deleted. We don't want to bother with another
+                        -- phase just for this, so we'll reregister by doing a build.
+                        return (Left (BuildStatusBuild (BuildReasonFilesChanged monitorReason)))
+                      MonitorUnchanged _ _
+                        | pkgHasEphemeralBuildTargets pkg ->
+                            return (Left (BuildStatusBuild BuildReasonEphemeralTargets))
+                        | otherwise ->
+                            return $
+                              Right
+                                BuildResult
+                                  { buildResultDocs = docsResult
+                                  , buildResultTests = testsResult
+                                  , buildResultLogFile = Nothing
+                                  }
+                  else
+                    return $
+                      Right
+                        BuildResult
+                          { buildResultDocs = docsResult
+                          , buildResultTests = testsResult
+                          , buildResultLogFile = Nothing
+                          }
     where
       (pkgconfig, buildComponents) = packageFileMonitorKeyValues pkg
 

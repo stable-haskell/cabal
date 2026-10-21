@@ -405,10 +405,21 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
           actualPath <- canonicalizePath actual
           compilerPath <- canonicalizePath compilerPathValue
           when (actualPath /= compilerPath) $
-            die' verbosity
-              ( "ghc-pkg installation mismatch for " ++ field
-                  ++ ": expected " ++ show compilerPathValue ++ " (" ++ show compilerPath ++ ")"
-                  ++ ", got " ++ show actual ++ " (" ++ show actualPath ++ ") from " ++ programPath ghcPkgProg
+            die'
+              verbosity
+              ( "ghc-pkg installation mismatch for "
+                  ++ field
+                  ++ ": expected "
+                  ++ show compilerPathValue
+                  ++ " ("
+                  ++ show compilerPath
+                  ++ ")"
+                  ++ ", got "
+                  ++ show actual
+                  ++ " ("
+                  ++ show actualPath
+                  ++ ") from "
+                  ++ programPath ghcPkgProg
               )
         Nothing -> die' verbosity ("ghc-pkg --info is missing " ++ field)
 
@@ -478,11 +489,11 @@ guessToolFromGhcPath targetName tool ghcProg verbosity searchpath =
           let base = takeFileName (dropExeExtension p)
               -- find "ghc<suf>" at the end of base
               ghcMarker = "ghc" ++ versionSuffix base
-          in if ghcMarker `isSuffixOf` base
-               then Just (take (length base - length ghcMarker) base)
-               else Nothing
+           in if ghcMarker `isSuffixOf` base
+                then Just (take (length base - length ghcMarker) base)
+                else Nothing
         given_prefix = targetPrefixOf given_path
-        real_prefix  = targetPrefixOf real_path
+        real_prefix = targetPrefixOf real_path
         guessNormal dir = dir </> toolname <.> exeExtension buildPlatform
         guessGhcVersioned dir suf =
           dir
@@ -497,13 +508,13 @@ guessToolFromGhcPath targetName tool ghcProg verbosity searchpath =
           | null pref = []
           | otherwise = [dir </> (pref ++ toolname) <.> exeExtension buildPlatform]
         mkGuesses dir suf prefix
-          | null suf  = guessTargetPrefixed dir prefix ++ [guessNormal dir]
+          | null suf = guessTargetPrefixed dir prefix ++ [guessNormal dir]
           | otherwise =
-              guessTargetPrefixed dir prefix ++
-              [ guessGhcVersioned dir suf
-              , guessVersioned dir suf
-              , guessNormal dir
-              ]
+              guessTargetPrefixed dir prefix
+                ++ [ guessGhcVersioned dir suf
+                   , guessVersioned dir suf
+                   , guessNormal dir
+                   ]
         canonicalTargetGuesses versionedOnly dir =
           case targetName of
             Nothing -> []
@@ -513,7 +524,7 @@ guessToolFromGhcPath targetName tool ghcProg verbosity searchpath =
                     [ (base ++ "-" ++ version) <.> exeExtension buildPlatform
                     , dir </> (toolname ++ "-" ++ target ++ "-" ++ version) <.> exeExtension buildPlatform
                     ]
-              in if versionedOnly then versioned else [base <.> exeExtension buildPlatform]
+               in if versionedOnly then versioned else [base <.> exeExtension buildPlatform]
         strictTargetTool = maybe False (\(_, strict, _) -> strict) targetName
         canonicalDirs
           | real_dir == given_dir = [given_dir]
@@ -522,13 +533,13 @@ guessToolFromGhcPath targetName tool ghcProg verbosity searchpath =
         guesses =
           concatMap (canonicalTargetGuesses True) canonicalDirs
             ++ concatMap (canonicalTargetGuesses False) canonicalDirs
-            ++
-          ( if strictTargetTool
-              then []
-              else if real_path == given_path
-              then []
-              else mkGuesses real_dir real_suf real_prefix
-          )
+            ++ ( if strictTargetTool
+                  then []
+                  else
+                    if real_path == given_path
+                      then []
+                      else mkGuesses real_dir real_suf real_prefix
+               )
             ++ if strictTargetTool then [] else mkGuesses given_dir given_suf given_prefix
     info verbosity $
       "looking for tool "
@@ -543,8 +554,14 @@ guessToolFromGhcPath targetName tool ghcProg verbosity searchpath =
       []
         | strictTargetTool && toolname == "ghc-pkg" ->
             die' verbosity $
-              "Could not find target-prefixed " ++ toolname ++ " for target " ++ maybe "<unknown>" (\(target, _, _) -> show target) targetName
-                ++ " next to compiler " ++ given_path ++ "; tried " ++ show guesses
+              "Could not find target-prefixed "
+                ++ toolname
+                ++ " for target "
+                ++ maybe "<unknown>" (\(target, _, _) -> show target) targetName
+                ++ " next to compiler "
+                ++ given_path
+                ++ "; tried "
+                ++ show guesses
         | strictTargetTool -> pure Nothing
         | otherwise -> programFindLocation tool verbosity searchpath
       (fp : _) -> do

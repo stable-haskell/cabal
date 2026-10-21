@@ -221,14 +221,14 @@ rebuildTargetsDryRun distDirLayout =
     dryRunLocalPkg pkg depsBuildStatus srcdir = do
       -- Go and do lots of I/O, reading caches and probing files to work out
       -- if anything has changed
-      
+
       change <-
         checkPackageFileMonitorChanged
           packageFileMonitor
           pkg
           srcdir
           depsBuildStatus
-      
+
       case change of
         -- It did change, giving us 'BuildStatusRebuild' info on why
         Left rebuild -> do
@@ -737,13 +737,13 @@ withTarballLocalDirectory
           pkgid
           dparams
     buildPkg (BuildStatusConfigure MonitorFirstRun) (makeSymbolicPath srcdir) builddir
-  where
-    srcrootdir = distUnpackedSrcRootDirectory distDirLayout
-    srcdir = distUnpackedSrcDirectory distDirLayout pkgid
-    builddir =
-      makeSymbolicPath $
-        makeRelative (normalise srcdir) $
-          distBuildDirectory distDirLayout dparams
+    where
+      srcrootdir = distUnpackedSrcRootDirectory distDirLayout
+      srcdir = distUnpackedSrcDirectory distDirLayout pkgid
+      builddir =
+        makeSymbolicPath $
+          makeRelative (normalise srcdir) $
+            distBuildDirectory distDirLayout dparams
 
 unpackPackageTarball
   :: Verbosity

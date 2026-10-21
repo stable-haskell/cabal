@@ -192,11 +192,11 @@ import Distribution.Client.ReplFlags
   )
 import Distribution.Compat.Binary (decode)
 import qualified Distribution.Compat.Graph as Graph
-import Distribution.Types.PackageName.Magic (fakePackageId)
 import Distribution.Simple.Flag (flagToMaybe, fromFlagOrDefault, pattern Flag)
 import Distribution.Simple.Program.Builtin (ghcProgram)
 import Distribution.Simple.Program.Db (requireProgram)
 import Distribution.Simple.Program.Types
+import Distribution.Types.PackageName.Magic (fakePackageId)
 import System.Directory
   ( doesFileExist
   , getCurrentDirectory
@@ -601,41 +601,41 @@ targetedRepl
 
         buildOutcomes <- runProjectBuildPhase verbosity baseCtx'' buildCtx'
         runProjectPostBuildPhase verbosity baseCtx'' buildCtx' buildOutcomes
-  where
-    combine_search_paths paths =
-      foldl' go Map.empty paths
-      where
-        go m ("PATH", Just s) = foldl' (\m' f -> Map.insertWith (+) f 1 m') m (splitSearchPath s)
-        go m _ = m
+    where
+      combine_search_paths paths =
+        foldl' go Map.empty paths
+        where
+          go m ("PATH", Just s) = foldl' (\m' f -> Map.insertWith (+) f 1 m') m (splitSearchPath s)
+          go m _ = m
 
-    projectRoot = distProjectRootDirectory $ distDirLayout ctx
-    distDir = distDirectory $ distDirLayout ctx
-    verbosity = cfgVerbosity normal flags
-    tempFileOptions = commonSetupTempFileOptions $ configCommonFlags configFlags
+      projectRoot = distProjectRootDirectory $ distDirLayout ctx
+      distDir = distDirectory $ distDirLayout ctx
+      verbosity = cfgVerbosity normal flags
+      tempFileOptions = commonSetupTempFileOptions $ configCommonFlags configFlags
 
-    -- FIXME: the compiler depends on the stage!!
-    validatedTargets sharedConfig comp elaboratedPlan' selectors = do
-      let multi_repl_enabled = multiReplDecision sharedConfig comp replFlags
-      -- Interpret the targets on the command line as repl targets
-      -- (as opposed to say build or haddock targets).
-      targets <-
-        either (reportTargetProblems verbosity) return $
-          resolveTargetsFromSolver
-            (selectPackageTargets multi_repl_enabled)
-            selectComponentTarget
-            elaboratedPlan'
-            Nothing
-            selectors
+      -- FIXME: the compiler depends on the stage!!
+      validatedTargets sharedConfig comp elaboratedPlan' selectors = do
+        let multi_repl_enabled = multiReplDecision sharedConfig comp replFlags
+        -- Interpret the targets on the command line as repl targets
+        -- (as opposed to say build or haddock targets).
+        targets <-
+          either (reportTargetProblems verbosity) return $
+            resolveTargetsFromSolver
+              (selectPackageTargets multi_repl_enabled)
+              selectComponentTarget
+              elaboratedPlan'
+              Nothing
+              selectors
 
-      -- Reject multiple targets, or at least targets in different
-      -- components. It is ok to have two module/file targets in the
-      -- same component, but not two that live in different components.
-      when (Set.size (distinctTargetComponents targets) > 1 && not (useMultiRepl multi_repl_enabled)) $
-        reportTargetProblems
-          verbosity
-          [multipleTargetsProblem multi_repl_enabled targets]
+        -- Reject multiple targets, or at least targets in different
+        -- components. It is ok to have two module/file targets in the
+        -- same component, but not two that live in different components.
+        when (Set.size (distinctTargetComponents targets) > 1 && not (useMultiRepl multi_repl_enabled)) $
+          reportTargetProblems
+            verbosity
+            [multipleTargetsProblem multi_repl_enabled targets]
 
-      return targets
+        return targets
 
 withCtx :: NixStyleFlags a -> [String] -> GlobalFlags -> TargetsAction [TargetSelector] b -> IO b
 withCtx flags targetStrings globalFlags =

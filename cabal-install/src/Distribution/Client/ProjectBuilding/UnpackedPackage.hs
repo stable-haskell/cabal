@@ -10,7 +10,7 @@
 -- | This module exposes functions to build and register packages.
 module Distribution.Client.ProjectBuilding.UnpackedPackage
   ( buildAndInstallUnpackedPackage
-  , PackageBuildingPhase(..)
+  , PackageBuildingPhase (..)
 
     -- ** Utilities
   , annotateFailure
@@ -95,13 +95,13 @@ import System.Semaphore (SemaphoreName (..))
 
 import GHC.Stack
 
-import qualified Distribution.Compat.Graph as Graph
-import Distribution.PackageDescription (BuildType(..))
-import qualified Distribution.PackageDescription as PD
-import Distribution.Client.FileMonitor (MonitorFilePath, monitorFileHashed, beginUpdateFileMonitor)
+import Distribution.Client.FileMonitor (MonitorFilePath, beginUpdateFileMonitor, monitorFileHashed)
+import Distribution.Client.RebuildMonad (execRebuild)
 import Distribution.Client.SourceFiles (needElaboratedConfiguredPackage)
 import Distribution.Client.SrcDist (allPackageSourceFiles)
-import Distribution.Client.RebuildMonad (execRebuild)
+import qualified Distribution.Compat.Graph as Graph
+import Distribution.PackageDescription (BuildType (..))
+import qualified Distribution.PackageDescription as PD
 
 -- | Each unpacked package is processed in the following phases:
 --
@@ -175,7 +175,11 @@ buildAndRegisterUnpackedPackage
         PBConfigurePhase $
           annotateFailure mlogFile ConfigureFailed $ do
             info verbosity $ "--- Configure phase " ++ prettyShow (Graph.nodeKey pkg)
-            setup configureCommand Cabal.configCommonFlags configureFlags configureArgs
+            setup
+              configureCommand
+              Cabal.configCommonFlags
+              configureFlags
+              configureArgs
               (InLibraryArgs $ InLibraryConfigureArgs pkgshared rpkg)
 
     -- Build phase
@@ -183,7 +187,11 @@ buildAndRegisterUnpackedPackage
       PBBuildPhase $
         annotateFailure mlogFile BuildFailed $ do
           info verbosity $ "--- Build phase " ++ prettyShow (Graph.nodeKey pkg)
-          setup buildCommand Cabal.buildCommonFlags (return . buildFlags) buildArgs
+          setup
+            buildCommand
+            Cabal.buildCommonFlags
+            (return . buildFlags)
+            buildArgs
             (InLibraryArgs $ InLibraryPostConfigureArgs SBuildPhase mbLBI)
 
     -- Haddock phase
@@ -192,7 +200,11 @@ buildAndRegisterUnpackedPackage
         PBHaddockPhase $
           annotateFailure mlogFile HaddocksFailed $ do
             info verbosity $ "--- Haddock phase " ++ prettyShow (Graph.nodeKey pkg)
-            setup haddockCommand Cabal.haddockCommonFlags (return . haddockFlags) haddockArgs
+            setup
+              haddockCommand
+              Cabal.haddockCommonFlags
+              (return . haddockFlags)
+              haddockArgs
               (InLibraryArgs $ InLibraryPostConfigureArgs SHaddockPhase mbLBI)
 
     -- Install phase
@@ -201,7 +213,11 @@ buildAndRegisterUnpackedPackage
         { runCopy = \destdir ->
             annotateFailure mlogFile InstallFailed $ do
               info verbosity $ "--- Install phase (copy) " ++ prettyShow (Graph.nodeKey pkg)
-              setup Cabal.copyCommand Cabal.copyCommonFlags (return . copyFlags destdir) copyArgs
+              setup
+                Cabal.copyCommand
+                Cabal.copyCommonFlags
+                (return . copyFlags destdir)
+                copyArgs
                 (InLibraryArgs $ InLibraryPostConfigureArgs SCopyPhase mbLBI)
         , runRegister = \pkgDBStack registerOpts ->
             annotateFailure mlogFile InstallFailed $ do
@@ -229,7 +245,11 @@ buildAndRegisterUnpackedPackage
         PBTestPhase $
           annotateFailure mlogFile TestsFailed $ do
             info verbosity $ "--- Test phase " ++ prettyShow (Graph.nodeKey pkg)
-            setup testCommand Cabal.testCommonFlags (return . testFlags) testArgs
+            setup
+              testCommand
+              Cabal.testCommonFlags
+              (return . testFlags)
+              testArgs
               (InLibraryArgs $ InLibraryPostConfigureArgs STestPhase mbLBI)
 
     -- Bench phase
@@ -238,7 +258,11 @@ buildAndRegisterUnpackedPackage
         PBBenchPhase $
           annotateFailure mlogFile BenchFailed $ do
             info verbosity $ "--- Benchmark phase " ++ prettyShow (Graph.nodeKey pkg)
-            setup benchCommand Cabal.benchmarkCommonFlags (return . benchFlags) benchArgs
+            setup
+              benchCommand
+              Cabal.benchmarkCommonFlags
+              (return . benchFlags)
+              benchArgs
               (InLibraryArgs $ InLibraryPostConfigureArgs SBenchPhase mbLBI)
 
     -- Repl phase
@@ -247,7 +271,11 @@ buildAndRegisterUnpackedPackage
         PBReplPhase $
           annotateFailure mlogFile ReplFailed $ do
             info verbosity $ "--- Repl phase " ++ prettyShow (Graph.nodeKey pkg)
-            setupInteractive replCommand Cabal.replCommonFlags (return . replFlags) replArgs
+            setupInteractive
+              replCommand
+              Cabal.replCommonFlags
+              (return . replFlags)
+              replArgs
               (InLibraryArgs $ InLibraryPostConfigureArgs SReplPhase mbLBI)
 
     return ()
@@ -388,7 +416,7 @@ buildAndRegisterUnpackedPackage
       setupInteractive =
         setupWrapper
           verbosity
-          scriptOptions { isInteractive = True }
+          scriptOptions{isInteractive = True}
           (Just (elabPkgDescription pkg))
 
       generateInstalledPackageInfo :: InLibraryLBI -> IO InstalledPackageInfo
@@ -416,7 +444,6 @@ buildAndRegisterUnpackedPackage
         case mlogFile of
           Nothing -> action Nothing
           Just logFile -> withFile logFile AppendMode (action . Just)
-
 
 buildAndInstallUnpackedPackage
   :: Verbosity
@@ -493,11 +520,12 @@ buildAndInstallUnpackedPackage
           whenRebuild $ do
             noticeProgress ProgressBuilding
             timestamp <- beginUpdateFileMonitor
-            _ <- runBuild
-            -- Be sure to invalidate the cache if building throws an exception!
-            -- If not, we'll abort execution with a stale recompilation cache.
-            -- See ghc#24926 for an example of how this can go wrong.
-              `onException` invalidatePackageRegFileMonitor packageFileMonitor            
+            _ <-
+              runBuild
+                -- Be sure to invalidate the cache if building throws an exception!
+                -- If not, we'll abort execution with a stale recompilation cache.
+                -- See ghc#24926 for an example of how this can go wrong.
+                `onException` invalidatePackageRegFileMonitor packageFileMonitor
 
             let listSimple =
                   execRebuild (getSymbolicPath srcdir) (needElaboratedConfiguredPackage pkg)
@@ -527,7 +555,7 @@ buildAndInstallUnpackedPackage
                     listSdist `ifNullThen` listSimple
                 | otherwise ->
                     listSimple
-            
+
             let dep_monitors =
                   map monitorFileHashed $
                     elabInplaceDependencyBuildCacheFiles
@@ -543,7 +571,6 @@ buildAndInstallUnpackedPackage
               buildStatus
               (monitors ++ dep_monitors)
               buildResult
-
         PBHaddockPhase{runHaddock} -> do
           noticeProgress ProgressHaddock
           _monitors <- runHaddock
@@ -555,17 +582,17 @@ buildAndInstallUnpackedPackage
 
             runCopy (Cabal.CopyToDb (elabRegistrationPackageDb pkg))
 
-            if elabRequiresRegistration pkg then do
-              ipi <- runRegister
-                  (elabRegisterPackageDBStack pkg)
-                  Cabal.defaultRegisterOptions
-                    { Cabal.registerMultiInstance = True
-                    , Cabal.registerSuppressFilesCheck = True
-                    }
-              updatePackageRegFileMonitor packageFileMonitor (getSymbolicPath srcdir) (Just ipi)
-            else
-              info verbosity $ "registerPkg: elab does NOT require registration for " ++ prettyShow uid
-
+            if elabRequiresRegistration pkg
+              then do
+                ipi <-
+                  runRegister
+                    (elabRegisterPackageDBStack pkg)
+                    Cabal.defaultRegisterOptions
+                      { Cabal.registerMultiInstance = True
+                      , Cabal.registerSuppressFilesCheck = True
+                      }
+                updatePackageRegFileMonitor packageFileMonitor (getSymbolicPath srcdir) (Just ipi)
+              else info verbosity $ "registerPkg: elab does NOT require registration for " ++ prettyShow uid
         PBTestPhase{runTest} -> runTest
         PBBenchPhase{runBench} -> runBench
         PBReplPhase{runRepl} -> runRepl >> return ()
@@ -645,12 +672,13 @@ buildAndInstallUnpackedPackage
           -- it just changed the CWD to a source directory. This needs further investigation.
           --
           -- An alternative patch was constructed here: https://github.com/stable-haskell/cabal/commit/604cab98c9a599953c7d95e4f37af449d5357577
-          Just _ -> Just
-            $ distDirectory distDirLayout
-            </> "logs"
-            </> prettyShow (elabStage pkg)
-            </> betterPlatform (elabToolchain pkg)
-            </> prettyShow (elabUnitId pkg)
+          Just _ ->
+            Just $
+              distDirectory distDirLayout
+                </> "logs"
+                </> prettyShow (elabStage pkg)
+                </> betterPlatform (elabToolchain pkg)
+                </> prettyShow (elabUnitId pkg)
 
       initLogFile :: IO ()
       initLogFile =
@@ -660,9 +688,10 @@ buildAndInstallUnpackedPackage
             createDirectoryIfMissing True (takeDirectory logFile)
             removeFileForcibly logFile
 
-
 --------------------------------------------------------------------------------
+
 -- * Exported Utils
+
 --------------------------------------------------------------------------------
 
 {- FOURMOLU_DISABLE -}

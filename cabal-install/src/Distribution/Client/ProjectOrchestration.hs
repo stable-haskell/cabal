@@ -108,10 +108,10 @@ module Distribution.Client.ProjectOrchestration
   ) where
 
 import Distribution.Client.Compat.Prelude
+import qualified Distribution.Compat.Graph as Graph
 import System.Directory
   ( makeAbsolute
   )
-import qualified Distribution.Compat.Graph as Graph
 import Prelude ()
 
 import Distribution.Client.ProjectBuilding
@@ -189,10 +189,11 @@ import qualified Distribution.Simple.Setup as Setup
 import Distribution.Simple.Utils
   ( createDirectoryIfMissingVerbose
   , dieWithException
+  , info
   , notice
   , noticeNoWrap
   , ordNub
-  , warn, info
+  , warn
   )
 import Distribution.Types.Flag
   ( FlagAssignment
