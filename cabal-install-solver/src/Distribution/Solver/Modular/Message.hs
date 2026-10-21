@@ -268,21 +268,21 @@ showOption qpn@(Q _pp pn) (POption i linkedTo) =
 -- | Shows a mixed list of instances and versions in a human-friendly way,
 -- abbreviated.
 -- >>> showOptions foobarQPN [v0, v1]
--- "foo-bar; 0, 1"
+-- "build:foo-bar; build:source:foo-bar-0, build:source:foo-bar-1"
 -- >>> showOptions foobarQPN [v0]
--- "foo-bar-0"
+-- "build:foo-bar == build:source:foo-bar-0"
 -- >>> showOptions foobarQPN [i0, i1]
--- "foo-bar; 0/installed-inplace, 1/installed-inplace"
+-- "build:foo-bar; build:installed:foo-bar-0-inplace, build:installed:foo-bar-1-inplace"
 -- >>> showOptions foobarQPN [i0, v1]
--- "foo-bar; 0/installed-inplace, 1"
+-- "build:foo-bar; build:installed:foo-bar-0-inplace, build:source:foo-bar-1"
 -- >>> showOptions foobarQPN [v0, i1]
--- "foo-bar; 0, 1/installed-inplace"
+-- "build:foo-bar; build:source:foo-bar-0, build:installed:foo-bar-1-inplace"
 -- >>> showOptions foobarQPN []
 -- "unexpected empty list of versions"
 -- >>> showOptions foobarQPN [k1, k2]
--- "foo-bar; foo-bar~>bazqux.foo-bar-1, foo-bar~>bazqux.foo-bar-2"
+-- "build:foo-bar; to reuse host:foo-bar for build:foo-bar, to reuse host:foo-bar for build:foo-bar"
 -- >>> showOptions foobarQPN [v0, i1, k2]
--- "foo-bar; 0, 1/installed-inplace, foo-bar~>bazqux.foo-bar-2"
+-- "build:foo-bar; build:source:foo-bar-0, build:installed:foo-bar-1-inplace, to reuse host:foo-bar for build:foo-bar"
 showOptions :: QPN -> [POption] -> String
 showOptions _ [] = "unexpected empty list of versions"
 showOptions q [x] = showOption q x
@@ -363,11 +363,11 @@ showConflictingDep (ConflictingDep dr (PkgComponent qpn comp) ci) =
 -- >>> import Distribution.Types.Version
 -- >>> import Distribution.Types.UnitId
 -- >>> let foobarPN = PackagePath Build QualToplevel
--- >>> let bazquxPN = PackagePath (Independent $ mkPackageName "bazqux") QualToplevel
+-- >>> let bazquxPN = PackagePath Host QualToplevel
 -- >>> let foobarQPN = Q foobarPN (mkPackageName "foo-bar")
--- >>> let v0 = POption (I (mkVersion [0]) InRepo) Nothing
--- >>> let v1 = POption (I (mkVersion [1]) InRepo) Nothing
--- >>> let i0 = POption (I (mkVersion [0]) (Inst $ mkUnitId "foo-bar-0-inplace")) Nothing
--- >>> let i1 = POption (I (mkVersion [1]) (Inst $ mkUnitId "foo-bar-1-inplace")) Nothing
--- >>> let k1 = POption (I (mkVersion [1]) InRepo) (Just bazquxPN)
--- >>> let k2 = POption (I (mkVersion [2]) InRepo) (Just bazquxPN)
+-- >>> let v0 = POption (I Build (mkVersion [0]) (InRepo $ mkPackageName "foo-bar")) Nothing
+-- >>> let v1 = POption (I Build (mkVersion [1]) (InRepo $ mkPackageName "foo-bar")) Nothing
+-- >>> let i0 = POption (I Build (mkVersion [0]) (Inst $ mkUnitId "foo-bar-0-inplace")) Nothing
+-- >>> let i1 = POption (I Build (mkVersion [1]) (Inst $ mkUnitId "foo-bar-1-inplace")) Nothing
+-- >>> let k1 = POption (I Build (mkVersion [1]) (InRepo $ mkPackageName "foo-bar")) (Just bazquxPN)
+-- >>> let k2 = POption (I Build (mkVersion [2]) (InRepo $ mkPackageName "foo-bar")) (Just bazquxPN)
