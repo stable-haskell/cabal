@@ -57,7 +57,7 @@ stages = [minBound .. maxBound]
 
 prevStage :: Stage -> Stage
 prevStage s | s == minBound = s
-            | otherwise     = Prelude.pred s 
+            | otherwise     = Prelude.pred s
 nextStage :: Stage -> Stage
 nextStage s | s == maxBound = s
             | otherwise     = Prelude.succ s

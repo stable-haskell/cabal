@@ -270,7 +270,7 @@ convGPD stage os arch cinfo constraints strfl solveExes pn
 -- before dependency solving. Additionally, this function only considers flags
 -- that are set by unqualified flag constraints, and it doesn't check the
 -- intra-package dependencies of a component.
-testConditionForComponent :: Stage 
+testConditionForComponent :: Stage
                           -> OS
                           -> Arch
                           -> CompilerInfo
