@@ -1436,7 +1436,7 @@ legacySharedConfigFieldDescrs constraintSrc =
         . addFields
           [ commaNewLineListFieldParsec
               "package-dbs"
-              (Disp.text . showPackageDb)
+              (showTokenQ . showPackageDb)
               (fmap readPackageDb parsecToken)
               configPackageDBs
               (\v conf -> conf{configPackageDBs = v})
@@ -1473,11 +1473,25 @@ legacySharedConfigFieldDescrs constraintSrc =
               (fmap Just parsec)
               (fmap unAllowNewer . configAllowNewer)
               (\v conf -> conf{configAllowNewer = fmap AllowNewer v})
+          , simpleFieldParsec
+              "build-compiler"
+              (fromFlagOrDefault Disp.empty . fmap pretty)
+              (toFlag <$> parsec <|> pure mempty)
+              configBuildHcFlavor
+              (\v conf -> conf{configBuildHcFlavor = v})
+          , commaNewLineListFieldParsec
+              "build-package-dbs"
+              (showTokenQ . showPackageDb)
+              (fmap readPackageDb parsecToken)
+              configBuildPackageDBs
+              (\v conf -> conf{configBuildPackageDBs = v})
           ]
         . filterFields
           [ "cabal-lib-version"
           , "solver"
           , "write-ghc-environment-files"
+          , "with-build-compiler"
+          , "with-build-hc-pkg"
           -- not "constraint" or "preference", we use our own plural ones above
           ]
         . commandOptionsToFields

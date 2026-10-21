@@ -27,8 +27,11 @@ import System.IO.Unsafe (unsafePerformIO)
 import Distribution.Deprecated.ParseUtils
 import qualified Distribution.Deprecated.ReadP as Parse
 
+import Distribution.Compiler (CompilerFlavor (GHC))
 import Distribution.Package
 import Distribution.PackageDescription
+import Distribution.Simple.Compiler (PackageDBX (..))
+import Distribution.Simple.Flag (toFlag)
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import Distribution.Simple.Program.Db
 import Distribution.Simple.Program.Types
@@ -91,6 +94,7 @@ tests =
       , testProperty "local" prop_roundtrip_printparse_local
       , testProperty "specific" prop_roundtrip_printparse_specific
       , testProperty "all" prop_roundtrip_printparse_all
+      , testCase "build and host toolchain fields survive printing" testToolchainRoundtrip
       ]
   , testGetProjectRootUsability
   , testFindProjectRoot
@@ -274,6 +278,34 @@ roundtrip_printparse config =
   where
     str :: String
     str = showLegacyProjectConfig (convertToLegacyProjectConfig config)
+
+-- Keep both toolchains populated so a build-stage field cannot accidentally
+-- overwrite its host-stage counterpart during serialization.
+testToolchainRoundtrip :: Assertion
+testToolchainRoundtrip =
+  case fmap convertLegacyProjectConfig (parseLegacyProjectConfig "unused" (toUTF8BS rendered)) of
+    ParseOk warnings config -> do
+      warnings @?= []
+      projectConfigToolchain (projectConfigShared config) @?= toolchain
+    ParseFailed err -> assertFailure (show err)
+  where
+    toolchain =
+      mempty
+        { projectConfigHcFlavor = toFlag GHC
+        , projectConfigHcPath = toFlag "host tools/ghc"
+        , projectConfigHcPkg = toFlag "host tools/ghc-pkg"
+        , projectConfigPackageDBs = [Nothing, Just GlobalPackageDB, Just (SpecificPackageDB "host db")]
+        , projectConfigBuildHcFlavor = toFlag GHC
+        , projectConfigBuildHcPath = toFlag "build tools/ghc"
+        , projectConfigBuildHcPkg = toFlag "build tools/ghc-pkg"
+        , projectConfigBuildPackageDBs = [Nothing, Just UserPackageDB, Just (SpecificPackageDB "build db")]
+        }
+    rendered =
+      showLegacyProjectConfig $
+        convertToLegacyProjectConfig
+          mempty
+            { projectConfigShared = mempty{projectConfigToolchain = toolchain}
+            }
 
 prop_roundtrip_printparse_all :: ProjectConfig -> Property
 prop_roundtrip_printparse_all config =
