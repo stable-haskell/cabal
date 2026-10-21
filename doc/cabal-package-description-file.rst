@@ -1930,6 +1930,16 @@ system-dependent values for these fields.
     A list of C-- source files to be compiled and linked with the Haskell
     files.
 
+.. pkg-field:: autogen-cmm-sources: filename list
+
+    A list of generated C-- source files to be compiled and linked with the
+    Haskell files. Paths are relative to the build directory, rather than
+    the package source directory used by :pkg-field:`cmm-sources`.
+
+    The files must be generated before Cabal compiles them; listing them
+    here does not generate them. The :pkg-field:`cmm-options` also apply to
+    these files.
+
 .. pkg-field:: js-sources: filename list
 
     A list of JavaScript source files to be linked with the Haskell
