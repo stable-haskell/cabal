@@ -178,7 +178,14 @@ asm-sources
     * Documentation of :pkg-field:`library:asm-sources`
 
     .. math::
-        \mathrm{commalist}\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}
+        \mathrm{commalist}\left(\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}{\left(\mathop{\mathord{``}\mathtt{\text{(}}\mathord{"}}{\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}\mathop{\mathord{``}\mathtt{\text{)}}\mathord{"}}\right)}^?\right)
+
+autogen-cmm-sources
+    * Monoidal field
+    * Documentation of :pkg-field:`library:autogen-cmm-sources`
+
+    .. math::
+        \mathrm{commalist}\left(\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}{\left(\mathop{\mathord{``}\mathtt{\text{(}}\mathord{"}}{\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}\mathop{\mathord{``}\mathtt{\text{)}}\mathord{"}}\right)}^?\right)
 
 autogen-includes
     * Monoidal field
@@ -231,7 +238,7 @@ c-sources
     * Documentation of :pkg-field:`library:c-sources`
 
     .. math::
-        \mathrm{commalist}\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}
+        \mathrm{commalist}\left(\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}{\left(\mathop{\mathord{``}\mathtt{\text{(}}\mathord{"}}{\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}\mathop{\mathord{``}\mathtt{\text{)}}\mathord{"}}\right)}^?\right)
 
 cc-options
     * Monoidal field
@@ -254,7 +261,7 @@ cmm-sources
     * Documentation of :pkg-field:`library:cmm-sources`
 
     .. math::
-        \mathrm{commalist}\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}
+        \mathrm{commalist}\left(\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}{\left(\mathop{\mathord{``}\mathtt{\text{(}}\mathord{"}}{\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}\mathop{\mathord{``}\mathtt{\text{)}}\mathord{"}}\right)}^?\right)
 
 cpp-options
     * Monoidal field
@@ -277,7 +284,7 @@ cxx-sources
     * Documentation of :pkg-field:`library:cxx-sources`
 
     .. math::
-        \mathrm{commalist}\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}
+        \mathrm{commalist}\left(\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}{\left(\mathop{\mathord{``}\mathtt{\text{(}}\mathord{"}}{\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}\mathop{\mathord{``}\mathtt{\text{)}}\mathord{"}}\right)}^?\right)
 
 default-extensions
     * Monoidal field
@@ -405,35 +412,6 @@ ghc-shared-options
     .. math::
         {\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}
 
-ghcjs-options
-    * Monoidal field
-    * Documentation of :pkg-field:`library:ghcjs-options`
-
-    .. math::
-        {\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}
-
-ghcjs-prof-options
-    * Monoidal field
-    * Documentation of :pkg-field:`library:ghcjs-prof-options`
-
-    .. math::
-        {\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}
-
-ghcjs-prof-shared-options
-    * Monoidal field
-    * Available since ``cabal-version: 3.14``.
-    * Documentation of :pkg-field:`library:ghcjs-prof-shared-options`
-
-    .. math::
-        {\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}
-
-ghcjs-shared-options
-    * Monoidal field
-    * Documentation of :pkg-field:`library:ghcjs-shared-options`
-
-    .. math::
-        {\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}
-
 hs-source-dir
     * Monoidal field
     * Deprecated since ``cabal-version: 1.2``: Please use 'hs-source-dirs'
@@ -483,7 +461,7 @@ js-sources
     * Documentation of :pkg-field:`library:js-sources`
 
     .. math::
-        \mathrm{commalist}\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}
+        \mathrm{commalist}\left(\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}\mathop{\mathord{``}\mathtt{\text{,}}\mathord{"}}]^c}}^+_{} \right\}{\left(\mathop{\mathord{``}\mathtt{\text{(}}\mathord{"}}{\left\{ \mathop{\mathit{hs\text{-}string}}\mid{{[\mathop{\mathord{``}\mathtt{\ }\mathord{"}}]^c}}^+_{} \right\}}^\ast_{\bullet}\mathop{\mathord{``}\mathtt{\text{)}}\mathord{"}}\right)}^?\right)
 
 jspp-options
     * Monoidal field
