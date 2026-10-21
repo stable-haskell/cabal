@@ -1109,8 +1109,8 @@ configureArgs flags =
 -- bare/GNU alias pair equal when at least one side is inferred.
 configureTargetDefaults :: String -> String -> [String] -> [String]
 configureTargetDefaults hostDefault buildDefault args =
-  ["--host=" ++ host | explicitHost == Nothing]
-    ++ ["--build=" ++ build | explicitBuild == Nothing]
+  ["--host=" ++ host | isNothing explicitHost]
+    ++ ["--build=" ++ build | isNothing explicitBuild]
   where
     explicitHost = configureTargetValue "--host" args
     explicitBuild = configureTargetValue "--build" args

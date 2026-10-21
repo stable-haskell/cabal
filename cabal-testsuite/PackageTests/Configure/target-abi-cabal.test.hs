@@ -9,7 +9,8 @@ import Test.Cabal.Prelude
 main = cabalTest . recordMode DoNotRecord $ do
   gccPath <- programPathM gccProgram
   runAutoreconf
-  cabal "v2-build" $
+  cabal
+    "v2-build"
     [ "--with-gcc=" ++ gccPath
     , "--configure-option=--host=arm-unknown-linux-gnueabihf"
     , "--configure-option=--build=x86_64-unknown-linux-musl"
