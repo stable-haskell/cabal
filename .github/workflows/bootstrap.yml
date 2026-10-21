@@ -21,7 +21,7 @@ jobs:
         os: [ubuntu-latest]
         ghc: ["9.2.8", "9.4.8", "9.6.7", "9.8.4", "9.10.3", "9.12.2"]
         include:
-          - os: macos-latest
+          - os: macos-15
             ghc: "9.2.8"
     name: Bootstrap ${{ matrix.os }} ghc-${{ matrix.ghc }}
     runs-on: ${{ matrix.os }}
@@ -33,6 +33,12 @@ jobs:
           rm -rf ~/.cache/cabal
 
       - uses: actions/checkout@v6
+
+      - name: Select Xcode 16.4
+        if: runner.os == 'macOS'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
 
       # runner.os isn't sufficient for binary compatible caches
       - name: Get runner OS/version for cache keys

@@ -54,7 +54,7 @@ jobs:
         sys:
           - { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
           - { os: ubuntu-latest, shell: bash }
-          - { os: macos-latest, shell: bash }
+          - { os: macos-15, shell: bash }
         ghc:
           [
             # IMPORTANT: If you remove a version from this list, then add it to the old-ghcs job below.
@@ -94,13 +94,13 @@ jobs:
           # 8.10.7 throws asm errors in hashable's cbits suggesting the runner doesn't
           # support a CPU extension for hardware SHA; may be fixable with flags
           - sys:
-              { os: macos-latest, shell: bash }
+              { os: macos-15, shell: bash }
             ghc: "9.0.2"
           - sys:
-              { os: macos-latest, shell: bash }
+              { os: macos-15, shell: bash }
             ghc: "8.10.7"
           - sys:
-              { os: macos-latest, shell: bash }
+              { os: macos-15, shell: bash }
             ghc: "8.8.4"
     defaults:
       run:
@@ -118,6 +118,12 @@ jobs:
            echo "TMP=${{ runner.temp }}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v6
+
+      - name: Select Xcode 16.4
+        if: runner.os == 'macOS'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
 
       # See https://github.com/haskell/cabal/blob/master/CONTRIBUTING.md#hackage-revisions
       - name: Add manually supplied allow-newer
@@ -409,7 +415,7 @@ jobs:
         sys:
           - { os: windows-latest, shell: "C:/msys64/usr/bin/bash.exe -e {0}" }
           - { os: ubuntu-latest, shell: bash }
-          - { os: macos-latest, shell: bash }
+          - { os: macos-15, shell: bash }
         # We only use one ghc version the used one for the next release (defined at top of the workflow)
         # We need to build an array dynamically to inject the appropriate env var in a previous job,
         # see https://docs.github.com/en/actions/learn-github-actions/expressions#fromjson
@@ -442,6 +448,12 @@ jobs:
            echo "TMP=${{ runner.temp }}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v6
+
+      - name: Select Xcode 16.4
+        if: runner.os == 'macOS'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
 
       - uses: haskell-actions/setup@v2
         id: setup-haskell
