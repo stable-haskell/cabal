@@ -151,7 +151,10 @@ issue2899 name =
 -- build-tool dependencies.
 duplicateDependencies :: String -> SolverTest
 duplicateDependencies name =
-  mkTest pkgs name ["A"] $ solverSuccess [("A", 1), ("B", 1)]
+  -- SolverResult currently projects package variables to name/version pairs,
+  -- so the host library and build-tool executable both appear as B-1 here.
+  -- Keep both entries: they represent distinct solver stages.
+  mkTest pkgs name ["A"] $ solverSuccess [("A", 1), ("B", 1), ("B", 1)]
   where
     copies, depth :: Int
     copies = 50
@@ -184,7 +187,7 @@ duplicateDependencies name =
 -- are lifted out of conditionals.
 duplicateFlaggedDependencies :: String -> SolverTest
 duplicateFlaggedDependencies name =
-  mkTest pkgs name ["A"] $ solverSuccess [("A", 1), ("B", 1)]
+  mkTest pkgs name ["A"] $ solverSuccess [("A", 1), ("B", 1), ("B", 1)]
   where
     copies, depth :: Int
     copies = 15
