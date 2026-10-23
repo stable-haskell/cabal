@@ -194,6 +194,7 @@ testProjectConfigShared = do
     projectConfigBuildHcFlavor = toFlag GHC
     projectConfigBuildHcPath = toFlag "/some/path/to/build-compiler"
     projectConfigBuildHcPkg = toFlag "/some/path/to/build-ghc-pkg"
+    projectConfigBuildPackageDBs = []
     projectConfigHaddockIndex = toFlag $ toPathTemplate "/path/to/haddock-index"
     projectConfigInstallDirs = mempty -- tested below in testInstallDirs
     projectConfigPackageDBs = [Nothing, Just (SpecificPackageDB "foo"), Nothing, Just (SpecificPackageDB "bar"), Just (SpecificPackageDB "baz")]

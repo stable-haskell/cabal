@@ -2,6 +2,7 @@
 
 import Control.Exception
 import Control.Monad.IO.Class
+import Data.List (intercalate)
 import System.Environment
 import System.FilePath
 import System.IO.Error
@@ -49,7 +50,17 @@ main = setupAndCabalTest . recordMode DoNotRecord $ do
                        Platform _ Windows -> "PATH"
                        Platform _ _other  -> "LD_LIBRARY_PATH"
         oldLdPath <- liftIO $ getEnv' ldPath
-        withEnv [ (ldPath, Just $ flibdir installDirs ++ [searchPathSeparator] ++ oldLdPath) ] $ do
+        withEnv
+            [ ( ldPath
+              , Just $
+                  intercalate
+                    [searchPathSeparator]
+                    [ flibdir installDirs
+                    , dynlibdir installDirs
+                    , oldLdPath
+                    ]
+              )
+            ] $ do
             cwd <- fmap testCurrentDir getTestEnv
             result <- runM (cwd </> "uselib") [] Nothing
             assertOutputContains "5678" result
