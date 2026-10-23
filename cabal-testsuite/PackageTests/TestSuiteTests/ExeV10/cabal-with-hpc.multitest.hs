@@ -11,14 +11,15 @@ import Test.Cabal.Prelude
 main = do
   skipIfCIAndOSX 4902
   cabalTest $ do
-    hasShared   <- hasSharedLibraries
+    hasShared <- hasSharedLibraries
     hasProfiled <- hasProfiledLibraries
-    hpcOk       <- correctHpcVersion
+    hpcOk <- correctHpcVersion
 
     forM_ (choose4 [True, False]) $ \(libProf, exeProf, exeDyn, shared) ->
       do
         let
-          opts = catMaybes
+          opts =
+            catMaybes
               [ enable libProf "library-profiling"
               , enable exeProf "profiling"
               , enable exeDyn "executable-dynamic"
@@ -32,10 +33,14 @@ main = do
         recordMode DoNotRecord $ do
           let
             skip =
-                not hpcOk
+              not hpcOk
                 || (not hasShared && (exeDyn || shared))
-                || (not hasProfiled && (libProf || exeProf))
-          unless skip $ cabal "v2-test" args
+          unless skip $
+            if not hasProfiled && (libProf || exeProf)
+              then do
+                result <- fails $ cabal' "v2-test" args
+                assertOutputContains "Profiling requires a separate profiling-target compiler" result
+              else cabal "v2-test" args
   where
     choose4 :: [a] -> [(a, a, a, a)]
     choose4 xs = liftM4 (,,,) xs xs xs xs
@@ -43,11 +48,14 @@ main = do
 -- | Checks for a suitable HPC version for testing.
 correctHpcVersion :: TestM Bool
 correctHpcVersion = do
-    let verbosity = Verbosity.mkVerbosity Verbosity.defaultVerbosityHandles Verbosity.normal
-        verRange  = orLaterVersion (mkVersion [0,7])
-    progDB <- testProgramDb `fmap` ask
-    liftIO $ (requireProgramVersion verbosity hpcProgram verRange progDB
-              >> return True) `catchIO` (\_ -> return False)
+  let verbosity = Verbosity.mkVerbosity Verbosity.defaultVerbosityHandles Verbosity.normal
+      verRange = orLaterVersion (mkVersion [0, 7])
+  progDB <- testProgramDb `fmap` ask
+  liftIO $
+    ( requireProgramVersion verbosity hpcProgram verRange progDB
+        >> return True
+    )
+      `catchIO` (\_ -> return False)
   where
     -- Distribution.Compat.Exception is hidden.
     catchIO :: IO a -> (E.IOException -> IO a) -> IO a

@@ -154,6 +154,18 @@ data ProjectConfig = ProjectConfig
   -- ^ Configuration to be applied to *local* packages; i.e.,
   -- any packages which are explicitly named in `cabal.project`.
   , projectConfigSpecificPackage :: MapMappend PackageName PackageConfig
+  , projectConfigStagePackages :: MapMappend Stage PackageConfig
+  -- ^ Configuration to be applied to all packages built for a particular
+  -- stage (e.g. @package build:*@ or @package host:*@). Lets a staged build
+  -- target the build-stage and host-stage packages independently, which
+  -- plain @package *@ cannot since the same package can be built in both
+  -- stages.
+  , projectConfigInstallPackages :: MapMappend PackageName PackageConfig
+  -- ^ Local options promoted onto selected install targets after they become
+  -- source distributions. Keep their origin separate from explicit package
+  -- stanzas so target profiling options do not configure a native Build copy.
+  -- Internal only: tracked in plan caches, but not read from or written to
+  -- project files.
   }
   deriving (Eq, Show, Generic)
   deriving (Semigroup, Monoid) via Generically ProjectConfig

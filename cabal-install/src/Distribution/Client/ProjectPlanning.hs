@@ -83,6 +83,7 @@ module Distribution.Client.ProjectPlanning
   , setupHsCommonFlags
   , setupHsConfigureFlags
   , setupHsConfigureArgs
+  , determineCoverageFor
   , setupHsBuildFlags
   , setupHsBuildArgs
   , setupHsReplFlags
@@ -102,6 +103,7 @@ module Distribution.Client.ProjectPlanning
   , binDirectories
   , storePackageInstallDirs
   , storePackageInstallDirs'
+  , normaliseUnscopedPackageConfig
   ) where
 
 import Distribution.Client.Compat.Prelude
@@ -235,6 +237,7 @@ import qualified Distribution.InstalledPackageInfo as IPI
 import qualified Distribution.PackageDescription as PD
 import qualified Distribution.PackageDescription.Configuration as PD
 import qualified Distribution.Simple.Configure as Cabal
+import qualified Distribution.Simple.Errors as CabalErrors
 import qualified Distribution.Simple.GHC as GHC
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Simple.LocalBuildInfo as Cabal
@@ -936,10 +939,13 @@ rebuildInstallPlan
         -- each package (e.g. to use a particular version of a pre-processor
         -- for some packages). However they cannot do this for the compiler
         -- itself as that's just not going to work. So we check for this.
-        liftIO $
-          checkBadPerPackageCompilerPaths
-            (configuredPrograms compilerProgDb)
-            (getMapMappend (projectConfigSpecificPackage projectConfig))
+        for_ toolchains $ \Toolchain{toolchainProgramDb} ->
+          liftIO $
+            checkBadPerPackageCompilerPaths
+              (configuredPrograms toolchainProgramDb)
+              ( getMapMappend
+                  (projectConfigSpecificPackage projectConfig <> projectConfigInstallPackages projectConfig)
+              )
 
       -- TODO: [required eventually] find/configure other programs that the
       -- user specifies.
@@ -1099,6 +1105,8 @@ rebuildInstallPlan
           , projectConfigAllPackages
           , projectConfigLocalPackages
           , projectConfigSpecificPackage
+          , projectConfigStagePackages
+          , projectConfigInstallPackages
           , projectConfigBuildOnly
           }
         toolchains
@@ -1141,6 +1149,8 @@ rebuildInstallPlan
                 projectConfigAllPackages
                 projectConfigLocalPackages
                 (getMapMappend projectConfigSpecificPackage)
+                (getMapMappend projectConfigStagePackages)
+                (getMapMappend projectConfigInstallPackages)
           let instantiatedPlan =
                 instantiateInstallPlan
                   cabalStoreDirLayout
@@ -1894,6 +1904,8 @@ elaborateInstallPlan
   -> PackageConfig
   -> PackageConfig
   -> Map PackageName PackageConfig
+  -> Map Stage PackageConfig
+  -> Map PackageName PackageConfig
   -> LogProgress (ElaboratedInstallPlan, ElaboratedSharedConfig)
 elaborateInstallPlan
   verbosity
@@ -1908,7 +1920,9 @@ elaborateInstallPlan
   projectConfigShared
   allPackagesConfig
   localPackagesConfig
-  perPackageConfig = do
+  perPackageConfig
+  stagePackagesConfig
+  installPackagesConfig = do
     x <- elaboratedInstallPlan
     return (x, elaboratedSharedConfig)
     where
@@ -2499,7 +2513,7 @@ elaborateInstallPlan
                 deps0
                 _exe_deps0
               ) =
-          (elaboratedPackage, libraryWayWarnings toolchains perPkgOption elabStage pkgid >> buildOptionsAdjustmentWarnings)
+          (elaboratedPackage, libraryWayWarnings toolchains lookupPerPkgOptionStaged elabStage pkgid >> buildOptionsAdjustmentWarnings)
           where
             elaboratedPackage = ElaboratedConfiguredPackage{..}
 
@@ -2517,7 +2531,9 @@ elaborateInstallPlan
               } = getStage toolchains elabStage
 
             buildOptionsAdjustmentWarnings :: LogProgress ()
-            buildOptionsAdjustmentWarnings =
+            buildOptionsAdjustmentWarnings = do
+              for_ (Cabal.profilingTargetError stageCompiler elabBuildOptionsRaw) $ \err ->
+                dieProgress (text (CabalErrors.exceptionMessage err))
               mapM_ (warnProgress . text) $
                 Cabal.buildOptionsAdjustmentWarnings
                   stageCompiler
@@ -2657,7 +2673,12 @@ elaborateInstallPlan
                       && (okProfDyn || not profExe)
                 , withFullyStaticExe = perPkgOptionFlag False pkgid packageConfigFullyStaticExe
                 , withGHCiLib = perPkgOptionFlag False pkgid packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
-                , withProfExe = profExe
+                , withProfExe =
+                    fromFlagOrDefault
+                      False
+                      ( lookupPerPkgOptionStaged elabStage pkgid packageConfigProf
+                          <> lookupPerPkgOptionStaged elabStage pkgid packageConfigProfExe
+                      )
                 , withProfLib = (elabStage, pkgid) `Set.member` pkgsUseProfilingLibrary libWays
                 , withProfLibShared = (elabStage, pkgid) `Set.member` pkgsUseProfilingLibraryShared libWays
                 , withBytecodeLib = perPkgOptionFlag False pkgid packageConfigBytecodeLib
@@ -2670,8 +2691,8 @@ elaborateInstallPlan
                 , stripExes = perPkgOptionFlag False pkgid packageConfigStripExes
                 , withDebugInfo = perPkgOptionFlag NoDebugInfo pkgid packageConfigDebugInfo
                 , relocatable = perPkgOptionFlag False pkgid packageConfigRelocatable
-                , withProfLibDetail = elabProfExeDetail
-                , withProfExeDetail = elabProfLibDetail
+                , withProfLibDetail = elabProfLibDetail
+                , withProfExeDetail = elabProfExeDetail
                 , programPrefix = elabProgPrefix
                 , programSuffix = elabProgSuffix
                 }
@@ -2785,6 +2806,36 @@ elaborateInstallPlan
       perPkgOption :: (Package pkg, Monoid m) => pkg -> (PackageConfig -> m) -> m
       perPkgOption = lookupPerPkgOption isLocalToProject allPackagesConfig localPackagesConfig perPackageConfig
 
+      lookupPerPkgOptionStaged
+        :: (Package pkg, Monoid m)
+        => Stage
+        -> pkg
+        -> (PackageConfig -> m)
+        -> m
+      lookupPerPkgOptionStaged stage pkg f =
+        -- This is where we merge the options from the project config that
+        -- apply to all packages, all project local packages, all packages of
+        -- a given stage, to specific named packages, and to install-target
+        -- selections. Later (more specific) entries override earlier ones.
+        global `mappend` local `mappend` stagecfg `mappend` perpkg `mappend` installpkg
+        where
+          global = f (normaliseUnscoped allPackagesConfig)
+          normaliseUnscoped =
+            normaliseUnscopedPackageConfig
+              stage
+              (toolchainCompiler (getStage toolchains Build))
+              (toolchainCompiler (getStage toolchains Host))
+          stagecfg = foldMap f (Map.lookup stage stagePackagesConfig)
+          local
+            | isLocalToProject pkg =
+                f (normaliseUnscoped localPackagesConfig)
+            | otherwise =
+                mempty
+          perpkg = foldMap f (Map.lookup (packageName pkg) perPackageConfig)
+          -- Install-local flags retain CLI precedence for the selected target,
+          -- but their profiling fields must not configure its native Build copy.
+          installpkg = foldMap (f . normaliseUnscoped) (Map.lookup (packageName pkg) installPackagesConfig)
+
       -- The project's package databases belong to the host compiler; a
       -- distinct build toolchain gets none of them.
       projectPackageDbs :: Stage -> [Maybe PackageDBCWD]
@@ -2850,7 +2901,7 @@ elaborateInstallPlan
       -- here is where we decide which ones will be local!
 
       libWays :: LibraryWays
-      libWays = elaborateLibraryWays toolchains libDepGraph perPkgOption
+      libWays = elaborateLibraryWays toolchains libDepGraph lookupPerPkgOptionStaged
 
       libDepGraph =
         Graph.fromDistinctList $
@@ -2882,13 +2933,14 @@ data LibraryWays = LibraryWays
   }
 
 -- | A per-package project-config lookup, specialised to the @Flag Bool@ fields
--- the way selection reads. This is 'perPkgOption' from
--- 'elaborateInstallPlan', which merges the all\/local\/named config layers.
-type PerPkgConfigFlag = PackageId -> (PackageConfig -> Flag Bool) -> Flag Bool
+-- the way selection reads. This is 'lookupPerPkgOptionStaged' from
+-- 'elaborateInstallPlan', which merges the all\/stage\/local\/named\/install
+-- config layers.
+type PerPkgConfigFlag = Stage -> PackageId -> (PackageConfig -> Flag Bool) -> Flag Bool
 
 -- | Look up a per-package boolean option, as 'Nothing' when it is unset.
-perPkgConfigMaybe :: PerPkgConfigFlag -> PackageId -> (PackageConfig -> Flag Bool) -> Maybe Bool
-perPkgConfigMaybe lookupFlag pkgid f = flagToMaybe (lookupFlag pkgid f)
+perPkgConfigMaybe :: PerPkgConfigFlag -> Stage -> PackageId -> (PackageConfig -> Flag Bool) -> Maybe Bool
+perPkgConfigMaybe lookupFlag stage pkgid f = flagToMaybe (lookupFlag stage pkgid f)
 
 -- The capability and default-way helpers below are pure functions of a single
 -- 'Compiler'; they do not look at dependencies. They used to close over the
@@ -2931,17 +2983,13 @@ compilerShouldUseSharedLibByDefault compiler =
 -- builds need profiling libraries of their dependencies).
 compilerShouldUseProfilingLibByDefault :: Compiler -> Bool
 compilerShouldUseProfilingLibByDefault compiler =
-  case compilerFlavor compiler of
-    GHC -> GHC.compilerBuildWay compiler == ProfWay && compilerCanBuildProfilingLibs compiler
-    _ -> False
+  compilerTargetsProfiling compiler && compilerCanBuildProfilingLibs compiler
 
 -- | Whether a compiler builds profiled dynamic code by default (so that
 -- packages it builds need profiled shared libraries of their dependencies).
 compilerShouldUseProfilingSharedLibByDefault :: Compiler -> Bool
 compilerShouldUseProfilingSharedLibByDefault compiler =
-  case compilerFlavor compiler of
-    GHC -> GHC.compilerBuildWay compiler == ProfDynWay && compilerCanBuildProfilingSharedLibs compiler
-    _ -> False
+  compilerTargetsProfiling compiler && compilerCanBuildProfilingSharedLibs compiler
 
 -- The @needs*@ predicates below are flat per-package checks (project config +
 -- the compiler's default way); they do not traverse dependencies. The downward
@@ -2949,8 +2997,8 @@ compilerShouldUseProfilingSharedLibByDefault compiler =
 
 -- | Does this package itself want a shared library build, given its own
 -- options and the compiler it is built with?
-needsSharedLib :: PerPkgConfigFlag -> Compiler -> PackageId -> Bool
-needsSharedLib lookupFlag compiler pkgid =
+needsSharedLib :: PerPkgConfigFlag -> Stage -> Compiler -> PackageId -> Bool
+needsSharedLib lookupFlag stage compiler pkgid =
   fromMaybe
     (compilerShouldUseSharedLibByDefault compiler)
     -- Case 1: --enable-shared or --disable-shared is passed explicitly, honour that.
@@ -2971,20 +3019,20 @@ needsSharedLib lookupFlag compiler pkgid =
           _ -> Nothing
     )
   where
-    pkgSharedLib = perPkgConfigMaybe lookupFlag pkgid packageConfigSharedLib
-    pkgDynExe = perPkgConfigMaybe lookupFlag pkgid packageConfigDynExe
-    pkgProf = perPkgConfigMaybe lookupFlag pkgid packageConfigProf
+    pkgSharedLib = perPkgConfigMaybe lookupFlag stage pkgid packageConfigSharedLib
+    pkgDynExe = perPkgConfigMaybe lookupFlag stage pkgid packageConfigDynExe
+    pkgProf = perPkgConfigMaybe lookupFlag stage pkgid packageConfigProf
 
 -- | Does this package itself want a profiling library build?
-needsProfilingLib :: PerPkgConfigFlag -> Compiler -> PackageId -> Bool
-needsProfilingLib lookupFlag compiler pkgid =
+needsProfilingLib :: PerPkgConfigFlag -> Stage -> Compiler -> PackageId -> Bool
+needsProfilingLib lookupFlag stage compiler pkgid =
   fromFlagOrDefault
     (compilerShouldUseProfilingLibByDefault compiler)
-    (lookupFlag pkgid packageConfigProf <> lookupFlag pkgid packageConfigProfLib)
+    (lookupFlag stage pkgid packageConfigProf <> lookupFlag stage pkgid packageConfigProfLib)
 
 -- | Does this package itself want a profiled shared library build?
-needsProfilingLibShared :: PerPkgConfigFlag -> Compiler -> PackageId -> Bool
-needsProfilingLibShared lookupFlag compiler pkgid =
+needsProfilingLibShared :: PerPkgConfigFlag -> Stage -> Compiler -> PackageId -> Bool
+needsProfilingLibShared lookupFlag stage compiler pkgid =
   fromMaybe
     (compilerShouldUseProfilingSharedLibByDefault compiler)
     -- case 1: If --enable-profiling-shared is passed explicitly, honour that
@@ -3003,9 +3051,9 @@ needsProfilingLibShared lookupFlag compiler pkgid =
           _ -> Nothing
     )
   where
-    profLibSharedFlag = perPkgConfigMaybe lookupFlag pkgid packageConfigProfShared
-    pkgDynExe = perPkgConfigMaybe lookupFlag pkgid packageConfigDynExe
-    pkgProf = perPkgConfigMaybe lookupFlag pkgid packageConfigProf
+    profLibSharedFlag = perPkgConfigMaybe lookupFlag stage pkgid packageConfigProfShared
+    pkgDynExe = perPkgConfigMaybe lookupFlag stage pkgid packageConfigDynExe
+    pkgProf = perPkgConfigMaybe lookupFlag stage pkgid packageConfigProf
 
 -- | The build 'Stage' of a solver-plan node, read from its stage-carrying
 -- 'SolverId' graph key.
@@ -3042,7 +3090,7 @@ elaborateLibraryWays toolchains libDepGraph lookupFlag =
     -- by (stage, package), and keep only stages whose compiler can build it.
     downwardClosedProperty
       :: (Compiler -> Bool)
-      -> (PerPkgConfigFlag -> Compiler -> PackageId -> Bool)
+      -> (PerPkgConfigFlag -> Stage -> Compiler -> PackageId -> Bool)
       -> Set (Stage, PackageId)
     downwardClosedProperty capable needs =
       Set.fromList
@@ -3052,7 +3100,7 @@ elaborateLibraryWays toolchains libDepGraph lookupFlag =
           libDepGraph
           [ Graph.nodeKey pkg
           | pkg <- Graph.toList libDepGraph
-          , needs lookupFlag (compilerFor (solverNodeStage pkg)) (packageId pkg)
+          , needs lookupFlag (solverNodeStage pkg) (compilerFor (solverNodeStage pkg)) (packageId pkg)
           -- TODO: [nice to have] this does not check config consistency, e.g. a
           -- package explicitly turning off profiling but something depending on
           -- it that needs profiling. That needs a separate config
@@ -3065,16 +3113,36 @@ elaborateLibraryWays toolchains libDepGraph lookupFlag =
 libraryWayWarnings :: Toolchains -> PerPkgConfigFlag -> Stage -> PackageId -> LogProgress ()
 libraryWayWarnings toolchains lookupFlag stage pkgid = do
   when
-    (needsProfilingLib lookupFlag compiler pkgid && not (compilerCanBuildProfilingLibs compiler))
+    (needsProfilingLib lookupFlag stage compiler pkgid && not (compilerCanBuildProfilingLibs compiler))
     (warnProgress (text "Compiler does not support building p libraries, profiling is disabled"))
   when
-    (needsSharedLib lookupFlag compiler pkgid && not (compilerCanBuildSharedLibs compiler))
+    (needsSharedLib lookupFlag stage compiler pkgid && not (compilerCanBuildSharedLibs compiler))
     (warnProgress (text "Compiler does not support building dyn libraries, dynamic libraries are disabled"))
   when
-    (needsProfilingLibShared lookupFlag compiler pkgid && not (compilerCanBuildProfilingSharedLibs compiler))
+    (needsProfilingLibShared lookupFlag stage compiler pkgid && not (compilerCanBuildProfilingSharedLibs compiler))
     (warnProgress (text "Compiler does not support building p_dyn libraries, profiling dynamic libraries are disabled."))
   where
     compiler = toolchainCompiler (getStage toolchains stage)
+
+-- | Unscoped profiling options describe the selected target. When its ABI
+-- is intrinsically profiled, remove those options from the global/local
+-- layers used for a different build ABI. Leave the fields unspecified so
+-- compiler defaults and explicit build-stage/package settings can still
+-- derive library profiling from @profiling: True@.
+normaliseUnscopedPackageConfig :: Stage -> Compiler -> Compiler -> PackageConfig -> PackageConfig
+normaliseUnscopedPackageConfig stage buildCompiler hostCompiler config
+  | stage == Build
+  , compilerTargetsProfiling hostCompiler
+  , compilerTargetAbi buildCompiler /= compilerTargetAbi hostCompiler =
+      config
+        { packageConfigProf = NoFlag
+        , packageConfigProfLib = NoFlag
+        , packageConfigProfExe = NoFlag
+        , packageConfigProfShared = NoFlag
+        , packageConfigProfDetail = NoFlag
+        , packageConfigProfLibDetail = NoFlag
+        }
+  | otherwise = config
 
 shouldBeLocal :: PackageSpecifier (SourcePackage (PackageLocation loc)) -> Maybe PackageId
 shouldBeLocal NamedPackage{} = Nothing
@@ -5136,6 +5204,28 @@ determineCoverageFor configuredPkg plan =
         && maybe False (\case CLibName{} -> True; CNotLibName{} -> False) (elabComponentName elab)
         -- We only want coverage for libraries which are dependencies of the given one
         && pkgSID `elem` map (confSrcId . fst) libDeps
+        -- Sibling libraries must be registered in the same stage: per-component
+        -- configure cannot infer them from its LBI, so only pass unit IDs from
+        -- the configured package's own stage.
+        && siblingStage elab
+        -- A component ID alone does not identify a Backpack instantiation.
+        -- Only pass libraries canonically linked into the configured
+        -- component, preserving the existing behavior for those unsupported
+        -- coverage targets.
+        && canonicallyLinked elab
+
+    siblingStage elab = case elabPkgOrComp configuredPkg of
+      -- Whole-package configures keep the plan-wide behaviour.
+      ElabPackage _ -> True
+      ElabComponent _ -> elabStage elab == elabStage configuredPkg
+
+    canonicallyLinked elab = case elabPkgOrComp configuredPkg of
+      ElabPackage _ -> True
+      ElabComponent comp ->
+        any (isCanonicalDependency (elabUnitId elab)) (compLinkedLibDependencies comp)
+
+    isCanonicalDependency uid (DefiniteUnitId defUid) = uid == unDefUnitId defUid
+    isCanonicalDependency uid (IndefFullUnitId cid insts) = Map.null insts && uid == newSimpleUnitId cid
 
     isIndefiniteOrInstantiation :: ModuleShape -> Bool
     isIndefiniteOrInstantiation = not . Set.null . modShapeRequires
