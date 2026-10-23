@@ -942,13 +942,30 @@ addInternalBuildTools
   -> ProgramDb
   -> ProgramDb
 addInternalBuildTools pwd pkg lbi bi progs =
-  prependProgramSearchPathNoLogging
-    internalToolPaths
-    [pkgDataDirVar]
+  addDataDirToCompiler
+    $ prependProgramSearchPathNoLogging
+      internalToolPaths
+      [pkgDataDirVar]
     $ foldr updateProgram progs internalBuildTools
   where
     internalToolPaths = map (takeDirectory . programPath) internalBuildTools
     pkgDataDirVar = (pkgPathEnvVar pkg "datadir", Just dataDirPath)
+
+    -- GHC may run compile-time code which launches a build tool as a child
+    -- process. Such a process inherits GHC's environment, so the package data
+    -- directory must also be set on the already-configured compiler program.
+    addDataDirToCompiler progDb
+      | compilerFlavor (compiler lbi) == GHC
+      , Just ghc <- lookupProgram ghcProgram progDb =
+          updateProgram
+            ghc
+              { programOverrideEnv =
+                  pkgDataDirVar
+                    : filter ((/= fst pkgDataDirVar) . fst) (programOverrideEnv ghc)
+              }
+            progDb
+      | otherwise = progDb
+
     internalBuildTools =
       [ (simpleConfiguredProgram toolName' (FoundOnSystem toolLocation))
         { programOverrideEnv = [pkgDataDirVar]

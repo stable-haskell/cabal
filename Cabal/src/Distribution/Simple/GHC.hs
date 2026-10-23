@@ -997,13 +997,21 @@ installExe
   _pkg
   exe = do
     createDirectoryIfMissingVerbose verbosity True binDir
+    workingDir <- getAbsolutePath <$> absoluteWorkingDirLBI lbi
     let exeName' = unUnqualComponentName $ exeName exe
         exeFileName = exeTargetName (hostPlatform lbi) (exeName exe)
+        ghcOptions = hcOptions GHC (PD.buildInfo exe)
+        exeSourcePath =
+          Internal.installExeSourcePath
+            (hostPlatform lbi)
+            workingDir
+            (buildPref </> exeName' </> exeFileName)
+            ghcOptions
         fixedExeBaseName = progprefix ++ exeName' ++ progsuffix
         installBinary dest = do
           installExecutableFile
             verbosity
-            (buildPref </> exeName' </> exeFileName)
+            exeSourcePath
             (dest <.> exeExtension (hostPlatform lbi))
           when (stripExes lbi) $
             Strip.stripExe
