@@ -7,11 +7,11 @@ import Distribution.Compat.Prelude
 import Prelude ()
 
 import qualified Distribution.Compat.Graph as Graph
-
+import qualified Data.Map as Map
 import Distribution.PackageDescription as PD hiding (buildInfo)
 import Distribution.Simple.Build.Inputs
 import Distribution.Simple.Compiler
-import Distribution.Simple.Errors (CabalException (ProfilingRequiresTargetCompiler))
+import Distribution.Simple.Errors (CabalException (ProfilingRequiresTargetCompiler, UnsupportedTargetVariant))
 import Distribution.Simple.Flag (Flag)
 import Distribution.Simple.GHC.Build.ExtraSources
 import Distribution.Simple.GHC.Build.Link
@@ -127,6 +127,27 @@ build numJobs verbHandles pkg_descr pbci = do
     )
     $ liftIO
     $ dieWithException verbosity (ProfilingRequiresTargetCompiler (compilerId (buildCompiler pbci)))
+  let targetCompiler = buildCompiler pbci
+      requestedGhcOptions = hcOptions GHC bi ++ hcProfOptions GHC bi ++ map Text.pack (programDefaultArgs ghcProg ++ programOverrideArgs ghcProg)
+      unsupportedVariant =
+        if not (compilerTargetsProfiling targetCompiler)
+          then Nothing
+          else
+            case () of
+              _ | any (`elem` requestedGhcOptions) [Text.pack "-dynamic", Text.pack "-dynamic-too"]
+                    && profilingDynamicSupported targetCompiler == Just False ->
+                    Just "dynamic profiling objects"
+                | Text.pack "-debug" `elem` requestedGhcOptions
+                    && profilingDebugSupported targetCompiler == Just False ->
+                    Just "debug profiling objects"
+                | otherwise -> Nothing
+  for_ unsupportedVariant $ \variant ->
+    liftIO $
+      dieWithException verbosity $
+        UnsupportedTargetVariant
+          (Map.findWithDefault (showCompilerIdWithAbi targetCompiler) "Target name" (compilerProperties targetCompiler))
+          variant
+          ["static nondebug libraries and executables"]
 
   -- Ways which are wanted from configuration flags
   let wantedWays@(wantedLibWays, wantedFLibWay, wantedExeWay) = buildWays lbi
