@@ -204,6 +204,7 @@ haddockAction relFlags targetStrings globalFlags = do
       . pkgConfigCompilerProgs
       . elaboratedShared
       $ buildCtx
+
   let buildCtx' =
         buildCtx
           { elaboratedShared =

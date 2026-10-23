@@ -572,7 +572,8 @@ targetedRepl
                   -- Keep the UnitId matching the desired target selector
                   & find (\(_, xs) -> any (\(_, selectors) -> activeTarget `elem` selectors) xs)
                   & fmap fst
-              -- Convert to filename (adapted from 'storePackageDirectory')
+              -- Multi-repl response files use the unqualified component
+              -- UnitId as their filename.
               pure (prettyShow unitId)
             unit_files_ordered :: [FilePath]
             unit_files_ordered =
@@ -769,8 +770,9 @@ generateReplFlags includeTransitive elaboratedPlan OriginalComponentInfo{..} = f
     trans = installedUnitId <$> InstallPlan.dependencyClosure elaboratedPlan (map planKey deps')
     trans' = trans \\ ociOriginalDeps
     flags =
-      fmap (("-package-id " ++) . prettyShow) . (\\ exeDeps) $
-        if includeTransitive then trans' else deps'
+      [ "-package-id " ++ prettyShow unitId
+      | unitId <- (if includeTransitive then trans' else deps') \\ exeDeps
+      ]
 
 -- | Add repl options to ensure the repl actually starts in the current working directory.
 --

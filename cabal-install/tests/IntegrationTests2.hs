@@ -2543,6 +2543,16 @@ testConfigOptionComments = do
     assertHasCommentLine :: String -> String -> Assertion
     assertHasCommentLine = assertHasLine' True
 
+    assertNoSetting :: String -> Assertion
+    assertNoSetting settingName =
+      assertBool
+        ( "Unexpected setting "
+            <> show settingName
+            <> " in configuration file "
+            <> configFile
+        )
+        (null (findLinesWith False settingName defaultConfigFile))
+
   "  url" `assertHasLine` "url"
   "  -- secure" `assertHasCommentLine` "secure"
   "  -- root-keys" `assertHasCommentLine` "root-keys"
@@ -2711,7 +2721,9 @@ testConfigOptionComments = do
   "  -- happy-location" `assertHasCommentLine` "happy-location"
   "  -- hpc-location" `assertHasCommentLine` "hpc-location"
   "  -- hscolour-location" `assertHasCommentLine` "hscolour-location"
-  "  -- jhc-location" `assertHasCommentLine` "jhc-location"
+  -- JHC was removed from Cabal's built-in program list, so neither of its
+  -- generated config fields should appear.
+  assertNoSetting "jhc-location"
   "  -- ld-location" `assertHasCommentLine` "ld-location"
   "  -- pkg-config-location" `assertHasCommentLine` "pkg-config-location"
   "  -- runghc-location" `assertHasCommentLine` "runghc-location"
@@ -2732,7 +2744,7 @@ testConfigOptionComments = do
   "  -- hpc-options" `assertHasCommentLine` "hpc-options"
   "  -- hsc2hs-options" `assertHasCommentLine` "hsc2hs-options"
   "  -- hscolour-options" `assertHasCommentLine` "hscolour-options"
-  "  -- jhc-options" `assertHasCommentLine` "jhc-options"
+  assertNoSetting "jhc-options"
   "  -- ld-options" `assertHasCommentLine` "ld-options"
   "  -- pkg-config-options" `assertHasCommentLine` "pkg-config-options"
   "  -- runghc-options" `assertHasCommentLine` "runghc-options"

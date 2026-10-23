@@ -1645,12 +1645,9 @@ planPackages
       pkgConfigDB
       resolverParams
     where
-      -- The solver plans for the host machine; the build toolchain is available
-      -- via @toolchains@ for later machine-aware planning (e.g. setup deps).
-      Toolchain
-        { toolchainCompiler = comp
-        , toolchainPlatform = platform
-        } = onMachine toolchains Host
+      -- The solver plans for the host machine. Setup scripts run on the build
+      -- machine, which is the host toolchain when there is no separate build
+      -- machine ('onMachine' Build errors in that case).
 
       -- TODO: [nice to have] disable multiple instances restriction in
       -- the solver, but then make sure we can cope with that in the
@@ -1683,14 +1680,17 @@ planPackages
             )
           . removeLowerBounds solverSettingAllowOlder
           . removeUpperBounds solverSettingAllowNewer
+          --
+          . addSetupCabalMaxVersionConstraint setupMaxCabalVersionConstraint
+          . addSetupCabalMinVersionConstraint (setupMinCabalVersionConstraint buildCompilerInfo)
           . addDefaultSetupDependencies
             setImplicitSetupInfo
-            ( mkDefaultSetupDeps comp platform
-                . PD.packageDescription
-                . srcpkgDescription
+            ( \srcpkg ->
+                mkDefaultSetupDeps
+                  buildCompilerInfo
+                  buildMachinePlatform
+                  (PD.packageDescription (srcpkgDescription srcpkg))
             )
-          . addSetupCabalMinVersionConstraint setupMinCabalVersionConstraint
-          . addSetupCabalMaxVersionConstraint setupMaxCabalVersionConstraint
           . addPreferences
             -- preferences from the config file or command line
             [ PackageVersionPreference name ver
@@ -1758,6 +1758,10 @@ planPackages
             ]
           $ stdResolverParams
 
+      buildToolchain = fromMaybe (onHost toolchains) (onBuild toolchains)
+      buildCompilerInfo = compilerInfo (toolchainCompiler buildToolchain)
+      buildMachinePlatform = toolchainPlatform buildToolchain
+
       stdResolverParams :: DepResolverParams
       stdResolverParams =
         -- Note: we don't use the standardInstallPolicy here, since that uses
@@ -1802,22 +1806,6 @@ planPackages
       --
       -- TODO: long-term, this compatibility matrix should be
       --       stored as a field inside 'Distribution.Compiler.Compiler'
-      setupMinCabalVersionConstraint
-        | isGHC, compVer >= mkVersion [9, 10] = mkVersion [3, 12]
-        | isGHC, compVer >= mkVersion [9, 6] = mkVersion [3, 10]
-        | isGHC, compVer >= mkVersion [9, 4] = mkVersion [3, 8]
-        | isGHC, compVer >= mkVersion [9, 2] = mkVersion [3, 6]
-        | isGHC, compVer >= mkVersion [9, 0] = mkVersion [3, 4]
-        | isGHC, compVer >= mkVersion [8, 10] = mkVersion [3, 2]
-        | isGHC, compVer >= mkVersion [8, 8] = mkVersion [3, 0]
-        | isGHC, compVer >= mkVersion [8, 6] = mkVersion [2, 4]
-        | isGHC, compVer >= mkVersion [8, 4] = mkVersion [2, 2]
-        | isGHC, compVer >= mkVersion [8, 2] = mkVersion [2, 0]
-        | otherwise = mkVersion [1, 24]
-        where
-          isGHC = compFlav == GHC
-          compFlav = compilerFlavor comp
-          compVer = compilerVersion comp
 
       -- As we can't predict the future, we also place a global upper
       -- bound on the lib:Cabal version we know how to interact with:
@@ -5225,6 +5213,93 @@ packageHashConfigInputs shared pkg =
   where
     ElaboratedConfiguredPackage{..} = normaliseConfiguredPackage shared pkg
     LBC.BuildOptions{..} = elabBuildOptions
+
+-- While we can talk to older Cabal versions (we need to be able to
+-- do so for custom Setup scripts that require older Cabal lib
+-- versions), we have problems talking to some older versions that
+-- don't support certain features.
+--
+-- For example, Cabal-1.16 and older do not know about build targets.
+-- Even worse, 1.18 and older only supported the --constraint flag
+-- with source package ids, not --dependency with installed package
+-- ids. That is bad because we cannot reliably select the right
+-- dependencies in the presence of multiple instances (i.e. the
+-- store). See issue #3932. So we require Cabal 1.20 as a minimum.
+--
+-- Moreover, lib:Cabal generally only supports the interface of
+-- current and past compilers; in fact recent lib:Cabal versions
+-- will warn when they encounter a too new or unknown GHC compiler
+-- version (c.f. #415). To avoid running into unsupported
+-- configurations we encode the compatibility matrix as lower
+-- bounds on lib:Cabal here (effectively corresponding to the
+-- respective major Cabal version bundled with the respective GHC
+-- release).
+--
+-- GHC 9.10  needs  Cabal >= 3.12
+-- GHC 9.2   needs  Cabal >= 3.6
+-- GHC 9.0   needs  Cabal >= 3.4
+-- GHC 8.10  needs  Cabal >= 3.2
+-- GHC 8.8   needs  Cabal >= 3.0
+-- GHC 8.6   needs  Cabal >= 2.4
+-- GHC 8.4   needs  Cabal >= 2.2
+-- GHC 8.2   needs  Cabal >= 2.0
+-- GHC 8.0   needs  Cabal >= 1.24
+-- GHC 7.10  needs  Cabal >= 1.22
+--
+-- (NB: we don't need to consider older GHCs as Cabal >= 1.20 is
+-- the absolute lower bound)
+--
+-- TODO: long-term, this compatibility matrix should be
+--       stored as a field inside 'Distribution.Compiler.Compiler'
+--
+setupMinCabalVersionConstraint :: CompilerInfo -> Version
+setupMinCabalVersionConstraint cinfo
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 10] =
+      mkVersion [3, 12]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 6] =
+      mkVersion [3, 10]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 4] =
+      mkVersion [3, 8]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 2] =
+      mkVersion [3, 6]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [9, 0] =
+      mkVersion [3, 4]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 10] =
+      mkVersion [3, 2]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 8] =
+      mkVersion [3, 0]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 6] =
+      mkVersion [2, 4]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 4] =
+      mkVersion [2, 2]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 2] =
+      mkVersion [2, 0]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [8, 0] =
+      mkVersion [1, 24]
+  | Just ghcVersion <- ghcCompatibleVersion
+  , ghcVersion >= mkVersion [7, 10] =
+      mkVersion [1, 22]
+  | otherwise = mkVersion [1, 20]
+  where
+    ghcCompatibleVersion =
+      case compilerInfoId cinfo of
+        CompilerId GHC version -> Just version
+        _ ->
+          listToMaybe
+            [ version
+            | CompilerId GHC version <- fromMaybe [] (compilerInfoCompat cinfo)
+            ]
 
 -- | Given the 'InstalledPackageIndex' for a nix-style package store, and an
 -- 'ElaboratedInstallPlan', replace configured source packages by installed

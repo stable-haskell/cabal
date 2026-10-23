@@ -41,6 +41,7 @@ import Distribution.Client.ProjectConfig.Types
   )
 import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
+import Distribution.Client.Toolchain (Machine (Host), Toolchain (..), onMachine)
 import Distribution.Client.RebuildMonad (runRebuild)
 import Distribution.Client.ScriptUtils
 import Distribution.Client.Setup
@@ -245,17 +246,15 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags'} cliTargetStrings globalF
     if not $ fromFlagOrDefault False (pathCompiler pathFlags)
       then pure Nothing
       else do
-        (compiler, _, progDb) <-
-          runRebuild (distProjectRootDirectory . distDirLayout $ baseCtx) $
-            configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
-        compilerProg <- requireCompilerProg verbosity compiler
-        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg progDb
-
-        let compilerInfo' =
-              mkCompilerInfo configuredCompilerProg compiler $
-                cabalStoreDirLayout (cabalDirLayout baseCtx)
-
-        pure $ Just compilerInfo'
+        let projectRoot = distProjectRootDirectory (distDirLayout baseCtx)
+        toolchains <- runRebuild projectRoot $ configureToolchains verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
+        -- The project compiler produces Host artifacts; Build is reserved for
+        -- tools run while building them. Query the same configured Host
+        -- toolchain and store layout used by the build plan.
+        let Toolchain{toolchainCompiler, toolchainProgramDb} = onMachine toolchains Host
+        compilerProg <- requireCompilerProg verbosity toolchainCompiler
+        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg toolchainProgramDb
+        pure $ Just $ mkCompilerInfo configuredCompilerProg toolchainCompiler (cabalStoreDirLayout $ cabalDirLayout baseCtx)
 
   paths <- for (fromFlagOrDefault [] $ pathDirectories pathFlags) $ \p -> do
     t <- getPathLocation verbosity baseCtx p
