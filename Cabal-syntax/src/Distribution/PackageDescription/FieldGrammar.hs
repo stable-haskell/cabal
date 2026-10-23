@@ -859,7 +859,6 @@ formatOtherModules = alaList' VCat MQuoted
 formatExtraSources :: [ExtraSource pkg] -> List VCat (Identity (ExtraSource pkg)) (ExtraSource pkg)
 formatExtraSources = alaList' VCat Identity
 
-
 -------------------------------------------------------------------------------
 -- newtypes
 -------------------------------------------------------------------------------

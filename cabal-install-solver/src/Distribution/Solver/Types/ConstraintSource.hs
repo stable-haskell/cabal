@@ -62,7 +62,7 @@ data ConstraintSource =
   | ConstraintSetupCabalMaxVersion
 
   -- | TODO
-  | ConstraintHideInstalledPackagesSpecificBySourcePackageId 
+  | ConstraintHideInstalledPackagesSpecificBySourcePackageId
   deriving (Show, Eq, Generic)
 
 instance Binary ConstraintSource

@@ -127,17 +127,17 @@ import Distribution.Types.ComponentRequestedSpec
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Types.PkgconfigVersion
+import Distribution.Utils.Path ((</>))
 import Distribution.Verbosity (VerbosityLevel (..), verbosityLevel)
 import Distribution.Version
-import Distribution.Utils.Path ((</>))
 
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Distribution.Compat.Graph as Graph
-import Text.PrettyPrint (colon, hsep, parens, text)
 import qualified Distribution.PackageDescription as PD
 import GHC.Stack (HasCallStack)
+import Text.PrettyPrint (colon, hsep, parens, text)
 
 -- | The combination of an elaborated install plan plus a
 -- 'ElaboratedSharedConfig' contains all the details necessary to be able
@@ -191,8 +191,8 @@ showElaboratedInstallPlan = InstallPlan.showInstallPlan_gen showNode
         herald =
           ( hsep
               [ InstallPlan.renderPlanPackageTag pkg
-              -- , InstallPlan.foldPlanPackage (const mempty) in_mem pkg
-              , pretty (packageId pkg)
+              , -- , InstallPlan.foldPlanPackage (const mempty) in_mem pkg
+                pretty (packageId pkg)
               , parens (pretty (nodeKey pkg))
               ]
           )
@@ -258,8 +258,8 @@ data ElaboratedConfiguredPackage = ElaboratedConfiguredPackage
   -- ^ The hash of the source, e.g. the tarball. We don't have this for
   -- local source dir packages.
   , elabIsSourcePackage :: Bool
-  -- FIXME
-  , elabIsSourcePackageClosure :: Bool
+  , -- FIXME
+    elabIsSourcePackageClosure :: Bool
   -- ^ Is this package in the closure of project source packages?
   , elabEnabledSpec :: ComponentRequestedSpec
   -- ^ Another way of phrasing 'pkgStanzasAvailable'.
@@ -414,7 +414,8 @@ elabRequiresRegistration elab =
       -- that was built and installed into the same store folder
       -- as otherwise this will cause build failures once a
       -- target actually depends on lib:cpphs.
-      build_target || Cabal.hasPublicLib (elabPkgDescription elab)
+      build_target
+        || Cabal.hasPublicLib (elabPkgDescription elab)
         -- the next sub-condition below is currently redundant
         -- (see discussion in #5604 for more details), but it's
         -- being kept intentionally here as a safeguard because if
@@ -489,7 +490,7 @@ elabExeName :: ElaboratedConfiguredPackage -> [String]
 elabExeName elab =
   case elabPkgOrComp elab of
     ElabPackage _ ->
-      [ PD.unUnqualComponentName (PD.exeName exe) | exe <- PD.executables (elabPkgDescription elab) ]
+      [PD.unUnqualComponentName (PD.exeName exe) | exe <- PD.executables (elabPkgDescription elab)]
     ElabComponent comp ->
       case compComponentName comp of
         Just (CExeName name) -> [PD.unUnqualComponentName name]
@@ -631,10 +632,10 @@ elabExeDependencies elab =
 -- actually want to build something.)
 elabExeDependencyPaths :: ElaboratedConfiguredPackage -> [FilePath]
 elabExeDependencyPaths elab =
-  map snd $ 
-  case elabPkgOrComp elab of
-    ElabPackage pkg -> ordNub $ CD.nonSetupDeps (pkgExeDependencyPaths pkg)
-    ElabComponent comp -> compExeDependencyPaths comp
+  map snd $
+    case elabPkgOrComp elab of
+      ElabPackage pkg -> ordNub $ CD.nonSetupDeps (pkgExeDependencyPaths pkg)
+      ElabComponent comp -> compExeDependencyPaths comp
 
 elabPkgConfigDependencies :: ElaboratedConfiguredPackage -> [(PkgconfigName, Maybe PkgconfigVersion)]
 elabPkgConfigDependencies elab =
@@ -665,7 +666,7 @@ elabRegistrationPackageDb elab =
 -- | The absolute install dirs for this package/component.
 -- NOTE: to be entirely honest, we do not really know these paths. This is because the copy
 -- is done by Cabal and we do not have a way to obtain the final paths other than
--- computing them ourselves here. We could hijack the copy process just like we do for 
+-- computing them ourselves here. We could hijack the copy process just like we do for
 -- register; that would make these paths the source of truth.
 elabAbsoluteInstallDirs
   :: HasCallStack
@@ -844,7 +845,6 @@ whyNotPerComponent = \case
   CuzCabalSpecVersion -> "cabal-version is less than 1.8"
   CuzNoBuildableComponents -> "there are no buildable components"
   CuzDisablePerComponent -> "you passed --disable-per-component"
-
 
 type CabalFileText = LBS.ByteString
 

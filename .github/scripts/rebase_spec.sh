@@ -10,7 +10,7 @@ input_branches=( "$@" )
 set -eux
 
 [ ${#input_branches[@]} -eq 0 ] &&
-	input_branches=( $(gh pr list --label rebase --state open --json headRefName --jq ".[] | select( .headRefName | match(\"${branch_regex}\")) | .headRefName" --template '{{range .}}{{tablerow .headRefName}}{{end}}') )
+    input_branches=( $(gh pr list --label rebase --state open --json headRefName --jq ".[] | select( .headRefName | match(\"${branch_regex}\")) | .headRefName" --template '{{range .}}{{tablerow .headRefName}}{{end}}') )
 
 branch_list=( )
 declare -A branch_map
@@ -107,18 +107,18 @@ create_branch_map() {
     local -n discovered=$2
     local -n map=$3
 
-	while IFS= read -r branch || [[ -n $branch ]]; do
+    while IFS= read -r branch || [[ -n $branch ]]; do
     rebase_target=$(git branch --merged "${branch}" --sort="ahead-behind:${branch}" --format="%(refname:short)" | grep -e "${branch_regex}" -e '^master$' | awk 'NR==2{print;exit}')
 
-	# this is the case when the branch is actually behind master... we then
-	# still want to rebase against master
-	if [ -z "${rebase_target}" ] ; then
-		rebase_target=master
-	fi
+    # this is the case when the branch is actually behind master... we then
+    # still want to rebase against master
+    if [ -z "${rebase_target}" ] ; then
+        rebase_target=master
+    fi
 
     if ! array_contains input_branches "${rebase_target}" && [ "${rebase_target}" != "master" ] ; then
-		discovered+=( "${rebase_target}" )
-	fi
+        discovered+=( "${rebase_target}" )
+    fi
 
     map["${branch}"]="${rebase_target}"
 done < <(printf '%s\n' "${arr[@]}")
@@ -134,13 +134,13 @@ create_branch_map input_branches newly_detected_input_branches branch_map
 # the 'rebase' label... this would break cherry-picking on master, so we include "parent"
 # branches regardless
 while true ; do
-	if [ ${#newly_detected_input_branches[@]} -eq 0 ] ; then
-		break
-	else
-		nothing=( )
-		create_branch_map newly_detected_input_branches nothing branch_map
-		newly_detected_input_branches=( "${nothing[@]}" )
-	fi
+    if [ ${#newly_detected_input_branches[@]} -eq 0 ] ; then
+        break
+    else
+        nothing=( )
+        create_branch_map newly_detected_input_branches nothing branch_map
+        newly_detected_input_branches=( "${nothing[@]}" )
+    fi
 done
 
 } >&2

@@ -114,7 +114,9 @@ defaultCompilerFlavor = case buildCompilerFlavor of
   _ -> Just buildCompilerFlavor
 
 --------------------------------------------------------------
+
 -- * Compiler Id
+
 --------------------------------------------------------------
 
 data CompilerId = CompilerId CompilerFlavor Version

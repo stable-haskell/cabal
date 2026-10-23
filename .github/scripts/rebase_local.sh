@@ -22,22 +22,22 @@ output_branches+=( "master" )
 # rebase each branch
 mkdir -p rebase
 for branch_spec in ${spec} ; do
-	branch=$(echo "${branch_spec}" | awk -F ':' '{ print $1 }')
-	rebase_target=$(echo "${branch_spec}" | awk -F ':' '{ print $2 }')
-	git checkout "${branch}"
+    branch=$(echo "${branch_spec}" | awk -F ':' '{ print $1 }')
+    rebase_target=$(echo "${branch_spec}" | awk -F ':' '{ print $2 }')
+    git checkout "${branch}"
     common_ancestor=$(git merge-base "${branch}" "origin/${rebase_target}")
-	[ -e rebase/"${branch}" ] && exit 1
+    [ -e rebase/"${branch}" ] && exit 1
     mkdir -p rebase/"${branch}"
-	(
-	cd rebase/"${branch}"
-	echo "${common_ancestor}" > BASE_COMMIT
+    (
+    cd rebase/"${branch}"
+    echo "${common_ancestor}" > BASE_COMMIT
     git format-patch "${common_ancestor}".."${branch}"
     )
-	if compgen -G rebase/"${branch}"/*.patch > /dev/null; then
-	  git reset --hard "${rebase_target}"
+    if compgen -G rebase/"${branch}"/*.patch > /dev/null; then
+      git reset --hard "${rebase_target}"
       git am --3way rebase/"${branch}"/*.patch
-	fi
-	output_branches+=( "${branch}" )
+    fi
+    output_branches+=( "${branch}" )
 done
 unset branch_spec branch
 

@@ -151,8 +151,8 @@ addChildren bs@(BS { rdeps = rdm, open = gs, next = Goals })
 
 -- If we have already picked a goal, then the choice depends on the kind
 -- of goal.
-addChildren bs@(BS { rdeps, index, next = OneGoal goal }) = 
-  case goal of 
+addChildren bs@(BS { rdeps, index, next = OneGoal goal }) =
+  case goal of
     PkgGoal qpn@(Q (PackagePath s _) pn) gr ->
       -- For a package goal, we look up the instances available in the global
       -- info, and then handle each instance in turn.

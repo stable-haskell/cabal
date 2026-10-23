@@ -25,7 +25,7 @@ import Prelude ()
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.RebuildMonad
-import Distribution.Client.Toolchain (Toolchain (..), Stage)
+import Distribution.Client.Toolchain (Stage, Toolchain (..))
 
 import Distribution.Package (UnitId, mkUnitId)
 
@@ -40,8 +40,8 @@ import qualified Data.Set as Set
 import System.Directory
 import System.FilePath
 
-import System.IO (openFile, IOMode(ReadWriteMode), hClose)
 import GHC.IO.Handle.Lock (LockMode (ExclusiveLock), hLock, hTryLock, hUnlock)
+import System.IO (IOMode (ReadWriteMode), hClose, openFile)
 
 -- $concurrency
 --
@@ -180,7 +180,7 @@ newStoreEntry
   copyFiles
   register =
     -- See $concurrency above for an explanation of the concurrency protocol
-    withTempDirectory incomingDir "new"  $ \incomingTmpDir -> do
+    withTempDirectory incomingDir "new" $ \incomingTmpDir -> do
       -- Write all store entry files within the temp dir and return the prefix.
       (incomingEntryDir, otherFiles) <- copyFiles incomingTmpDir
 
@@ -193,8 +193,8 @@ newStoreEntry
 
         if exists
           then do
-           -- If the entry exists then we lost the race and we must abandon,
-          -- unlock and re-use the existing store entry.
+            -- If the entry exists then we lost the race and we must abandon,
+            -- unlock and re-use the existing store entry.
             info verbosity $ "Concurrent build race: abandoning build in favour of existing entry " ++ finalEntryDir
             return UseExistingStoreEntry
           else do
@@ -214,7 +214,6 @@ newStoreEntry
     where
       finalEntryDir = storePackageDirectory stage toolchain unitid
       incomingDir = storeIncomingDirectory stage toolchain
-
 
 withIncomingUnitIdLock
   :: Verbosity

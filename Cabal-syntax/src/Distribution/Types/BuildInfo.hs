@@ -322,4 +322,4 @@ lookupHcOptions
   -> CompilerFlavor
   -> BuildInfo
   -> [String]
-lookupHcOptions f _hc bi  = f bi
+lookupHcOptions f _hc bi = f bi
