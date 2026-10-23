@@ -3,6 +3,7 @@ module Main (main) where
 import Test.Tasty
 
 import qualified UnitTests.Distribution.Client.BuildReport
+import qualified UnitTests.Distribution.Client.CmdHaddockProject
 import qualified UnitTests.Distribution.Client.CmdRun
 import qualified UnitTests.Distribution.Client.Configure
 import qualified UnitTests.Distribution.Client.FetchUtils
@@ -38,6 +39,9 @@ main = do
       [ testGroup
           "UnitTests.Distribution.Client.BuildReport"
           UnitTests.Distribution.Client.BuildReport.tests
+      , testGroup
+          "UnitTests.Distribution.Client.CmdHaddockProject"
+          UnitTests.Distribution.Client.CmdHaddockProject.tests
       , testGroup
           "UnitTests.Distribution.Client.CmdRun"
           UnitTests.Distribution.Client.CmdRun.tests

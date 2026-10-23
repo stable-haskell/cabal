@@ -1,4 +1,4 @@
-module MyLib (someFunc) where
+module MyLib (someFunc, Async) where
 
 import Control.Concurrent.Async
 

@@ -1,0 +1,7 @@
+{- cabal:
+build-depends: base
+ghc-options: -o "output without extension"
+-}
+
+main :: IO ()
+main = putStrLn "Extensionless output"
