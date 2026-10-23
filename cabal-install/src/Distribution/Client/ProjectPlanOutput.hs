@@ -4,6 +4,7 @@
 module Distribution.Client.ProjectPlanOutput
   ( -- * Plan output
     writePlanExternalRepresentation
+  , toolchainJsonFields
 
     -- * Project status
 
@@ -32,6 +33,7 @@ import qualified Distribution.Client.Utils.Json as J
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 
 import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
+import qualified Distribution.Solver.Types.Stage as Stage
 
 import qualified Distribution.Compat.Binary as Binary
 import Distribution.Compat.Graph (Graph, Node)
@@ -50,7 +52,7 @@ import Distribution.Simple.GHC
   , GhcImplInfo (supportsPkgEnvFiles)
   , getImplInfo
   , simpleGhcEnvironmentFile
-  , writeGhcEnvironmentFileWithAbi
+  , writeGhcEnvironmentFileWithTarget
   )
 import Distribution.Simple.Utils
 import Distribution.System
@@ -79,6 +81,23 @@ import System.IO
 
 import Distribution.Simple.Program.GHC (packageDbArgsDb)
 
+jdisplay :: Pretty a => a -> J.Value
+jdisplay = J.String . prettyShow
+
+-- | JSON fields for a compiler stage, including its canonical target name.
+toolchainJsonFields :: Stage.Stage -> Toolchain -> [(String, J.Value)]
+toolchainJsonFields stage Toolchain{toolchainCompiler, toolchainPlatform} =
+  [ prefixed "compiler-id" J..= J.String (showCompilerId toolchainCompiler)
+  , prefixed "target-name" J..= J.String (either error renderTargetName (compilerTargetName toolchainPlatform toolchainCompiler))
+  , prefixed "arch" J..= jdisplay arch
+  , prefixed "os" J..= jdisplay os
+  ]
+  where
+    Platform arch os = toolchainPlatform
+    prefixed s = case stage of
+      Stage.Build -> "build-" ++ s
+      Stage.Host -> s
+
 -----------------------------------------------------------------------------
 -- Writing plan.json files
 --
@@ -106,20 +125,18 @@ encodePlanAsJson :: DistDirLayout -> ElaboratedInstallPlan -> ElaboratedSharedCo
 encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
   -- TODO: [nice to have] include all of the sharedPackageConfig and all of
   --      the parts of the elaboratedInstallPlan
-  J.object
+  J.object $
     [ "cabal-version" J..= jdisplay cabalInstallVersion
     , "cabal-lib-version" J..= jdisplay cabalVersion
-    , "compiler-id"
-        J..= (J.String . showCompilerId . pkgConfigCompiler)
-          elaboratedSharedConfig
-    , "compiler-abi" J..= jdisplay (compilerAbiTag (pkgConfigCompiler elaboratedSharedConfig))
-    , "os" J..= jdisplay os
-    , "arch" J..= jdisplay arch
-    , "install-plan" J..= installPlanToJ elaboratedInstallPlan
     ]
+      ++ toolchainJ Host
+      ++ toolchainJ Build
+      ++ ["install-plan" J..= installPlanToJ elaboratedInstallPlan]
   where
-    plat :: Platform
-    plat@(Platform arch os) = pkgConfigPlatform elaboratedSharedConfig
+    toolchains = pkgConfigToolchains elaboratedSharedConfig
+
+    toolchainJ stage =
+      toolchainJsonFields stage (Stage.getStage toolchains stage)
 
     installPlanToJ :: ElaboratedInstallPlan -> [J.Value]
     installPlanToJ = map planPackageToJ . InstallPlan.toList
@@ -221,6 +238,9 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               ]
                 ++ bin_file (compSolverName comp)
       where
+        Toolchain{toolchainPlatform = plat} =
+          Stage.getStage toolchains (elabStage elab)
+
         -- \| Only add build-info file location if the Setup.hs CLI
         -- is recent enough to be able to generate build info files.
         -- Otherwise, write 'null'.
@@ -866,11 +886,12 @@ writePlanGhcEnvironment
     | compilerFlavor compiler == GHC
     , supportsPkgEnvFiles (getImplInfo compiler) =
         Just
-          <$> writeGhcEnvironmentFileWithAbi
+          <$> writeGhcEnvironmentFileWithTarget
             path
             platform
             (compilerVersion compiler)
             (compilerTargetAbi compiler)
+            (Map.lookup "Target name" (compilerProperties compiler))
             ( renderGhcEnvironmentFile
                 path
                 elaboratedInstallPlan

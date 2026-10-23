@@ -2531,6 +2531,9 @@ elaborateInstallPlan
 
             buildOptionsAdjustmentWarnings :: LogProgress ()
             buildOptionsAdjustmentWarnings = do
+              for_ explicitUnsupportedProfilingVariant $ \variant ->
+                for_ (Cabal.profilingTargetVariantError stageCompiler variant (profilingDynamicSupported stageCompiler)) $
+                  dieProgress . text . CabalErrors.exceptionMessage
               for_ (Cabal.profilingTargetError stageCompiler elabBuildOptionsRaw) $ \err ->
                 dieProgress (text (CabalErrors.exceptionMessage err))
               mapM_ (warnProgress . text) $
@@ -2666,10 +2669,6 @@ elaborateInstallPlan
                 , withStaticLib = perPkgOptionFlag False pkgid packageConfigStaticLib
                 , withDynExe =
                     perPkgOptionFlag False pkgid packageConfigDynExe
-                      -- We can't produce a dynamic executable if the user
-                      -- wants to enable executable profiling but the
-                      -- compiler doesn't support prof+dyn.
-                      && (okProfDyn || not profExe)
                 , withFullyStaticExe = perPkgOptionFlag False pkgid packageConfigFullyStaticExe
                 , withGHCiLib = perPkgOptionFlag False pkgid packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
                 , withProfExe =
@@ -2695,8 +2694,15 @@ elaborateInstallPlan
                 , programPrefix = elabProgPrefix
                 , programSuffix = elabProgSuffix
                 }
-            okProfDyn = profilingDynamicSupportedOrUnknown stageCompiler
-            profExe = perPkgOptionFlag False pkgid packageConfigProf
+            explicitUnsupportedProfilingVariant =
+              listToMaybe
+                [ variant
+                | (Just True, variant) <-
+                    [ (flagToMaybe (lookupPerPkgOptionStaged elabStage pkgid packageConfigSharedLib), "shared libraries")
+                    , (flagToMaybe (lookupPerPkgOptionStaged elabStage pkgid packageConfigDynExe), "dynamically linked executables")
+                    , (flagToMaybe (lookupPerPkgOptionStaged elabStage pkgid packageConfigProfShared), "shared profiling libraries")
+                    ]
+                ]
 
             elabBuildOptions = Cabal.adjustBuildOptions stageCompiler stageProgDb elabBuildOptionsRaw
 
@@ -2975,20 +2981,13 @@ compilerCanBuildProfilingSharedLibs = compilerCanBuildWayLibs profilingDynamicSu
 compilerShouldUseSharedLibByDefault :: Compiler -> Bool
 compilerShouldUseSharedLibByDefault compiler =
   case compilerFlavor compiler of
-    GHC -> GHC.compilerBuildWay compiler == DynWay && compilerCanBuildSharedLibs compiler
+    GHC ->
+      GHC.compilerBuildWay compiler == DynWay
+        && ( if compilerTargetsProfiling compiler
+               then compilerCanBuildProfilingSharedLibs compiler
+               else compilerCanBuildSharedLibs compiler
+           )
     _ -> False
-
--- | Whether a compiler builds profiled code by default (so that packages it
--- builds need profiling libraries of their dependencies).
-compilerShouldUseProfilingLibByDefault :: Compiler -> Bool
-compilerShouldUseProfilingLibByDefault compiler =
-  compilerTargetsProfiling compiler && compilerCanBuildProfilingLibs compiler
-
--- | Whether a compiler builds profiled dynamic code by default (so that
--- packages it builds need profiled shared libraries of their dependencies).
-compilerShouldUseProfilingSharedLibByDefault :: Compiler -> Bool
-compilerShouldUseProfilingSharedLibByDefault compiler =
-  compilerTargetsProfiling compiler && compilerCanBuildProfilingSharedLibs compiler
 
 -- The @needs*@ predicates below are flat per-package checks (project config +
 -- the compiler's default way); they do not traverse dependencies. The downward
@@ -3024,16 +3023,16 @@ needsSharedLib lookupFlag stage compiler pkgid =
 
 -- | Does this package itself want a profiling library build?
 needsProfilingLib :: PerPkgConfigFlag -> Stage -> Compiler -> PackageId -> Bool
-needsProfilingLib lookupFlag stage compiler pkgid =
+needsProfilingLib lookupFlag stage _compiler pkgid =
   fromFlagOrDefault
-    (compilerShouldUseProfilingLibByDefault compiler)
+    False
     (lookupFlag stage pkgid packageConfigProf <> lookupFlag stage pkgid packageConfigProfLib)
 
 -- | Does this package itself want a profiled shared library build?
 needsProfilingLibShared :: PerPkgConfigFlag -> Stage -> Compiler -> PackageId -> Bool
 needsProfilingLibShared lookupFlag stage compiler pkgid =
   fromMaybe
-    (compilerShouldUseProfilingSharedLibByDefault compiler)
+    False
     -- case 1: If --enable-profiling-shared is passed explicitly, honour that
     ( case profLibSharedFlag of
         Just v -> Just v
@@ -5061,6 +5060,7 @@ packageHashConfigInputs shared pkg =
   PackageHashConfigInputs
     { pkgHashCompilerId = compilerId (elabCompiler shared pkg)
     , pkgHashCompilerABI = compilerAbiTag (elabCompiler shared pkg)
+    , pkgHashTargetName = either error renderTargetName (compilerTargetName (elabPlatform shared pkg) (elabCompiler shared pkg))
     , pkgHashPlatform = elabPlatform shared pkg
     , pkgHashFlagAssignment = elabFlagAssignment
     , pkgHashConfigureScriptArgs = elabConfigureScriptArgs
