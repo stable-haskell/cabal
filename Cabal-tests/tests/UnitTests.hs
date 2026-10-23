@@ -13,6 +13,7 @@ import qualified UnitTests.Distribution.PackageDescription.Check
 import qualified UnitTests.Distribution.Simple.Command
 import qualified UnitTests.Distribution.Simple.Compiler
 import qualified UnitTests.Distribution.Simple.Glob
+import qualified UnitTests.Distribution.Simple.GHC
 import qualified UnitTests.Distribution.Simple.Program.GHC
 import qualified UnitTests.Distribution.Simple.Program.Internal
 import qualified UnitTests.Distribution.Simple.Utils
@@ -47,6 +48,7 @@ tests =
     , testGroup "Distribution.Simple.Glob"
         UnitTests.Distribution.Simple.Glob.tests
     , UnitTests.Distribution.Simple.Program.GHC.tests
+    , testGroup "Distribution.Simple.GHC" UnitTests.Distribution.Simple.GHC.tests
     , testGroup "Distribution.Simple.Program.Internal"
         UnitTests.Distribution.Simple.Program.Internal.tests
     , testGroup "Distribution.Simple.Utils" $

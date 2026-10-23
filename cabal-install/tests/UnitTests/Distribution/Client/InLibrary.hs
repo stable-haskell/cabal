@@ -4,6 +4,7 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Distribution.Client.InLibrary as InLibrary
 import Distribution.Client.ProjectPlanning.Types (Stage (..), Staged (..), Toolchain (..))
+import Distribution.Client.Toolchain (getStage)
 import Distribution.Client.Types (GenericReadyPackage (..))
 import Distribution.Simple.Compiler
 import Distribution.Simple.Program.Builtin (ghcProgram)
@@ -37,6 +38,7 @@ checkToolchain stage = do
           toolchain
           -- Compiler metadata must not depend on the package description.
           (ReadyPackage (error "unexpected package metadata evaluation"))
+          mempty
           []
       configuredProgram = lookupProgram ghcProgram (LBC.withPrograms (InLibrary.localBuildConfig inputs))
   InLibrary.compiler inputs @?= toolchainCompiler toolchain
@@ -47,14 +49,15 @@ checkToolchain stage = do
     @?= Just (Map.findWithDefault "" "stage-marker" (compilerProperties (InLibrary.compiler inputs)))
 
 toolchains :: Staged Toolchain
-toolchains = Staged $ \stage -> case stage of
-  Build -> makeToolchain "build" "native-ghc" (Platform X86_64 Linux)
-  Host -> makeToolchain "host" "host-ghc" (Platform AArch64 OSX)
+toolchains =
+  Staged
+    { onHost = makeToolchain "host" "host-ghc" (Platform AArch64 OSX)
+    , onBuild = Just (makeToolchain "build" "native-ghc" (Platform X86_64 Linux))
+    }
 
 makeToolchain :: String -> FilePath -> Platform -> Toolchain
 makeToolchain stageMarker path platform =
   Toolchain
-    platform
     Compiler
       { compilerId = CompilerId GHC (if stageMarker == "build" then mkVersion [9, 12] else mkVersion [9, 14])
       , compilerAbiTag = AbiTag (stageMarker ++ "-abi")
@@ -64,6 +67,7 @@ makeToolchain stageMarker path platform =
       , compilerProperties = Map.singleton "stage-marker" stageMarker
       , compilerWiredInUnitIds = Nothing
       }
+    platform
     ( updateProgram
         ( (simpleConfiguredProgram "ghc" (UserSpecified path))
             { programProperties = Map.singleton "stage-marker" stageMarker
@@ -71,4 +75,3 @@ makeToolchain stageMarker path platform =
         )
         emptyProgramDb
     )
-    []

@@ -35,6 +35,9 @@ projectConfigFieldGrammar source knownPrograms = do
   let projectConfigProvenance = Set.singleton (Explicit source)
       projectConfigAllPackages = mempty
       projectConfigSpecificPackage = mempty
+      -- Internal install overlay fields are not read from project files.
+      projectConfigStagePackages = mempty
+      projectConfigInstallPackages = mempty
   projectConfigLocalPackages <- blurFieldGrammar L.projectConfigLocalPackages (packageConfigFieldGrammar knownPrograms)
   pure ProjectConfig{..}
 

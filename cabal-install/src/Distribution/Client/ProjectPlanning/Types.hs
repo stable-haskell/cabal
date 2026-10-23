@@ -67,6 +67,11 @@ module Distribution.Client.ProjectPlanning.Types
   , componentOptionalStanza
   , componentTargetName
 
+    -- * Toolchain
+  , Toolchain (..)
+  , Stage (..)
+  , Staged (..)
+
     -- * Setup script
   , SetupScriptStyle (..)
   , SetupCliVersion (..)
@@ -97,6 +102,7 @@ import Distribution.Client.SolverInstallPlan
   )
 import Distribution.Client.Toolchain
   ( Stage (..)
+  , Staged (..)
   , Toolchain (..)
   , Toolchains
   , getStage
