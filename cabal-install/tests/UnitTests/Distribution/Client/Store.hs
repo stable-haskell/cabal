@@ -17,9 +17,9 @@ import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
-import Distribution.Client.RebuildMonad
 import Distribution.Client.DistDirLayout (betterPlatform, defaultStoreDirLayout)
 import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
+import Distribution.Client.RebuildMonad
 import Distribution.Client.Store
 import Distribution.Client.Toolchain (Toolchain (..))
 import qualified Distribution.Client.Utils.Json as Json
