@@ -568,7 +568,14 @@ configureToolchains
       -- Use the host compiler if a separate build compiler is not specified
       buildHcFlavor = flagToMaybe projectConfigBuildHcFlavor <|> flagToMaybe projectConfigHcFlavor
       buildHcPath = flagToMaybe projectConfigBuildHcPath <|> flagToMaybe projectConfigHcPath
-      buildHcPkg = flagToMaybe projectConfigBuildHcPkg <|> flagToMaybe projectConfigHcPkg
+      buildHcPkg =
+        flagToMaybe projectConfigBuildHcPkg
+          <|> if isSeparateBuildCompiler
+            then Nothing
+            else flagToMaybe projectConfigHcPkg
+      isSeparateBuildCompiler =
+        isJust (flagToMaybe projectConfigBuildHcFlavor)
+          || isJust (flagToMaybe projectConfigBuildHcPath)
 
 {- Note [Caching the result of configuring the compiler]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2115,6 +2122,9 @@ elaborateInstallPlan
 
             buildOptionsAdjustmentWarnings :: LogProgress ()
             buildOptionsAdjustmentWarnings = do
+              for_ explicitUnsupportedProfilingVariant $ \variant ->
+                for_ (Cabal.profilingTargetVariantError elabCompiler variant (profilingDynamicSupported elabCompiler)) $
+                  dieProgress . text . CabalErrors.exceptionMessage
               for_ (Cabal.profilingTargetError elabCompiler elabBuildOptionsRaw) $ \err ->
                 dieProgress (text (CabalErrors.exceptionMessage err))
               mapM_ (warnProgress . text) $
@@ -2270,10 +2280,6 @@ elaborateInstallPlan
                 , withBytecodeLib = perPkgOptionFlag srcpkgPackageId False packageConfigBytecodeLib
                 , withDynExe =
                     perPkgOptionFlag srcpkgPackageId False packageConfigDynExe
-                      -- We can't produce a dynamic executable if the user
-                      -- wants to enable executable profiling but the
-                      -- compiler doesn't support prof+dyn.
-                      && (okProfDyn || not profExe)
                 , withFullyStaticExe = perPkgOptionFlag srcpkgPackageId False packageConfigFullyStaticExe
                 , withGHCiLib = perPkgOptionFlag srcpkgPackageId False packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
                 , withProfExe =
@@ -2296,8 +2302,15 @@ elaborateInstallPlan
                 , withProfLibDetail = elabProfLibDetail
                 , withProfExeDetail = elabProfExeDetail
                 }
-            okProfDyn = profilingDynamicSupportedOrUnknown elabCompiler
-            profExe = perPkgOptionFlag srcpkgPackageId False packageConfigProf
+            explicitUnsupportedProfilingVariant =
+              listToMaybe
+                [ variant
+                | (Just True, variant) <-
+                    [ (perPkgOptionMaybeStaged elabStage srcpkgPackageId packageConfigSharedLib, "shared libraries")
+                    , (perPkgOptionMaybeStaged elabStage srcpkgPackageId packageConfigDynExe, "dynamically linked executables")
+                    , (perPkgOptionMaybeStaged elabStage srcpkgPackageId packageConfigProfShared, "shared profiling libraries")
+                    ]
+                ]
 
             elabBuildOptions = Cabal.adjustBuildOptions elabCompiler elabProgramDb elabBuildOptionsRaw
 
@@ -2530,7 +2543,11 @@ elaborateInstallPlan
             -- which matches behaviour in previous cabal releases
             Nothing -> True
 
-          canBuildSharedLibs = canBuildWayLibs dynamicSupported
+          canBuildSharedLibs =
+            canBuildWayLibs $
+              if compilerTargetsProfiling compiler
+                then profilingDynamicSupported
+                else dynamicSupported
           canBuildProfilingSharedLibs = canBuildWayLibs profilingDynamicSupported
 
       pkgsUseProfilingLibrary :: Stage -> Compiler -> Set PackageId
@@ -4465,6 +4482,7 @@ packageHashConfigInputs pkg =
   PackageHashConfigInputs
     { pkgHashCompilerId = compilerId toolchainCompiler
     , pkgHashCompilerABI = compilerAbiTag toolchainCompiler
+    , pkgHashTargetName = either error renderTargetName (compilerTargetName toolchainPlatform toolchainCompiler)
     , pkgHashPlatform = toolchainPlatform
     , pkgHashFlagAssignment = elabFlagAssignment
     , pkgHashConfigureScriptArgs = elabConfigureScriptArgs

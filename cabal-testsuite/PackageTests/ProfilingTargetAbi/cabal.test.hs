@@ -1,6 +1,13 @@
 import Data.List (isSuffixOf)
 import Data.Maybe (isNothing)
-import Distribution.Simple.Compiler (Compiler (compilerWiredInUnitIds), compilerTargetsProfiling, showCompilerIdWithAbi)
+import qualified Data.Map as Map
+import Distribution.Simple.Compiler
+  ( Compiler (compilerProperties, compilerWiredInUnitIds)
+  , compilerTargetAbi
+  , compilerTargetName
+  , compilerTargetsProfiling
+  , renderTargetName
+  )
 import Test.Cabal.Prelude
 
 -- Run with an intrinsic profiling target as --with-ghc and an ordinary
@@ -9,8 +16,12 @@ import Test.Cabal.Prelude
 main = cabalTest $ recordMode DoNotRecord $ do
   env <- getTestEnv
   skipUnless "needs an intrinsic profiling target" (compilerTargetsProfiling (testCompiler env))
-  unless ("-profiling" `isSuffixOf` showCompilerIdWithAbi (testCompiler env)) $
-    fail "the compiler ABI tag does not include the target ABI"
+  targetName <- either fail pure (compilerTargetName (testPlatform env) (testCompiler env))
+  let canonicalTarget = renderTargetName targetName
+  case Map.lookup "Target name" (compilerProperties (testCompiler env)) of
+    Just reportedTarget -> assertEqual "canonical target name matches compiler metadata" reportedTarget canonicalTarget
+    Nothing -> assertBool "legacy profiling target lacks terminal -prof" ("-prof" `isSuffixOf` canonicalTarget)
+  assertEqual "target ABI remains separate from canonical name" "profiling" (compilerTargetAbi (testCompiler env))
   unless (isNothing (compilerWiredInUnitIds (testCompiler env))) $
     fail "native compiler wired-in unit IDs leaked into the profiling target"
   skipUnless "needs a separate ordinary build compiler" $ case testBuildCompilerPath env of
