@@ -19,6 +19,7 @@ module Distribution.Simple.GHC.Internal
   , sourcesGhcOptions
   , mkGHCiLibName
   , filterGhciFlags
+  , installExeSourcePath
   , ghcLookupProperty
   , getHaskellObjects
   , mkGhcOptPackages
@@ -92,7 +93,8 @@ import Language.Haskell.Extension
 import System.Directory (listDirectory)
 import System.Environment (getEnv)
 import System.FilePath
-  ( takeDirectory
+  ( isRelative
+  , takeDirectory
   , takeExtension
   , takeFileName
   )
@@ -100,6 +102,24 @@ import System.IO (hClose, hPutStrLn)
 
 targetPlatform :: [(String, String)] -> Maybe Platform
 targetPlatform ghcInfo = platformFromTriple =<< lookup "Target platform" ghcInfo
+
+-- | Find the executable file written by GHC. Explicit @-o@ options override
+-- Cabal's usual component output path, and GHC resolves relative paths from
+-- its working directory. On Windows, GHC adds the executable extension when
+-- the supplied path does not already have one.
+installExeSourcePath :: Platform -> FilePath -> FilePath -> [String] -> FilePath
+installExeSourcePath platform workingDir defaultPath ghcOptions =
+  case lookup "-o" (reverse (zip ghcOptions (drop 1 ghcOptions))) of
+    Just path -> addExeExtension (resolve path)
+    Nothing -> defaultPath
+  where
+    resolve path
+      | isRelative path = workingDir </> path
+      | otherwise = path
+    exeExt = exeExtension platform
+    addExeExtension path
+      | null exeExt || not (null (takeExtension path)) = path
+      | otherwise = path <.> exeExt
 
 -- | Adjust the way we find and configure gcc and ld
 configureToolchain

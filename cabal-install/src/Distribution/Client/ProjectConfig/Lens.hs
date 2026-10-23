@@ -234,6 +234,10 @@ projectConfigBuildHcPkg :: Lens' ProjectConfigShared (Flag FilePath)
 projectConfigBuildHcPkg f s = fmap (\x -> s{T.projectConfigBuildHcPkg = x}) (f (T.projectConfigBuildHcPkg s))
 {-# INLINEABLE projectConfigBuildHcPkg #-}
 
+projectConfigBuildPackageDBs :: Lens' ProjectConfigShared [Maybe PackageDBCWD]
+projectConfigBuildPackageDBs f s = fmap (\x -> s{T.projectConfigBuildPackageDBs = x}) (f (T.projectConfigBuildPackageDBs s))
+{-# INLINEABLE projectConfigBuildPackageDBs #-}
+
 projectConfigHaddockIndex :: Lens' ProjectConfigShared (Flag PathTemplate)
 projectConfigHaddockIndex f s = fmap (\x -> s{T.projectConfigHaddockIndex = x}) (f (T.projectConfigHaddockIndex s))
 {-# INLINEABLE projectConfigHaddockIndex #-}
