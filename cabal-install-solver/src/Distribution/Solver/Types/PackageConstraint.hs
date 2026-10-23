@@ -80,8 +80,14 @@ scopeToPackageName (ConstraintScope _stage (ScopeAnyExeQualifier pn)) = pn
 scopeToPackageName (ConstraintScope _stage (ScopeAnyQualifier pn)) = pn
 
 constraintScopeMatches :: ConstraintScope -> QPN -> Bool
-constraintScopeMatches (ConstraintScope mstage qualifier) (Q (PackagePath stage' _namespace q) pn') =
-  maybe True (== stage') mstage && constraintQualifierMatches qualifier q pn'
+constraintScopeMatches (ConstraintScope mstage qualifier) (Q (PackagePath stage' namespace q) pn') =
+  maybe True (== stage') mstage
+    && namespaceMatches
+    && constraintQualifierMatches qualifier q pn'
+  where
+    namespaceMatches = case (qualifier, namespace) of
+      (ScopeTarget pn, Independent root) -> pn == root
+      _ -> True
 
 constraintQualifierMatches :: ConstraintQualifier -> Qualifier -> PackageName -> Bool
 constraintQualifierMatches (ScopeTarget pn) QualToplevel pn' = pn == pn'

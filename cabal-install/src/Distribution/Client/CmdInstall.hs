@@ -936,6 +936,7 @@ prepareExeInstall
         mkUnitBinDir unitId =
           case InstallPlan.lookup plan (WithStage stage unitId) of
             Just (InstallPlan.Configured elab) -> elabBinDir elab
+            Just (InstallPlan.Installed elab) -> elabBinDir elab
             Just _ -> error "Expected an ElaboratedConfiguredPackage!"
             Nothing -> error "UnitId not found in plan!"
 

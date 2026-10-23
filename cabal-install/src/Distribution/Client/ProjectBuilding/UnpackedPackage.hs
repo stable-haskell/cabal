@@ -10,6 +10,7 @@
 -- | This module exposes functions to build and register packages.
 module Distribution.Client.ProjectBuilding.UnpackedPackage
   ( buildAndInstallUnpackedPackage
+  , createHackageDocumentationArchives
   , PackageBuildingPhase (..)
 
     -- ** Utilities
@@ -27,7 +28,9 @@ import Distribution.Client.ProjectPlanning
 import Distribution.Client.ProjectPlanning.Types
 
 import Distribution.Client.DistDirLayout
+import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.JobControl
+import Distribution.Client.PackageHash (renderPackageHashInputs)
 import Distribution.Client.Setup
   ( CommonSetupFlags
   , filterBenchmarkFlags
@@ -41,6 +44,7 @@ import Distribution.Client.Setup
   , filterTestFlags
   )
 import Distribution.Client.SetupWrapper
+import qualified Distribution.Client.Tar as Tar
 import Distribution.Client.Types hiding
   ( BuildFailure (..)
   , BuildOutcome
@@ -56,12 +60,14 @@ import Distribution.Compat.Lens
 import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import qualified Distribution.InstalledPackageInfo as Installed
 import Distribution.Package
+import Distribution.Simple.BuildPaths (haddockDirName)
 import Distribution.Simple.Command (CommandUI)
 import Distribution.Simple.Compiler
   ( PackageDBStackCWD
   , coercePackageDBStack
   )
 import qualified Distribution.Simple.Configure as Cabal
+import qualified Distribution.Simple.InstallDirs as InstallDirs
 import Distribution.Simple.LocalBuildInfo
   ( ComponentName (..)
   , LibraryName (..)
@@ -85,11 +91,13 @@ import Distribution.Version
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map as Map
 
 import Control.Exception (Handler (..), SomeAsyncException, catches, onException)
-import System.Directory (canonicalizePath, createDirectoryIfMissing)
-import System.FilePath (takeDirectory, (</>))
+import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist)
+import System.FilePath (takeDirectory, (<.>), (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
 import System.Semaphore (SemaphoreName (..))
 
@@ -582,6 +590,21 @@ buildAndInstallUnpackedPackage
 
             runCopy (Cabal.CopyToDb (elabRegistrationPackageDb pkg))
 
+            -- Keep the inputs alongside the immutable store entry, so its
+            -- configuration can be inspected without reconstructing the plan.
+            for_ (elabPkgSourceHash pkg) $ \sourceHash ->
+              unless (elabIsSourcePackageClosure pkg) $ do
+                let entryDir =
+                      InstallDirs.libdir (elabAbsoluteInstallDirs pkg)
+                    hashFileName = entryDir </> "cabal-hash.txt"
+                    hashInputs = renderPackageHashInputs (packageHashInputs sourceHash pkg)
+                createDirectoryIfMissingVerbose verbosity True entryDir
+                info verbosity $
+                  "creating file with the inputs used to compute the package hash: " ++ hashFileName
+                LBS.writeFile hashFileName hashInputs
+                debug verbosity "Package hash inputs:"
+                traverse_ (debug verbosity . ("> " ++)) (lines $ LBS.unpack hashInputs)
+
             if elabRequiresRegistration pkg
               then do
                 ipi <-
@@ -624,7 +647,22 @@ buildAndInstallUnpackedPackage
 
       whenReconfigure action = case buildStatus of
         BuildStatusConfigure _ -> action
-        _ -> InLibraryLBI <$> Cabal.getPersistBuildConfig (Just srcdir) builddir
+        _
+          | PD.buildType (elabPkgDescription pkg) == PD.Custom
+              || elabSetupScriptStyle pkg == SetupNonCustomExternalLib ->
+              -- External Setup scripts' persisted LocalBuildInfo belongs to
+              -- the Setup compiler's
+              -- Cabal version and must not be deserialized by cabal-install's
+              -- Cabal library when configure is skipped.
+              return NotInLibraryNoLBI
+        _ -> do
+          persistedConfig <- Cabal.tryGetPersistBuildConfig (Just srcdir) builddir
+          case persistedConfig of
+            Right lbi -> return (InLibraryLBI lbi)
+            Left err@Cabal.ConfigStateFileBadVersion{} -> do
+              info verbosity $ "Reconfiguring because the saved Setup configuration uses an older Cabal version: " ++ show err
+              action
+            Left err -> throwIO err
 
       whenRebuild :: IO () -> IO ()
       whenRebuild action
@@ -719,6 +757,37 @@ annotateFailure mlogFile annotate action =
 --------------------------------------------------------------------------------
 -- * Other Utils
 --------------------------------------------------------------------------------
+
+-- | Archive only after all component Haddocks have finished. Each component
+-- has its own build directory, but Hackage expects one archive per package.
+-- Merge their documentation trees in a fresh staging directory so parallel
+-- builds cannot overwrite each other's archive or include stale components.
+createHackageDocumentationArchives :: Verbosity -> DistDirLayout -> ElaboratedInstallPlan -> IO ()
+createHackageDocumentationArchives verbosity layout plan =
+  for_ (Map.toList packageDocs) $ \(name, directories) -> do
+    existing <- filterM doesDirectoryExist (ordNub directories)
+    unless (null existing) $ do
+      let tempRoot = distTempDirectory layout
+          destination = distDirectory layout </> name <.> "tar.gz"
+      createDirectoryIfMissingVerbose verbosity True tempRoot
+      withTempDirectory tempRoot "haddock-archive" $ \staging -> do
+        for_ existing $ \source ->
+          copyDirectoryRecursive verbosity source (staging </> name)
+        Tar.createTarGzFile destination staging name
+      notice verbosity $ "Documentation tarball created: " ++ destination
+  where
+    packageDocs =
+      Map.fromListWith (++)
+        [ (name, [docRoot </> name])
+        | pkg <- concatMap (InstallPlan.foldPlanPackage (const []) pure) (InstallPlan.toList plan)
+        , elabStage pkg == Host
+        , elabHaddockForHackage pkg == Cabal.ForHackage
+        , hasValidHaddockTargets pkg
+        , let name = haddockDirName Cabal.ForHackage (elabPkgDescription pkg)
+              docRoot = fromMaybe
+                (distBuildDirectory layout (elabDistDirParams pkg) </> "doc" </> "html")
+                (elabHaddockOutputDir pkg)
+        ]
 
 hasValidHaddockTargets :: ElaboratedConfiguredPackage -> Bool
 hasValidHaddockTargets ElaboratedConfiguredPackage{..}

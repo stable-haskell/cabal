@@ -8,7 +8,8 @@ import Distribution.Client.Targets
   , UserQualifier (..)
   , readUserConstraint
   )
-import Distribution.Package (mkPackageName)
+import Distribution.Package (PackageIdentifier (..), mkPackageName)
+import Distribution.Client.Types.PackageSpecifier (PackageSpecifier (..), pkgSpecifierConstraints)
 import Distribution.PackageDescription (mkFlagAssignment, mkFlagName)
 import Distribution.Version (anyVersion, mkVersion, thisVersion)
 
@@ -16,7 +17,10 @@ import Distribution.Parsec (explicitEitherParsec, parsec, parsecCommaList)
 import Distribution.Pretty (prettyShow)
 
 import Distribution.Solver.Types.OptionalStanza (OptionalStanza (..))
-import Distribution.Solver.Types.PackageConstraint (PackageProperty (..))
+import Distribution.Solver.Types.ConstraintSource (ConstraintSource (ConstraintSourceUserTarget))
+import Distribution.Solver.Types.LabeledPackageConstraint (LabeledPackageConstraint (..))
+import Distribution.Solver.Types.PackageConstraint (ConstraintQualifier (..), ConstraintScope (..), PackageConstraint (..), PackageProperty (..), constraintScopeMatches)
+import Distribution.Solver.Types.PackagePath (Namespace (..), PackagePath (..), Qualified (..), Qualifier (..))
 import Distribution.Solver.Types.Stage (Stage (..), showStage)
 
 import Test.Tasty
@@ -33,7 +37,24 @@ makeGroup name f xs =
 
 tests :: [TestTree]
 tests =
-  [ makeGroup
+  [ testCase "local source versions constrain their own target namespace" $ do
+      let name = mkPackageName "local-package"
+          other = mkPackageName "other-root"
+          version = mkVersion [2]
+          scope = ConstraintScope (Just Host) (ScopeTarget name)
+          goal stage namespace qualifier = Q (PackagePath stage namespace qualifier) name
+      case pkgSpecifierConstraints (SpecificSourcePackage (PackageIdentifier name version)) of
+        [LabeledPackageConstraint constraint source] -> do
+          constraint @?= PackageConstraint scope (PackagePropertyVersion (thisVersion version))
+          source @?= ConstraintSourceUserTarget
+        _ -> assertFailure "expected one version constraint for the local source target"
+      constraintScopeMatches scope (goal Host DefaultNamespace QualToplevel) @?= True
+      constraintScopeMatches scope (goal Host (Independent name) QualToplevel) @?= True
+      constraintScopeMatches scope (goal Host (Independent other) QualToplevel) @?= False
+      constraintScopeMatches scope (goal Build (Independent name) QualToplevel) @?= False
+      constraintScopeMatches scope (goal Host (Independent name) (QualSetup name)) @?= False
+      constraintScopeMatches (ConstraintScope (Just Host) (ScopeQualified QualToplevel name)) (goal Host (Independent other) QualToplevel) @?= True
+  , makeGroup
       "readUserConstraint"
       (uncurry readUserConstraintTest)
       exampleConstraints

@@ -415,7 +415,9 @@ elabRequiresRegistration elab =
       -- as otherwise this will cause build failures once a
       -- target actually depends on lib:cpphs.
       build_target
-        || Cabal.hasPublicLib (elabPkgDescription elab)
+        || ( not (elabIsSourcePackageClosure elab)
+              && Cabal.hasPublicLib (elabPkgDescription elab)
+           )
         -- the next sub-condition below is currently redundant
         -- (see discussion in #5604 for more details), but it's
         -- being kept intentionally here as a safeguard because if
