@@ -111,6 +111,7 @@ import System.Directory
 import Prelude ()
 
 import Distribution.Client.ProjectBuilding
+import Distribution.Client.ProjectBuilding.UnpackedPackage (createHackageDocumentationArchives)
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectPlanOutput
 import Distribution.Client.ProjectPlanning hiding
@@ -537,6 +538,7 @@ runProjectPostBuildPhase
     -- Finally if there were any build failures then report them and throw
     -- an exception to terminate the program
     dieOnBuildFailures verbosity currentCommand elaboratedPlanToExecute buildOutcomes
+    createHackageDocumentationArchives verbosity distDirLayout elaboratedShared elaboratedPlanToExecute
 
 -- Note that it is a deliberate design choice that the 'buildTargets' is
 -- not passed to phase 1, and the various bits of input config is not

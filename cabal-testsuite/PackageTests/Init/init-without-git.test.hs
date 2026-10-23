@@ -13,8 +13,11 @@ main = do
       do
         ghc_path <- programPathM ghcProgram
         cabal_path <- programPathM cabalProgram
-        withSymlink ghc_path (bin </> "ghc") . withSymlink cabal_path (bin </> "cabal") .
-          withEnv [("PATH", Just bin)] $ do
+        gcc_path <- programPathM gccProgram
+        withSymlink ghc_path (bin </> "ghc")
+          . withSymlink cabal_path (bin </> "cabal")
+          . withSymlink gcc_path (bin </> "gcc")
+          . withEnv [("PATH", Just bin)] $ do
             cwd <- fmap testSourceCopyDir getTestEnv
 
             void . withDirectory cwd $ do
