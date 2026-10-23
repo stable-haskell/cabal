@@ -18,7 +18,13 @@ import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
 import Distribution.Client.RebuildMonad
+import Distribution.Client.DistDirLayout (betterPlatform, defaultStoreDirLayout)
+import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
 import Distribution.Client.Store
+import Distribution.Client.Toolchain (Machine (..), Toolchain (..))
+import qualified Distribution.Client.Utils.Json as Json
+import Distribution.Simple.Program.Db (emptyProgramDb)
+import qualified Data.Map as Map
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -53,6 +59,34 @@ testTargetAbi = do
   storeDirectory layout profiledCompiler platform @?= "store" </> "x86_64-linux" </> "ghc-9.14.1-profiling"
   assertBool "package databases must not alias" $
     storePackageDBPath layout compiler platform /= storePackageDBPath layout profiledCompiler platform
+  -- A qualified target identity renders canonically for plan output and
+  -- path helpers, independently of the host architecture.
+  let nativeToolchain = Toolchain compiler platform emptyProgramDb
+      profiledToolchain =
+        Toolchain
+          compiler
+            { compilerProperties =
+                Map.fromList
+                  [ ("Target name", "aarch64-apple-darwin-prof")
+                  , ("Target platform", "aarch64-apple-darwin")
+                  , ("Target ABI", "profiling")
+                  ]
+            }
+          platform
+          emptyProgramDb
+  betterPlatform nativeToolchain @?= "x86_64-linux"
+  betterPlatform profiledToolchain @?= "aarch64-apple-darwin-prof"
+  assertBool "incoming locks must use the selected target namespace" $
+    storeIncomingLock layout compiler platform (mkUnitId "foo-1.0-xyz")
+      /= storeIncomingLock layout profiledCompiler platform (mkUnitId "foo-1.0-xyz")
+  case lookup "target-name" (toolchainJsonFields Host profiledToolchain) of
+    Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
+    _ -> assertFailure "plan JSON omitted the canonical target-name field"
+  case lookup "build-target-name" (toolchainJsonFields Build profiledToolchain) of
+    Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
+    _ -> assertFailure "build-stage plan JSON omitted the canonical target-name field"
+  assertBool "the ABI crossing is independent of the architecture" $
+    betterPlatform nativeToolchain /= betterPlatform profiledToolchain
 
 testListEmpty :: Assertion
 testListEmpty =

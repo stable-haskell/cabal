@@ -19,6 +19,7 @@ module Distribution.Client.DistDirLayout
     -- * 'StoreDirLayout'
   , StoreDirLayout (..)
   , defaultStoreDirLayout
+  , betterPlatform
 
     -- * 'CabalDirLayout'
   , CabalDirLayout (..)
@@ -31,7 +32,6 @@ import Prelude ()
 
 import System.FilePath
 
-import qualified Data.Map as Map
 import Distribution.Client.Config
   ( defaultLogsDir
   , defaultStoreDir
@@ -50,7 +50,8 @@ import Distribution.Simple.Compiler
   , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
-  , compilerTargetAbi
+  , compilerTargetName
+  , renderTargetName
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
 import Distribution.System
@@ -344,18 +345,10 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock :: Compiler -> Platform -> UnitId -> FilePath
     storeIncomingLock compiler platform unitid =
       storeIncomingDirectory compiler platform </> prettyShow unitid <.> "lock"
--- | This returns the platform triple in the same string representation used by the compiler e.g. x86_64-unknown-linux.
--- If the compiler does not have a "Target platform" property, it falls back to pretty printing the Platform value in
--- the toolchain.
+-- | Return the canonical logical target name used in store and dist paths.
 betterPlatform :: Toolchain -> String
 betterPlatform toolchain =
-  Map.findWithDefault
-    (prettyShow (toolchainPlatform toolchain))
-    "Target platform"
-    (compilerProperties (toolchainCompiler toolchain))
-    ++ case compilerTargetAbi (toolchainCompiler toolchain) of
-      "" -> ""
-      abi -> "-" ++ abi
+  either error renderTargetName (compilerTargetName (toolchainPlatform toolchain) (toolchainCompiler toolchain))
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

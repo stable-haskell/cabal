@@ -3,12 +3,16 @@
 module UnitTests.Distribution.Client.ProjectPlanning (tests) where
 
 import Data.Binary (decode, encode)
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import Data.List (isInfixOf)
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import Distribution.Backpack (OpenUnitId (..))
 import Distribution.Backpack.ModuleShape (emptyModuleShape)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.CmdInstall (addLocalConfigToPkgs)
+import Distribution.Client.HashValue (hashValue)
+import Distribution.Client.PackageHash
 import Distribution.Client.ProjectConfig (lookupLocalPackageConfig, resolveSolverSettings)
 import Distribution.Client.ProjectConfig.Types
   ( MapMappend (..)
@@ -38,7 +42,7 @@ import Distribution.Simple.Program.Db (defaultProgramDb, userSpecifyPath)
 import Distribution.Simple.Setup (emptyConfigFlags)
 import Distribution.Solver.Types.Machine (Machine (..), toolMachine)
 import Distribution.Solver.Types.Settings (IndependentGoals (..))
-import Distribution.System (Arch (..), OS (..), Platform (..))
+import Distribution.System (Arch (..), OS (..), Platform (..), buildPlatform)
 import Distribution.Types.ComponentName
 import Distribution.Types.Flag (mkFlagAssignment, mkFlagName)
 import Distribution.Types.LibraryName
@@ -52,6 +56,7 @@ tests =
   [ testGroup "Build Target Tests" buildTargetTests
   , testGroup "sameCompiler" sameCompilerTests
   , testGroup "projectPackageDbsFor" projectPackageDbsForTests
+  , testGroup "Qualified target package hash" packageHashTargetTests
   , testGroup "Intrinsic profiling configuration layers" profilingBuildOptionsTests
   , testGroup "Install-local target configuration" installPromotionTests
   , testCase "coverage configure flags include canonical sibling unit ids" testCoverageDependencies
@@ -325,6 +330,88 @@ testBuildOptions =
     , LBC.relocatable = False
     }
 
+packageHashTargetTests :: [TestTree]
+packageHashTargetTests =
+  [ testCase "package hash renders canonical target name and retains compiler build ABI" $ do
+      let machine = packageHash "x86_64-unknown-linux-gnu" "build-abi"
+          profiling = packageHash "x86_64-unknown-linux-gnu-prof" "build-abi"
+          otherBuildAbi = packageHash "x86_64-unknown-linux-gnu" "other-build-abi"
+          rendered = LBS.unpack (renderPackageHashInputs machine)
+          profRendered = LBS.unpack (renderPackageHashInputs profiling)
+      assertBool "hash input must label the canonical target name" $
+        "target-name: x86_64-unknown-linux-gnu\n" `isInfixOf` rendered
+      assertBool "hash input must preserve the compiler build ABI" $
+        "compilerabi: build-abi" `isInfixOf` rendered
+      assertBool "different target identities must change package hash input" $
+        rendered /= profRendered
+      assertBool "target identity must affect the package hash" $
+        hashPackageHashInputs machine /= hashPackageHashInputs profiling
+      assertBool "build ABI must remain an independent package hash input" $
+        "compilerabi: other-build-abi" `isInfixOf` LBS.unpack (renderPackageHashInputs otherBuildAbi)
+          && hashPackageHashInputs machine /= hashPackageHashInputs otherBuildAbi
+  ]
+  where
+    packageHash targetName buildAbi =
+      PackageHashInputs
+        { pkgHashPkgId = PackageIdentifier (mkPackageName "target-test") (mkVersion [1])
+        , pkgHashComponent = Nothing
+        , pkgHashSourceHash = hashValue mempty
+        , pkgHashPkgConfigDeps = mempty
+        , pkgHashDirectDeps = mempty
+        , pkgHashOtherConfig =
+            PackageHashConfigInputs
+              { pkgHashCompilerId = CompilerId GHC (mkVersion [9, 14, 1])
+              , pkgHashCompilerABI = AbiTag buildAbi
+              , pkgHashTargetName = targetName
+              , pkgHashPlatform = buildPlatform
+              , pkgHashFlagAssignment = mempty
+              , pkgHashConfigureScriptArgs = []
+              , pkgHashVanillaLib = True
+              , pkgHashSharedLib = False
+              , pkgHashDynExe = False
+              , pkgHashFullyStaticExe = False
+              , pkgHashGHCiLib = False
+              , pkgHashProfLib = False
+              , pkgHashProfExe = False
+              , pkgHashProfLibDetail = ProfDetailDefault
+              , pkgHashProfExeDetail = ProfDetailDefault
+              , pkgHashBytecodeLib = False
+              , pkgHashCoverage = False
+              , pkgHashOptimization = NormalOptimisation
+              , pkgHashSplitObjs = False
+              , pkgHashSplitSections = False
+              , pkgHashStripLibs = False
+              , pkgHashStripExes = True
+              , pkgHashDebugInfo = NormalDebugInfo
+              , pkgHashProgramArgs = mempty
+              , pkgHashExtraLibDirs = []
+              , pkgHashExtraLibDirsStatic = []
+              , pkgHashExtraFrameworkDirs = []
+              , pkgHashExtraIncludeDirs = []
+              , pkgHashProgPrefix = Nothing
+              , pkgHashProgSuffix = Nothing
+              , pkgHashPackageDbs = []
+              , pkgHashDocumentation = False
+              , pkgHashHaddockHoogle = False
+              , pkgHashHaddockHtml = False
+              , pkgHashHaddockHtmlLocation = Nothing
+              , pkgHashHaddockForeignLibs = False
+              , pkgHashHaddockExecutables = False
+              , pkgHashHaddockTestSuites = False
+              , pkgHashHaddockBenchmarks = False
+              , pkgHashHaddockInternal = False
+              , pkgHashHaddockCss = Nothing
+              , pkgHashHaddockLinkedSource = False
+              , pkgHashHaddockQuickJump = False
+              , pkgHashHaddockContents = Nothing
+              , pkgHashHaddockIndex = Nothing
+              , pkgHashHaddockBaseUrl = Nothing
+              , pkgHashHaddockResourcesDir = Nothing
+              , pkgHashHaddockOutputDir = Nothing
+              , pkgHashHaddockUseUnicode = False
+              }
+        }
+
 installPromotionTests :: [TestTree]
 installPromotionTests =
   [ testCase "promotion retains its origin and genuine package settings" $ do
@@ -370,7 +457,10 @@ installPromotionTests =
       Map.lookup name (solverSettingFlagAssignments settings) @?= Just assignment
       length (solverSettingConstraints settings) @?= 1
   , testCase "promoted details survive cache serialization and change its input" $ do
-      (decode (encode promoted) :: ProjectConfig) @?= promoted
+      let restored = decode (encode promoted) :: ProjectConfig
+      restored @?= promoted
+      forMachine Build restored @?= forMachine Build promoted
+      forMachine Host restored @?= forMachine Host promoted
       let changed = promoted{projectConfigInstallPackages = MapMappend (Map.singleton name local{packageConfigProfDetail = Flag ProfDetailAllFunctions})}
       assertBool "profiling detail must be part of the monitored configuration" (encode promoted /= encode changed)
   ]
@@ -379,6 +469,9 @@ installPromotionTests =
     local =
       mempty
         { packageConfigProf = Flag True
+        , packageConfigProfLib = Flag True
+        , packageConfigProfExe = Flag True
+        , packageConfigProfShared = Flag False
         , packageConfigProfDetail = Flag ProfDetailToplevelFunctions
         , packageConfigProfLibDetail = Flag ProfDetailTopLate
         , packageConfigOptimization = Flag MaximumOptimisation
@@ -415,6 +508,7 @@ profilingBuildOptionsTests =
       let normalized = normalize Build unscoped
       effectiveProfiling normalized @?= (False, False, False)
       packageConfigProfLib normalized @?= NoFlag
+      packageConfigProfExe normalized @?= NoFlag
       packageConfigProfShared normalized @?= NoFlag
       packageConfigProfDetail normalized @?= NoFlag
       packageConfigProfLibDetail normalized @?= NoFlag
@@ -445,6 +539,27 @@ profilingBuildOptionsTests =
       let scoped = mempty{packageConfigProfDetail = Flag ProfDetailToplevelFunctions}
       packageConfigProfDetail (normalize Build unscoped <> scoped)
         @?= Flag ProfDetailToplevelFunctions
+  , testCase "all explicit Build profiling fields survive target scoping" $ do
+      let scoped =
+            mempty
+              { packageConfigProf = Flag True
+              , packageConfigProfLib = Flag False
+              , packageConfigProfExe = Flag True
+              , packageConfigProfShared = Flag True
+              , packageConfigProfDetail = Flag ProfDetailAllFunctions
+              , packageConfigProfLibDetail = Flag ProfDetailTopLate
+              }
+          result = normalize Build unscoped <> scoped
+      map
+        (\f -> f result)
+        [ packageConfigProf
+        , packageConfigProfLib
+        , packageConfigProfExe
+        , packageConfigProfShared
+        ]
+        @?= [Flag True, Flag False, Flag True, Flag True]
+      packageConfigProfDetail result @?= Flag ProfDetailAllFunctions
+      packageConfigProfLibDetail result @?= Flag ProfDetailTopLate
   , testCase "ordinary cross builds retain existing unscoped options" $
       normaliseUnscopedPackageConfig Build ordinaryCompiler ordinaryCompiler unscoped @?= unscoped
   , testCase "matching intrinsic build ABI retains its options" $

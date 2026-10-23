@@ -192,6 +192,7 @@ type PackageSourceHash = HashValue
 data PackageHashConfigInputs = PackageHashConfigInputs
   { pkgHashCompilerId :: CompilerId
   , pkgHashCompilerABI :: AbiTag
+  , pkgHashTargetName :: String
   , pkgHashPlatform :: Platform
   , pkgHashFlagAssignment :: FlagAssignment -- complete not partial
   , pkgHashConfigureScriptArgs :: [String] -- just ./configure for build-type Configure
@@ -305,6 +306,7 @@ renderPackageHashInputs
           , -- and then all the config
             entry "compilerid" prettyShow pkgHashCompilerId
           , entry "compilerabi" prettyShow pkgHashCompilerABI
+          , entry "target-name" id pkgHashTargetName
           , entry "platform" prettyShow pkgHashPlatform
           , opt "flags" mempty showFlagAssignment pkgHashFlagAssignment
           , opt "configure-script" [] unwords pkgHashConfigureScriptArgs
