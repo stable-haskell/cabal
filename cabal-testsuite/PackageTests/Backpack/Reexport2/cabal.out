@@ -1,4 +1,7 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Error:
     Problem with module re-exports:
@@ -7,4 +10,6 @@ Error:
         It occurs in neither the 'exposed-modules' of this package,
         nor any of its 'build-depends' dependencies.
     In the stanza 'library'
-    In the inplace package 'Reexport2-1.0'
+    In the local package 'Reexport2-1.0'
+    CallStack (from HasCallStack):
+  dieProgress, called at src/Distribution/Backpack/LinkedComponent.hs:<LINE>:<COL> in <CABAL_UNIT>:Distribution.Backpack.LinkedComponent

@@ -8,10 +8,15 @@ Installing library in <PATH>
 # Setup register
 Registering library for p-1.0...
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - q-1.0 (exe:q) (first run)
+ - host q-1.0 (exe:q) (first run)
 Configuring executable 'q' for q-1.0...
 Preprocessing executable 'q' for q-1.0...
 Building executable 'q' for q-1.0...
+Installing executable q in <PATH>
+Warning: The directory <ROOT>/cabal-manual-packagedb.dist/work/./q/dist/store/host/<ARCH>/bin is not in the system search path.

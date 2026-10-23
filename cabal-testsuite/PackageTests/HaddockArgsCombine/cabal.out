@@ -1,8 +1,11 @@
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - HaddockArgsCombine-0.1.0.0 (exe:HaddockArgsCombine) (first run)
+ - host HaddockArgsCombine-0.1.0.0 (exe:HaddockArgsCombine) (first run)
 Configuring executable 'HaddockArgsCombine' for HaddockArgsCombine-0.1.0.0...
 Preprocessing executable 'HaddockArgsCombine' for HaddockArgsCombine-0.1.0.0...
 Building executable 'HaddockArgsCombine' for HaddockArgsCombine-0.1.0.0...

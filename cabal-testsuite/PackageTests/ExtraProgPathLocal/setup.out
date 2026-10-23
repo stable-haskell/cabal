@@ -1,8 +1,13 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - client-0.1.0.0 (exe:hello-world) (first run)
+ - host client-0.1.0.0 (exe:hello-world) (first run)
 Configuring executable 'hello-world' for client-0.1.0.0...
 Preprocessing executable 'hello-world' for client-0.1.0.0...
 Building executable 'hello-world' for client-0.1.0.0...
+Installing executable hello-world in <PATH>
+Warning: The directory <ROOT>/setup.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

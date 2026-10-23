@@ -1,8 +1,12 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - bug-0 (test:test) (first run)
+ - host bug-0 (test:test) (first run)
 Configuring test suite 'test' for bug-0...
 Preprocessing test suite 'test' for bug-0...
 Building test suite 'test' for bug-0...
+Warning: No executables and no library found. Nothing to do.

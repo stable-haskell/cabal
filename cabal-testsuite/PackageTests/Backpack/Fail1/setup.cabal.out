@@ -5,3 +5,5 @@ Error:
         MissingReq
     In mixins: Fail1:sig requires (MissingReq as A)
     In the stanza library
+    CallStack (from HasCallStack):
+  dieProgress, called at src/Distribution/Backpack/LinkedComponent.hs:<LINE>:<COL> in <CABAL_UNIT>:Distribution.Backpack.LinkedComponent

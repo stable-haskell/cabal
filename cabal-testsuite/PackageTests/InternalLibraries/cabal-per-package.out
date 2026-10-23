@@ -1,6 +1,16 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Error:
     Internal libraries only supported with per-component builds.
     Per-component builds were disabled because you passed --disable-per-component
-    In the inplace package 'p-0.1.0.0'
+    In the local package 'p-0.1.0.0'
+    CallStack (from HasCallStack):
+  dieProgress, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  elaborateSolverToComponents, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  elaboratedInstallPlan, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  elaborateInstallPlan, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  phaseElaboratePlan, called at src/Distribution/Client/ProjectPlanning.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectPlanning
+  rebuildInstallPlan, called at src/Distribution/Client/ProjectOrchestration.hs:<LINE>:<COL> in <CABAL_INSTALL_UNIT>:Distribution.Client.ProjectOrchestration

@@ -3,3 +3,7 @@ Configuring DepCycle-1.0...
 Error:
     Components in the package DepCycle-1.0 depend on each other in a cyclic way:
     'library 'bar'' depends on 'library 'foo'' depends on 'library 'bar''
+    CallStack (from HasCallStack):
+  dieProgress, called at src/Distribution/Backpack/Configure.hs:<LINE>:<COL> in <CABAL_UNIT>:Distribution.Backpack.Configure
+  configureComponentLocalBuildInfos, called at src/Distribution/Simple/Configure.hs:<LINE>:<COL> in <CABAL_UNIT>:Distribution.Simple.Configure
+  configureComponents, called at src/Distribution/Simple/Configure.hs:<LINE>:<COL> in <CABAL_UNIT>:Distribution.Simple.Configure

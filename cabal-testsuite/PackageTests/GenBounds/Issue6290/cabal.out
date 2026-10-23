@@ -1,3 +1,6 @@
 # cabal gen-bounds
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 All bounds up-to-date

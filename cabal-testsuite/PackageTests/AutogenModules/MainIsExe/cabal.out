@@ -1,15 +1,18 @@
 # cabal build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - MainIsExe-0.1 (exe:Exe) (first run)
+ - host MainIsExe-0.1 (exe:Exe) (first run)
 Configuring executable 'Exe' for MainIsExe-0.1...
 Preprocessing executable 'Exe' for MainIsExe-0.1...
 Error: [Cabal-7125]
-Failed to build MainIsExe-0.1-inplace-Exe. The exception was:
+Failed to build MainIsExe-0.1-Exe. The exception was:
   -----BEGIN CABAL OUTPUT-----
 Error: [Cabal-7554]
-can't find source for MyDummy in ., cabal.dist/work/./dist/build/<ARCH>/ghc-<GHCVER>/MainIsExe-0.1/x/Exe/build/Exe/autogen, cabal.dist/work/./dist/build/<ARCH>/ghc-<GHCVER>/MainIsExe-0.1/x/Exe/build/global-autogen
+can't find source for MyDummy in ., <ROOT>/cabal.dist/work/./dist/build/host/<ARCH>/MainIsExe-0.1-Exe/build/Exe/autogen, <ROOT>/cabal.dist/work/./dist/build/host/<ARCH>/MainIsExe-0.1-Exe/build/global-autogen
 CallStack (from HasCallStack):
-  dieWithException, called at src/Distribution/Simple/PreProcess.hs:315:13 in Cabal-3.17.0.0-inplace:Distribution.Simple.PreProcess
+  dieWithException, called at src/Distribution/Simple/PreProcess.hs:<LINE>:<COL> in <CABAL_UNIT>:Distribution.Simple.PreProcess
 

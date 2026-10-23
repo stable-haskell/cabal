@@ -1,8 +1,13 @@
 # cabal build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - A-0.1.0.0 (exe:A) (first run)
+ - host A-0.1.0.0 (exe:A) (first run)
 Configuring executable 'A' for A-0.1.0.0...
 Preprocessing executable 'A' for A-0.1.0.0...
 Building executable 'A' for A-0.1.0.0...
+Installing executable A in <PATH>
+Warning: The directory <ROOT>/build-info-exe.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

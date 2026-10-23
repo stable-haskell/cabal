@@ -1,7 +1,36 @@
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - fake-package-0 (exe:script-with_sp) (first run)
+ - host fake-package-0 (exe:script-with_sp) (first run)
 Configuring executable 'script-with_sp' for fake-package-0...
 Building executable 'script-with_sp' for fake-package-0...
+Installing executable script-with_sp in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
+# cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
+Resolving dependencies...
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
+In order, the following will be built:
+ - host fake-package-0 (exe:script-with_output) (first run)
+Configuring executable 'script-with_output' for fake-package-0...
+Building executable 'script-with_output' for fake-package-0...
+Installing executable script-with_output in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.
+# cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
+Resolving dependencies...
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
+In order, the following will be built:
+ - host fake-package-0 (exe:script-without_extension) (first run)
+Configuring executable 'script-without_extension' for fake-package-0...
+Building executable 'script-without_extension' for fake-package-0...
+Installing executable script-without_extension in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

@@ -1,9 +1,16 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - inplace-dep-1.0 (lib) (first run)
+ - host inplace-dep-1.0 (lib) (first run)
 Configuring library for inplace-dep-1.0...
 Preprocessing library for inplace-dep-1.0...
 Building library for inplace-dep-1.0...
+Installing library in <PATH>
 # cabal v2-exec
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>

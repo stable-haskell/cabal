@@ -1,8 +1,13 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - T8875-0.1.0.0 (exe:foo) (first run)
+ - host T8875-0.1.0.0 (exe:foo) (first run)
 Configuring executable 'foo' for T8875-0.1.0.0...
 Preprocessing executable 'foo' for T8875-0.1.0.0...
 Building executable 'foo' for T8875-0.1.0.0...
+Installing executable foo in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

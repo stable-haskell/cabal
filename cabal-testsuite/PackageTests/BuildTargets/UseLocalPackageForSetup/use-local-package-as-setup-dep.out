@@ -1,14 +1,17 @@
 # cabal v2-update
 Downloading the latest package list from test-local-repo
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Error: [Cabal-7107]
 Could not resolve dependencies:
-[__0] trying: pkg-1.0 (user goal)
-[__1] next goal: setup-dep (user goal)
-[__1] rejecting: setup-dep-2.0 (conflict: pkg => setup-dep>=1 && <2)
-[__1] rejecting: setup-dep-1.0 (constraint from user target requires ==2.0)
-[__1] fail (backjumping, conflict set: pkg, setup-dep)
-After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: setup-dep (3), pkg (2)
+[__0] trying: host:pkg == host:source:pkg-1.0 (user goal)
+[__1] next goal: host:setup-dep (user goal)
+[__1] rejecting: host:setup-dep == host:source:setup-dep-2.0 (conflict: host:pkg => host:setup-dep>=1 && <2)
+[__1] rejecting: host:setup-dep == host:source:setup-dep-1.0 (constraint from user target requires ==2.0)
+[__1] fail (backjumping, conflict set: host:pkg, host:setup-dep)
+After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: host:setup-dep (3), host:pkg (2)
 # pkg my-exe
 Main.hs: setup-dep from repo

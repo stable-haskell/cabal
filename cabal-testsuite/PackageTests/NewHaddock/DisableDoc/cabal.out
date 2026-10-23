@@ -1,11 +1,14 @@
 # cabal v2-update
 Downloading the latest package list from test-local-repo
 # cabal haddock
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - A-0.1.0.0 (lib) (requires build)
- - B-0.1.0.0 (lib) (first run)
+ - host A-0.1.0.0 (lib) (requires build)
+ - host B-0.1.0.0 (lib) (first run)
 Configuring library for A-0.1.0.0...
 Preprocessing library for A-0.1.0.0...
 Building library for A-0.1.0.0...
@@ -13,4 +16,4 @@ Installing library in <PATH>
 Configuring library for B-0.1.0.0...
 Preprocessing library for B-0.1.0.0...
 Running Haddock on library for B-0.1.0.0...
-Documentation created: <ROOT>/cabal.dist/work/dist/build/<ARCH>/ghc-<GHCVER>/B-0.1.0.0/doc/html/B
+Documentation created: <ROOT>/cabal.dist/work/dist/build/host/<ARCH>/B-0.1.0.0/doc/html/B

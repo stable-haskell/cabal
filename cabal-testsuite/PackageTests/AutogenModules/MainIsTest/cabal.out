@@ -1,16 +1,19 @@
 # cabal build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - MainIsTest-0.1 (test:Test) (first run)
+ - host MainIsTest-0.1 (test:Test) (first run)
 Configuring test suite 'Test' for MainIsTest-0.1...
 Preprocessing test suite 'Test' for MainIsTest-0.1...
 Building test suite 'Test' for MainIsTest-0.1...
 Error: [Cabal-7125]
-Failed to build MainIsTest-0.1-inplace-Test. The exception was:
+Failed to build MainIsTest-0.1-Test. The exception was:
   -----BEGIN CABAL OUTPUT-----
 Error: [Cabal-2115]
 MyDummy.hs doesn't exist
 CallStack (from HasCallStack):
-  dieWithException, called at src/Distribution/Simple/Utils.hs:1392:16 in Cabal-3.17.0.0-inplace:Distribution.Simple.Utils
+  dieWithException, called at src/Distribution/Simple/Utils.hs:<LINE>:<COL> in <CABAL_UNIT>:Distribution.Simple.Utils
 

@@ -1,6 +1,9 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following would be built:
- - issue6961-0 (lib:internal-lib) (first run)
- - issue6961-0 (test:example) (first run)
+ - host issue6961-0 (lib:internal-lib) (first run)
+ - host issue6961-0 (test:example) (first run)

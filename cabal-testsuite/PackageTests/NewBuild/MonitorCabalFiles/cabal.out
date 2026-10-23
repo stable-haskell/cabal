@@ -1,22 +1,31 @@
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - q-0.1.0.0 (exe:q) (first run)
+ - host q-0.1.0.0 (exe:q) (first run)
 Configuring executable 'q' for q-0.1.0.0...
 Preprocessing executable 'q' for q-0.1.0.0...
 Building executable 'q' for q-0.1.0.0...
 Error: [Cabal-7125]
-Failed to build q-0.1.0.0-inplace-q.
+Failed to build q-0.1.0.0-q.
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - p-1.0 (lib) (first run)
- - q-0.1.0.0 (exe:q) (configuration changed)
+ - host p-1.0 (lib) (first run)
+ - host q-0.1.0.0 (exe:q) (configuration changed)
 Configuring library for p-1.0...
 Preprocessing library for p-1.0...
 Building library for p-1.0...
+Installing library in <PATH>
 Configuring executable 'q' for q-0.1.0.0...
 Preprocessing executable 'q' for q-0.1.0.0...
 Building executable 'q' for q-0.1.0.0...
+Installing executable q in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

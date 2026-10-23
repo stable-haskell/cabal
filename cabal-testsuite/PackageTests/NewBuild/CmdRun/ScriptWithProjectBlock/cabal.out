@@ -1,7 +1,12 @@
 # cabal v2-run
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O2
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O2
 In order, the following will be built:
- - fake-package-0 (exe:script-s.hs) (first run)
+ - host fake-package-0 (exe:script-s.hs) (first run)
 Configuring executable 'script-s.hs' for fake-package-0...
 Building executable 'script-s.hs' for fake-package-0...
+Installing executable script-s.hs in <PATH>
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin is not in the system search path.

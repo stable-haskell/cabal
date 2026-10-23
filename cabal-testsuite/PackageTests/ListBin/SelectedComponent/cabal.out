@@ -1,6 +1,9 @@
 # cabal list-bin
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - SelectedComponent-1.0.0 (exe:testexe) (first run)
-<ROOT>/cabal.dist/work/./dist/build/<ARCH>/ghc-<GHCVER>/SelectedComponent-1.0.0/build/testexe/testexe
+ - host SelectedComponent-1.0.0 (exe:testexe) (first run)
+<ROOT>/cabal.dist/work/./dist/store/host/<ARCH>/bin/testexe

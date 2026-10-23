@@ -1,27 +1,34 @@
 # cabal v2-update
 Downloading the latest package list from test-local-repo
 # cabal v2-install
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - mybuilder-0.1.0.0 (exe:mybuilder) (requires build)
+ - host mybuilder-0.1.0.0 (exe:mybuilder) (requires build)
 Configuring executable 'mybuilder' for mybuilder-0.1.0.0...
 Preprocessing executable 'mybuilder' for mybuilder-0.1.0.0...
 Building executable 'mybuilder' for mybuilder-0.1.0.0...
 Installing executable mybuilder in <PATH>
-Warning: The directory <ROOT>/cabal.dist/home/.cabal/store/ghc-<GHCVER>/incoming/new-<RAND><ROOT>/cabal.dist/home/.cabal/store/ghc-<GHCVER>/<PACKAGE>-<HASH>/bin is not in the system search path.
+Warning: The directory <ROOT>/cabal.dist/home/.cabal/store/host/<ARCH>/bin is not in the system search path.
 Symlinking 'mybuilder' to '<ROOT>/cabal.dist/install/mybuilder'
 # cabal v2-build
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Build profile: -w ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
- - mybuilder-0.2.0.0 (exe:mybuilder) (requires build)
- - cabal-bug-build-tool-0 (lib) (first run)
+ - build mybuilder-0.2.0.0 (exe:mybuilder) (requires build)
+ - host cabal-bug-build-tool-0 (lib) (first run)
 Configuring executable 'mybuilder' for mybuilder-0.2.0.0...
 Preprocessing executable 'mybuilder' for mybuilder-0.2.0.0...
 Building executable 'mybuilder' for mybuilder-0.2.0.0...
 Installing executable mybuilder in <PATH>
-Warning: The directory <ROOT>/cabal.dist/home/.cabal/store/ghc-<GHCVER>/incoming/new-<RAND><ROOT>/cabal.dist/home/.cabal/store/ghc-<GHCVER>/<PACKAGE>-<HASH>/bin is not in the system search path.
+Warning: The directory <ROOT>/cabal.dist/work/./dist/store/build/<ARCH>/bin is not in the system search path.
 Configuring library for cabal-bug-build-tool-0...
 Preprocessing library for cabal-bug-build-tool-0...
 Building library for cabal-bug-build-tool-0...
+Installing library in <PATH>

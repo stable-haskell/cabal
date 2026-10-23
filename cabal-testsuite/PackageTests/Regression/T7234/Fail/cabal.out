@@ -1,9 +1,12 @@
 # cabal v2-build
 Warning: The package description file ./issue7234.cabal has warnings: issue7234.cabal:13:3: The field "other-extensions" is available only since the Cabal specification version 1.10.
+Toolchains:
+- build compiler ghc-<GHCVER>
+- host compiler ghc-<GHCVER>
 Resolving dependencies...
 Error: [Cabal-7107]
 Could not resolve dependencies:
-[__0] next goal: issue7234 (user goal)
-[__0] rejecting: issue7234-0 (conflict: requires unknown extension HopefullyThisExtensionWontOccur)
-[__0] fail (backjumping, conflict set: issue7234)
-After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: issue7234 (2)
+[__0] next goal: host:issue7234 (user goal)
+[__0] rejecting: host:issue7234 == host:source:issue7234-0 (conflict: requires unknown extension HopefullyThisExtensionWontOccur)
+[__0] fail (backjumping, conflict set: host:issue7234)
+After searching the rest of the dependency tree exhaustively, these were the goals I've had most trouble fulfilling: host:issue7234 (2)
