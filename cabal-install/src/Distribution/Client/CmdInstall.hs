@@ -448,6 +448,10 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
     getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile
   packageDbs <- getPackageDbStack compiler platform projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
   installedIndex <- getInstalledPackages verbosity compiler packageDbs progDb
+  -- Installations must outlive the temporary project: resolve the
+  -- configured persistent store layout for use below.
+  mstoreDir <- traverse makeAbsolute $ flagToMaybe projectConfigStoreDir
+  let installStoreDirLayout = cabalStoreDirLayout (mkCabalDirLayout mstoreDir (flagToMaybe projectConfigLogsDir))
 
   let
     (envSpecs, nonGlobalEnvEntries) =
@@ -459,7 +463,11 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   globalTmp <- getTemporaryDirectory
 
   withTempDirectory globalTmp "cabal-install." $ \tmpDir -> do
-    distDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
+    scratchDistDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
+    -- Installations must outlive the temporary project and any --builddir
+    -- scratch directory. Use the configured persistent store for both the
+    -- planner's registration database and the environment written below.
+    let distDirLayout = scratchDistDirLayout{distStoreDirLayout = installStoreDirLayout}
 
     uriSpecs <-
       runRebuild tmpDir $
