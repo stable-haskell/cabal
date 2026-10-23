@@ -13,6 +13,6 @@ main = cabalTest $ do
   r <- recordMode DoNotRecord $ cabal' "v2-build" ["T4288"]
   assertOutputContains "This is setup-helper-1.0." r
   "In order, the following will be built:\n\
-  \ - setup-helper-1.0 (lib:setup-helper) (first run)\n\
-  \ - T4288-1.0 (lib:T4288) (first run)"
+  \ - build setup-helper-1.0 (lib:setup-helper) (first run)\n\
+  \ - host T4288-1.0 (lib:T4288) (first run)"
     & flip (assertOn isInfixOf multilineNeedleHaystack) r

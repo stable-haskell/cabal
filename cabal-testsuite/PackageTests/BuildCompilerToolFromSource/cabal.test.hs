@@ -2,7 +2,7 @@ import Test.Cabal.Prelude
 
 import Distribution.Package (mkPackageName)
 import System.FilePath ((</>))
-import Test.Cabal.Plan (ConfiguredInplace (..), InstallItem (..), Plan (..), Stage (..))
+import Test.Cabal.Plan (ConfiguredInplace (..), InstallItem (..), Plan (..), PlanStage (..))
 
 -- Build a build-tool dependency FROM SOURCE with a distinct build compiler.
 --
@@ -35,7 +35,7 @@ main = cabalTest . recordMode DoNotRecord $ do
             [ configuredInplaceDistDir c
             | AConfiguredInplace c <- planInstallPlan plan
             , configuredInplacePackageName c == mkPackageName "tool"
-            , configuredInplaceStage c == Build
+            , configuredInplaceStage c == BuildStage
             ]
       toolDist <- case toolDists of
         [d] -> return d

@@ -1,0 +1,5 @@
+{- cabal:
+build-depends: base
+ghc-options: -o ignored-output -o "final output.bin"
+-}
+main = putStrLn "Explicit output"

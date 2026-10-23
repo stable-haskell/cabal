@@ -2,7 +2,7 @@ import Test.Cabal.Prelude
 
 import Distribution.Package (mkPackageName)
 import System.FilePath ((</>))
-import Test.Cabal.Plan (ConfiguredInplace (..), InstallItem (..), Plan (..), Stage (..))
+import Test.Cabal.Plan (ConfiguredInplace (..), InstallItem (..), Plan (..), PlanStage (..))
 
 -- A build tool that itself has a build tool and a custom Setup.hs, under a
 -- distinct build compiler.
@@ -52,7 +52,7 @@ main = cabalTest . recordMode DoNotRecord $ do
         [ configuredInplaceDistDir c
         | AConfiguredInplace c <- planInstallPlan plan
         , configuredInplacePackageName c == mkPackageName name
-        , configuredInplaceStage c == Build
+        , configuredInplaceStage c == BuildStage
         ] of
         [d] -> return d
         ds -> fail ("expected exactly one build-stage copy of " ++ name ++ " in the plan, found " ++ show ds)

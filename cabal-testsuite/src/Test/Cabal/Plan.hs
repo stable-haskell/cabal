@@ -8,16 +8,19 @@ module Test.Cabal.Plan
   , InstallItem (..)
   , ConfiguredInplace (..)
   , ConfiguredGlobal (..)
-  , Stage (..)
+  , PlanStage (..)
   , Revision (..)
+  , decodePlan
   , planDistDir
+  , planDistDirForStage
   , buildInfoFile
+  , buildInfoFileForStage
   ) where
 
 import Control.Monad
 import Data.Aeson
 import Data.Aeson.Types
-import Data.Maybe (fromMaybe)
+import qualified Data.ByteString.Lazy as BS
 import qualified Data.Text as Text
 import Distribution.Package
 import Distribution.Parsec (eitherParsec, simpleParsec)
@@ -29,6 +32,18 @@ import Distribution.Types.Version
 data Plan = Plan {planInstallPlan :: [InstallItem]}
   deriving (Show)
 
+data PlanStage = BuildStage | HostStage
+  deriving (Eq, Show)
+
+instance FromJSON PlanStage where
+  parseJSON = withText "PlanStage" $ \s -> case s of
+    "build" -> pure BuildStage
+    "host" -> pure HostStage
+    _ -> fail $ "unrecognized package stage: " ++ Text.unpack s
+
+decodePlan :: BS.ByteString -> Either String Plan
+decodePlan = eitherDecode
+
 data InstallItem
   = APreExisting
   | AConfiguredGlobal ConfiguredGlobal
@@ -37,41 +52,27 @@ data InstallItem
 
 -- local or inplace package
 data ConfiguredInplace = ConfiguredInplace
-  { configuredInplaceDistDir :: FilePath
+  { configuredInplaceStage :: PlanStage
+  , configuredInplaceDistDir :: FilePath
   , configuredInplaceBuildInfo :: Maybe FilePath
   , configuredInplacePackageName :: PackageName
   , configuredInplaceVersion :: Version
   , configuredInplaceRevision :: Revision
   , configuredInplaceComponentName :: Maybe ComponentName
-  , configuredInplaceStage :: Stage
   }
   deriving (Show)
 
 data ConfiguredGlobal = ConfiguredGlobal
-  { configuredGlobalBinFile :: Maybe FilePath
+  { configuredGlobalStage :: PlanStage
+  , configuredGlobalBinFile :: Maybe FilePath
+  , configuredGlobalDistDir :: Maybe FilePath
+  , configuredGlobalBuildInfo :: Maybe FilePath
   , configuredGlobalPackageName :: PackageName
   , configuredGlobalVersion :: Version
   , configuredGlobalRevision :: Revision
   , configuredGlobalComponentName :: Maybe ComponentName
-  , configuredGlobalStage :: Stage
   }
   deriving (Show)
-
--- | The build stage of a plan entry, as recorded in the @stage@ field of
--- plan.json. Under cross-compilation the same package can appear at both
--- stages; in an ordinary build everything is on the host stage.
-data Stage = Build | Host
-  deriving (Eq, Show)
-
-instance FromJSON Stage where
-  parseJSON = withText "Stage" $ \t -> case Text.unpack t of
-    "build" -> return Build
-    "host" -> return Host
-    s -> fail ("unrecognized value of 'stage' field: " ++ s)
-
--- | Older plan.json files have no @stage@ field; everything was host then.
-parseStage :: Object -> Parser Stage
-parseStage v = fromMaybe Host <$> v .:? "stage"
 
 newtype Revision = Revision Int
   deriving (Show, Eq, FromJSON)
@@ -85,37 +86,47 @@ instance FromJSON InstallItem where
     t <- v .: "type"
     case t :: String of
       "pre-existing" -> return APreExisting
-      "configured" -> do
-        s <- v .: "style"
-        case s :: String of
-          "global" -> AConfiguredGlobal `fmap` parseJSON obj
-          "inplace" -> AConfiguredInplace `fmap` parseJSON obj
-          "local" -> AConfiguredInplace `fmap` parseJSON obj
-          _ -> fail $ "unrecognized value of 'style' field: " ++ s
+      "configured" -> configured
+      "installed" -> configured
       _ -> fail "unrecognized value of 'type' field"
+    where
+      configured = do
+        s <- v .:? "style"
+        case s :: Maybe String of
+          -- Staged plans use a project-local store for every component and
+          -- no longer distinguish installed/inplace build styles.
+          Nothing -> do
+            _ <- v .: "stage" :: Parser PlanStage
+            AConfiguredGlobal <$> parseJSON obj
+          Just "global" -> AConfiguredGlobal <$> parseJSON obj
+          Just "inplace" -> AConfiguredInplace <$> parseJSON obj
+          Just "local" -> AConfiguredInplace <$> parseJSON obj
+          Just other -> fail $ "unrecognized value of 'style' field: " ++ other
   parseJSON invalid = typeMismatch "InstallItem" invalid
 
 instance FromJSON ConfiguredInplace where
   parseJSON (Object v) = do
+    stage <- v .:? "stage" .!= HostStage
     dist_dir <- v .: "dist-dir"
     build_info <- v .:? "build-info"
     pkg_name <- v .: "pkg-name"
     pkg_version <- v .: "pkg-version"
     pkg_revision <- v .: "pkg-revision"
     component_name <- v .:? "component-name"
-    stage <- parseStage v
-    return (ConfiguredInplace dist_dir build_info pkg_name pkg_version pkg_revision component_name stage)
+    return (ConfiguredInplace stage dist_dir build_info pkg_name pkg_version pkg_revision component_name)
   parseJSON invalid = typeMismatch "ConfiguredInplace" invalid
 
 instance FromJSON ConfiguredGlobal where
   parseJSON (Object v) = do
+    stage <- v .:? "stage" .!= HostStage
     bin_file <- v .:? "bin-file"
+    dist_dir <- v .:? "dist-dir"
+    build_info <- v .:? "build-info"
     pkg_name <- v .: "pkg-name"
     pkg_version <- v .: "pkg-version"
     pkg_revision <- v .: "pkg-revision"
     component_name <- v .:? "component-name"
-    stage <- parseStage v
-    return (ConfiguredGlobal bin_file pkg_name pkg_version pkg_revision component_name stage)
+    return (ConfiguredGlobal stage bin_file dist_dir build_info pkg_name pkg_version pkg_revision component_name)
   parseJSON invalid = typeMismatch "ConfiguredGlobal" invalid
 
 instance FromJSON PackageName where
@@ -135,13 +146,16 @@ instance FromJSON ComponentName where
   parseJSON invalid = typeMismatch "ComponentName" invalid
 
 data DistDirOrBinFile = DistDir FilePath | BinFile FilePath
+  deriving (Eq, Show)
 
 planDistDir :: Plan -> PackageName -> ComponentName -> DistDirOrBinFile
-planDistDir plan pkg_name cname =
-  -- Under cross-compilation a component can be in the plan at both stages;
-  -- the host-stage copy is the one a test normally means (it is what the
-  -- user targeted), so prefer it when that resolves the ambiguity.
-  case preferHost (concatMap p (planInstallPlan plan)) of
+planDistDir = planDistDirForStage HostStage
+
+-- | Select the target component by default; Build copies must be requested
+-- explicitly, since their executable ABI need not match the target's.
+planDistDirForStage :: PlanStage -> Plan -> PackageName -> ComponentName -> DistDirOrBinFile
+planDistDirForStage stage plan pkg_name cname =
+  case concatMap p (planInstallPlan plan) of
     [x] -> x
     [] ->
       error $
@@ -159,27 +173,29 @@ planDistDir plan pkg_name cname =
           ++ prettyShow pkg_name
           ++ " in install plan"
   where
-    preferHost xs = case [x | (Host, x) <- xs] of
-      [x] -> [x]
-      _ -> map snd xs
     p APreExisting = []
     p (AConfiguredGlobal conf) = do
+      guard (configuredGlobalStage conf == stage)
       guard (configuredGlobalPackageName conf == pkg_name)
       guard $ case configuredGlobalComponentName conf of
         Nothing -> True
         Just cname' -> cname == cname'
       case configuredGlobalBinFile conf of
-        Nothing -> []
-        Just bin_file -> return (configuredGlobalStage conf, BinFile bin_file)
+        Nothing -> maybe [] (pure . DistDir) (configuredGlobalDistDir conf)
+        Just bin_file -> return $ BinFile bin_file
     p (AConfiguredInplace conf) = do
+      guard (configuredInplaceStage conf == stage)
       guard (configuredInplacePackageName conf == pkg_name)
       guard $ case configuredInplaceComponentName conf of
         Nothing -> True
         Just cname' -> cname == cname'
-      return (configuredInplaceStage conf, DistDir (configuredInplaceDistDir conf))
+      return (DistDir (configuredInplaceDistDir conf))
 
 buildInfoFile :: Plan -> PackageName -> ComponentName -> FilePath
-buildInfoFile plan pkg_name cname =
+buildInfoFile = buildInfoFileForStage HostStage
+
+buildInfoFileForStage :: PlanStage -> Plan -> PackageName -> ComponentName -> FilePath
+buildInfoFileForStage stage plan pkg_name cname =
   case concatMap p (planInstallPlan plan) of
     [Just x] -> x
     [Nothing] ->
@@ -207,8 +223,15 @@ buildInfoFile plan pkg_name cname =
           ++ " in install plan"
   where
     p APreExisting = []
-    p (AConfiguredGlobal _) = []
+    p (AConfiguredGlobal conf) = do
+      guard (configuredGlobalStage conf == stage)
+      guard (configuredGlobalPackageName conf == pkg_name)
+      guard $ case configuredGlobalComponentName conf of
+        Nothing -> True
+        Just cname' -> cname == cname'
+      return $ configuredGlobalBuildInfo conf
     p (AConfiguredInplace conf) = do
+      guard (configuredInplaceStage conf == stage)
       guard (configuredInplacePackageName conf == pkg_name)
       guard $ case configuredInplaceComponentName conf of
         Nothing -> True
