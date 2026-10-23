@@ -582,10 +582,10 @@ testConfigureTargetArgs = do
         }
 
 testToolchain :: Compiler -> Toolchain
-testToolchain compiler =
+testToolchain testCompiler =
   Toolchain
     { toolchainPlatform = buildPlatform
-    , toolchainCompiler = compiler
+    , toolchainCompiler = testCompiler
     , toolchainProgramDb = defaultProgramDb
     }
 

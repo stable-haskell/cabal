@@ -926,6 +926,9 @@ data ConfigExFlags = ConfigExFlags
   -- ^ Path to the compiler for the build stage (@--with-build-compiler@).
   , configBuildHcPkg :: Flag FilePath
   -- ^ Path to the package tool for the build stage (@--with-build-hc-pkg@).
+  , configBuildPackageDBs :: [Maybe PackageDB]
+  -- ^ Package databases for the build stage (cross-compilation). Project-file
+  -- only (@build-package-dbs@); no command-line option.
   }
   deriving (Eq, Show, Generic)
   deriving (Semigroup, Monoid) via Generically ConfigExFlags
