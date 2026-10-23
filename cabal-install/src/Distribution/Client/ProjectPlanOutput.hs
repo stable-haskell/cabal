@@ -183,6 +183,8 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               )
         , "id" J..= (jdisplay . installedUnitId) elab
         , machineToJ (elabMachine elab)
+        , "dist-dir" J..= J.String dist_dir
+        , "build-info" J..= buildInfoLocation
         , "pkg-name" J..= (jdisplay . pkgName . packageId) elab
         , "pkg-version" J..= (jdisplay . pkgVersion . packageId) elab
         , -- The `x-revision` field is a feature of repos (not cabal itself),
@@ -204,13 +206,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
           ++ [ "pkg-src-sha256" J..= J.String (showHashValue hash)
              | Just hash <- [elabPkgSourceHash elab]
              ]
-          ++ ( case elabBuildStyle elab of
-                BuildInplaceOnly{} ->
-                  ["dist-dir" J..= J.String dist_dir] ++ [buildInfoFileLocation]
-                BuildAndInstall ->
-                  -- TODO: install dirs?
-                  []
-             )
+
           ++ case elabPkgOrComp elab of
             ElabPackage pkg ->
               let components =
@@ -239,19 +235,19 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
         Toolchain{toolchainPlatform = plat} =
           onMachine toolchains (elabMachine elab)
 
-        -- \| Only add build-info file location if the Setup.hs CLI
+        -- Only add build-info file location if the Setup.hs CLI
         -- is recent enough to be able to generate build info files.
         -- Otherwise, write 'null'.
         --
         -- Consumers of `plan.json` can use the nullability of this file location
         -- to indicate that the given component uses `build-type: Custom`
         -- with an old lib:Cabal version.
-        buildInfoFileLocation :: J.Pair
-        buildInfoFileLocation
+        buildInfoLocation :: J.Value
+        buildInfoLocation
           | setupCliVersion (elabSetupScriptCliVersion elab) < mkVersion [3, 7, 0, 0] =
-              "build-info" J..= J.Null
+              J.Null
           | otherwise =
-              "build-info" J..= J.String (getSymbolicPath $ buildInfoPref $ makeSymbolicPath dist_dir)
+              J.String (getSymbolicPath $ buildInfoPref $ makeSymbolicPath dist_dir)
 
         packageLocationToJ :: PackageLocation (Maybe FilePath) -> J.Value
         packageLocationToJ pkgloc =
