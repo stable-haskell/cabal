@@ -8,17 +8,17 @@ import Distribution.Client.Targets
   , UserQualifier (..)
   , readUserConstraint
   )
-import Distribution.Package (PackageIdentifier (..), mkPackageName)
 import Distribution.Client.Types.PackageSpecifier (PackageSpecifier (..), pkgSpecifierConstraints)
+import Distribution.Package (PackageIdentifier (..), mkPackageName)
 import Distribution.PackageDescription (mkFlagAssignment, mkFlagName)
 import Distribution.Version (anyVersion, mkVersion, thisVersion)
 
 import Distribution.Parsec (explicitEitherParsec, parsec, parsecCommaList)
 import Distribution.Pretty (prettyShow)
 
-import Distribution.Solver.Types.OptionalStanza (OptionalStanza (..))
 import Distribution.Solver.Types.ConstraintSource (ConstraintSource (ConstraintSourceUserTarget))
 import Distribution.Solver.Types.LabeledPackageConstraint (LabeledPackageConstraint (..))
+import Distribution.Solver.Types.OptionalStanza (OptionalStanza (..))
 import Distribution.Solver.Types.PackageConstraint (ConstraintQualifier (..), ConstraintScope (..), PackageConstraint (..), PackageProperty (..), constraintScopeMatches)
 import Distribution.Solver.Types.PackagePath (Namespace (..), PackagePath (..), Qualified (..), Qualifier (..))
 import Distribution.Solver.Types.Stage (Stage (..), showStage)

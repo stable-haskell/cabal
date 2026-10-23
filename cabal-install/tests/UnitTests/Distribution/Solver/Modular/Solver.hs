@@ -12,8 +12,8 @@ import qualified Data.Map as Map
 
 import Distribution.Solver.Modular.Builder (buildTree)
 import Distribution.Solver.Modular.Index (PInfo (..), mkIndex)
-import qualified Distribution.Solver.Modular.Package as SolverPackage
 import qualified Distribution.Solver.Modular.PSQ as PSQ
+import qualified Distribution.Solver.Modular.Package as SolverPackage
 import qualified Distribution.Solver.Modular.Tree as Tree
 import Distribution.Solver.Types.Settings (IndependentGoals (..))
 import Distribution.Types.UnitId (mkUnitId)
