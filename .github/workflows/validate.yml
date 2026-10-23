@@ -125,6 +125,17 @@ jobs:
         if: runner.os != 'Windows'
         run: git config --global protocol.file.allow always
 
+      # GHC 9.4.8's bindist passes -fuse-ld=gold (e.g. when hsc2hs links its
+      # probes), but Ubuntu 24.04 no longer ships the gold linker, so linking
+      # fails with "collect2: fatal error: cannot find 'ld'". Fall back to
+      # bfd for that compiler.
+      - name: "LINUX: Provide ld.gold for GHC 9.4.8"
+        if: runner.os == 'Linux' && matrix.ghc == '9.4.8'
+        run: |
+          if ! command -v ld.gold >/dev/null 2>&1; then
+            sudo ln -s "$(command -v ld)" /usr/bin/ld.gold
+          fi
+
       # The tool is not essential to the rest of the test suite. If
       # hackage-repo-tool is not present, any test that requires it will
       # be skipped.
