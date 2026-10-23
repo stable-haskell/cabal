@@ -218,6 +218,8 @@ data ProjectConfigShared = ProjectConfigShared
   -- ^ Path to the compiler for the build stage (cross-compilation).
   , projectConfigBuildHcPkg :: Flag FilePath
   -- ^ Path to the package tool for the build stage (cross-compilation).
+  , projectConfigBuildPackageDBs :: [Maybe PackageDBCWD]
+  -- ^ Package databases for the build stage (cross-compilation).
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!
