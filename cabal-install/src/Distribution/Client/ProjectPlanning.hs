@@ -82,6 +82,7 @@ module Distribution.Client.ProjectPlanning
   , setupHsScriptOptions
   , setupHsCommonFlags
   , setupHsConfigureFlags
+  , configureTargetArgs
   , setupHsConfigureArgs
   , setupHsBuildFlags
   , setupHsBuildArgs
@@ -4757,7 +4758,8 @@ setupHsConfigureFlags
       configDumpBuildInfo = toFlag elabDumpBuildInfo
 
       configConfigurationsFlags = elabFlagAssignment
-      configConfigureArgs = elabConfigureScriptArgs
+      configConfigureArgs = configureTargetArgs elabMachine toolchains elabConfigureScriptArgs
+      toolchains = pkgConfigToolchains sharedConfig
       configExtraLibDirs = fmap makeSymbolicPath elabExtraLibDirs
       configExtraLibDirsStatic = fmap makeSymbolicPath elabExtraLibDirsStatic
       configExtraFrameworkDirs = fmap makeSymbolicPath elabExtraFrameworkDirs
@@ -4830,6 +4832,48 @@ setupHsConfigureFlags
             Just (CLibName lname) -> lname
             Just _ -> error "non-library dependency"
             Nothing -> LMainLibName
+
+-- The package machine selects Autoconf's host alias. Autoconf's build alias
+-- is the machine the build runs on: the build toolchain when one exists, and
+-- the host toolchain otherwise. 'onMachine' Build errors when there is no
+-- separate build machine, so this lookup falls back.
+configureTargetArgs :: Machine -> Toolchains -> [String] -> [String]
+configureTargetArgs packageMachine toolchains userArgs =
+  Cabal.configureTargetDefaults hostTriple buildTriple userArgs ++ userArgs
+  where
+    hostTriple = machineTarget packageMachine
+    buildTriple = machineTarget Build
+    machineTarget machine =
+      let toolchain = toolchainFor machine
+       in Map.findWithDefault
+            (configurePlatformTriple (toolchainPlatform toolchain))
+            "Target platform"
+            (compilerProperties (toolchainCompiler toolchain))
+    toolchainFor Host = onHost toolchains
+    toolchainFor Build = fromMaybe (onHost toolchains) (onBuild toolchains)
+
+configurePlatformTriple :: Platform -> String
+configurePlatformTriple (Platform arch os) = prettyShow arch ++ "-" ++ fromOS os
+  where
+    fromOS Linux = "unknown-linux"
+    fromOS Windows = "unknown-mingw32"
+    fromOS OSX = "apple-darwin"
+    fromOS FreeBSD = "unknown-freebsd"
+    fromOS OpenBSD = "unknown-openbsd"
+    fromOS NetBSD = "unknown-netbsd"
+    fromOS DragonFly = "unknown-dragonflybsd"
+    fromOS Solaris = "sun-solaris"
+    fromOS AIX = "ibm-aix"
+    fromOS HPUX = "hp-hpux"
+    fromOS IRIX = "sgi-irix"
+    fromOS HaLVM = "unknown-halvm"
+    fromOS Hurd = "unknown-gnu"
+    fromOS IOS = "apple-ios"
+    fromOS Android = "unknown-linux-android"
+    fromOS Ghcjs = "unknown-ghcjs"
+    fromOS Wasi = "unknown-wasi"
+    fromOS Haiku = "unknown-haiku"
+    fromOS (OtherOS otheros) = "unknown-" ++ otheros
 
 setupHsConfigureArgs
   :: ElaboratedConfiguredPackage
