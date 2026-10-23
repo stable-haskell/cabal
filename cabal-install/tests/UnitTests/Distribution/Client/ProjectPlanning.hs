@@ -3,16 +3,27 @@
 module UnitTests.Distribution.Client.ProjectPlanning (tests) where
 
 import Data.List.NonEmpty
+import qualified Data.Map as Map
+import Distribution.Backpack (OpenUnitId (..))
+import Distribution.Backpack.ModuleShape (emptyModuleShape)
+import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.ProjectConfig.Types (ProjectConfigShared (..))
-import Distribution.Client.ProjectPlanning (ComponentTarget (..), SubComponentTarget (..), nubComponentTargets, projectPackageDbsFor, sameCompiler)
+import Distribution.Client.ProjectPlanning (ComponentTarget (..), SubComponentTarget (..), determineCoverageFor, nubComponentTargets, projectPackageDbsFor, sameCompiler)
+import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.Toolchain (Staged (..), Toolchain (..))
+import Distribution.Client.Types (ConfiguredId (..))
+import qualified Distribution.Compat.Graph as Graph
 import Distribution.Compiler (CompilerFlavor (..))
+import Distribution.Package (PackageIdentifier (..), mkComponentId, mkPackageName, newSimpleUnitId)
 import Distribution.Simple.Compiler (AbiTag (..), Compiler (..), CompilerId (..), PackageDBX (..))
+import Distribution.Simple.Flag
 import Distribution.Simple.Program.Db (defaultProgramDb, userSpecifyPath)
+import Distribution.Solver.Types.Settings (IndependentGoals (..))
 import Distribution.Solver.Types.Stage (Stage (..), prevStage)
 import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Types.ComponentName
 import Distribution.Types.LibraryName
+import Distribution.Types.UnitId (unsafeMkDefUnitId)
 import Distribution.Version (mkVersion)
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -22,7 +33,51 @@ tests =
   [ testGroup "Build Target Tests" buildTargetTests
   , testGroup "sameCompiler" sameCompilerTests
   , testGroup "projectPackageDbsFor" projectPackageDbsForTests
+  , testCase "coverage configure flags include canonical sibling unit ids" testCoverageDependencies
   ]
+
+testCoverageDependencies :: Assertion
+testCoverageDependencies = do
+  let sourceId = PackageIdentifier (mkPackageName "coverage-fixture") (mkVersion [1])
+      siblingId = mkComponentId "coverage-fixture-library"
+      externalId = PackageIdentifier (mkPackageName "coverage-dependency") (mkVersion [1])
+      externalComponentId = mkComponentId "coverage-dependency-library"
+      siblingUnitId = newSimpleUnitId siblingId
+      externalUnitId = newSimpleUnitId externalComponentId
+      component =
+        (undefined :: ElaboratedComponent)
+          { compLibDependencies =
+              [ (ConfiguredId sourceId Nothing siblingId, False)
+              , (ConfiguredId externalId Nothing externalComponentId, False)
+              ]
+          , compLinkedLibDependencies =
+              [ DefiniteUnitId (unsafeMkDefUnitId siblingUnitId)
+              , DefiniteUnitId (unsafeMkDefUnitId externalUnitId)
+              , IndefFullUnitId siblingId Map.empty
+              ]
+          }
+      elab =
+        (undefined :: ElaboratedConfiguredPackage)
+          { elabPkgOrComp = ElabComponent component
+          , elabPkgSourceId = sourceId
+          , elabStage = Host
+          }
+      mkLib pkgId unitId =
+        (undefined :: ElaboratedConfiguredPackage)
+          { elabUnitId = unitId
+          , elabPkgSourceId = pkgId
+          , elabLocalToProject = True
+          , elabModuleShape = emptyModuleShape
+          , elabComponentName = Just (CLibName LMainLibName)
+          , elabStage = Host
+          }
+      plan =
+        InstallPlan.new (IndependentGoals False) $
+          Graph.fromDistinctList
+            [ InstallPlan.Configured (mkLib sourceId siblingUnitId)
+            , InstallPlan.Configured (mkLib externalId externalUnitId)
+            ]
+  determineCoverageFor elab plan @?= Flag [siblingUnitId]
 
 -- ----------------------------------------------------------------------------
 -- projectPackageDbsFor

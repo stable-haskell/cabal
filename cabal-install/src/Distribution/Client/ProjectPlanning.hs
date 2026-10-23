@@ -83,6 +83,7 @@ module Distribution.Client.ProjectPlanning
   , setupHsCommonFlags
   , setupHsConfigureFlags
   , setupHsConfigureArgs
+  , determineCoverageFor
   , setupHsBuildFlags
   , setupHsBuildArgs
   , setupHsReplFlags
@@ -5136,6 +5137,28 @@ determineCoverageFor configuredPkg plan =
         && maybe False (\case CLibName{} -> True; CNotLibName{} -> False) (elabComponentName elab)
         -- We only want coverage for libraries which are dependencies of the given one
         && pkgSID `elem` map (confSrcId . fst) libDeps
+        -- Sibling libraries must be registered in the same stage: per-component
+        -- configure cannot infer them from its LBI, so only pass unit IDs from
+        -- the configured package's own stage.
+        && siblingStage elab
+        -- A component ID alone does not identify a Backpack instantiation.
+        -- Only pass libraries canonically linked into the configured
+        -- component, preserving the existing behavior for those unsupported
+        -- coverage targets.
+        && canonicallyLinked elab
+
+    siblingStage elab = case elabPkgOrComp configuredPkg of
+      -- Whole-package configures keep the plan-wide behaviour.
+      ElabPackage _ -> True
+      ElabComponent _ -> elabStage elab == elabStage configuredPkg
+
+    canonicallyLinked elab = case elabPkgOrComp configuredPkg of
+      ElabPackage _ -> True
+      ElabComponent comp ->
+        any (isCanonicalDependency (elabUnitId elab)) (compLinkedLibDependencies comp)
+
+    isCanonicalDependency uid (DefiniteUnitId defUid) = uid == unDefUnitId defUid
+    isCanonicalDependency uid (IndefFullUnitId cid insts) = Map.null insts && uid == newSimpleUnitId cid
 
     isIndefiniteOrInstantiation :: ModuleShape -> Bool
     isIndefiniteOrInstantiation = not . Set.null . modShapeRequires
