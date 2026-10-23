@@ -68,6 +68,9 @@ module Distribution.Client.ProjectPlanning.Types
   , componentOptionalStanza
   , componentTargetName
 
+    -- * Toolchain
+  , Toolchain (..)
+
     -- * Setup script
   , SetupScriptStyle (..)
   , SetupCliVersion (..)

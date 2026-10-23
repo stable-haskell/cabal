@@ -55,6 +55,7 @@ import Distribution.Simple.Compiler
   , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
+  , compilerTargetAbi
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
 import Distribution.System
@@ -368,6 +369,9 @@ betterPlatform toolchain =
     (prettyShow (toolchainPlatform toolchain))
     "Target platform"
     (compilerProperties (toolchainCompiler toolchain))
+    ++ case compilerTargetAbi (toolchainCompiler toolchain) of
+      "" -> ""
+      abi -> "-" ++ abi
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

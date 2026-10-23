@@ -61,6 +61,7 @@ module Distribution.Simple.Configure
   , configCompilerProgDb
   , computeEffectiveProfiling
   , adjustBuildOptions
+  , profilingTargetError
   , buildOptionsAdjustmentWarnings
   , adjustBuildOptionsAndWarn
   , ccLdOptionsBuildInfo
@@ -823,7 +824,7 @@ buildOptionsFromConfigFlags verbosity cfg comp = do
             -- rely on them. By the time that bug was fixed, ghci had
             -- been changed to read shared libraries instead of archive
             -- files (see next code block).
-            GHC.compilerBuildWay comp `notElem` [DynWay, ProfDynWay]
+            GHC.compilerBuildWay comp /= DynWay
           _ -> False
 
   let sharedLibsByDefault
@@ -922,8 +923,17 @@ adjustBuildOptions comp programDb opts =
     , LBC.withBytecodeLib = bytecodeLib
     , LBC.exeCoverage = exeCov
     , LBC.libCoverage = libCov
+    , -- An intrinsic profiling target has one profiling package universe.
+      -- Its ordinary filenames already contain profiling code; requesting
+      -- the legacy profiling way must not build a second _p variant.
+      LBC.withVanillaLib = LBC.withVanillaLib opts || (profilingTarget && LBC.withProfLib opts)
+    , LBC.withSharedLib = LBC.withSharedLib opts || (profilingTarget && LBC.withProfLibShared opts)
+    , LBC.withProfLib = not profilingTarget && LBC.withProfLib opts
+    , LBC.withProfLibShared = not profilingTarget && LBC.withProfLibShared opts
+    , LBC.withProfExe = not profilingTarget && LBC.withProfExe opts
     }
   where
+    profilingTarget = compilerTargetsProfiling comp
     splitSec
       | not (LBC.splitSections opts) = False
       | GHC <- compilerFlavor comp
@@ -979,6 +989,21 @@ adjustBuildOptions comp programDb opts =
       | LBC.libCoverage opts, not (coverageSupported comp) = False
       | otherwise = LBC.libCoverage opts
 
+-- | Reject requests which would otherwise select an obsolete profiling way.
+-- Profiling detail is meaningful only for a profiling target; default detail
+-- values on ordinary builds do not request instrumentation.
+profilingTargetError :: Compiler -> LBC.BuildOptions -> Maybe CabalException
+profilingTargetError comp opts
+  | not (compilerTargetsProfiling comp)
+  , LBC.withProfLib opts
+      || LBC.withProfLibShared opts
+      || LBC.withProfExe opts
+      || any
+        (`notElem` [ProfDetailNone, ProfDetailDefault])
+        [LBC.withProfLibDetail opts, LBC.withProfExeDetail opts] =
+      Just (ProfilingRequiresTargetCompiler (compilerId comp))
+  | otherwise = Nothing
+
 -- | Warnings to emit after downgrading 'LBC.BuildOptions' when the
 -- compiler (or another toolchain program) doesn't support a requested feature.
 buildOptionsAdjustmentWarnings
@@ -1027,6 +1052,7 @@ adjustBuildOptionsAndWarn
   -> LBC.BuildOptions
   -> IO LBC.BuildOptions
 adjustBuildOptionsAndWarn verbosity comp programDb opts0 = do
+  for_ (profilingTargetError comp opts0) (dieWithException verbosity)
   let opts1 = adjustBuildOptions comp programDb opts0
   mapM_ (warn verbosity) (buildOptionsAdjustmentWarnings comp opts0 opts1)
 
@@ -1038,15 +1064,6 @@ adjustBuildOptionsAndWarn verbosity comp programDb opts0 = do
     )
     $ warn verbosity
     $ "Executables will use dynamic linking, but a shared library "
-      ++ "is not being built. Linking will fail if any executables "
-      ++ "depend on the library."
-  when
-    ( LBC.withDynExe opts1
-        && LBC.withProfExe opts1
-        && not (LBC.withProfLibShared opts1)
-    )
-    $ warn verbosity
-    $ "Executables will use profiled dynamic linking, but a profiled shared library "
       ++ "is not being built. Linking will fail if any executables "
       ++ "depend on the library."
   return opts1
@@ -2027,73 +2044,39 @@ configureProfiling verbosity cfg comp = do
         return ProfDetailDefault
       checkProfileLevel other = return other
 
-  applyProfiling <-
-    if profilingSupported comp && (profilingVanillaSupportedOrUnknown comp || profilingDynamicSupportedOrUnknown comp)
-      then do
-        exeLevel <- checkProfileLevel tryExeProfileLevel
-        libLevel <- checkProfileLevel tryLibProfileLevel
-        let apply buildOptions =
-              buildOptions
-                { LBC.withProfLib = tryLibProfiling
-                , LBC.withProfLibDetail = libLevel
-                , LBC.withProfExe = tryExeProfiling
-                , LBC.withProfExeDetail = exeLevel
-                }
-        let compilerSupportsProfilingDynamic = profilingDynamicSupportedOrUnknown comp
-        apply2 <-
-          if compilerSupportsProfilingDynamic
-            then -- Case 1: We support profiled shared libraries so turn on shared profiling
-            -- libraries if the user asked for it.
-            return $ \buildOptions -> apply buildOptions{LBC.withProfLibShared = tryLibProfilingShared}
-            else -- Case 2: Compiler doesn't support profiling shared so turn them off
-            do
-              -- If we wanted to enable profiling shared libraries.. tell the
-              -- user we couldn't.
-              when (profilingVanillaSupportedOrUnknown comp && tryLibProfilingShared) $
-                warn
-                  verbosity
-                  ( "The compiler "
-                      ++ showCompilerId comp
-                      ++ " does not support "
-                      ++ "profiling shared objects. Static profiled objects "
-                      ++ "will be built."
-                  )
-              return $ \buildOptions ->
-                let original_options = apply buildOptions
-                 in original_options
-                      { LBC.withProfLibShared = False
-                      , LBC.withProfLib = profilingVanillaSupportedOrUnknown comp && (tryLibProfilingShared || LBC.withProfLib original_options)
-                      , LBC.withDynExe = if LBC.withProfExe original_options then False else LBC.withDynExe original_options
-                      }
-
-        when (tryExeProfiling && not (tryLibProfiling || tryLibProfilingShared)) $ do
-          warn
-            verbosity
-            ( "Executables will be built with profiling, but library "
-                ++ "profiling is disabled. Linking will fail if any executables "
-                ++ "depend on the library."
-            )
-        return apply2
-      else do
-        let apply buildOptions =
-              buildOptions
-                { LBC.withProfLib = False
-                , LBC.withProfLibShared = False
-                , LBC.withProfLibDetail = ProfDetailNone
-                , LBC.withProfExe = False
-                , LBC.withProfExeDetail = ProfDetailNone
-                }
-        when (tryExeProfiling || tryLibProfiling) $
-          warn
-            verbosity
-            ( "The compiler "
-                ++ showCompilerId comp
-                ++ " does not support "
-                ++ "profiling. Profiling has been disabled."
-            )
-        return apply
-
-  return applyProfiling
+  let requested =
+        tryLibProfiling
+          || tryLibProfilingShared
+          || tryExeProfiling
+          || any
+            (`notElem` [ProfDetailNone, ProfDetailDefault])
+            [tryExeProfileLevel, tryLibProfileLevel]
+  when (requested && not (compilerTargetsProfiling comp)) $
+    dieWithException verbosity (ProfilingRequiresTargetCompiler (compilerId comp))
+  if compilerTargetsProfiling comp
+    then do
+      exeLevel <- checkProfileLevel tryExeProfileLevel
+      libLevel <- checkProfileLevel tryLibProfileLevel
+      let shared = profilingDynamicSupportedOrUnknown comp
+      when (tryLibProfilingShared && not shared) $
+        warn verbosity "This profiling target does not support shared libraries; static libraries will be built."
+      return $ \opts ->
+        opts
+          { LBC.withProfLib = tryLibProfiling || (tryLibProfilingShared && not shared)
+          , LBC.withProfLibShared = tryLibProfilingShared && shared
+          , LBC.withProfExe = tryExeProfiling
+          , LBC.withProfLibDetail = libLevel
+          , LBC.withProfExeDetail = exeLevel
+          , LBC.withDynExe = LBC.withDynExe opts && (shared || not tryExeProfiling)
+          }
+    else return $ \opts ->
+      opts
+        { LBC.withProfLib = False
+        , LBC.withProfLibShared = False
+        , LBC.withProfExe = False
+        , LBC.withProfLibDetail = ProfDetailNone
+        , LBC.withProfExeDetail = ProfDetailNone
+        }
 
 -- -----------------------------------------------------------------------------
 -- Configuring package dependencies

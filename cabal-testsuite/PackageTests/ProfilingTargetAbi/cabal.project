@@ -1,0 +1,5 @@
+packages: . tools
+
+package host:*
+  shared: False
+  library-for-ghci: False

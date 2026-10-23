@@ -82,6 +82,7 @@ module Distribution.Client.ProjectPlanning
   , setupHsScriptOptions
   , setupHsCommonFlags
   , setupHsConfigureFlags
+  , determineCoverageFor
   , setupHsConfigureArgs
   , setupHsBuildFlags
   , setupHsBuildArgs
@@ -102,6 +103,7 @@ module Distribution.Client.ProjectPlanning
   , binDirectories
   , storePackageInstallDirs
   , storePackageInstallDirs'
+  , normaliseUnscopedPackageConfig
   ) where
 
 import Distribution.Client.Compat.Prelude
@@ -149,7 +151,6 @@ import Distribution.Client.Targets (userToPackageConstraint)
 import Distribution.Client.Toolchain
   ( Machine (..)
   , PerMachine (..)
-  , Toolchain (..)
   , Toolchains
   , isCross
   , mapWithMachine
@@ -237,6 +238,7 @@ import qualified Distribution.InstalledPackageInfo as IPI
 import qualified Distribution.PackageDescription as PD
 import qualified Distribution.PackageDescription.Configuration as PD
 import qualified Distribution.Simple.Configure as Cabal
+import qualified Distribution.Simple.Errors as CabalErrors
 import qualified Distribution.Simple.GHC as GHC
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Simple.LocalBuildInfo as Cabal
@@ -1018,7 +1020,8 @@ rebuildInstallPlan
         -- each package (e.g. to use a particular version of a pre-processor
         -- for some packages). However they cannot do this for the compiler
         -- itself as that's just not going to work. So we check for this, for
-        -- each machine against that machine's compiler.
+        -- each machine against that machine's compiler. The install-target
+        -- overlay is included so a promoted local flag is checked too.
         liftIO $
           sequence_ $
             mapWithMachine
@@ -1026,7 +1029,7 @@ rebuildInstallPlan
                   checkBadPerPackageCompilerPaths
                     (machineProgramPaths machine)
                     (configuredPrograms (toolchainProgramDb toolchain))
-                    (getMapMappend (projectConfigSpecificPackage projectConfig))
+                    (getMapMappend (projectConfigSpecificPackage projectConfig <> projectConfigInstallPackages projectConfig))
               )
               toolchains
 
@@ -1202,6 +1205,7 @@ rebuildInstallPlan
           , projectConfigLocalPackages
           , projectConfigSpecificPackage
           , projectConfigMachinePackages
+          , projectConfigInstallPackages
           , projectConfigBuildOnly
           }
         toolchains
@@ -1245,6 +1249,7 @@ rebuildInstallPlan
                 projectConfigLocalPackages
                 (getMapMappend projectConfigSpecificPackage)
                 (getMapMappend projectConfigMachinePackages)
+                (getMapMappend projectConfigInstallPackages)
           let instantiatedPlan =
                 instantiateInstallPlan
                   cabalStoreDirLayout
@@ -2002,6 +2007,7 @@ elaborateInstallPlan
   -> PackageConfig
   -> Map PackageName PackageConfig
   -> Map Machine PackageConfig
+  -> Map PackageName PackageConfig
   -> LogProgress (ElaboratedInstallPlan, ElaboratedSharedConfig)
 elaborateInstallPlan
   verbosity
@@ -2017,7 +2023,8 @@ elaborateInstallPlan
   allPackagesConfig
   localPackagesConfig
   perPackageConfig
-  machinePackagesConfig = do
+  machinePackagesConfig
+  installPackagesConfig = do
     x <- elaboratedInstallPlan
     return (x, elaboratedSharedConfig)
     where
@@ -2676,7 +2683,9 @@ elaborateInstallPlan
               } = onMachine toolchains elabMachine
 
             buildOptionsAdjustmentWarnings :: LogProgress ()
-            buildOptionsAdjustmentWarnings =
+            buildOptionsAdjustmentWarnings = do
+              for_ (Cabal.profilingTargetError stageCompiler elabBuildOptionsRaw) $ \err ->
+                dieProgress (text (CabalErrors.exceptionMessage err))
               mapM_ (warnProgress . text) $
                 Cabal.buildOptionsAdjustmentWarnings
                   machineCompiler
@@ -2816,7 +2825,12 @@ elaborateInstallPlan
                       && (okProfDyn || not profExe)
                 , withFullyStaticExe = perPkgOptionFlag False pkgid packageConfigFullyStaticExe
                 , withGHCiLib = perPkgOptionFlag False pkgid packageConfigGHCiLib -- TODO: [required feature] needs to default to enabled on windows still
-                , withProfExe = profExe
+                , withProfExe =
+                    fromFlagOrDefault
+                      False
+                      ( perPkgOption pkgid packageConfigProf
+                          <> perPkgOption pkgid packageConfigProfExe
+                      )
                 , withProfLib = (elabMachine, pkgid) `Set.member` pkgsUseProfilingLibrary libWays
                 , withProfLibShared = (elabMachine, pkgid) `Set.member` pkgsUseProfilingLibraryShared libWays
                 , withBytecodeLib = perPkgOptionFlag False pkgid packageConfigBytecodeLib
@@ -2829,8 +2843,8 @@ elaborateInstallPlan
                 , stripExes = perPkgOptionFlag False pkgid packageConfigStripExes
                 , withDebugInfo = perPkgOptionFlag NoDebugInfo pkgid packageConfigDebugInfo
                 , relocatable = perPkgOptionFlag False pkgid packageConfigRelocatable
-                , withProfLibDetail = elabProfExeDetail
-                , withProfExeDetail = elabProfLibDetail
+                , withProfLibDetail = elabProfLibDetail
+                , withProfExeDetail = elabProfExeDetail
                 , programPrefix = elabProgPrefix
                 , programSuffix = elabProgSuffix
                 }
@@ -2932,8 +2946,27 @@ elaborateInstallPlan
 
       -- The per-package option lookup for a package built for a given machine.
       -- 'elaborateSolverToCommon' fixes the machine to the package's own.
+      -- Layers, from least to most specific: all packages, local packages,
+      -- @package <machine>:*@, named packages, then the install-target overlay.
+      -- Unscoped profiling options are normalised so a profiled host target
+      -- does not force those options onto a build machine with a different ABI.
       perPkgOptionOnMachine :: (Package pkg, Monoid m) => Machine -> pkg -> (PackageConfig -> m) -> m
-      perPkgOptionOnMachine = lookupPerPkgOption isLocalToProject allPackagesConfig localPackagesConfig machinePackagesConfig perPackageConfig
+      perPkgOptionOnMachine machine pkg f =
+        global `mappend` local `mappend` machinecfg `mappend` perpkg `mappend` installpkg
+        where
+          buildCompiler = toolchainCompiler (fromMaybe (onHost toolchains) (onBuild toolchains))
+          hostCompiler = toolchainCompiler (onHost toolchains)
+          normaliseUnscoped = normaliseUnscopedPackageConfig machine buildCompiler hostCompiler
+          global = f (normaliseUnscoped allPackagesConfig)
+          machinecfg = foldMap f (Map.lookup machine machinePackagesConfig)
+          local
+            | isLocalToProject pkg = f (normaliseUnscoped localPackagesConfig)
+            | otherwise = mempty
+          perpkg = foldMap f (Map.lookup (packageName pkg) perPackageConfig)
+          -- Install-local flags keep CLI precedence for the selected target.
+          -- Their profiling fields must not configure its build-machine copy;
+          -- 'normaliseUnscoped' drops them when the two machines have different ABIs.
+          installpkg = foldMap (f . normaliseUnscoped) (Map.lookup (packageName pkg) installPackagesConfig)
 
       -- The project's package databases belong to the host compiler; a
       -- distinct build toolchain gets none of them.
@@ -3076,8 +3109,9 @@ data LibraryWays = LibraryWays
   }
 
 -- | A per-package project-config lookup, specialised to the @Flag Bool@ fields
--- the way selection reads. This is 'perPkgOption' from
--- 'elaborateInstallPlan', which merges the all\/local\/named config layers.
+-- the way selection reads. This is 'perPkgOptionOnMachine' from
+-- 'elaborateInstallPlan', which merges the all\/local\/machine\/named\/install
+-- config layers. The machine is fixed by the caller.
 type PerPkgConfigFlag = PackageId -> (PackageConfig -> Flag Bool) -> Flag Bool
 
 -- | Look up a per-package boolean option, as 'Nothing' when it is unset.
@@ -3125,17 +3159,13 @@ compilerShouldUseSharedLibByDefault compiler =
 -- builds need profiling libraries of their dependencies).
 compilerShouldUseProfilingLibByDefault :: Compiler -> Bool
 compilerShouldUseProfilingLibByDefault compiler =
-  case compilerFlavor compiler of
-    GHC -> GHC.compilerBuildWay compiler == ProfWay && compilerCanBuildProfilingLibs compiler
-    _ -> False
+  compilerTargetsProfiling compiler && compilerCanBuildProfilingLibs compiler
 
 -- | Whether a compiler builds profiled dynamic code by default (so that
 -- packages it builds need profiled shared libraries of their dependencies).
 compilerShouldUseProfilingSharedLibByDefault :: Compiler -> Bool
 compilerShouldUseProfilingSharedLibByDefault compiler =
-  case compilerFlavor compiler of
-    GHC -> GHC.compilerBuildWay compiler == ProfDynWay && compilerCanBuildProfilingSharedLibs compiler
-    _ -> False
+  compilerTargetsProfiling compiler && compilerCanBuildProfilingSharedLibs compiler
 
 -- The @needs*@ predicates below are flat per-package checks (project config +
 -- the compiler's default way); they do not traverse dependencies. The downward
@@ -3257,8 +3287,22 @@ elaborateLibraryWays toolchains libDepGraph lookupFlag =
 -- | Warn when a package requests a library way its machine compiler cannot build.
 -- Uses the flat per-package predicates (not the downward closure) — we only
 -- warn about packages that themselves request the way.
+--
+-- Profiling is a target ABI. A request on a compiler that does not report
+-- that ABI is an error, same as Setup configure. The elaborated options drop
+-- the request when the compiler cannot build profiling libraries, so this
+-- check has to look at the flags rather than those options.
 libraryWayWarnings :: Toolchains -> PerPkgConfigFlag -> Machine -> PackageId -> LogProgress ()
 libraryWayWarnings toolchains lookupFlag machine pkgid = do
+  when
+    ( requestedProfiling && not (compilerTargetsProfiling compiler)
+    )
+    $ dieProgress
+      ( text
+          ( CabalErrors.exceptionMessage
+              (CabalErrors.ProfilingRequiresTargetCompiler (compilerId compiler))
+          )
+      )
   when
     (needsProfilingLib lookupFlag compiler pkgid && not (compilerCanBuildProfilingLibs compiler))
     (warnProgress (text "Compiler does not support building p libraries, profiling is disabled"))
@@ -3270,6 +3314,34 @@ libraryWayWarnings toolchains lookupFlag machine pkgid = do
     (warnProgress (text "Compiler does not support building p_dyn libraries, profiling dynamic libraries are disabled."))
   where
     compiler = toolchainCompiler (onMachine toolchains machine)
+    requestedProfiling =
+      needsProfilingLib lookupFlag compiler pkgid
+        || needsProfilingLibShared lookupFlag compiler pkgid
+        || fromFlagOrDefault
+          False
+          ( lookupFlag pkgid packageConfigProf
+              <> lookupFlag pkgid packageConfigProfExe
+          )
+
+-- | Unscoped profiling options describe the selected target. When its ABI
+-- is intrinsically profiled, remove those options from the global/local
+-- layers used for a different build ABI. Leave the fields unspecified so
+-- compiler defaults and explicit build-stage/package settings can still
+-- derive library profiling from @profiling: True@.
+normaliseUnscopedPackageConfig :: Machine -> Compiler -> Compiler -> PackageConfig -> PackageConfig
+normaliseUnscopedPackageConfig machine buildCompiler hostCompiler config
+  | machine == Build
+  , compilerTargetsProfiling hostCompiler
+  , compilerTargetAbi buildCompiler /= compilerTargetAbi hostCompiler =
+      config
+        { packageConfigProf = NoFlag
+        , packageConfigProfLib = NoFlag
+        , packageConfigProfExe = NoFlag
+        , packageConfigProfShared = NoFlag
+        , packageConfigProfDetail = NoFlag
+        , packageConfigProfLibDetail = NoFlag
+        }
+  | otherwise = config
 
 shouldBeLocal :: PackageSpecifier (SourcePackage (PackageLocation loc)) -> Maybe PackageId
 shouldBeLocal NamedPackage{} = Nothing

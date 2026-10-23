@@ -11,6 +11,7 @@ module Distribution.Client.CmdInstall
     -- * Internals exposed for testing
   , selectPackageTargets
   , selectComponentTarget
+  , addLocalConfigToPkgs
 
     -- * Internals exposed for CmdRepl + CmdRun
   , establishDummyDistDirLayout
@@ -132,6 +133,7 @@ import Distribution.Simple.Compiler
   , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
+  , compilerTargetAbi
   )
 import Distribution.Simple.Configure
   ( configCompilerEx
@@ -147,7 +149,7 @@ import Distribution.Simple.GHC
   , ParseErrorExc (..)
   , getGhcAppDir
   , getImplInfo
-  , ghcPlatformAndVersionString
+  , ghcPlatformAndVersionStringWithAbi
   , readGhcEnvironmentFile
   , renderGhcEnvironmentFile
   )
@@ -403,7 +405,9 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   -- not apply to them.
   --
   -- We rectify this here. In the project configuration, we copy projectConfigLocalPackages to a
-  -- new projectConfigSpecificPackage entry for each package corresponding to a target selector.
+  -- new projectConfigInstallPackages entry for each package corresponding to a target selector.
+  -- Keep this promotion separate from explicit package settings so the planner
+  -- can preserve the target scope of profiling options in a staged build.
   --
   -- See #8637 and later #7297, #8909, #7236.
 
@@ -457,7 +461,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
           , toolchainProgramDb = progDb
           }
 
-  (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags platform compilerVersion
+  (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags platform compilerVersion (compilerTargetAbi compiler)
   (usedExistingPkgEnvFile, existingEnvEntries) <-
     getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile
   packageDbs <- getPackageDbStack hostToolchain projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
@@ -722,8 +726,8 @@ withoutProject verbosity globalConfig targetStrings = do
 addLocalConfigToPkgs :: ProjectConfig -> [PackageName] -> ProjectConfig
 addLocalConfigToPkgs config pkgs =
   config
-    { projectConfigSpecificPackage =
-        projectConfigSpecificPackage config
+    { projectConfigInstallPackages =
+        projectConfigInstallPackages config
           <> MapMappend (Map.fromList targetPackageConfigs)
     }
   where
@@ -1289,26 +1293,26 @@ entriesForLibraryComponents = Map.foldrWithKey' (\k v -> (go k v <>)) []
 -- | Gets the file path to the request environment file. The @Bool@ is @True@
 -- if we got an explicit instruction using @--package-env@, @False@ if we used
 -- the default.
-getEnvFile :: ClientInstallFlags -> Platform -> Version -> IO (Bool, FilePath)
-getEnvFile clientInstallFlags platform compilerVersion = do
+getEnvFile :: ClientInstallFlags -> Platform -> Version -> String -> IO (Bool, FilePath)
+getEnvFile clientInstallFlags platform compilerVersion abi = do
   appDir <- getGhcAppDir
   case flagToMaybe (cinstEnvironmentPath clientInstallFlags) of
     Just spec
       -- Is spec a bare word without any "pathy" content, then it refers to
       -- a named global environment.
       | takeBaseName spec == spec ->
-          return (True, getGlobalEnv appDir platform compilerVersion spec)
+          return (True, getGlobalEnv appDir platform compilerVersion abi spec)
       | otherwise -> do
           spec' <- makeAbsolute spec
           isDir <- doesDirectoryExist spec'
           if isDir
             then -- If spec is a directory, then make an ambient environment inside
             -- that directory.
-              return (True, getLocalEnv spec' platform compilerVersion)
+              return (True, getLocalEnv spec' platform compilerVersion abi)
             else -- Otherwise, treat it like a literal file path.
               return (True, spec')
     Nothing ->
-      return (False, getGlobalEnv appDir platform compilerVersion "default")
+      return (False, getGlobalEnv appDir platform compilerVersion abi "default")
 
 -- | Returns the list of @GhcEnvFilePackageId@ values already existing in the
 --   environment being operated on. The @Bool@ is @True@ if we took settings
@@ -1340,19 +1344,19 @@ getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile = do
 -- | Constructs the path to the global GHC environment file.
 --
 -- TODO(m-renaud): Create PkgEnvName newtype wrapper.
-getGlobalEnv :: FilePath -> Platform -> Version -> String -> FilePath
-getGlobalEnv appDir platform compilerVersion name =
+getGlobalEnv :: FilePath -> Platform -> Version -> String -> String -> FilePath
+getGlobalEnv appDir platform compilerVersion abi name =
   appDir
-    </> ghcPlatformAndVersionString platform compilerVersion
+    </> ghcPlatformAndVersionStringWithAbi platform compilerVersion abi
     </> "environments"
     </> name
 
 -- | Constructs the path to a local GHC environment file.
-getLocalEnv :: FilePath -> Platform -> Version -> FilePath
-getLocalEnv dir platform compilerVersion =
+getLocalEnv :: FilePath -> Platform -> Version -> String -> FilePath
+getLocalEnv dir platform compilerVersion abi =
   dir
     </> ".ghc.environment."
-    <> ghcPlatformAndVersionString platform compilerVersion
+    <> ghcPlatformAndVersionStringWithAbi platform compilerVersion abi
 
 getPackageDbStack
   :: Toolchain

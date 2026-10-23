@@ -731,6 +731,9 @@ platformDefines lbi =
         ++ ["-D" ++ arch ++ "_BUILD_ARCH=1"]
         ++ map (\os' -> "-D" ++ os' ++ "_HOST_OS=1") osStr
         ++ map (\arch' -> "-D" ++ arch' ++ "_HOST_ARCH=1") archStr
+        -- hsc2hs and c2hs invoke the C compiler directly, without GHC's
+        -- intrinsic target way flags. They must still see its ABI layouts.
+        ++ ["-DPROFILING" | compilerTargetsProfiling comp]
     _ -> []
   where
     comp = compiler lbi

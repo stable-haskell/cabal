@@ -22,12 +22,20 @@ it is highly recommended to read in depth the
 Profiling CPU performance
 -------------------------
 
-First, configure Cabal to build your application, e.g. ``my-app``, with profiling enabled,
-with the following command:
+Profiling requires a separate compiler whose ``ghc --info`` reports
+``("Target ABI", "profiling")``. Select it for the application and an ordinary
+compiler for Setup scripts, preprocessors and other build tools:
 
 .. code-block:: console
 
-    $ cabal configure --enable-profiling
+    $ cabal configure --with-compiler=<platform>-profiling-ghc --with-build-compiler=ghc --enable-profiling
+
+Replace ``<platform>`` with the installed toolchain's platform prefix. The
+profiling compiler has its own package databases, Cabal store and package
+environments. Its objects, interfaces and archives use ordinary names such as
+``Module.o``, ``Module.hi`` and ``libHSpackage.a``. Shared libraries retain their
+ordinary dynamic naming. The compiler determines the profiling ABI;
+``profiling`` and the detail settings control instrumentation within it.
 
 This command creates a ``cabal.project.local`` file with the following content:
 
@@ -119,6 +127,24 @@ You can find more information and further options in the
 and the
 `GHC profiling compiler options <https://downloads.haskell.org/ghc/latest/docs/users_guide/profiling.html#compiler-options-for-profiling>`__
 section.
+
+Migration from legacy profiling ways
+------------------------------------
+
+Cabal no longer builds profiling variants alongside ordinary libraries.
+The ``ProfWay``/``ProfDynWay`` model and its ``.p_o``, ``.p_hi``, ``_p.a`` and
+``p_dyn`` names have been removed. Profiling requests on an ordinary compiler,
+including older GHCs distributed with legacy profiling libraries, now produce
+a migration error. Install and select a profiling-target compiler instead of
+adding ``-prof`` to the ordinary compiler. Normal non-profiling builds with
+older GHCs remain supported.
+
+``--enable-library-profiling``, ``--enable-executable-profiling`` and
+``--enable-profiling-shared`` remain accepted by profiling targets. They select
+ordinary static/shared artifacts and instrumentation; they do not create
+another library universe. ``ghc-prof-options`` and
+``ghc-prof-shared-options`` apply to the static and shared artifacts of the
+profiling target, respectively.
 
 Profiling your dependencies too
 -------------------------------
