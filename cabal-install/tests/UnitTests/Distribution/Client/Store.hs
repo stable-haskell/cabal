@@ -68,6 +68,9 @@ testInstallSerial =
           writeFile (destprefix </> file) content
           return (destprefix, [])
 
+    -- newStoreEntry places temporary files inside the stage's store.
+    createDirectoryIfMissing True (storeIncomingDirectory storeDirLayout stage toolchain)
+
     assertNewStoreEntry
       tmp
       storeDirLayout

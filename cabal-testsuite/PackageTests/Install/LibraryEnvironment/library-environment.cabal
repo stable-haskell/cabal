@@ -1,0 +1,10 @@
+cabal-version: 2.0
+name: library-environment
+version: 0.1
+build-type: Simple
+
+library
+  exposed-modules: InstalledEnvironment
+  hs-source-dirs: src
+  build-depends: base
+  default-language: Haskell2010
