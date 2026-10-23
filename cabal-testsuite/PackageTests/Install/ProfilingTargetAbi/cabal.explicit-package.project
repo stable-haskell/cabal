@@ -1,0 +1,7 @@
+packages: tool app
+
+package host:*
+  shared: False
+
+package dual-stage-tool
+  profiling: True

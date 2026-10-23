@@ -31,10 +31,12 @@ import Prelude ()
 
 import System.FilePath
 
+import qualified Data.Map as Map
 import Distribution.Client.Config
   ( defaultLogsDir
   , defaultStoreDir
   )
+import Distribution.Client.Toolchain (Toolchain (..))
 import Distribution.Compiler
 import Distribution.Package
   ( ComponentId
@@ -48,6 +50,7 @@ import Distribution.Simple.Compiler
   , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
+  , compilerTargetAbi
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
 import Distribution.System
@@ -330,6 +333,18 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock :: Compiler -> UnitId -> FilePath
     storeIncomingLock compiler unitid =
       storeIncomingDirectory compiler </> prettyShow unitid <.> "lock"
+-- | This returns the platform triple in the same string representation used by the compiler e.g. x86_64-unknown-linux.
+-- If the compiler does not have a "Target platform" property, it falls back to pretty printing the Platform value in
+-- the toolchain.
+betterPlatform :: Toolchain -> String
+betterPlatform toolchain =
+  Map.findWithDefault
+    (prettyShow (toolchainPlatform toolchain))
+    "Target platform"
+    (compilerProperties (toolchainCompiler toolchain))
+    ++ case compilerTargetAbi (toolchainCompiler toolchain) of
+      "" -> ""
+      abi -> "-" ++ abi
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

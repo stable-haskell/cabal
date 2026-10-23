@@ -50,7 +50,7 @@ import Distribution.Simple.GHC
   , GhcImplInfo (supportsPkgEnvFiles)
   , getImplInfo
   , simpleGhcEnvironmentFile
-  , writeGhcEnvironmentFile
+  , writeGhcEnvironmentFileWithAbi
   )
 import Distribution.Simple.Utils
 import Distribution.System
@@ -866,10 +866,11 @@ writePlanGhcEnvironment
     | compilerFlavor compiler == GHC
     , supportsPkgEnvFiles (getImplInfo compiler) =
         Just
-          <$> writeGhcEnvironmentFile
+          <$> writeGhcEnvironmentFileWithAbi
             path
             platform
             (compilerVersion compiler)
+            (compilerTargetAbi compiler)
             ( renderGhcEnvironmentFile
                 path
                 elaboratedInstallPlan
