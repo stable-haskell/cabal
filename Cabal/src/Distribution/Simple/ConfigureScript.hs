@@ -19,10 +19,12 @@ import Distribution.Compat.Prelude
 import Prelude ()
 
 -- local
+
+import qualified Data.Map as Map
 import Distribution.PackageDescription
 import Distribution.Pretty
-import Distribution.Simple.Configure (findDistPrefOrDefault)
 import Distribution.Simple.Compiler (Compiler, compilerProperties)
+import Distribution.Simple.Configure (findDistPrefOrDefault)
 import Distribution.Simple.Errors
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program
@@ -34,7 +36,6 @@ import Distribution.System (OS (..), Platform (..), buildPlatform)
 import Distribution.Utils.NubList
 import Distribution.Utils.Path
 import Distribution.Verbosity
-import qualified Data.Map as Map
 
 -- Base
 import System.Directory (createDirectoryIfMissing, doesFileExist, makeAbsolute)
@@ -72,6 +73,7 @@ runConfigureScriptWithCompiler
 runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = do
   let commonCfg = configCommonFlags cfg
       verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity commonCfg)
+
   dist_dir <- findDistPrefOrDefault $ setupDistPref commonCfg
   let build_dir = dist_dir </> makeRelativePathEx "build"
       mbWorkDir = flagToMaybe $ setupWorkingDir commonCfg
@@ -105,8 +107,6 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = d
   validateTargetArg verbosity "--build" args
 
   configureFile <- toUnix <$> makeAbsolute configureScriptPath
-  putStrLn $ "[runConfigureScript] configureFile = " ++ configureFile
-  putStrLn $ "[runConfigureScript] arg = " ++ unwords args
 
   let configureFile' = toUnix configureFile
   -- autoconf is fussy about filenames, and has a set of forbidden
@@ -200,6 +200,9 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = d
         ("CFLAGS", Just (mkFlagsEnv ccFlags "CFLAGS"))
           : [("CXXFLAGS", Just (mkFlagsEnv cxxFlags "CXXFLAGS")) | Just cxxFlags <- [mcxxFlags]]
           ++ [("PATH", Just pathEnv) | not (null extraPath)]
+          ++ [ ("GHC", canonicalisePathSeparator <$> lookup "ghc" (configProgramPaths cfg))
+             , ("GHC_PKG", canonicalisePathSeparator <$> lookup "ghc-pkg" (configProgramPaths cfg))
+             ]
           ++ cabalFlagEnv
       maybeHostFlag = ["--host=" ++ show (pretty hp) | hp /= buildPlatform]
       args' =
@@ -226,6 +229,8 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = d
     args = configureScriptArgs mbCompiler hp (platformToTriple buildPlatform) (configureArgs backwardsCompatHack cfg)
     backwardsCompatHack = False
 
+
+    extraPath = fromNubList $ configProgramPathExtra cfg
 
 configureScriptArgs :: Maybe Compiler -> Platform -> String -> [String] -> [String]
 configureScriptArgs mbCompiler selectedPlatform buildTriple userArgs =
@@ -268,7 +273,6 @@ rejectProfilingTarget verbosity option target =
         ++ option
         ++ "=<machine> and "
         ++ "select the profiling compiler with --with-compiler=<machine>-prof-ghc."
-
 
 platformToTriple :: Platform -> String
 platformToTriple (Platform arch os) = prettyShow arch <> "-" <> fromOS os

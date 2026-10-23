@@ -681,7 +681,10 @@ absoluteInstalledPackageInfo pkg abi_hash lib lbi clbi =
       | null (installIncludes bi) = []
       | otherwise = [includedir installDirs]
     bi = libBuildInfo lib
-    installDirs = absoluteComponentInstallDirs pkg lbi (componentUnitId clbi) NoCopyDest
+    installDirs =
+      haddockLibraryInstallDirs
+        lib
+        (absoluteComponentInstallDirs pkg lbi (componentUnitId clbi) NoCopyDest)
 
 relocatableInstalledPackageInfo
   :: PackageDescription
@@ -709,7 +712,23 @@ relocatableInstalledPackageInfo pkg abi_hash lib lbi clbi pkgroot =
     bi = libBuildInfo lib
 
     installDirs =
-      ("${pkgroot}" </>) . shortRelativePath (getSymbolicPath pkgroot) <$> absoluteComponentInstallDirs pkg lbi (componentUnitId clbi) NoCopyDest
+      (("${pkgroot}" </>) . shortRelativePath (getSymbolicPath pkgroot))
+        <$>
+        haddockLibraryInstallDirs
+          lib
+          (absoluteComponentInstallDirs pkg lbi (componentUnitId clbi) NoCopyDest)
+
+-- | Internal-library Haddock output is installed in a subdirectory of the
+-- package HTML directory. Keep both paths in the package registration aligned
+-- with the copied interface and HTML files.
+haddockLibraryInstallDirs :: Library -> InstallDirs FilePath -> InstallDirs FilePath
+haddockLibraryInstallDirs lib installDirs = case libName lib of
+  LMainLibName -> installDirs
+  LSubLibName name ->
+    installDirs
+      { haddockdir = haddockdir installDirs </> prettyShow name
+      , htmldir = htmldir installDirs </> prettyShow name
+      }
 
 -- -----------------------------------------------------------------------------
 -- Unregistration

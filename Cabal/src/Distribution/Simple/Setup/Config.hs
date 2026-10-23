@@ -34,6 +34,7 @@ module Distribution.Simple.Setup.Config
   , readPackageDbList
   , showPackageDb
   , showPackageDbList
+  , canonicalisePathSeparator
   , configureArgs
   , configureTargetDefaults
   , configureOptions
