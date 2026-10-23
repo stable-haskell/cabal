@@ -50,6 +50,9 @@ module Distribution.Client.ProjectPlanning.Types
   , MemoryOrDisk (..)
   , isInplaceBuildStyle
   , CabalFileText
+  , combinedTarballHash
+  , unpackedTarballDirectory
+  , unpackedTarballSrcDirectory
   , NotPerComponentReason (..)
   , NotPerComponentBuildType (..)
   , whyNotPerComponent
@@ -81,6 +84,7 @@ module Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+import Distribution.Client.HashValue (HashValue, hashValue, showHashValue)
 import Distribution.Client.PackageHash
 import Distribution.Client.TargetSelector
   ( SubComponentTarget (..)
@@ -145,6 +149,7 @@ import Distribution.Types.PkgconfigVersion
 import Distribution.Utils.Path (getSymbolicPath)
 import Distribution.Version
 
+import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
@@ -559,6 +564,34 @@ dataDirsEnvironmentForPackage distDirLayout plan pkg =
     )
     (InstallPlan.dependencyClosure plan [nodeKey pkg])
 
+-- | Combine a tarball's content hash with the package's description override,
+-- if any, to obtain the hash qualifying its unpacked source directory.
+-- This is shared with 'Distribution.Client.ProjectBuilding' so planning and
+-- building agree on where tarball data files live.
+combinedTarballHash :: HashValue -> Maybe CabalFileText -> HashValue
+combinedTarballHash tarballHash Nothing = tarballHash
+combinedTarballHash tarballHash (Just cabalFile) =
+  hashValue $
+    LBS.fromStrict (BS.pack (showHashValue tarballHash ++ "\0"))
+      <> cabalFile
+
+-- | The directory a tarball with the given combined hash is unpacked into.
+-- This matches 'Distribution.Client.ProjectBuilding.unpackedSrcDirectory'.
+unpackedTarballDirectory :: DistDirLayout -> PackageId -> HashValue -> FilePath
+unpackedTarballDirectory distDirLayout pkgid combinedHash =
+  distUnpackedSrcRootDirectory distDirLayout
+    </> showHashValue combinedHash
+    </> prettyShow pkgid
+
+-- | The hash-qualified unpacked source directory for a tarball package,
+-- combining its recorded source hash with any description override.
+unpackedTarballSrcDirectory :: DistDirLayout -> ElaboratedConfiguredPackage -> PackageSourceHash -> FilePath
+unpackedTarballSrcDirectory distDirLayout pkg rawHash =
+  unpackedTarballDirectory
+    distDirLayout
+    (elabPkgSourceId pkg)
+    (combinedTarballHash rawHash (elabPkgDescriptionOverride pkg))
+
 -- | Construct an environment variable that points
 -- the package's datadir to its correct location.
 -- This might be:
@@ -580,20 +613,26 @@ dataDirEnvVarForPackage distDirLayout pkg =
         )
   where
     srcPath (LocalUnpackedPackage path) = path
-    srcPath (LocalTarballPackage _path) = unpackedPath
-    srcPath (RemoteTarballPackage _uri _localTar) = unpackedPath
-    srcPath (RepoTarballPackage _repo _packageId _localTar) = unpackedPath
+    srcPath (LocalTarballPackage _path) = tarballUnpackedPath
+    srcPath (RemoteTarballPackage _uri _localTar) = tarballUnpackedPath
+    srcPath (RepoTarballPackage _repo _packageId _localTar) = tarballUnpackedPath
     -- The 'Just' payload is the tarball cabal-install packs the synced
     -- checkout into (see 'syncAndReadSourcePackagesRemoteRepos'), not a
     -- directory: the package is unpacked from it under the dist tree like
     -- any other tarball, so that is where its data files live.
-    srcPath (RemoteSourceRepoPackage _sourceRepo (Just _tarball)) = unpackedPath
+    srcPath (RemoteSourceRepoPackage _sourceRepo (Just _tarball)) = tarballUnpackedPath
     -- TODO: see https://github.com/haskell/cabal/wiki/Potential-Refactors#unresolvedpkgloc
     srcPath (RemoteSourceRepoPackage _sourceRepo Nothing) =
       error
         "calling dataDirEnvVarForPackage on a not-downloaded repo is an error"
-    unpackedPath =
-      distUnpackedSrcDirectory distDirLayout $ elabPkgSourceId pkg
+    -- Tarball data files live in the hash-qualified unpacked source. The
+    -- recorded source hash is required: falling back to the unqualified
+    -- path would point at a directory the builder never unpacks.
+    tarballUnpackedPath = case elabPkgSourceHash pkg of
+      Nothing ->
+        error
+          "calling dataDirEnvVarForPackage on a tarball package without a source hash is an error"
+      Just rawHash -> unpackedTarballSrcDirectory distDirLayout pkg rawHash
     rawDataDir = getSymbolicPath $ dataDir (elabPkgDescription pkg)
     pkgDir = srcPath (elabPkgSourceLocation pkg)
     dataDirPath

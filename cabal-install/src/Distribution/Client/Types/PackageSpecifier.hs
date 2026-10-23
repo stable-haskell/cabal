@@ -14,6 +14,7 @@ import Distribution.Version (nullVersion, thisVersion)
 
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.LabeledPackageConstraint
+import Distribution.Solver.Types.Machine (Machine (Host))
 import Distribution.Solver.Types.PackageConstraint
 
 -- | A fully or partially resolved reference to a package.
@@ -49,7 +50,7 @@ pkgSpecifierConstraints (SpecificSourcePackage pkg) =
   where
     pc =
       PackageConstraint
-        (ConstraintScope Nothing (ScopeTarget $ packageName pkg))
+        (ConstraintScope (Just Host) (ScopeTarget (packageName pkg)))
         (PackagePropertyVersion $ thisVersion (packageVersion pkg))
 
 mkNamedPackage :: PackageIdentifier -> PackageSpecifier pkg

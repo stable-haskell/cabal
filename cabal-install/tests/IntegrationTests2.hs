@@ -2711,6 +2711,8 @@ testConfigOptionComments = do
   "  -- happy-location" `assertHasCommentLine` "happy-location"
   "  -- hpc-location" `assertHasCommentLine` "hpc-location"
   "  -- hscolour-location" `assertHasCommentLine` "hscolour-location"
+  -- JHC is still a built-in program on this base, so its config fields stay
+  -- commented, the same as the other compilers.
   "  -- jhc-location" `assertHasCommentLine` "jhc-location"
   "  -- ld-location" `assertHasCommentLine` "ld-location"
   "  -- pkg-config-location" `assertHasCommentLine` "pkg-config-location"

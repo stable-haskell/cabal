@@ -27,6 +27,7 @@ import Distribution.Client.ProjectPlanning.Types
   , SetupScriptStyle (..)
   )
 import Distribution.Client.SolverInstallPlan (SolverPlanPackage)
+import Distribution.Compiler (CompilerFlavor (GHC), CompilerId (..), CompilerInfo (..))
 import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
 import qualified Distribution.Solver.Types.ComponentDeps as CD
 import Distribution.Solver.Types.ResolverPackage (resolverPackageLibDeps)
@@ -36,7 +37,6 @@ import Distribution.CabalSpecVersion
 
 import Distribution.Package
 import Distribution.PackageDescription
-import Distribution.Simple.Compiler
 import Distribution.System
 
 import Distribution.Simple.Utils
@@ -88,7 +88,7 @@ packageSetupScriptStyle pkg
 --
 -- @since 3.12.0.0
 mkDefaultSetupDeps
-  :: Compiler
+  :: CompilerInfo
   -> Platform
   -> PackageDescription
   -> Maybe [Dependency]
@@ -209,7 +209,7 @@ packageSetupScriptSpecVersion _ pkg libDepGraph deps =
 cabalPkgname :: PackageName
 cabalPkgname = mkPackageName "Cabal"
 
-legacyCustomSetupPkgs :: Compiler -> Platform -> [PackageName]
+legacyCustomSetupPkgs :: CompilerInfo -> Platform -> [PackageName]
 legacyCustomSetupPkgs compiler (Platform _ os) =
   map mkPackageName $
     [ "array"
@@ -230,4 +230,7 @@ legacyCustomSetupPkgs compiler (Platform _ os) =
       ++ ["ghc-prim" | isGHC]
       ++ ["template-haskell" | isGHC]
   where
-    isGHC = compilerCompatFlavor GHC compiler
+    isGHC = case compilerInfoId compiler of
+      CompilerId GHC _ -> True
+      _ -> any ((== GHC) . compilerIdFlavor) (fromMaybe [] (compilerInfoCompat compiler))
+    compilerIdFlavor (CompilerId flavor _) = flavor
