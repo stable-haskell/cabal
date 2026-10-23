@@ -459,13 +459,13 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   globalTmp <- getTemporaryDirectory
 
   withTempDirectory globalTmp "cabal-install." $ \tmpDir -> do
-    distDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
+    scratchDistDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
 
     uriSpecs <-
       runRebuild tmpDir $
         fetchAndReadSourcePackages
           verbosity
-          distDirLayout
+          scratchDistDirLayout
           (Just compiler)
           (projectConfigShared config)
           (projectConfigBuildOnly config)
@@ -501,7 +501,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
       establishDummyProjectBaseContext
         verbosity
         config
-        distDirLayout
+        scratchDistDirLayout
         (envSpecs' ++ pkgSpecs ++ uriSpecs)
         InstallCommand
 

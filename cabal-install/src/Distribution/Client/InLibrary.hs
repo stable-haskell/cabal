@@ -1,7 +1,8 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 
 module Distribution.Client.InLibrary
-  ( libraryConfigureInputsFromElabPackage
+  ( LibraryConfigureInputs (compiler, platform, localBuildConfig)
+  , libraryConfigureInputsFromElabPackage
   , configure
   , build
   , haddock
@@ -20,6 +21,7 @@ import qualified Distribution.Client.SetupHooks.CallHooksExe as ExternalHooksExe
   ( buildTypePreBuildHooks
   , buildTypeSetupHooks
   )
+import Distribution.Client.Toolchain (Toolchain (..))
 import Distribution.Client.Types
 
 import qualified Distribution.PackageDescription as PD
@@ -76,7 +78,7 @@ libraryConfigureInputsFromElabPackage
   :: VerbosityHandles
   -> BuildType
   -> ProgramDb
-  -> ElaboratedSharedConfig
+  -> Toolchain
   -> ElaboratedReadyPackage
   -> InstalledPackageIndex
   -> [String]
@@ -86,17 +88,21 @@ libraryConfigureInputsFromElabPackage
   verbHandles
   bt
   progDb
-  -- NB: don't use the ProgramDb from the ElaboratedSharedConfig;
-  -- that one is only for the compiler itself and not for the package.
-  sharedConfig
+  -- The caller selects the package's machine once for both this metadata and
+  -- its ProgramDb. Keep the supplied package-specific ProgramDb, which also
+  -- contains the configured tools and arguments needed by this package.
+  Toolchain
+    { toolchainCompiler = compil
+    , toolchainPlatform = plat
+    }
   (ReadyPackage pkg)
   ipi
   userTargets =
     LibraryConfigureInputs
       { verbosityHandles = verbHandles
       , -- The package is configured with the toolchain of its own machine.
-        compiler = elabCompiler sharedConfig pkg
-      , platform = elabPlatform sharedConfig pkg
+        compiler = compil
+      , platform = plat
       , buildType =
           -- NB: don't get the build-type from 'pkgDescr',
           -- because for Configure build-type we rewrite the build-type

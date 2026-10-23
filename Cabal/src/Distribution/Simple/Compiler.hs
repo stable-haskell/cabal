@@ -26,6 +26,7 @@ module Distribution.Simple.Compiler
   , showCompilerIdWithAbi
   , compilerFlavor
   , compilerVersion
+  , compilerTargetAbi
   , compilerCompatFlavor
   , compilerCompatVersion
   , compilerInfo
@@ -110,7 +111,7 @@ import qualified Text.Read as Read
 import Language.Haskell.Extension
 
 import Data.Bool (bool)
-import qualified Data.Map as Map (lookup)
+import qualified Data.Map as Map (findWithDefault, lookup)
 import System.Directory (canonicalizePath)
 
 data Compiler = Compiler
@@ -246,6 +247,11 @@ compilerFlavor = (\(CompilerId f _) -> f) . compilerId
 
 compilerVersion :: Compiler -> Version
 compilerVersion = (\(CompilerId _ v) -> v) . compilerId
+
+-- | The compiler's intrinsic target ABI, independently of its architecture
+-- and OS. Older compilers omit this property and retain their existing ABI.
+compilerTargetAbi :: Compiler -> String
+compilerTargetAbi = Map.findWithDefault "" "Target ABI" . compilerProperties
 
 -- | Is this compiler compatible with the compiler flavour we're interested in?
 --
