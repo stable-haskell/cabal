@@ -20,6 +20,7 @@ import Prelude ()
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
+import Data.List (isInfixOf)
 import Distribution.Compat.CopyFile (filesEqual)
 import Distribution.Simple.Compiler (arDashLSupported, arResponseFilesSupported)
 import Distribution.Simple.LocalBuildInfo (LocalBuildInfo (..), mbWorkDirLBI)

@@ -56,6 +56,7 @@ import Distribution.Client.CmdInstall.ClientInstallFlags
 
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.Settings
+import Distribution.Solver.Types.Stage (Stage)
 
 import Distribution.Package
   ( PackageId

@@ -61,6 +61,7 @@ import Distribution.Simple.Flag
 import Distribution.Simple.InstallDirs.Internal
 import Distribution.System
 
+import GHC.Stack (HasCallStack)
 import System.Directory (getAppUserDataDirectory)
 import System.FilePath
   ( dropDrive
