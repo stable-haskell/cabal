@@ -1,7 +1,7 @@
 Could not resolve dependencies:
-[__0] trying: oops-0.1 (user goal)
-[__1] next goal: hashable (dependency of oops)
-[__1] rejecting: hashable-1.4.3.0
+[__0] trying: host:oops == host:source:oops-0.1 (user goal)
+[__1] next goal: host:hashable (dependency of host:oops)
+[__1] rejecting: host:hashable == host:source:hashable-1.4.3.0
       (constraint from oops/oops-9.config requires ==1.4.2.0)
         imported by: oops-8.config
         imported by: oops/oops-7.config
@@ -12,5 +12,5 @@ Could not resolve dependencies:
         imported by: oops-2.config
         imported by: oops/oops-1.config
         imported by: oops-0.project
-[__1] rejecting: hashable-1.4.2.0
+[__1] rejecting: host:hashable == host:source:hashable-1.4.2.0
       (constraint from oops-0.project requires ==1.4.3.0)

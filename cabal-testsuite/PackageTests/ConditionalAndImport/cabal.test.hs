@@ -113,8 +113,14 @@ main = cabalTest . withRepo "repo" . recordMode RecordMarked $ do
   log "checking that imports work skipping into a subfolder and then back out again and again"
   hopping <- cabal' "v2-build" [ "--project-file=hops-0.project" ]
 
-  readFileVerbatim "hops.expect.txt" >>=
-    flip (assertOn isInfixOf multilineNeedleHaystack) hopping .  normalizePathSeparators
+  expectedHops <- normalizePathSeparators <$> readFileVerbatim "hops.expect.txt"
+  let expectedHopsWithLocal = unlines $
+        take 2 (lines expectedHops)
+          ++ ["- hops-0.project.local"]
+          ++ drop 2 (lines expectedHops)
+      matchesHopsOverlay _ actual =
+        any ((`isInfixOf` actual) . encodeLf) [expectedHops, expectedHopsWithLocal]
+  assertOn matchesHopsOverlay multilineNeedleHaystack expectedHops hopping
 
   -- The project is named oops as it is like hops but has conflicting constraints.
   -- +-- oops-0.project
@@ -173,7 +179,13 @@ main = cabalTest . withRepo "repo" . recordMode RecordMarked $ do
   log "checking that missing package message lists configuration provenance"
   missing <- fails $ cabal' "v2-build" [ "--project-file=cabal-missing-package.project" ]
 
-  readFileVerbatim "cabal-missing-package.expect.txt"
-    >>= flip (assertOn isInfixOf multilineNeedleHaystack) missing . normalizePathSeparators
+  expectedMissing <- normalizePathSeparators <$> readFileVerbatim "cabal-missing-package.expect.txt"
+  let expectedMissingWithLocal = unlines $
+        take 2 (lines expectedMissing)
+          ++ ["  - cabal-missing-package.project.local"]
+          ++ drop 2 (lines expectedMissing)
+      matchesMissingOverlay _ actual =
+        any ((`isInfixOf` actual) . encodeLf) [expectedMissing, expectedMissingWithLocal]
+  assertOn matchesMissingOverlay multilineNeedleHaystack expectedMissing missing
 
   return ()

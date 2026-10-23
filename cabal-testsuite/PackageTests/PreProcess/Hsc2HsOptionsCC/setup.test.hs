@@ -1,7 +1,7 @@
 import Test.Cabal.Prelude
 import Distribution.Pretty (prettyShow)
-import Data.Maybe (isJust)
-import System.Directory (findExecutable)
+import Distribution.Simple.Compiler (compilerProperties)
+import qualified Data.Map as Map
 
 -- Check that preprocessors (hsc2hs) are run
 main = setupAndCabalTest $ do
@@ -18,9 +18,15 @@ main = setupAndCabalTest $ do
                 .   resultOutput
                 <$> runProgramM ghcProgram ["--print-libdir"] Nothing
             else do
-                hasGxx <- liftIO $ fmap isJust $ findExecutable "g++"
-                skipUnless "g++" hasGxx
-                pure "g++"
+                -- Use the configured C++ compiler. On Darwin a bare g++ may
+                -- be an unavailable Xcode shim even when GHC has a working
+                -- C++ toolchain (for example, in a Nix environment).
+                env <- getTestEnv
+                case Map.lookup "C++ compiler command" (compilerProperties (testCompiler env)) of
+                    Just path | not (null path) -> pure path
+                    _ -> do
+                        skipUnless "C++ compiler" =<< isAvailableProgram gppProgram
+                        programPath <$> requireProgramM gppProgram
 
     -- we need recent enough hsc2hs
     -- hsc2hs commit 9671202c11f7fe98e5b96d379532b6f691dc46dd
