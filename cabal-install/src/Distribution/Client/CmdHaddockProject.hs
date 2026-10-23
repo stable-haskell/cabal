@@ -4,9 +4,10 @@
 module Distribution.Client.CmdHaddockProject
   ( haddockProjectCommand
   , haddockProjectAction
+  , haddockProjectDirectoryUrlPath
   ) where
 
-import Control.Monad (mapM)
+import Control.Monad (forM_, mapM)
 import Distribution.Client.Compat.Prelude hiding (get)
 import Prelude ()
 
@@ -83,7 +84,7 @@ import Distribution.Simple.InstallDirs
   ( haddockdir
   , toPathTemplate
   )
-import Distribution.Simple.Program (addKnownProgram, haddockProgram, reconfigurePrograms)
+import Distribution.Simple.Program (addKnownProgram, haddockProgram, reconfigurePrograms, requireProgramVersion)
 import Distribution.Simple.Setup
   ( HaddockFlags (..)
   , HaddockProjectFlags (..)
@@ -100,7 +101,7 @@ import Distribution.Simple.Utils
   , warn
   )
 import Distribution.Types.InstalledPackageInfo (InstalledPackageInfo (..))
-import Distribution.Types.PackageDescription (PackageDescription (benchmarks, subLibraries, testSuites))
+import Distribution.Types.PackageDescription (PackageDescription (benchmarks, library, subLibraries, testSuites))
 import Distribution.Types.PackageId (pkgName)
 import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.UnitId (unUnitId)
@@ -183,6 +184,47 @@ haddockProjectAction flags _extraArgs globalFlags = do
           (haddockProjectProgramPaths flags)
           (haddockProjectProgramArgs flags)
           (addKnownProgram haddockProgram (toolchainProgramDb hostToolchain))
+      _ <- requireProgramVersion verbosity haddockProgram (orLaterVersion (mkVersion [2, 26, 1])) programs
+
+      --
+      -- Build project; we need to build dependencies.
+      -- Issue #8958.
+      --
+
+      when localStyle $
+        CmdBuild.buildAction
+          (commandDefaultFlags CmdBuild.buildCommand)
+          ["all"]
+          globalFlags
+
+      --
+      -- Build haddocks of each components
+      --
+
+      CmdHaddock.haddockAction
+        nixFlags
+        ["all"]
+        globalFlags
+
+      --
+      -- Copy haddocks to the destination folder
+      --
+
+      -- Copy every source component's documentation before checking interface
+      -- paths. A package description lists all of its libraries, while each
+      -- component has a separate output directory; checking sibling interfaces
+      -- before their output has been copied would report them as missing.
+      forM_ pkgs $ \case
+          Right package | elabLocalToProject package -> do
+            let pkg_descr = elabPkgDescription package
+                packageDir = haddockDirName ForDevelopment pkg_descr
+                destDir = outputDir </> packageDir
+                buildDir = distBuildDirectory distLayout (elabDistDirParams sharedConfig package)
+                docDir = buildDir </> "doc" </> "html" </> packageDir
+            hasDocs <- doesDirectoryExist docDir
+            when hasDocs $ copyDirectoryRecursive verbosity docDir destDir
+          _ -> return ()
+
       packageInfos <- fmap (nub . concat) $ for pkgs $ \case
           Left package | localStyle -> do
             let packageName = unPackageName (pkgName $ sourcePackageId package)
@@ -218,18 +260,19 @@ haddockProjectAction flags _extraArgs globalFlags = do
                 a <- doesDirectoryExist docDir
                 if a
                   then do
-                    copyDirectoryRecursive verbosity docDir destDir
                     let infos :: [(String, FilePath, Visibility)]
                         infos =
-                          (unPackageName packageName, interfacePath, Visible)
-                            : [ (sublibDirPath, sublibInterfacePath, Visible)
-                              | lib <- subLibraries pkg_descr
-                              , let sublibDirPath = haddockLibraryDirPath ForDevelopment pkg_descr lib
-                                    sublibInterfacePath =
+                          [ (unPackageName packageName, interfacePath, Visible)
+                          | isJust (library pkg_descr)
+                          ]
+                            ++ [ (sublibDirPath, sublibInterfacePath, Visible)
+                               | lib <- subLibraries pkg_descr
+                               , let sublibDirPath = haddockLibraryDirPath ForDevelopment pkg_descr lib
+                                     sublibInterfacePath =
                                       outputDir
                                         </> sublibDirPath
                                         </> haddockLibraryPath pkg_descr lib
-                              ]
+                               ]
                             ++ [ (testPath, testInterfacePath, Visible)
                                | test <- testSuites pkg_descr
                                , let testPath = haddockTestDirPath ForDevelopment pkg_descr test
@@ -303,7 +346,8 @@ haddockProjectAction flags _extraArgs globalFlags = do
               { haddockProjectDir = Flag outputDir
               , haddockProjectInterfaces =
                   Flag
-                    [ (interfacePath, Just url, Just url, visibility)
+                    [ let urlPath = haddockProjectDirectoryUrlPath url
+                       in (interfacePath, Just urlPath, Just urlPath, visibility)
                     | (url, interfacePath, visibility) <- packageInfos'
                     ]
               , haddockProjectUseUnicode = NoFlag
@@ -331,7 +375,9 @@ haddockProjectAction flags _extraArgs globalFlags = do
           -- `--haddock-html-location`.
           haddockBaseUrl =
             if localStyle
-              then Flag ".."
+              then -- A directory URL needs its trailing slash: older Haddock
+              -- versions otherwise insert native Windows separators.
+                Flag "../"
               else NoFlag
         , haddockProgramPaths = haddockProjectProgramPaths flags
         , haddockProgramArgs = haddockProjectProgramArgs flags
@@ -408,3 +454,10 @@ haddockProjectAction flags _extraArgs globalFlags = do
     matchingPackages =
       fmap (foldPlanPackage (Left . withoutStage) Right)
         . InstallPlan.toList
+
+-- Haddock interprets the first fields of --read-interface as URLs. The paths
+-- here are generated from package/component names, which cannot contain literal
+-- backslashes. Convert Windows separators for the URL fields without changing
+-- the native interface path used for filesystem access.
+haddockProjectDirectoryUrlPath :: FilePath -> FilePath
+haddockProjectDirectoryUrlPath = map (\c -> if c == '\\' then '/' else c)

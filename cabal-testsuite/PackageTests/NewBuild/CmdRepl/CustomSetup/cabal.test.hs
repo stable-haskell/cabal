@@ -6,4 +6,5 @@ main = do
     skipUnlessGhcVersion ">= 8.8"
     skipIfGhcVersion ">= 9.10"
     res <- cabalWithStdin "v2-repl" ["foo"] ""
-    assertOutputContains "- foo-0.1.0.0 (interactive)" res
+    assertOutputContains "- host foo-0.1.0.0" res
+    assertOutputContains "--- Repl phase host:foo-0.1.0.0" res
