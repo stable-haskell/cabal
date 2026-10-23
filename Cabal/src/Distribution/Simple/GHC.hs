@@ -72,7 +72,9 @@ module Distribution.Simple.GHC
   , Internal.simpleGhcEnvironmentFile
   , Internal.renderGhcEnvironmentFile
   , Internal.writeGhcEnvironmentFile
+  , Internal.writeGhcEnvironmentFileWithAbi
   , Internal.ghcPlatformAndVersionString
+  , Internal.ghcPlatformAndVersionStringWithAbi
   , readGhcEnvironmentFile
   , parseGhcEnvironmentFile
   , ParseErrorExc (..)
@@ -101,7 +103,7 @@ import Distribution.Simple.Compiler
 import Distribution.Simple.Errors
 import Distribution.Simple.Flag
 import qualified Distribution.Simple.GHC.Build as GHC
-import Distribution.Simple.GHC.Build.Modules (BuildWay (..))
+import Distribution.Simple.GHC.Build.Modules (BuildWay (..), buildWayExtraHcOptions)
 import Distribution.Simple.GHC.Build.Utils
 import Distribution.Simple.GHC.EnvironmentParser
 import Distribution.Simple.GHC.ImplInfo
@@ -132,7 +134,6 @@ import System.FilePath
   , takeBaseName
   , takeDirectory
   )
-import qualified System.Info
 #ifndef mingw32_HOST_OS
 import System.Posix (createSymbolicLink)
 #endif /* mingw32_HOST_OS */
@@ -240,6 +241,14 @@ configureCompiler verbosity hcPath conf0 = do
       -- In this example, @AbiTag@ is "inplace".
       compilerAbiTag :: AbiTag
       compilerAbiTag =
+        case (projectAbiTag, Map.lookup "Target ABI" ghcInfoMap) of
+          (tag, Nothing) -> tag
+          (tag, Just "") -> tag
+          (NoAbiTag, Just abi) -> AbiTag abi
+          (AbiTag tag, Just abi) -> AbiTag (tag ++ "-" ++ abi)
+
+      projectAbiTag :: AbiTag
+      projectAbiTag =
         case Map.lookup "Project Unit Id" ghcInfoMap of
           Nothing -> NoAbiTag
           Just "" -> NoAbiTag
@@ -258,6 +267,10 @@ configureCompiler verbosity hcPath conf0 = do
         | otherwise = Just (mkUnitId s)
 
       wiredInUnitIds = do
+        -- These baked-in IDs describe libraries used by the running compiler.
+        -- An intrinsic profiling target has a separate package universe; its
+        -- target libraries must be resolved from the target package database.
+        guard (Map.lookup "Target ABI" ghcInfoMap /= Just "profiling")
         ghcUnitId <- validUnitId =<< projectUnitId
         ghcInternalUnitId <- validUnitId =<< Map.lookup "ghc-internal Unit Id" ghcInfoMap
         pure
@@ -276,7 +289,9 @@ configureCompiler verbosity hcPath conf0 = do
           , compilerWiredInUnitIds = wiredInUnitIds
           }
       compPlatform = Internal.targetPlatform ghcInfo
-  return (comp, compPlatform, progdb1)
+  let ghcProgWithAbi =
+        ghcProg{programProperties = Map.insert "Target ABI" (compilerTargetAbi comp) (programProperties ghcProg)}
+  return (comp, compPlatform, updateProgram ghcProgWithAbi progdb1)
 
 -- | Given a configured @ghc@ program, configure auxiliary programs such
 -- as @ghc-pkg@ or @haddock@, as well as toolchain programs such as @ar@, @ld@,
@@ -591,9 +606,10 @@ getUserPackageDB _verbosity ghcProg platform = do
   return (appdir </> platformAndVersion </> packageConfFileName)
   where
     platformAndVersion =
-      Internal.ghcPlatformAndVersionString
+      Internal.ghcPlatformAndVersionStringWithAbi
         platform
         ghcVersion
+        (Map.findWithDefault "" "Target ABI" (programProperties ghcProg))
     packageConfFileName = "package.conf.d"
     ghcVersion = fromMaybe (error "GHC.getUserPackageDB: no ghc version") $ programVersion ghcProg
 
@@ -816,6 +832,7 @@ libAbiHash verbosity _pkg_descr lbi lib clbi = do
         `mappend` mempty
           { ghcOptMode = toFlag GhcModeAbiHash
           , ghcOptInputModules = toNubListR $ exposedModules lib
+          , ghcOptExtra = hcOptions GHC libBi ++ buildWayExtraHcOptions StaticWay comp libBi
           }
     sharedArgs =
       vanillaArgs
@@ -824,39 +841,11 @@ libAbiHash verbosity _pkg_descr lbi lib clbi = do
           , ghcOptFPic = toFlag True
           , ghcOptHiSuffix = toFlag "dyn_hi"
           , ghcOptObjSuffix = toFlag "dyn_o"
-          , ghcOptExtra = hcOptions GHC libBi ++ hcSharedOptions GHC libBi
-          }
-    profArgs =
-      vanillaArgs
-        `mappend` mempty
-          { ghcOptProfilingMode = toFlag True
-          , ghcOptProfilingAuto =
-              Internal.profDetailLevelFlag
-                True
-                (withProfLibDetail lbi)
-          , ghcOptHiSuffix = toFlag "p_hi"
-          , ghcOptObjSuffix = toFlag "p_o"
-          , ghcOptExtra = hcOptions GHC libBi ++ hcProfOptions GHC libBi
-          }
-    profDynArgs =
-      vanillaArgs
-        `mappend` mempty
-          { ghcOptProfilingMode = toFlag True
-          , ghcOptProfilingAuto =
-              Internal.profDetailLevelFlag
-                True
-                (withProfLibDetail lbi)
-          , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-          , ghcOptFPic = toFlag True
-          , ghcOptHiSuffix = toFlag "p_dyn_hi"
-          , ghcOptObjSuffix = toFlag "p_dyn_o"
-          , ghcOptExtra = hcOptions GHC libBi ++ hcProfSharedOptions GHC libBi
+          , ghcOptExtra = hcOptions GHC libBi ++ buildWayExtraHcOptions DynWay comp libBi
           }
     ghcArgs =
       let (libWays, _, _) = buildWays lbi
        in case libWays (componentIsIndefinite clbi) of
-            (ProfDynWay : _) -> profDynArgs
-            (ProfWay : _) -> profArgs
             (StaticWay : _) -> vanillaArgs
             (DynWay : _) -> sharedArgs
             _ -> error "libAbiHash: Can't find an enabled library way"
@@ -989,8 +978,6 @@ installLib verbosity lbi targetDir dynlibTargetDir bytecodeTargetDir _builtDir p
   forM_ (wantedLibWays isIndef) $ \w -> case w of
     StaticWay -> copyModuleFiles (Suffix "hi")
     DynWay -> copyModuleFiles (Suffix "dyn_hi")
-    ProfWay -> copyModuleFiles (Suffix "p_hi")
-    ProfDynWay -> copyModuleFiles (Suffix "p_dyn_hi")
 
   -- copy extra compilation artifacts that ghc plugins may produce
   copyDirectoryIfExists extraCompilationArtifacts
@@ -1015,14 +1002,6 @@ installLib verbosity lbi targetDir dynlibTargetDir bytecodeTargetDir _builtDir p
           , f <- "" : extraLibFlavours (libBuildInfo lib)
           ]
         whenGHCi $ installOrdinary builtDir targetDir ghciLibName
-      ProfWay -> do
-        installOrdinary builtDir targetDir profileLibName
-        whenGHCi $ installOrdinary builtDir targetDir ghciProfLibName
-      ProfDynWay -> do
-        installShared
-          builtDir
-          dynlibTargetDir
-          (mkProfSharedLibName platform compiler_id uid)
       DynWay -> do
         if
             -- The behavior for "extra-bundled-libraries" changed in version 2.5.0.
@@ -1110,10 +1089,8 @@ installLib verbosity lbi targetDir dynlibTargetDir bytecodeTargetDir _builtDir p
     compiler_id = compilerId (compiler lbi)
     platform = hostPlatform lbi
     uid = componentUnitId clbi
-    profileLibName = mkProfLibName uid
     bytecodeLibName = mkBytecodeLibName compiler_id uid
     ghciLibName = Internal.mkGHCiLibName uid
-    ghciProfLibName = Internal.mkGHCiProfLibName uid
 
     hasLib =
       not $
@@ -1164,11 +1141,10 @@ pkgRoot verbosity lbi = fmap makeSymbolicPath . pkgRoot'
       appDir <- getGhcAppDir
       let ver = compilerVersion (compiler lbi)
           subdir =
-            System.Info.arch
-              ++ '-'
-              : System.Info.os
-              ++ '-'
-              : prettyShow ver
+            Internal.ghcPlatformAndVersionStringWithAbi
+              (hostPlatform lbi)
+              ver
+              (compilerTargetAbi (compiler lbi))
           rootDir = appDir </> subdir
       -- We must create the root directory for the user package database if it
       -- does not yet exist. Otherwise '${pkgroot}' will resolve to a

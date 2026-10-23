@@ -48,7 +48,7 @@ import Distribution.Simple.GHC
   , GhcImplInfo (supportsPkgEnvFiles)
   , getImplInfo
   , simpleGhcEnvironmentFile
-  , writeGhcEnvironmentFile
+  , writeGhcEnvironmentFileWithAbi
   )
 import Distribution.Simple.Utils
 import Distribution.System
@@ -839,10 +839,11 @@ writePlanGhcEnvironment
       then -- TODO: check ghcjs compat
 
         fmap Just $
-          writeGhcEnvironmentFile
+          writeGhcEnvironmentFileWithAbi
             path
             toolchainPlatform
             (compilerVersion toolchainCompiler)
+            (compilerTargetAbi toolchainCompiler)
             env
       else return Nothing
     where

@@ -30,6 +30,8 @@ module Distribution.Simple.Compiler
   , showCompilerIdWithAbi
   , compilerFlavor
   , compilerVersion
+  , compilerTargetAbi
+  , compilerTargetsProfiling
   , compilerCompatFlavor
   , compilerCompatVersion
   , compilerInfo
@@ -110,7 +112,7 @@ import Distribution.Version
 import Language.Haskell.Extension
 
 import Data.Bool (bool)
-import qualified Data.Map as Map (lookup)
+import qualified Data.Map as Map (findWithDefault, lookup)
 import System.Directory (canonicalizePath)
 
 data Compiler = Compiler
@@ -156,6 +158,17 @@ compilerFlavor = (\(CompilerId f _) -> f) . compilerId
 
 compilerVersion :: Compiler -> Version
 compilerVersion = (\(CompilerId _ v) -> v) . compilerId
+
+-- | The compiler's intrinsic target ABI, independently of its architecture
+-- and OS. Older compilers omit this property and retain their existing ABI.
+compilerTargetAbi :: Compiler -> String
+compilerTargetAbi = Map.findWithDefault "" "Target ABI" . compilerProperties
+
+-- | Profiling is intrinsic to this target, rather than an additional library
+-- way. Its ordinary objects and interfaces already use the profiling ABI.
+compilerTargetsProfiling :: Compiler -> Bool
+compilerTargetsProfiling comp =
+  compilerFlavor comp == GHC && compilerTargetAbi comp == "profiling"
 
 -- | Is this compiler compatible with the compiler flavour we're interested in?
 --
@@ -508,9 +521,7 @@ coverageSupported comp =
 -- | Does this compiler support profiling?
 profilingSupported :: Compiler -> Bool
 profilingSupported comp =
-  case compilerFlavor comp of
-    GHC -> True
-    _ -> False
+  compilerTargetsProfiling comp
 
 -- | Returns Just if we can certainly determine whether a way is supported
 -- if we don't know, return Nothing
@@ -535,17 +546,14 @@ profilingVanillaSupportedOrUnknown comp = profilingVanillaSupported comp `elem` 
 
 -- | Is the compiler distributed with profiling libraries
 profilingVanillaSupported :: Compiler -> Maybe Bool
-profilingVanillaSupported comp = waySupported "p" comp
+profilingVanillaSupported comp =
+  Just (compilerTargetsProfiling comp)
 
 -- | Is the compiler distributed with profiling dynamic libraries
 profilingDynamicSupported :: Compiler -> Maybe Bool
 profilingDynamicSupported comp
-  | GHC <- compilerFlavor comp
-  , -- Certainly not before 9.11, as prof+dyn was not implemented yet.
-    compilerVersion comp <= mkVersion [9, 11, 0] =
-      Just False
-  | otherwise =
-      waySupported "p_dyn" comp
+  | compilerTargetsProfiling comp = dynamicSupported comp
+  | otherwise = Just False
 
 -- | Either profiling dynamic is definitely supported or we don't know (so assume
 -- it is)

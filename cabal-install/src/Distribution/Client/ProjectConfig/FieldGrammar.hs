@@ -47,6 +47,7 @@ projectConfigFieldGrammar source knownPrograms =
     -- \^ PackageConfig applied to explicitly named packages
     <*> pure mempty
     -- \^ PackageConfig applied to all packages of a given stage ('package build:*' etc.)
+    <*> pure mempty -- Internal install-local overlay is not read from project files.
   where
     provenance = Set.singleton (Explicit source)
 

@@ -3,6 +3,8 @@ module UnitTests.Distribution.Client.Store (tests) where
 -- import Control.Monad
 -- import Control.Concurrent (forkIO, threadDelay)
 -- import Control.Concurrent.MVar
+
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import System.Directory
 import System.FilePath
@@ -29,9 +31,37 @@ tests :: [TestTree]
 tests =
   [ testCase "list content empty" testListEmpty
   , testCase "install serial" testInstallSerial
+  , testCase "same architecture target ABIs have separate stores and databases" testTargetAbi
   -- , testCase "install parallel"    testInstallParallel
   -- TODO: figure out some way to do a parallel test, see issue below
   ]
+
+testTargetAbi :: Assertion
+testTargetAbi = do
+  let compiler =
+        Compiler
+          { compilerId = CompilerId GHC (mkVersion [9, 14, 1])
+          , compilerAbiTag = NoAbiTag
+          , compilerCompat = []
+          , compilerLanguages = []
+          , compilerExtensions = []
+          , compilerProperties = Map.singleton "Target platform" "aarch64-apple-darwin"
+          , compilerWiredInUnitIds = Nothing
+          }
+      native = Toolchain buildPlatform compiler emptyProgramDb []
+      profiled =
+        native
+          { toolchainCompiler =
+              compiler
+                { compilerProperties = Map.insert "Target ABI" "profiling" (compilerProperties compiler)
+                }
+          }
+      layout = defaultStoreDirLayout "store"
+  storeDirectory layout Host native @?= "store" </> "host" </> "aarch64-apple-darwin"
+  storeDirectory layout Host profiled @?= "store" </> "host" </> "aarch64-apple-darwin-profiling"
+  assertBool "package databases must not alias" $
+    storePackageDBPath layout Host native /= storePackageDBPath layout Host profiled
+  assertBool "the ABI crossing is independent of the architecture" (native /= profiled)
 
 testListEmpty :: Assertion
 testListEmpty =

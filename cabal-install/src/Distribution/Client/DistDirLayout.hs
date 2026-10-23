@@ -31,6 +31,7 @@ import Prelude ()
 
 import System.FilePath
 
+import qualified Data.Map as Map
 import Distribution.Client.Config
   ( defaultLogsDir
   , defaultStoreDir
@@ -46,9 +47,9 @@ import Distribution.Simple.Compiler
   , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
+  , compilerTargetAbi
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
-import qualified Data.Map as Map
 
 -- | Information which can be used to construct the path to
 -- the build directory of a build.  This is LESS fine-grained
@@ -277,6 +278,9 @@ betterPlatform toolchain =
     (prettyShow (toolchainPlatform toolchain))
     "Target platform"
     (compilerProperties (toolchainCompiler toolchain))
+    ++ case compilerTargetAbi (toolchainCompiler toolchain) of
+      "" -> ""
+      abi -> "-" ++ abi
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

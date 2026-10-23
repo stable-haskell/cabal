@@ -447,37 +447,13 @@ testCoverage (LocalBuildInfo{exeCoverage = exes, libCoverage = libs}) =
 buildWays :: LocalBuildInfo -> (Bool -> [BuildWay], Bool -> BuildWay, BuildWay)
 buildWays lbi =
   let
-    -- enable-library-profiling (enable (static profiling way)) .p_o
-    -- enable-shared (enabled dynamic way)  .dyn_o
-    -- enable-profiling-shared (enable dynamic profilng way) .p_dyn_o
-    -- enable-library-vanilla (enable vanilla way) .o
-    --
-    -- enable-executable-dynamic => build dynamic executables
-    -- => --enable-profiling + --enable-executable-dynamic => build dynamic profiled executables
-    -- => --enable-profiling => build vanilla profiled executables
-
+    -- Static and shared artifacts both use the selected compiler's target ABI.
     wantedLibWays is_indef =
-      [ProfDynWay | withProfLibShared lbi && not is_indef]
-        <> [ProfWay | withProfLib lbi]
-        -- I don't see why we shouldn't build with dynamic-- indefinite components.
-        <> [DynWay | withSharedLib lbi && not is_indef]
-        -- MP: Ideally we should have `BuildOptions` on a per component basis, in
-        -- which case this `is_indef` check could be moved to configure time.
+      [DynWay | withSharedLib lbi && not is_indef]
         <> [StaticWay | withVanillaLib lbi || withStaticLib lbi]
 
-    wantedFLibWay is_dyn_flib =
-      case (is_dyn_flib, withProfExe lbi) of
-        (True, True) -> ProfDynWay
-        (False, True) -> ProfWay
-        (True, False) -> DynWay
-        (False, False) -> StaticWay
-
-    wantedExeWay =
-      case (withDynExe lbi, withProfExe lbi) of
-        (True, True) -> ProfDynWay
-        (True, False) -> DynWay
-        (False, True) -> ProfWay
-        (False, False) -> StaticWay
+    wantedFLibWay is_dyn_flib = if is_dyn_flib then DynWay else StaticWay
+    wantedExeWay = if withDynExe lbi then DynWay else StaticWay
    in
     (wantedLibWays, wantedFLibWay, wantedExeWay)
 

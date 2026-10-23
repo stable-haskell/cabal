@@ -230,22 +230,10 @@ buildExtraSources
                 -- -fPIC is used in case you are using the repl
                 -- of a dynamically linked GHC
                 baseSrcOpts{ghcOptFPic = toFlag True}
-              profSrcOpts =
-                vanillaSrcOpts
-                  `mappend` mempty
-                    { ghcOptProfilingMode = toFlag True
-                    }
               sharedSrcOpts =
                 vanillaSrcOpts
                   `mappend` mempty
                     { ghcOptFPic = toFlag True
-                    , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-                    }
-              profSharedSrcOpts =
-                vanillaSrcOpts
-                  `mappend` mempty
-                    { ghcOptProfilingMode = toFlag True
-                    , ghcOptFPic = toFlag True
                     , ghcOptDynLinkMode = toFlag GhcDynamicOnly
                     }
               -- TODO: Placing all Haskell, C, & C++ objects in a single directory
@@ -261,8 +249,8 @@ buildExtraSources
 
           createDirectoryIfMissingVerbose verbosity True (i odir)
           case targetComponent targetInfo of
-            -- For libraries, we compile extra objects in the four ways: vanilla, shared, profiled and profiled shared.
-            -- We suffix shared objects with `.dyn_o`, profiled ones with `.p_o` and profiled shared ones with `.p_dyn_o`.
+            -- Libraries have ordinary static and shared object names.
+            -- Their profiling ABI comes from the selected target compiler.
             CLib _lib
               -- Unless for repl, in which case we only need the vanilla way
               | BuildRepl _ <- buildingWhat ->
@@ -272,23 +260,17 @@ buildExtraSources
                     forM_ (neededLibWays isIndef) $ \case
                       StaticWay -> compileIfNeeded vanillaSrcOpts
                       DynWay -> compileIfNeeded sharedSrcOpts{ghcOptObjSuffix = toFlag "dyn_o"}
-                      ProfWay -> compileIfNeeded profSrcOpts{ghcOptObjSuffix = toFlag "p_o"}
-                      ProfDynWay -> compileIfNeeded profSharedSrcOpts{ghcOptObjSuffix = toFlag "p_dyn_o"}
             CFLib flib ->
               case neededFLibWay (withDynFLib flib) of
                 StaticWay -> compileIfNeeded vanillaSrcOpts
                 DynWay -> compileIfNeeded sharedSrcOpts
-                ProfWay -> compileIfNeeded profSrcOpts
-                ProfDynWay -> compileIfNeeded profSharedSrcOpts
             -- For the remaining component types (Exec, Test, Bench), we also
             -- determine with which options to build the objects (vanilla vs shared vs
-            -- profiled), but predicate is the same for the three kinds.
+            -- shared), but predicate is the same for the three kinds.
             _exeLike ->
               case neededExeWay of
                 StaticWay -> compileIfNeeded vanillaSrcOpts
                 DynWay -> compileIfNeeded sharedSrcOpts
-                ProfWay -> compileIfNeeded profSrcOpts
-                ProfDynWay -> compileIfNeeded profSharedSrcOpts
 
       -- build any sources
       if (null sources || componentIsIndefinite clbi)

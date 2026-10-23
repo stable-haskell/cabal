@@ -55,8 +55,6 @@ import System.FilePath
   , replaceExtension
   )
 
-import Distribution.Simple.InstallDirs (bindir, libdir)
-
 -- | Links together the object files of the Haskell modules and extra sources
 -- using the context in which the component is being built.
 --
@@ -265,13 +263,9 @@ linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosi
     uid = componentUnitId clbi
     libBi = libBuildInfo lib
     vanillaLibFilePath = buildTargetDir </> makeRelativePathEx (mkLibName uid)
-    profileLibFilePath = buildTargetDir </> makeRelativePathEx (mkProfLibName uid)
     sharedLibFilePath =
       buildTargetDir
         </> makeRelativePathEx (mkSharedLibName (hostPlatform lbi) compiler_id uid)
-    profSharedLibFilePath =
-      buildTargetDir
-        </> makeRelativePathEx (mkProfSharedLibName (hostPlatform lbi) compiler_id uid)
     staticLibFilePath =
       buildTargetDir
         </> makeRelativePathEx (mkStaticLibName (hostPlatform lbi) compiler_id uid)
@@ -279,7 +273,6 @@ linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosi
       buildTargetDir
         </> makeRelativePathEx (mkBytecodeLibName compiler_id uid)
     ghciLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiLibName uid)
-    ghciProfLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiProfLibName uid)
 
     getObjWayFiles :: BuildWay -> IO [SymbolicPath Pkg File]
     getObjWayFiles w = getObjFiles (buildWayObjectExtension objExtension w) (buildWayObjectExtension objExtension w)
@@ -329,7 +322,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosi
         { -- TODO: This basically duplicates componentGhcOptions.
           -- I think we want to do the same as we do for executables: re-use the
           -- base options, and link by module names, not object paths.
-          ghcOptExtra = hcStaticOptions GHC libBi
+          ghcOptExtra = buildWayExtraHcOptions StaticWay comp libBi
         , ghcOptHideAllPackages = toFlag True
         , ghcOptNoAutoLinkPackages = toFlag True
         , ghcOptPackageDBs = withPackageDB lbi
@@ -362,29 +355,11 @@ linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosi
     ghcSharedLinkArgs :: [SymbolicPath Pkg File] -> GhcOptions
     ghcSharedLinkArgs dynObjectFiles =
       ghcBaseLinkArgs
-        { ghcOptShared = toFlag True
+        { ghcOptExtra = buildWayExtraHcOptions DynWay comp libBi
+        , ghcOptShared = toFlag True
         , ghcOptDynLinkMode = toFlag GhcDynamicOnly
         , ghcOptInputFiles = toNubListR $ map coerceSymbolicPath dynObjectFiles
         , ghcOptOutputFile = toFlag sharedLibFilePath
-        , ghcOptDylibName = mempty
-        , ghcOptLinkLibs = extraLibs libBi
-        , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
-        , ghcOptLinkFrameworks = toNubListR $ map getSymbolicPath $ PD.frameworks libBi
-        , ghcOptLinkFrameworkDirs =
-            toNubListR $ PD.extraFrameworkDirs libBi
-        , ghcOptRPaths = rpaths
-        }
-    ghcProfSharedLinkArgs pdynObjectFiles =
-      ghcBaseLinkArgs
-        { ghcOptShared = toFlag True
-        , ghcOptProfilingMode = toFlag True
-        , ghcOptProfilingAuto =
-            Internal.profDetailLevelFlag
-              True
-              (withProfLibDetail lbi)
-        , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-        , ghcOptInputFiles = toNubListR pdynObjectFiles
-        , ghcOptOutputFile = toFlag profSharedLibFilePath
         , ghcOptDylibName = mempty
         , ghcOptLinkLibs = extraLibs libBi
         , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
@@ -409,9 +384,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosi
         }
 
   staticObjectFiles <- getObjWayFiles StaticWay
-  profObjectFiles <- getObjWayFiles ProfWay
   dynamicObjectFiles <- getObjWayFiles DynWay
-  profDynamicObjectFiles <- getObjWayFiles ProfDynWay
 
   -- See doc/internal/bytecode-libraries.md for how the chosen companion
   -- way determines which .gbc files get packed into the .bytecodelib.
@@ -426,18 +399,6 @@ linkLibrary buildTargetDir cleanedExtraLibDirs cleanedExtraLibDirsStatic verbosi
     for_ wantedWays $ \way -> do
       info verbosity ("Linking " ++ show way ++ " library...")
       case way of
-        ProfWay -> do
-          Ar.createArLibArchive verbosity lbi profileLibFilePath profObjectFiles
-          when (withGHCiLib lbi) $ do
-            (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
-            Ld.combineObjectFiles
-              verbosity
-              lbi
-              ldProg
-              ghciProfLibFilePath
-              profObjectFiles
-        ProfDynWay -> do
-          runGhcProg $ ghcProfSharedLinkArgs profDynamicObjectFiles
         DynWay -> do
           runGhcProg $ ghcSharedLinkArgs dynamicObjectFiles
           -- The .gbc files were built with DynWay if both are enabled.
@@ -633,19 +594,23 @@ getRPaths pbci = do
           --
           -- Mirrors the executable/library split in
           -- 'Distribution.Simple.LocalBuildInfo.depLibraryPaths'.
-          installDirs = absoluteComponentInstallDirs
-            (localPkgDescr lbi) lbi (componentUnitId clbi) NoCopyDest
+          installDirs =
+            absoluteComponentInstallDirs
+              (localPkgDescr lbi)
+              lbi
+              (componentUnitId clbi)
+              NoCopyDest
           isExe = case clbi of
             ExeComponentLocalBuildInfo{} -> True
             _ -> False
           relDir
-            | isExe     = bindir installDirs
+            | isExe = bindir installDirs
             | otherwise = libdir installDirs
           -- Convert an rpath entry to its loader-relative form.
           --
-          -- * Already-relative paths get the `@loader_path` / `$ORIGIN`
+          -- \* Already-relative paths get the `@loader_path` / `$ORIGIN`
           --   prefix as before.
-          -- * Absolute paths are rewritten to a relative-form expression
+          -- \* Absolute paths are rewritten to a relative-form expression
           --   (`@loader_path/../../...`) computed against the binary's
           --   install dir, so the resulting binary does not bake a
           --   build-host absolute path into LC_RPATH / DT_RUNPATH.
@@ -669,7 +634,7 @@ getRPaths pbci = do
           --   the stable-haskell GHC bindist assembly pipeline.
           relPath p
             | isRelative p = hostPref </> p
-            | otherwise    = hostPref </> shortRelativePath relDir p
+            | otherwise = hostPref </> shortRelativePath relDir p
           rpaths =
             -- Always search the artifact's own directory ($ORIGIN /
             -- @loader_path) first, so a sibling library installed alongside it
@@ -703,8 +668,6 @@ data StaticRtsInfo = StaticRtsInfo
   , statRtsEventlogLib :: FilePath
   , statRtsThreadedDebugLib :: FilePath
   , statRtsThreadedEventlogLib :: FilePath
-  , statRtsProfilingLib :: FilePath
-  , statRtsThreadedProfilingLib :: FilePath
   }
 
 data RtsInfo = RtsInfo
@@ -747,8 +710,6 @@ extractRtsInfo lbi =
               , statRtsEventlogLib = "HSrts_l"
               , statRtsThreadedDebugLib = "HSrts_thr_debug"
               , statRtsThreadedEventlogLib = "HSrts_thr_l"
-              , statRtsProfilingLib = "HSrts_p"
-              , statRtsThreadedProfilingLib = "HSrts_thr_p"
               }
         , rtsLibPaths = InstalledPackageInfo.libraryDirs rts
         }

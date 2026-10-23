@@ -366,6 +366,7 @@ test-suite unit-tests
 
     build-depends:
       , array
+      , binary
       , bytestring
       , cabal-install
       , Cabal-tree-diff

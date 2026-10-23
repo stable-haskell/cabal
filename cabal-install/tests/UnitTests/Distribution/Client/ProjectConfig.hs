@@ -419,6 +419,7 @@ instance Arbitrary ProjectConfig where
               <$> shortListOf 3 arbitrary
           )
       <*> pure mempty -- projectConfigStagePackages: no round-trip coverage yet
+      <*> pure mempty -- projectConfigInstallPackages: internal install-only state
 
   -- package entries with no content are equivalent to
   -- the entry not existing at all, so exclude empty
@@ -451,6 +452,7 @@ instance Arbitrary ProjectConfig where
             )
         , projectConfigAllPackages = x9'
         , projectConfigStagePackages = mempty
+        , projectConfigInstallPackages = mempty
         }
       | ((x0', x1', x2', x3'), (x4', x5', x6', x7', x8', x9')) <-
           shrink
