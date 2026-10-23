@@ -7,7 +7,7 @@ main = cabalTest . withRepo "repo" $ do
     env <- getTestEnv
 
     -- Check properties of executable component
-    libDir <- findDependencyInStore "exe"
+    libDir <- findBuildDependencyInStore "exe"
     -- Documentation is enabled..
     assertFileDoesContain (libDir </> "cabal-hash.txt") "documentation: True"
     -- But not built

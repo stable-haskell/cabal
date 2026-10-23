@@ -5,3 +5,5 @@ import Test.Cabal.Prelude
 main = cabalTest $ do
   r <- cabal' "haddock" ["--haddock-for-hackage", "A"]
   assertOutputDoesNotContain "index.html" r
+  env <- getTestEnv
+  shouldExist $ testDistDir env </> "A-0.0.0-docs.tar.gz"

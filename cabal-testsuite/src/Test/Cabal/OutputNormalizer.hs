@@ -1,8 +1,12 @@
 module Test.Cabal.OutputNormalizer
   ( NormalizerEnv (..)
   , normalizeOutput
+  , normalizeCallStackFrames
+  , normalizeScriptBuildCacheKeys
   ) where
 
+import Data.Char (isAlphaNum, isAscii, isDigit)
+import Data.List (findIndex, isPrefixOf, tails)
 import Data.Monoid (Endo (..))
 
 import Distribution.Package
@@ -19,9 +23,8 @@ import Data.Foldable qualified as F
 
 normalizeOutput :: NormalizerEnv -> String -> String
 normalizeOutput nenv =
-  -- Normalize backslashes to forward slashes to normalize
-  -- file paths
-  backslashToSlash
+  normalizeCallStackFrames
+    . normalizeScriptBuildCacheKeys
     -- Install path frequently has architecture specific elements, so
     -- nub it out
     . resub "Installing (.+) in .+" "Installing \\1 in <PATH>"
@@ -75,10 +78,28 @@ normalizeOutput nenv =
     . resub (posixRegexEscape (display (normalizerPlatform nenv))) "<ARCH>"
     -- Store and build paths spell the platform the way the compiler does
     -- (e.g. x86_64-unknown-linux), not the way cabal does (x86_64-linux).
+    -- Normalize the triples reported by the selected test compilers so
+    -- unrelated cross targets remain visible. Profiling variants come
+    -- first so the -prof suffix is normalized together with its triple
+    -- instead of dangling off an already-normalized <ARCH>.
+    . appEndo
+      ( F.fold
+          ( map
+              (\triple -> Endo (resub (posixRegexEscape triple) "<ARCH>"))
+              (F.toList (normalizerTargetPlatform nenv) ++ normalizerMachineTriples nenv)
+          )
+      )
+    . appEndo
+      ( F.fold
+          ( map
+              (\triple -> Endo (resub (posixRegexEscape (triple ++ "-prof")) "<ARCH>"))
+              (F.toList (normalizerTargetPlatform nenv) ++ normalizerMachineTriples nenv)
+          )
+      )
     . maybe
       id
-      (\triple -> resub (posixRegexEscape triple) "<ARCH>")
-      (normalizerTargetPlatform nenv)
+      (\triple -> resub (posixRegexEscape triple) "<BUILD-ARCH>")
+      (normalizerDistinctBuildMachineTriple nenv)
     -- Some GHC versions are chattier than others
     . resub "^ignoring \\(possibly broken\\) abi-depends field for packages" ""
     -- Normalize the current GHC version.  Apply this BEFORE packageIdRegex,
@@ -186,6 +207,11 @@ data NormalizerEnv = NormalizerEnv
   , normalizerTargetPlatform :: Maybe String
   -- ^ The platform triple as the compiler spells it (its @Target platform@
   -- property), which is what appears in store and build paths.
+  , normalizerMachineTriples :: [String]
+  -- ^ Canonical Host target triples, plus a matching Build triple when both
+  -- compilers have the same machine target.
+  , normalizerDistinctBuildMachineTriple :: Maybe String
+  -- ^ A distinct Build machine target remains identifiable in normalized output.
   , normalizerCabalVersion :: Version
   , normalizerCabalInstallVersion :: Maybe Version
   }
@@ -198,6 +224,14 @@ posixRegexEscape = concatMap (\c -> if c `elem` posixSpecialChars then ['\\', c]
 
 backslashToSlash :: String -> String
 backslashToSlash = map (\c -> if c == '\\' then '/' else c)
+
+-- | Normalize only the 52-hex key directory below @script-builds@.
+-- The script cache key is derived from the absolute script path, which varies
+-- with the test runner's temporary directory.
+normalizeScriptBuildCacheKeys :: String -> String
+normalizeScriptBuildCacheKeys =
+  resub "/script-builds/[A-Fa-f0-9]{52}/" "/script-builds/<HASH>/"
+    . backslashToSlash
 
 -- From regex-compat-tdfa by Christopher Kuklewicz and shelarcy, BSD-3-Clause
 -------------------------
@@ -242,3 +276,80 @@ mkRegex :: String -> Regex
 mkRegex s = makeRegexOpts opt defaultExecOpt s
   where
     opt = defaultCompOpt{newSyntax = True, multiline = True}
+
+-- | Normalize unstable coordinates and Cabal unit ids in HasCallStack frame
+-- lines. Keep the frame function, source path, and module so the diagnostic
+-- still identifies where the call originated.
+--
+-- Exported so the testsuite can verify this narrowly scoped normalization
+-- without constructing a platform-specific 'NormalizerEnv'.
+normalizeCallStackFrames :: String -> String
+normalizeCallStackFrames = go
+  where
+    go input =
+      case break (\c -> c == '\n' || c == '\r') input of
+        (line, []) -> normalizeFrame line
+        (line, '\r' : '\n' : rest) -> normalizeFrame line ++ "\r\n" ++ go rest
+        (line, separator : rest) -> normalizeFrame line ++ [separator] ++ go rest
+
+    normalizeFrame line =
+      case breakOn ", called at " line of
+        Nothing -> line
+        Just (function, locationAndUnit) ->
+          case breakOnKnownUnit locationAndUnit of
+            Nothing -> line
+            Just (location, unitAndModule, unitPlaceholder) ->
+              case breakOn ":" unitAndModule of
+                Just (unitSuffix, moduleName)
+                  | isUnitIdSuffix unitSuffix
+                  , not (null moduleName) ->
+                      case splitLast ':' location of
+                        Just (locationWithoutColumn, column)
+                          | isDigits column ->
+                              case splitLast ':' locationWithoutColumn of
+                                Just (sourcePath, sourceLine)
+                                  | not (null sourcePath)
+                                  , isDigits sourceLine ->
+                                      function
+                                        ++ ", called at "
+                                        ++ backslashToSlash sourcePath
+                                        ++ ":<LINE>:<COL> in "
+                                        ++ unitPlaceholder
+                                        ++ ":"
+                                        ++ moduleName
+                                _ -> line
+                        _ -> line
+                _ -> line
+
+    isDigits value = not (null value) && all isDigit value
+
+    isUnitIdSuffix value =
+      not (null value)
+        && any isDigit value
+        && all (\c -> isAsciiAlphaNum c || c `elem` ".+-") value
+
+    isAsciiAlphaNum c =
+      isAscii c && isAlphaNum c
+
+    breakOnKnownUnit value =
+      case breakOnLast " in Cabal-" value of
+        Just (location, unitAndModule) ->
+          Just (location, unitAndModule, "<CABAL_UNIT>")
+        Nothing -> do
+          (location, unitAndModule) <- breakOnLast " in cabal-install-" value
+          pure (location, unitAndModule, "<CABAL_INSTALL_UNIT>")
+
+    splitLast separator value = do
+      (prefix, suffix) <- breakOnLast [separator] value
+      if null suffix then Nothing else Just (prefix, suffix)
+
+    breakOn needle value = do
+      index <- findIndex (needle `isPrefixOf`) (tails value)
+      pure (take index value, drop (index + length needle) value)
+
+    breakOnLast needle value =
+      case [index | (index, suffix) <- zip [0 ..] (tails value), needle `isPrefixOf` suffix] of
+        [] -> Nothing
+        indexes ->
+          let index = last indexes
+           in Just (take index value, drop (index + length needle) value)

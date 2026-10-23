@@ -1,7 +1,7 @@
 import Test.Cabal.Prelude
 import System.Directory
 import System.FilePath
-import Distribution.Simple.Utils
+import Distribution.Simple.Utils hiding (withEnv)
 import Distribution.Verbosity
 
 -- Test cabal init when git is not installed

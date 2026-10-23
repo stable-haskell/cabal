@@ -23,6 +23,11 @@ There are a few useful flags:
 * `--with-ghc PATH` can be used to specify an alternate version of
   GHC to ask the tests to compile with.
 
+* `--extra-build-package-db DIR` can be repeated to provide additional package
+  databases for the build compiler. Native builds also use the host package
+  databases; selecting a separate build compiler keeps its package databases
+  isolated unless they are provided explicitly.
+
 * `--builddir DIR` can be used to manually specify the dist directory
   that was used to build `cabal-tests`; this can be used if
   the autodetection doesn't work correctly (which may be the
