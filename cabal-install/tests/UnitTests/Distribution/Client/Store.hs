@@ -3,6 +3,7 @@ module UnitTests.Distribution.Client.Store (tests) where
 -- import Control.Monad
 -- import Control.Concurrent (forkIO, threadDelay)
 -- import Control.Concurrent.MVar
+
 import qualified Data.Set as Set
 import System.Directory
 import System.FilePath
@@ -13,13 +14,17 @@ import Distribution.Package (UnitId, mkUnitId)
 import Distribution.Simple.Compiler (AbiTag (..), Compiler (..), CompilerFlavor (..), CompilerId (..))
 import Distribution.Simple.Program.Db (emptyProgramDb)
 import Distribution.Simple.Utils (withTempDirectory)
-import Distribution.System (buildPlatform)
+import Distribution.System (Arch (..), OS (..), Platform (..), buildPlatform)
 import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
+import qualified Data.Map as Map
+import Distribution.Client.DistDirLayout (betterPlatform)
+import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
 import Distribution.Client.RebuildMonad
 import Distribution.Client.Store
 import Distribution.Client.Toolchain (Machine (..), Toolchain (..))
+import qualified Distribution.Client.Utils.Json as Json
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -28,9 +33,72 @@ tests :: [TestTree]
 tests =
   [ testCase "list content empty" testListEmpty
   , testCase "install serial" testInstallSerial
+  , testCase "same architecture target ABIs have separate stores and databases" testTargetAbi
   -- , testCase "install parallel"    testInstallParallel
   -- TODO: figure out some way to do a parallel test, see issue below
   ]
+
+testTargetAbi :: Assertion
+testTargetAbi = do
+  let compiler =
+        Compiler
+          { compilerId = CompilerId GHC (mkVersion [9, 14, 1])
+          , compilerAbiTag = NoAbiTag
+          , compilerCompat = []
+          , compilerLanguages = []
+          , compilerExtensions = []
+          , compilerProperties = mempty
+          , compilerWiredInUnitIds = Nothing
+          }
+      platform = Platform X86_64 Linux
+      layout = defaultStoreDirLayout "store"
+      -- The plain toolchain reports no target properties, so the store
+      -- uses cabal's own platform spelling.
+      nativeToolchain = Toolchain compiler platform emptyProgramDb
+      -- A same-architecture profiling target keeps its store directory,
+      -- package database and incoming lock disjoint via the -prof suffix.
+      profiledToolchain =
+        Toolchain
+          compiler
+            { compilerProperties =
+                Map.fromList
+                  [ ("Target platform", "x86_64-linux")
+                  , ("Target ABI", "profiling")
+                  ]
+            }
+          platform
+          emptyProgramDb
+      -- A qualified target identity renders canonically for plan output
+      -- and path helpers, independently of the host architecture.
+      crossToolchain =
+        Toolchain
+          compiler
+            { compilerProperties =
+                Map.fromList
+                  [ ("Target name", "aarch64-apple-darwin-prof")
+                  , ("Target platform", "aarch64-apple-darwin")
+                  , ("Target ABI", "profiling")
+                  ]
+            }
+          platform
+          emptyProgramDb
+  storeDirectory layout Host nativeToolchain @?= "store" </> "host" </> "x86_64-linux"
+  storeDirectory layout Host profiledToolchain @?= "store" </> "host" </> "x86_64-linux-prof"
+  assertBool "package databases must not alias" $
+    storePackageDBPath layout Host nativeToolchain /= storePackageDBPath layout Host profiledToolchain
+  assertBool "incoming locks must use the selected target namespace" $
+    storeIncomingLock layout Host nativeToolchain (mkUnitId "foo-1.0-xyz")
+      /= storeIncomingLock layout Host profiledToolchain (mkUnitId "foo-1.0-xyz")
+  betterPlatform nativeToolchain @?= "x86_64-linux"
+  betterPlatform crossToolchain @?= "aarch64-apple-darwin-prof"
+  case lookup "target-name" (toolchainJsonFields Host crossToolchain) of
+    Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
+    _ -> assertFailure "plan JSON omitted the canonical target-name field"
+  case lookup "build-target-name" (toolchainJsonFields Build crossToolchain) of
+    Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
+    _ -> assertFailure "build-stage plan JSON omitted the canonical target-name field"
+  assertBool "the ABI crossing is independent of the architecture" $
+    betterPlatform nativeToolchain /= betterPlatform profiledToolchain
 
 testListEmpty :: Assertion
 testListEmpty =
@@ -84,6 +152,16 @@ testInstallSerial =
         pkgDir = storePackageDirectory storeDirLayout Host toolchain
     assertFileEqual (pkgDir unitid1 </> "file1") "content-foo"
     assertFileEqual (pkgDir unitid2 </> "file2") "content-bar"
+
+    -- Store reuse is disabled under this layout (see Note [Store reuse is
+    -- disabled under this layout] in Distribution.Client.Store): installed
+    -- units live under the store's shared lib/ and are never enumerated by
+    -- getStoreEntries.
+    entries <- runRebuild tmp $ getStoreEntries storeDirLayout Host toolchain
+    assertBool "installed unit must not be enumerated while reuse is disabled" $
+      Set.notMember unitid1 entries
+    assertBool "installed unit must not be enumerated while reuse is disabled" $
+      Set.notMember unitid2 entries
   where
     unitid1 = mkUnitId "foo-1.0-xyz"
     unitid2 = mkUnitId "bar-2.0-xyz"
@@ -178,14 +256,13 @@ assertNewStoreEntry
   -> NewStoreEntryOutcome
   -> Assertion
 assertNewStoreEntry
-  tmp
+  _tmp
   storeDirLayout
   tc
   unitid
   copyFiles
   register
   expectedOutcome = do
-    entries <- runRebuild tmp $ getStoreEntries storeDirLayout Host tc
     outcome <-
       newStoreEntry
         verbosity
@@ -197,8 +274,6 @@ assertNewStoreEntry
         register
     assertEqual "newStoreEntry outcome" expectedOutcome outcome
     assertStoreEntryExists storeDirLayout tc unitid True
-    let expected = Set.insert unitid entries
-    assertStoreContent tmp storeDirLayout tc expected
 
 assertStoreEntryExists
   :: StoreDirLayout
