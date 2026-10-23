@@ -24,8 +24,8 @@ import qualified Data.Map as Map
 import Distribution.Compiler (CompilerFlavor (..))
 import Distribution.PackageDescription
 import Distribution.Pretty
-import Distribution.Simple.Configure (findDistPrefOrDefault)
 import Distribution.Simple.Compiler (Compiler, compilerProperties)
+import Distribution.Simple.Configure (findDistPrefOrDefault)
 import Distribution.Simple.Errors
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program
@@ -74,6 +74,7 @@ runConfigureScriptWithCompiler
 runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = do
   let commonCfg = configCommonFlags cfg
       verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity commonCfg)
+
   dist_dir <- findDistPrefOrDefault $ setupDistPref commonCfg
   let build_dir = dist_dir </> makeRelativePathEx "build"
       mbWorkDir = flagToMaybe $ setupWorkingDir commonCfg
@@ -231,6 +232,21 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = d
           : [("CXXFLAGS", Just (mkFlagsEnv cxxFlags "CXXFLAGS")) | Just cxxFlags <- [mcxxFlags]]
           ++ [("PATH", Just pathEnv) | not (null extraPath)]
           ++ hcEnv
+          -- Fall back to explicit @--with-ghc@/@--with-ghc-pkg@ program
+          -- paths when the program database provided neither (e.g. a
+          -- direct @Setup configure@ invocation). These only fire when
+          -- 'hcEnv' above left the variable unset, so the
+          -- program-database-backed paths always win and an absent key
+          -- never clears them.
+          ++ [ (var, Just (canonicalisePathSeparator path))
+             | Just GHC <- [flagToMaybe (configHcFlavor cfg)]
+             , (var, mpath, prog) <-
+                [ ("GHC", hcPath, "ghc")
+                , ("GHC_PKG", hcPkgPath, "ghc-pkg")
+                ]
+             , Nothing <- [mpath]
+             , Just path <- [lookup prog (configProgramPaths cfg)]
+             ]
           ++ cabalFlagEnv
       -- Tell the script which machine it configures for, in the GNU
       -- spelling it understands (see 'platformGnuTriple'). The selected
@@ -267,7 +283,6 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = d
           { progInvokeCwd = Just build_in
           }
     Nothing -> dieWithException verbosity NotFoundMsg
-
 
 configureScriptArgs :: Maybe Compiler -> Platform -> String -> [String] -> [String]
 configureScriptArgs mbCompiler selectedPlatform buildTriple userArgs =

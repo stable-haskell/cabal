@@ -408,8 +408,16 @@ projectPackageDbsForTests :: [TestTree]
 projectPackageDbsForTests =
   [ testCase "host machine keeps the project databases" $
       projectPackageDbsFor config Host @?= configured
-  , testCase "the build machine gets none of them" $
-      projectPackageDbsFor config Build @?= []
+  , testCase "the build machine gets none of the host databases" $
+      projectPackageDbsFor configWithBuild Host @?= configured
+  , testCase "the build machine returns the configured build databases" $
+      projectPackageDbsFor configWithBuild Build @?= buildConfigured
+  , testCase "host databases do not leak to the build machine" $
+      assertBool "host db leaked to build" $
+        all (`notElem` projectPackageDbsFor configWithBuild Build) configured
+  , testCase "build databases do not leak to the host machine" $
+      assertBool "build db leaked to host" $
+        all (`notElem` projectPackageDbsFor configWithBuild Host) buildConfigured
   , testCase "a distinct build toolchain puts setup scripts on the build machine" $
       toolMachine cross Host @?= Build
   , testCase "tools of build-machine packages stay on the build machine" $
@@ -421,8 +429,14 @@ projectPackageDbsForTests =
   ]
   where
     configured = [Just (SpecificPackageDB "/somewhere/package.db")]
+    buildConfigured = [Just (SpecificPackageDB "/somewhere/build-package.db")]
 
     config = (mempty :: ProjectConfigShared){projectConfigPackageDBs = configured}
+    configWithBuild =
+      (mempty :: ProjectConfigShared)
+        { projectConfigPackageDBs = configured
+        , projectConfigBuildPackageDBs = buildConfigured
+        }
 
     -- 'toolMachine' only looks at whether there is a build machine; which
     -- compilers they are does not matter here.
@@ -617,10 +631,10 @@ testConfigureTargetArgs = do
         }
 
 testToolchain :: Compiler -> Toolchain
-testToolchain compiler =
+testToolchain testCompiler =
   Toolchain
     { toolchainPlatform = buildPlatform
-    , toolchainCompiler = compiler
+    , toolchainCompiler = testCompiler
     , toolchainProgramDb = defaultProgramDb
     }
 

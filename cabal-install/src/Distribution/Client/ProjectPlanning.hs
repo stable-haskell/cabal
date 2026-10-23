@@ -1083,6 +1083,13 @@ rebuildInstallPlan
               -- installed index is read inside this block, so changing only
               -- --with-build-compiler must invalidate the cached plan too.
               fmap toolchainSignature toolchains
+            , -- The solver reads the installed index through the per-machine
+              -- package-db stacks, so both host and build selections must
+              -- invalidate the cached plan.
+
+              ( projectConfigPackageDBs projectConfigShared
+              , projectConfigBuildPackageDBs projectConfigShared
+              )
             )
             $ do
               -- Read the installed-package index once per machine: the host
@@ -1969,9 +1976,11 @@ planPackages
 -- | The project's package-db settings for a 'Machine'.
 --
 -- @package-dbs:@ and @--package-db@ name databases of the host compiler, and
--- a package database is only readable by the compiler that wrote it. A
--- distinct build toolchain therefore inherits none of them: its stack is its
--- own global database plus its own store.
+-- a package database is only readable by the compiler that wrote it, while
+-- @build-package-dbs:@ supplies databases explicitly configured for a
+-- distinct @Build@ machine. A distinct build toolchain therefore inherits
+-- none of the host databases: its stack is its own global database plus its
+-- own store and any @build-package-dbs:@ entries.
 --
 -- A 'Build' machine exists only when there is a distinct build toolchain (see
 -- 'toolMachine'), so this needs no cross-compilation check. When there is no
@@ -1981,7 +1990,7 @@ projectPackageDbsFor
   :: ProjectConfigShared
   -> Machine
   -> [Maybe PackageDBCWD]
-projectPackageDbsFor _ Build = []
+projectPackageDbsFor shared Build = projectConfigBuildPackageDBs shared
 projectPackageDbsFor shared Host = projectConfigPackageDBs shared
 
 elaborateInstallPlan

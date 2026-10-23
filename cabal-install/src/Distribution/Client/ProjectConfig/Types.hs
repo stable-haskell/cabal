@@ -58,7 +58,6 @@ import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.Machine (Machine)
 import Distribution.Solver.Types.Settings
 
-
 import Distribution.Package
   ( PackageId
   , PackageName
@@ -220,6 +219,8 @@ data ProjectConfigShared = ProjectConfigShared
   -- ^ Path to the compiler for the build machine (cross-compilation).
   , projectConfigBuildHcPkg :: Flag FilePath
   -- ^ Path to the package tool for the build machine (cross-compilation).
+  , projectConfigBuildPackageDBs :: [Maybe PackageDBCWD]
+  -- ^ Package databases for the build machine (cross-compilation).
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!

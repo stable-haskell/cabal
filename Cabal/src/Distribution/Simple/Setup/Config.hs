@@ -34,6 +34,7 @@ module Distribution.Simple.Setup.Config
   , readPackageDbList
   , showPackageDb
   , showPackageDbList
+  , canonicalisePathSeparator
   , configureArgs
   , configureTargetDefaults
   , configureOptions
@@ -59,8 +60,6 @@ import Distribution.Simple.InstallDirs
 import Distribution.Simple.Program
 import Distribution.Simple.Setup.Common
 import Distribution.Simple.Utils
-import qualified System.FilePath as FP.Native
-import qualified System.FilePath.Posix as FP.Posix
 import Distribution.Types.ComponentId
 import Distribution.Types.DumpBuildInfo
 import Distribution.Types.GivenComponent
@@ -70,6 +69,8 @@ import Distribution.Types.UnitId
 import Distribution.Utils.NubList
 import Distribution.Utils.Path
 import Distribution.Verbosity
+import qualified System.FilePath as FP.Native
+import qualified System.FilePath.Posix as FP.Posix
 
 import qualified Text.PrettyPrint as Disp
 
