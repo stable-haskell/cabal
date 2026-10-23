@@ -1,4 +1,6 @@
 AC_INIT([Haskell zlib package], [1.1], [libraries@haskell.org], [zlib])
+AC_CANONICAL_HOST
+AC_CANONICAL_BUILD
 
 # Safety check: Ensure that we are in the correct source directory.
 AC_CONFIG_SRCDIR([zlib.cabal])
@@ -32,4 +34,10 @@ fi
 AC_SUBST([BUILD_PACKAGE_BOOL])
 
 AC_CONFIG_FILES([zlib.buildinfo])
+AC_CONFIG_COMMANDS([cabal-target-triples],
+  [printf '%s\n' "$ac_configure_args" "$host" "$build" > "$srcdir/cabal-target-triples"],
+  [ac_configure_args="$ac_configure_args"
+   host="$host"
+   build="$build"
+   srcdir="$srcdir"])
 AC_OUTPUT
