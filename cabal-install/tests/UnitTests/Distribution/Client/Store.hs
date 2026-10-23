@@ -62,6 +62,9 @@ testInstallSerial =
           writeFile (destprefix </> file) content
           return (destprefix, [])
 
+    -- newStoreEntry places temporary files inside the machine's store.
+    createDirectoryIfMissing True (storeIncomingDirectory storeDirLayout compiler platform)
+
     assertNewStoreEntry
       tmp
       storeDirLayout
