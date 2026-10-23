@@ -62,6 +62,8 @@ module Distribution.Simple.Configure
   , computeEffectiveProfiling
   , adjustBuildOptions
   , profilingTargetError
+  , profilingTargetVariantError
+  , configureProfiling
   , buildOptionsAdjustmentWarnings
   , adjustBuildOptionsAndWarn
   , ccLdOptionsBuildInfo
@@ -828,6 +830,7 @@ buildOptionsFromConfigFlags verbosity cfg comp = do
           _ -> False
 
   let sharedLibsByDefault
+        | compilerTargetsProfiling comp && not (profilingDynamicSupportedOrUnknown comp) = False
         | fromFlag (configDynExe cfg) =
             -- build a shared library if dynamically-linked
             -- executables are requested
@@ -1002,6 +1005,19 @@ profilingTargetError comp opts
         (`notElem` [ProfDetailNone, ProfDetailDefault])
         [LBC.withProfLibDetail opts, LBC.withProfExeDetail opts] =
       Just (ProfilingRequiresTargetCompiler (compilerId comp))
+  | otherwise = Nothing
+
+-- | Report an explicit shared-variant request that the profiling target
+-- cannot satisfy. An unknown capability remains permissive for compatibility.
+profilingTargetVariantError :: Compiler -> String -> Maybe Bool -> Maybe CabalException
+profilingTargetVariantError comp requested support
+  | compilerTargetsProfiling comp
+  , support == Just False =
+      Just $
+        UnsupportedTargetVariant
+          (Map.findWithDefault (showCompilerIdWithAbi comp) "Target name" (compilerProperties comp))
+          requested
+          ["static nondebug libraries and executables"]
   | otherwise = Nothing
 
 -- | Warnings to emit after downgrading 'LBC.BuildOptions' when the
@@ -2021,6 +2037,15 @@ configureProfiling
   -> IO (LBC.BuildOptions -> LBC.BuildOptions)
 configureProfiling verbosity cfg comp = do
   let (tryLibProfiling, tryLibProfilingShared, tryExeProfiling) = computeEffectiveProfiling cfg
+      explicitSharedVariant =
+        listToMaybe
+          [ variant
+          | (Just True, variant) <-
+              [ (flagToMaybe (configProfShared cfg), "shared profiling libraries")
+              , (flagToMaybe (configSharedLib cfg), "shared libraries")
+              , (flagToMaybe (configDynExe cfg), "dynamically linked executables")
+              ]
+          ]
 
       tryExeProfileLevel =
         fromFlagOrDefault
@@ -2051,6 +2076,8 @@ configureProfiling verbosity cfg comp = do
           || any
             (`notElem` [ProfDetailNone, ProfDetailDefault])
             [tryExeProfileLevel, tryLibProfileLevel]
+  for_ explicitSharedVariant $ \variant ->
+    for_ (profilingTargetVariantError comp variant (profilingDynamicSupported comp)) (dieWithException verbosity)
   when (requested && not (compilerTargetsProfiling comp)) $
     dieWithException verbosity (ProfilingRequiresTargetCompiler (compilerId comp))
   if compilerTargetsProfiling comp
@@ -2058,8 +2085,6 @@ configureProfiling verbosity cfg comp = do
       exeLevel <- checkProfileLevel tryExeProfileLevel
       libLevel <- checkProfileLevel tryLibProfileLevel
       let shared = profilingDynamicSupportedOrUnknown comp
-      when (tryLibProfilingShared && not shared) $
-        warn verbosity "This profiling target does not support shared libraries; static libraries will be built."
       return $ \opts ->
         opts
           { LBC.withProfLib = tryLibProfiling || (tryLibProfilingShared && not shared)

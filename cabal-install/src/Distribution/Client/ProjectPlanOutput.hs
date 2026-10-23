@@ -4,6 +4,7 @@
 module Distribution.Client.ProjectPlanOutput
   ( -- * Plan output
     writePlanExternalRepresentation
+  , toolchainJsonFields
 
     -- * Project status
 
@@ -20,7 +21,7 @@ import Distribution.Client.HashValue (hashValue, showHashValue)
 import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectPlanning.Machine (WithMachine (..), withoutMachine)
 import Distribution.Client.ProjectPlanning.Types
-import Distribution.Client.Toolchain (Machine (..), showMachine)
+import Distribution.Client.Toolchain (Machine (..), isCross, onMachine, showMachine)
 import Distribution.Client.Types.ConfiguredId (confInstId)
 import Distribution.Client.Types.PackageLocation (PackageLocation (..))
 import Distribution.Client.Types.Repo (RemoteRepo (..), Repo (..))
@@ -32,7 +33,6 @@ import qualified Distribution.Client.Utils.Json as J
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 
 import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
-
 import qualified Distribution.Compat.Binary as Binary
 import Distribution.Compat.Graph (Graph, Node)
 import qualified Distribution.Compat.Graph as Graph
@@ -50,7 +50,7 @@ import Distribution.Simple.GHC
   , GhcImplInfo (supportsPkgEnvFiles)
   , getImplInfo
   , simpleGhcEnvironmentFile
-  , writeGhcEnvironmentFileWithAbi
+  , writeGhcEnvironmentFileWithTarget
   )
 import Distribution.Simple.Utils
 import Distribution.System
@@ -79,6 +79,23 @@ import System.IO
 
 import Distribution.Simple.Program.GHC (packageDbArgsDb)
 
+jdisplay :: Pretty a => a -> J.Value
+jdisplay = J.String . prettyShow
+
+-- | JSON fields for one machine's compiler, including its canonical target name.
+toolchainJsonFields :: Machine -> Toolchain -> [(String, J.Value)]
+toolchainJsonFields machine Toolchain{toolchainCompiler, toolchainPlatform} =
+  [ prefixed "compiler-id" J..= J.String (showCompilerId toolchainCompiler)
+  , prefixed "target-name" J..= J.String (either error renderTargetName (compilerTargetName toolchainPlatform toolchainCompiler))
+  , prefixed "arch" J..= jdisplay arch
+  , prefixed "os" J..= jdisplay os
+  ]
+  where
+    Platform arch os = toolchainPlatform
+    prefixed s = case machine of
+      Build -> "build-" ++ s
+      Host -> s
+
 -----------------------------------------------------------------------------
 -- Writing plan.json files
 --
@@ -106,20 +123,18 @@ encodePlanAsJson :: DistDirLayout -> ElaboratedInstallPlan -> ElaboratedSharedCo
 encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
   -- TODO: [nice to have] include all of the sharedPackageConfig and all of
   --      the parts of the elaboratedInstallPlan
-  J.object
+  J.object $
     [ "cabal-version" J..= jdisplay cabalInstallVersion
     , "cabal-lib-version" J..= jdisplay cabalVersion
-    , "compiler-id"
-        J..= (J.String . showCompilerId . pkgConfigCompiler)
-          elaboratedSharedConfig
-    , "compiler-abi" J..= jdisplay (compilerAbiTag (pkgConfigCompiler elaboratedSharedConfig))
-    , "os" J..= jdisplay os
-    , "arch" J..= jdisplay arch
-    , "install-plan" J..= installPlanToJ elaboratedInstallPlan
     ]
+      ++ toolchainJ Host
+      ++ [field | isCross toolchains, field <- toolchainJ Build]
+      ++ ["install-plan" J..= installPlanToJ elaboratedInstallPlan]
   where
-    plat :: Platform
-    plat@(Platform arch os) = pkgConfigPlatform elaboratedSharedConfig
+    toolchains = pkgConfigToolchains elaboratedSharedConfig
+
+    toolchainJ machine =
+      toolchainJsonFields machine (onMachine toolchains machine)
 
     installPlanToJ :: ElaboratedInstallPlan -> [J.Value]
     installPlanToJ = map planPackageToJ . InstallPlan.toList
@@ -221,6 +236,9 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
               ]
                 ++ bin_file (compSolverName comp)
       where
+        Toolchain{toolchainPlatform = plat} =
+          onMachine toolchains (elabMachine elab)
+
         -- \| Only add build-info file location if the Setup.hs CLI
         -- is recent enough to be able to generate build info files.
         -- Otherwise, write 'null'.
@@ -866,11 +884,12 @@ writePlanGhcEnvironment
     | compilerFlavor compiler == GHC
     , supportsPkgEnvFiles (getImplInfo compiler) =
         Just
-          <$> writeGhcEnvironmentFileWithAbi
+          <$> writeGhcEnvironmentFileWithTarget
             path
             platform
             (compilerVersion compiler)
             (compilerTargetAbi compiler)
+            (Map.lookup "Target name" (compilerProperties compiler))
             ( renderGhcEnvironmentFile
                 path
                 elaboratedInstallPlan
