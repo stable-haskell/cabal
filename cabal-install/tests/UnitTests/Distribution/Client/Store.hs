@@ -3,6 +3,7 @@ module UnitTests.Distribution.Client.Store (tests) where
 -- import Control.Monad
 -- import Control.Concurrent (forkIO, threadDelay)
 -- import Control.Concurrent.MVar
+
 import qualified Data.Set as Set
 import System.Directory
 import System.FilePath
@@ -26,9 +27,32 @@ tests :: [TestTree]
 tests =
   [ testCase "list content empty" testListEmpty
   , testCase "install serial" testInstallSerial
+  , testCase "same architecture target ABIs have separate stores and databases" testTargetAbi
   -- , testCase "install parallel"    testInstallParallel
   -- TODO: figure out some way to do a parallel test, see issue below
   ]
+
+testTargetAbi :: Assertion
+testTargetAbi = do
+  let compiler =
+        Compiler
+          { compilerId = CompilerId GHC (mkVersion [9, 14, 1])
+          , compilerAbiTag = NoAbiTag
+          , compilerCompat = []
+          , compilerLanguages = []
+          , compilerExtensions = []
+          , compilerProperties = mempty
+          , compilerWiredInUnitIds = Nothing
+          }
+      -- A profiling target is identified by its ABI tag, which the store
+      -- layout uses to keep its artifacts separate.
+      profiledCompiler = compiler{compilerAbiTag = AbiTag "profiling"}
+      platform = Platform X86_64 Linux
+      layout = defaultStoreDirLayout "store"
+  storeDirectory layout compiler platform @?= "store" </> "x86_64-linux" </> "ghc-9.14.1"
+  storeDirectory layout profiledCompiler platform @?= "store" </> "x86_64-linux" </> "ghc-9.14.1-profiling"
+  assertBool "package databases must not alias" $
+    storePackageDBPath layout compiler platform /= storePackageDBPath layout profiledCompiler platform
 
 testListEmpty :: Assertion
 testListEmpty =
@@ -66,7 +90,7 @@ testInstallSerial =
           writeFile (destprefix </> file) content
           return (destprefix, [])
 
-    -- newStoreEntry places temporary files inside the stage's store.
+    -- newStoreEntry places temporary files inside the store's incoming directory.
     createDirectoryIfMissing True (storeIncomingDirectory storeDirLayout compiler platform)
 
     assertNewStoreEntry

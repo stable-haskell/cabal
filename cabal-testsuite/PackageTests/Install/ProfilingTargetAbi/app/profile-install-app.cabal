@@ -1,0 +1,11 @@
+cabal-version: 3.0
+name: profile-install-app
+version: 0.1
+build-type: Simple
+
+executable profile-install-app
+  main-is: Main.hs
+  build-depends: base, dual-stage-tool
+  build-tool-depends: dual-stage-tool:dual-stage-tool
+  ghc-options: -F -pgmF dual-stage-tool -rtsopts
+  default-language: Haskell2010
