@@ -13,9 +13,11 @@ import Distribution.PackageDescription (mkFlagAssignment, mkFlagName)
 import Distribution.Version (anyVersion, mkVersion, thisVersion)
 
 import Distribution.Parsec (explicitEitherParsec, parsec, parsecCommaList)
+import Distribution.Pretty (prettyShow)
 
 import Distribution.Solver.Types.OptionalStanza (OptionalStanza (..))
 import Distribution.Solver.Types.PackageConstraint (PackageProperty (..))
+import Distribution.Solver.Types.Stage (Stage (..), showStage)
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -38,6 +40,10 @@ tests =
   , makeGroup
       "parseUserConstraint"
       (uncurry parseUserConstraintTest)
+      exampleConstraints
+  , makeGroup
+      "print/parseUserConstraint"
+      (\(_, constraint) -> parseUserConstraintTest (prettyShow constraint) constraint)
       exampleConstraints
   , makeGroup
       "readUserConstraints"
@@ -106,9 +112,24 @@ exampleConstraints =
     --    UserConstraint (UserQualified (UserQualExe (pn "foo") (pn "happy")) (pn "template-haskell"))
     --                   (PackagePropertyStanzas [TestStanzas]))
   ]
+    ++ stagedConstraints
   where
     pn = mkPackageName
     fn = mkFlagName
+
+    stagedConstraints =
+      [ ( showStage stage ++ ":" ++ scope ++ " source"
+        , UserConstraintStaged stage qualifier PackagePropertySource
+        )
+      | stage <- [Build, Host]
+      , (scope, qualifier) <-
+          [ ("bytestring", UserQualified UserQualToplevel (pn "bytestring"))
+          , ("any.bytestring", UserAnyQualifier (pn "bytestring"))
+          , ("setup.Cabal", UserAnySetupQualifier (pn "Cabal"))
+          , ("exe.alex", UserAnyExeQualifier (pn "alex"))
+          , ("process:setup.bytestring", UserQualified (UserQualSetup (pn "process")) (pn "bytestring"))
+          ]
+      ]
 
 readUserConstraintTest :: String -> UserConstraint -> Assertion
 readUserConstraintTest str uc =

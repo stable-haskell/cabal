@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Distribution.Solver.Types.PackagePath
     ( PackagePath(..)
+    , Namespace(..)
     , Qualifier(..)
     , dispQualifier
     , Qualified(..)
@@ -15,17 +16,34 @@ import Prelude ()
 import Distribution.Package (PackageName)
 import Distribution.Pretty (pretty, flatStyle, Pretty)
 import qualified Text.PrettyPrint as Disp
-import Distribution.Solver.Types.Stage (Stage)
+import Distribution.Solver.Types.Stage (Stage, showStage)
 
-data PackagePath = PackagePath Stage Qualifier
+data PackagePath = PackagePath Stage Namespace Qualifier
   deriving (Eq, Ord, Show, Generic)
 
 instance Binary PackagePath
 instance Structured PackagePath
 
+-- | Independent goal roots have separate package-choice scopes. Compatible
+-- instances can still be shared within a stage, which selects the toolchain.
+data Namespace
+  = DefaultNamespace
+  | Independent PackageName
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary Namespace
+instance Structured Namespace
+
 instance Pretty PackagePath where
-  pretty (PackagePath stage qualifier) =
-    pretty stage <<>> Disp.text ":" <<>> pretty qualifier
+  pretty (PackagePath stage namespace qualifier) =
+    Disp.text (showStage stage)
+      <<>> Disp.text ":"
+      <<>> dispNamespace namespace
+      <<>> dispQualifier qualifier
+
+dispNamespace :: Namespace -> Disp.Doc
+dispNamespace DefaultNamespace = Disp.empty
+dispNamespace (Independent pn) = pretty pn <<>> Disp.text "."
 
 -- | Qualifier of a package within a namespace (see 'PackagePath')
 data Qualifier =
@@ -98,8 +116,8 @@ instance (Structured a) => Structured (Qualified a)
 type QPN = Qualified PackageName
 
 instance Pretty (Qualified PackageName) where
-  pretty (Q (PackagePath stage qual) pn) =
-    pretty stage <<>> Disp.colon <<>> dispQualifier qual <<>> pretty pn
+  pretty (Q pp pn) =
+    pretty pp <<>> pretty pn
 
 -- | Pretty-prints a qualified package name.
 dispQPN :: QPN -> Disp.Doc

@@ -219,8 +219,8 @@ data QualifyOptions = QO {
 --
 -- NOTE: It's the _dependencies_ of a package that may or may not be independent
 -- from the package itself. Package flag choices must of course be consistent.
-qualifyDeps :: QPN -> FlaggedDeps PN -> FlaggedDeps QPN
-qualifyDeps (Q pp@(PackagePath s q) pn) = go
+qualifyDeps :: QualifyOptions -> QPN -> FlaggedDeps PN -> FlaggedDeps QPN
+qualifyDeps (QO baseShim setupIndependent) (Q pp@(PackagePath s ns q) pn) = go
   where
     go :: FlaggedDeps PN -> FlaggedDeps QPN
     go = map go1
@@ -249,13 +249,33 @@ qualifyDeps (Q pp@(PackagePath s q) pn) = go
     -- In case of executable and setup dependencies, we need to qualify the dependency
     -- with the previous stage (e.g. Host -> Build).
     goD (Dep dep@(PkgComponent qpn (ExposedExe _)) ci) _component =
-      Dep (Q (PackagePath (prevStage s) (QualExe pn qpn)) <$> dep) ci
+      Dep (Q (PackagePath (prevStage s) ns (QualExe pn qpn)) <$> dep) ci
 
-    goD (Dep dep@(PkgComponent _qpn (ExposedLib _)) ci) ComponentSetup =
-      Dep (Q (PackagePath (prevStage s) (QualSetup pn)) <$> dep) ci
+    goD (Dep dep@(PkgComponent qpn (ExposedLib _)) ci) comp
+      | qBase qpn =
+          Dep (Q (PackagePath (dependencyStage comp) ns (QualBase pn)) <$> dep) ci
+      | qSetup comp =
+          Dep (Q (PackagePath (prevStage s) ns (QualSetup pn)) <$> dep) ci
 
-    goD (Dep dep@(PkgComponent _qpn _) ci) _component =
-      Dep (Q (PackagePath s q) <$> dep) ci
+    goD (Dep dep@(PkgComponent _qpn _) ci) comp =
+      Dep (Q (PackagePath (dependencyStage comp) ns inheritedQ) <$> dep) ci
+
+    -- Preserve setup/executable qualification through their dependencies,
+    -- but reset the base-shim qualifier so unrelated base shims do not share
+    -- the inherited package scope.
+    inheritedQ = case q of
+      QualSetup _ -> q
+      QualExe _ _ -> q
+      QualToplevel -> q
+      QualBase _ -> QualToplevel
+
+    qBase dep = baseShim && unPackageName dep == "base"
+
+    -- Should we qualify this goal with the 'Setup' package path?
+    qSetup comp = setupIndependent && comp == ComponentSetup
+
+    dependencyStage comp =
+      if comp == ComponentSetup then prevStage s else s
 
 -- | Remove qualifiers from set of dependencies
 --

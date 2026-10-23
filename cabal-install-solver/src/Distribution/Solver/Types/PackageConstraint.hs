@@ -80,7 +80,7 @@ scopeToPackageName (ConstraintScope _stage (ScopeAnyExeQualifier pn)) = pn
 scopeToPackageName (ConstraintScope _stage (ScopeAnyQualifier pn)) = pn
 
 constraintScopeMatches :: ConstraintScope -> QPN -> Bool
-constraintScopeMatches (ConstraintScope mstage qualifier) (Q (PackagePath stage' q) pn') =
+constraintScopeMatches (ConstraintScope mstage qualifier) (Q (PackagePath stage' _namespace q) pn') =
   maybe True (== stage') mstage && constraintQualifierMatches qualifier q pn'
 
 constraintQualifierMatches :: ConstraintQualifier -> Qualifier -> PackageName -> Bool
@@ -102,7 +102,7 @@ constraintQualifierMatches (ScopeAnyQualifier pn) _ pn' = pn == pn'
 
 instance Pretty ConstraintScope where
   pretty (ConstraintScope mstage qualifier) =
-    maybe mempty pretty mstage <+> pretty qualifier
+    maybe mempty (\stage -> pretty stage <<>> Disp.colon) mstage <<>> pretty qualifier
 
 instance Pretty ConstraintQualifier where
   pretty (ScopeTarget pn) = pretty pn <<>> Disp.text "." <<>> pretty pn

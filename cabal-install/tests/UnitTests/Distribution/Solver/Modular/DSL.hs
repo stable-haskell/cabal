@@ -821,7 +821,7 @@ exResolve
   countConflicts
   fineGrainedConflicts
   minimizeConflictSet
-  _indepGoals
+  indepGoals
   prefOldest
   reorder
   allowBootLibInstalls
@@ -871,16 +871,17 @@ exResolve
               setCountConflicts countConflicts $
                 setFineGrainedConflicts fineGrainedConflicts $
                   setMinimizeConflictSet minimizeConflictSet $
-                    (if asBool prefOldest then setPreferenceDefault PreferAllOldest else id) $
-                      setReorderGoals reorder $
-                        setMaxBackjumps mbj $
-                          setAllowBootLibInstalls allowBootLibInstalls $
-                            setOnlyConstrained onlyConstrained $
-                              setEnableBackjumping enableBj $
-                                setSolveExecutables solveExes $
-                                  setGoalOrder goalOrder $
-                                    setSolverVerbosity (C.verbosityLevel verbosity) $
-                                      standardInstallPolicy avaiIdx targets'
+                    setIndependentGoals indepGoals $
+                      (if asBool prefOldest then setPreferenceDefault PreferAllOldest else id) $
+                        setReorderGoals reorder $
+                          setMaxBackjumps mbj $
+                            setAllowBootLibInstalls allowBootLibInstalls $
+                              setOnlyConstrained onlyConstrained $
+                                setEnableBackjumping enableBj $
+                                  setSolveExecutables solveExes $
+                                    setGoalOrder goalOrder $
+                                      setSolverVerbosity (C.verbosityLevel verbosity) $
+                                        standardInstallPolicy avaiIdx targets'
       toLpc pc = LabeledPackageConstraint pc ConstraintSourceUnknown
 
       toConstraint (ExVersionConstraint scope v) =

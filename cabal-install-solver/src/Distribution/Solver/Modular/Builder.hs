@@ -114,7 +114,7 @@ scopedExtendOpen :: QPN -> FlaggedDeps PN -> FlagInfo ->
 scopedExtendOpen qpn fdeps fdefs s = extendOpen qpn gs s
   where
     -- Qualify all package names
-    qfdeps = qualifyDeps qpn fdeps
+    qfdeps = qualifyDeps (qualifyOptions s) qpn fdeps
     -- Introduce all package flags
     qfdefs = L.map (\ (fn, b) -> Flagged (FN qpn fn) b [] []) $ M.toList fdefs
     -- Combine new package and flag goals
@@ -153,7 +153,7 @@ addChildren bs@(BS { rdeps = rdm, open = gs, next = Goals })
 -- of goal.
 addChildren bs@(BS { rdeps, index, next = OneGoal goal }) =
   case goal of
-    PkgGoal qpn@(Q (PackagePath s _) pn) gr ->
+    PkgGoal qpn@(Q (PackagePath s _ _) pn) gr ->
       -- For a package goal, we look up the instances available in the global
       -- info, and then handle each instance in turn.
       case M.lookup pn index of
@@ -245,9 +245,10 @@ linkChoices :: forall a w . LinkingState
             -> QPN
             -> (w, POption, a)
             -> [(w, POption, a)]
-linkChoices related (Q _pp pn) (weight, POption i Nothing, subtree) =
-    L.map aux (M.findWithDefault [] (pn, i) related)
+linkChoices related (Q (PackagePath stage _namespace _) pn) (weight, POption i Nothing, subtree) =
+    L.map aux $ filter sameStage (M.findWithDefault [] (pn, i) related)
   where
+    sameStage (PackagePath stage' _namespace' _) = stage == stage'
     aux :: PackagePath -> (w, POption, a)
     aux pp = (weight, POption i (Just pp), subtree)
 linkChoices _ _ (_, POption _ (Just _), _) =
@@ -261,7 +262,7 @@ alreadyLinked = error "addLinking called on tree that already contains linked no
 -- | Interface to the tree builder. Just takes an index and a list of package names,
 -- and computes the initial state and then the tree from there.
 buildTree :: Index -> IndependentGoals -> [PN] -> Tree () QGoalReason
-buildTree idx (IndependentGoals _ind) igs =
+buildTree idx (IndependentGoals ind) igs =
     build Linker {
         buildState = BS {
             index = idx
@@ -274,8 +275,11 @@ buildTree idx (IndependentGoals _ind) igs =
       }
   where
     -- The package names are interpreted as top-level goals in the host stage.
-    path = PackagePath Stage.Host QualToplevel
-    qpns = [ Q path pn | pn <- igs ]
+    qpns =
+      [ Q (PackagePath Stage.Host namespace QualToplevel) pn
+      | pn <- igs
+      , let namespace = if ind then Independent pn else DefaultNamespace
+      ]
 
 
 {-------------------------------------------------------------------------------

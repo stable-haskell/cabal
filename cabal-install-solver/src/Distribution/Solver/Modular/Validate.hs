@@ -192,7 +192,7 @@ validate = go
 
     -- What to do for package nodes ...
     goP :: QPN -> POption -> Validate (Tree d c) -> Validate (Tree d c)
-    goP qpn@(Q (PackagePath _stage _) pn) (POption i _mpp) r = do
+    goP qpn@(Q (PackagePath _stage _namespace _) pn) (POption i _mpp) r = do
       PA ppa pfa psa <- asks pa    -- obtain current preassignment
       extSupported   <- asks supportedExt  -- obtain the supported extensions
       langSupported  <- asks supportedLang -- obtain the supported languages
@@ -205,7 +205,8 @@ validate = go
       let I stage _vr _loc = i
       let (PInfo deps comps _ mfr) = idx ! pn ! i
       -- qualify the deps in the current scope
-      let qdeps = qualifyDeps qpn deps
+      qopts <- asks qualifyOptions
+      let qdeps = qualifyDeps qopts qpn deps
       -- the new active constraints are given by the instance we have chosen,
       -- plus the dependency information we have for that instance
       let newactives = extractAllDeps pfa psa qdeps
@@ -236,7 +237,7 @@ validate = go
 
     -- What to do for flag nodes ...
     goF :: QFN -> Bool -> Validate (Tree d c) -> Validate (Tree d c)
-    goF qfn@(FN qpn@(Q (PackagePath stage _) _) _f) b r = do
+    goF qfn@(FN qpn@(Q (PackagePath stage _namespace _) _) _f) b r = do
       PA ppa pfa psa <- asks pa -- obtain current preassignment
       extSupported   <- asks supportedExt  -- obtain the supported extensions
       langSupported  <- asks supportedLang -- obtain the supported languages
@@ -266,7 +267,7 @@ validate = go
 
     -- What to do for stanza nodes (similar to flag nodes) ...
     goS :: QSN -> Bool -> Validate (Tree d c) -> Validate (Tree d c)
-    goS qsn@(SN qpn@(Q (PackagePath stage _) _) _f) b r = do
+    goS qsn@(SN qpn@(Q (PackagePath stage _namespace _) _) _f) b r = do
       PA ppa pfa psa <- asks pa -- obtain current preassignment
       extSupported   <- asks supportedExt  -- obtain the supported extensions
       langSupported  <- asks supportedLang -- obtain the supported languages
