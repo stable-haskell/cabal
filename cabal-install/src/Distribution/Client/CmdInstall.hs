@@ -462,6 +462,10 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
     getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile
   packageDbs <- getPackageDbStack hostToolchain projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
   installedIndex <- getInstalledPackages verbosity compiler packageDbs progDb
+  -- Installations must outlive the temporary project: resolve the
+  -- configured persistent store layout for use below.
+  mstoreDir <- traverse makeAbsolute $ flagToMaybe projectConfigStoreDir
+  installStoreDirLayout <- cabalStoreDirLayout <$> mkCabalDirLayout mstoreDir (flagToMaybe projectConfigLogsDir)
 
   let
     (envSpecs, nonGlobalEnvEntries) =
@@ -473,13 +477,13 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   globalTmp <- getTemporaryDirectory
 
   withTempDirectory globalTmp "cabal-install." $ \tmpDir -> do
-    distDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
+    scratchDistDirLayout <- establishDummyDistDirLayout verbosity config tmpDir
 
     uriSpecs <-
       runRebuild tmpDir $
         fetchAndReadSourcePackages
           verbosity
-          distDirLayout
+          scratchDistDirLayout
           (Just compiler)
           (projectConfigShared config)
           (projectConfigBuildOnly config)
@@ -511,13 +515,18 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
         newEnvNames = S.fromList $ map getPackageName envSpecs'
         installedIndex' = PI.fromList . concatMap snd . filter (\p -> fst p `S.member` newEnvNames) $ installedPacks
 
-    baseCtx <-
+    baseCtx0 <-
       establishDummyProjectBaseContext
         verbosity
         config
-        distDirLayout
+        scratchDistDirLayout
         (envSpecs' ++ pkgSpecs ++ uriSpecs)
         InstallCommand
+
+    -- Installations must outlive the temporary project and any --builddir
+    -- scratch directory. Use the configured persistent store for both the
+    -- planner's registration database and the environment written below.
+    let baseCtx = baseCtx0{cabalDirLayout = (cabalDirLayout baseCtx0){cabalStoreDirLayout = installStoreDirLayout}}
 
     buildCtx <- constructProjectBuildContext verbosity (baseCtx{installedPackages = Just installedIndex'}) targetSelectors
 
