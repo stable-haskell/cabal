@@ -265,13 +265,9 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     uid = componentUnitId clbi
     libBi = libBuildInfo lib
     vanillaLibFilePath = buildTargetDir </> makeRelativePathEx (mkLibName uid)
-    profileLibFilePath = buildTargetDir </> makeRelativePathEx (mkProfLibName uid)
     sharedLibFilePath =
       buildTargetDir
         </> makeRelativePathEx (mkSharedLibName (hostPlatform lbi) compiler_id uid)
-    profSharedLibFilePath =
-      buildTargetDir
-        </> makeRelativePathEx (mkProfSharedLibName (hostPlatform lbi) compiler_id uid)
     staticLibFilePath =
       buildTargetDir
         </> makeRelativePathEx (mkStaticLibName (hostPlatform lbi) compiler_id uid)
@@ -296,7 +292,6 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
           Ld.combineObjectFiles verbosity lbi ldProg target files
 
     ghciLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiLibName uid)
-    ghciProfLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiProfLibName uid)
 
     getObjWayFiles :: BuildWay -> IO [SymbolicPath Pkg File]
     getObjWayFiles w = getObjFiles (buildWayObjectExtension objExtension w) (buildWayObjectExtension objExtension w)
@@ -331,7 +326,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     ghcBaseLinkArgs =
       Internal.linkGhcOptions (verbosityLevel verbosity) lbi libBi clbi
         <> mempty
-          { ghcOptExtra = map Text.unpack $ hcStaticOptions GHC libBi
+          { ghcOptExtra = map Text.unpack $ buildWayExtraHcOptions StaticWay comp libBi
           , ghcOptNoAutoLinkPackages = toFlag True
           }
 
@@ -341,29 +336,11 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     ghcSharedLinkArgs :: [SymbolicPath Pkg File] -> GhcOptions
     ghcSharedLinkArgs dynObjectFiles =
       ghcBaseLinkArgs
-        { ghcOptShared = toFlag True
+        { ghcOptExtra = map Text.unpack $ buildWayExtraHcOptions DynWay comp libBi
+        , ghcOptShared = toFlag True
         , ghcOptDynLinkMode = toFlag GhcDynamicOnly
         , ghcOptInputFiles = toNubListR $ map coerceSymbolicPath dynObjectFiles
         , ghcOptOutputFile = toFlag sharedLibFilePath
-        , ghcOptDylibName = mempty
-        , ghcOptLinkLibs = map Text.unpack $ extraLibs libBi
-        , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
-        , ghcOptLinkFrameworks = toNubListR $ map getSymbolicPath $ PD.frameworks libBi
-        , ghcOptLinkFrameworkDirs =
-            toNubListR $ PD.extraFrameworkDirs libBi
-        , ghcOptRPaths = rpaths
-        }
-    ghcProfSharedLinkArgs pdynObjectFiles =
-      ghcBaseLinkArgs
-        { ghcOptShared = toFlag True
-        , ghcOptProfilingMode = toFlag True
-        , ghcOptProfilingAuto =
-            Internal.profDetailLevelFlag
-              True
-              (withProfLibDetail lbi)
-        , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-        , ghcOptInputFiles = toNubListR pdynObjectFiles
-        , ghcOptOutputFile = toFlag profSharedLibFilePath
         , ghcOptDylibName = mempty
         , ghcOptLinkLibs = map Text.unpack $ extraLibs libBi
         , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
@@ -389,22 +366,12 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
         }
 
   staticObjectFiles <- getObjWayFiles StaticWay
-  profObjectFiles <- getObjWayFiles ProfWay
   dynamicObjectFiles <- getObjWayFiles DynWay
-  profDynamicObjectFiles <- getObjWayFiles ProfDynWay
 
   -- See doc/internal/bytecode-libraries.md for how the chosen companion
   -- way determines which .gbc files get packed into the .bytecodelib.
   let
     linkWay = \case
-      ProfWay -> do
-        Ar.createArLibArchive verbosity lbi profileLibFilePath profObjectFiles
-        when (withGHCiLib lbi) $ do
-          combineObjectFiles
-            ghciProfLibFilePath
-            profObjectFiles
-      ProfDynWay -> do
-        runGhcProg $ ghcProfSharedLinkArgs profDynamicObjectFiles
       DynWay -> do
         runGhcProg $ ghcSharedLinkArgs dynamicObjectFiles
         -- The .gbc files were built with DynWay if both are enabled.
@@ -683,8 +650,6 @@ data StaticRtsInfo = StaticRtsInfo
   , statRtsEventlogLib :: FilePath
   , statRtsThreadedDebugLib :: FilePath
   , statRtsThreadedEventlogLib :: FilePath
-  , statRtsProfilingLib :: FilePath
-  , statRtsThreadedProfilingLib :: FilePath
   }
 
 data RtsInfo = RtsInfo
@@ -727,8 +692,6 @@ extractRtsInfo lbi =
               , statRtsEventlogLib = "HSrts_l"
               , statRtsThreadedDebugLib = "HSrts_thr_debug"
               , statRtsThreadedEventlogLib = "HSrts_thr_l"
-              , statRtsProfilingLib = "HSrts_p"
-              , statRtsThreadedProfilingLib = "HSrts_thr_p"
               }
         , rtsLibPaths = InstalledPackageInfo.libraryDirs rts
         }

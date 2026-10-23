@@ -36,6 +36,8 @@ projectConfigFieldGrammar source knownPrograms = do
       projectConfigAllPackages = mempty
       projectConfigSpecificPackage = mempty
       projectConfigMachinePackages = mempty
+      -- Internal install overlay fields are not read from project files.
+      projectConfigInstallPackages = mempty
   projectConfigLocalPackages <- blurFieldGrammar L.projectConfigLocalPackages (packageConfigFieldGrammar knownPrograms)
   pure ProjectConfig{..}
 

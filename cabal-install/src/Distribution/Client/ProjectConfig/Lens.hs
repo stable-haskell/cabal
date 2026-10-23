@@ -110,6 +110,10 @@ projectConfigMachinePackages :: Lens' ProjectConfig (MapMappend Machine PackageC
 projectConfigMachinePackages f s = fmap (\x -> s{T.projectConfigMachinePackages = x}) (f (T.projectConfigMachinePackages s))
 {-# INLINEABLE projectConfigMachinePackages #-}
 
+projectConfigInstallPackages :: Lens' ProjectConfig (MapMappend PackageName PackageConfig)
+projectConfigInstallPackages f s = fmap (\x -> s{T.projectConfigInstallPackages = x}) (f (T.projectConfigInstallPackages s))
+{-# INLINEABLE projectConfigInstallPackages #-}
+
 projectConfigVerbosity :: Lens' ProjectConfigBuildOnly (Flag VerbosityFlags)
 projectConfigVerbosity f s = fmap (\x -> s{T.projectConfigVerbosity = x}) (f (T.projectConfigVerbosity s))
 {-# INLINEABLE projectConfigVerbosity #-}

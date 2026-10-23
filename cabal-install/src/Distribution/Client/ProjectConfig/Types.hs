@@ -58,6 +58,7 @@ import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.Machine (Machine)
 import Distribution.Solver.Types.Settings
 
+
 import Distribution.Package
   ( PackageId
   , PackageName
@@ -160,6 +161,12 @@ data ProjectConfig = ProjectConfig
   -- the same package can be built for both machines, which plain @package *@
   -- cannot tell apart. It sits between the local-package and the named
   -- layer: @package *@ < local packages < @package <machine>:*@ < @package name@.
+  , projectConfigInstallPackages :: MapMappend PackageName PackageConfig
+  -- ^ Local options promoted onto selected install targets after they become
+  -- source distributions. Keep their origin separate from explicit package
+  -- stanzas so target profiling options do not configure a build-machine copy.
+  -- Internal only: tracked in plan caches, but not read from or written to
+  -- project files.
   }
   deriving (Eq, Show, Generic)
   deriving (Semigroup, Monoid) via Generically ProjectConfig

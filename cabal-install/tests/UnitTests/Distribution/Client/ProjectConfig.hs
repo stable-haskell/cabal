@@ -412,6 +412,7 @@ instance Arbitrary ProjectConfig where
               <$> shortListOf 3 arbitrary
           )
       <*> pure mempty -- projectConfigMachinePackages: neither legacy nor printer support
+      <*> pure mempty -- projectConfigInstallPackages: internal install-only state
 
   -- package entries with no content are equivalent to
   -- the entry not existing at all, so exclude empty
@@ -444,6 +445,7 @@ instance Arbitrary ProjectConfig where
               (fmap getNonMEmpty x8')
         , projectConfigAllPackages = x9'
         , projectConfigMachinePackages = mempty
+        , projectConfigInstallPackages = mempty
         }
       | ((x0', x1', x2', x3'), (x4', x5', x6', x7', x8', x9')) <-
           shrink

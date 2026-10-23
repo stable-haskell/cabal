@@ -619,8 +619,10 @@ convertLegacyProjectConfig
       , projectConfigAllPackages = configAllPackages
       , projectConfigLocalPackages = configLocalPackages
       , projectConfigSpecificPackage = fmap perPackage legacySpecificConfig
-      , -- The legacy format has no machine-qualified package stanzas.
+      , -- The legacy format has no machine-qualified package stanzas,
+        -- and no install-target overlay.
         projectConfigMachinePackages = mempty
+      , projectConfigInstallPackages = mempty
       }
     where
       configAllPackages = convertLegacyPerPackageFlags g bpp bpa i h t b

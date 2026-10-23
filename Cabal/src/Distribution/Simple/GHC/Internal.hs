@@ -18,7 +18,6 @@ module Distribution.Simple.GHC.Internal
   , componentGhcOptions
   , sourcesGhcOptions
   , mkGHCiLibName
-  , mkGHCiProfLibName
   , filterGhciFlags
   , ghcLookupProperty
   , getHaskellObjects
@@ -36,10 +35,12 @@ module Distribution.Simple.GHC.Internal
   , ghcArchString
   , ghcOsString
   , ghcPlatformAndVersionString
+  , ghcPlatformAndVersionStringWithAbi
 
     -- * Constructing GHC environment files
   , GhcEnvironmentFileEntry (..)
   , writeGhcEnvironmentFile
+  , writeGhcEnvironmentFileWithAbi
   , simpleGhcEnvironmentFile
   , ghcEnvironmentFileName
   , renderGhcEnvironmentFile
@@ -638,9 +639,6 @@ filterGhciFlags = filter supported
 mkGHCiLibName :: UnitId -> String
 mkGHCiLibName lib = getHSLibraryName lib <.> "o"
 
-mkGHCiProfLibName :: UnitId -> String
-mkGHCiProfLibName lib = getHSLibraryName lib <.> "p_o"
-
 ghcLookupProperty :: String -> Compiler -> Bool
 ghcLookupProperty prop comp =
   case Map.lookup prop (compilerProperties comp) of
@@ -777,6 +775,12 @@ ghcPlatformAndVersionString :: Platform -> Version -> String
 ghcPlatformAndVersionString (Platform arch os) version =
   intercalate "-" [ghcArchString arch, ghcOsString os, prettyShow version]
 
+-- | Include an intrinsic target ABI after GHC's usual platform/version name.
+-- The empty ABI preserves the names used by existing compilers.
+ghcPlatformAndVersionStringWithAbi :: Platform -> Version -> String -> String
+ghcPlatformAndVersionStringWithAbi platform version abi =
+  ghcPlatformAndVersionString platform version ++ if null abi then "" else "-" ++ abi
+
 -- -----------------------------------------------------------------------------
 -- Constructing GHC environment files
 
@@ -823,11 +827,22 @@ writeGhcEnvironmentFile
   -> [GhcEnvironmentFileEntry FilePath]
   -- ^ the content
   -> IO FilePath
-writeGhcEnvironmentFile directory platform ghcversion entries = do
+writeGhcEnvironmentFile directory platform ghcversion =
+  writeGhcEnvironmentFileWithAbi directory platform ghcversion ""
+
+-- | Write an environment for a compiler with an intrinsic target ABI.
+writeGhcEnvironmentFileWithAbi
+  :: FilePath
+  -> Platform
+  -> Version
+  -> String
+  -> [GhcEnvironmentFileEntry FilePath]
+  -> IO FilePath
+writeGhcEnvironmentFileWithAbi directory platform ghcversion abi entries = do
   writeFileAtomic envfile . BS.pack . renderGhcEnvironmentFile $ entries
   return envfile
   where
-    envfile = directory </> ghcEnvironmentFileName platform ghcversion
+    envfile = directory </> ".ghc.environment." ++ ghcPlatformAndVersionStringWithAbi platform ghcversion abi
 
 -- | The @.ghc.environment-$arch-$os-$ver@ file name
 ghcEnvironmentFileName :: Platform -> Version -> FilePath
