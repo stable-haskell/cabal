@@ -4,8 +4,8 @@ module UnitTests.Distribution.Client.Store (tests) where
 -- import Control.Concurrent (forkIO, threadDelay)
 -- import Control.Concurrent.MVar
 
-import qualified Data.Set as Set
 import Data.List (isInfixOf)
+import qualified Data.Set as Set
 import System.Directory
 import System.FilePath
 
@@ -18,9 +18,9 @@ import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
-import Distribution.Client.RebuildMonad
 import Distribution.Client.DistDirLayout (betterPlatform, defaultStoreDirLayout)
 import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
+import Distribution.Client.RebuildMonad
 import Distribution.Client.Store
 import Distribution.Client.Toolchain (Toolchain (..))
 import qualified Distribution.Client.Utils.Json as Json
