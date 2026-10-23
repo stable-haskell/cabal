@@ -85,6 +85,7 @@ module Distribution.Client.ProjectPlanning
   , setupHsScriptOptions
   , setupHsCommonFlags
   , setupHsConfigureFlags
+  , configureTargetArgs
   , setupHsConfigureArgs
   , setupHsBuildFlags
   , setupHsBuildArgs
@@ -4036,11 +4037,13 @@ setupHsConfigureFlags
   -- ^ How to transform a path which is relative to cabal-install cwd to one which
   -- is relative to the route of the package about to be compiled. The simplest way
   -- to do this is to convert the potentially relative path into an absolute path.
+  -> ElaboratedSharedConfig
   -> ElaboratedReadyPackage
   -> Cabal.CommonSetupFlags
   -> m Cabal.ConfigFlags
 setupHsConfigureFlags
   mkSymbolicPath
+  sharedConfig
   (ReadyPackage elab@ElaboratedConfiguredPackage{..})
   configCommonFlags = do
     -- explicitly clear, then our package db stack
@@ -4094,7 +4097,8 @@ setupHsConfigureFlags
       configDumpBuildInfo = toFlag elabDumpBuildInfo
 
       configConfigurationsFlags = elabFlagAssignment
-      configConfigureArgs = elabConfigureScriptArgs
+      configConfigureArgs = configureTargetArgs elabStage toolchains elabConfigureScriptArgs
+      toolchains = pkgConfigToolchains sharedConfig
       configExtraLibDirs = fmap makeSymbolicPath elabExtraLibDirs
       configExtraLibDirsStatic = fmap makeSymbolicPath elabExtraLibDirsStatic
       configExtraFrameworkDirs = fmap makeSymbolicPath elabExtraFrameworkDirs
@@ -4186,6 +4190,41 @@ setupHsConfigureFlags
             Just (CLibName lname) -> lname
             Just _ -> error "non-library dependency"
             Nothing -> LMainLibName
+
+configureTargetArgs :: Stage -> Toolchains -> [String] -> [String]
+configureTargetArgs packageStage toolchains userArgs = Cabal.configureTargetDefaults hostTriple buildTriple userArgs ++ userArgs
+  where
+    hostTriple = stageTarget packageStage
+    buildTriple = stageTarget Build
+    stageTarget stage =
+      let toolchain = getStage toolchains stage
+       in Map.findWithDefault
+            (configurePlatformTriple (toolchainPlatform toolchain))
+            "Target platform"
+            (compilerProperties (toolchainCompiler toolchain))
+
+configurePlatformTriple :: Platform -> String
+configurePlatformTriple (Platform arch os) = prettyShow arch ++ "-" ++ fromOS os
+  where
+    fromOS Linux = "unknown-linux"
+    fromOS Windows = "unknown-mingw32"
+    fromOS OSX = "apple-darwin"
+    fromOS FreeBSD = "unknown-freebsd"
+    fromOS OpenBSD = "unknown-openbsd"
+    fromOS NetBSD = "unknown-netbsd"
+    fromOS DragonFly = "unknown-dragonflybsd"
+    fromOS Solaris = "sun-solaris"
+    fromOS AIX = "ibm-aix"
+    fromOS HPUX = "hp-hpux"
+    fromOS IRIX = "sgi-irix"
+    fromOS HaLVM = "unknown-halvm"
+    fromOS Hurd = "unknown-gnu"
+    fromOS IOS = "apple-ios"
+    fromOS Android = "unknown-linux-android"
+    fromOS Ghcjs = "unknown-ghcjs"
+    fromOS Wasi = "unknown-wasi"
+    fromOS Haiku = "unknown-haiku"
+    fromOS (OtherOS otheros) = "unknown-" ++ otheros
 
 setupHsConfigureArgs
   :: ElaboratedConfiguredPackage

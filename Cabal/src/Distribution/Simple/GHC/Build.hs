@@ -128,15 +128,15 @@ build numJobs verbHandles pkg_descr pbci = do
       unsupportedVariant =
         if not (compilerTargetsProfiling targetCompiler)
           then Nothing
-          else
-            case () of
-              _ | any (`elem` requestedGhcOptions) ["-dynamic", "-dynamic-too"]
-                    && profilingDynamicSupported targetCompiler == Just False ->
-                    Just "dynamic profiling objects"
-                | "-debug" `elem` requestedGhcOptions
-                    && profilingDebugSupported targetCompiler == Just False ->
-                    Just "debug profiling objects"
-                | otherwise -> Nothing
+          else case () of
+            _
+              | any (`elem` requestedGhcOptions) ["-dynamic", "-dynamic-too"]
+                  && profilingDynamicSupported targetCompiler == Just False ->
+                  Just "dynamic profiling objects"
+              | "-debug" `elem` requestedGhcOptions
+                  && profilingDebugSupported targetCompiler == Just False ->
+                  Just "debug profiling objects"
+              | otherwise -> Nothing
   for_ unsupportedVariant $ \variant ->
     liftIO $
       dieWithException verbosity $

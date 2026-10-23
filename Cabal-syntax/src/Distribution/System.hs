@@ -335,6 +335,19 @@ platformFromTriple triple =
       _ <- P.char '-'
       _ <- parseWord -- Skip vendor
       _ <- P.char '-'
-      os <- fmap (classifyOS Permissive) parsecIdent -- OS may have hyphens, like
+      os <- fmap classifyTripleOS parsecIdent -- OS may have hyphens, like
       -- 'nto-qnx'
       return $ Platform arch os
+
+    -- GHC target triples commonly include the Linux C-library ABI as part of
+    -- the OS segment. Recognize the known suffixes without treating arbitrary
+    -- unknown OS strings beginning with "linux" as Linux.
+    classifyTripleOS name =
+      case lowercase name of
+        "linux-gnu" -> Linux
+        "linux-musl" -> Linux
+        "linux-gnueabi" -> Linux
+        "linux-gnueabihf" -> Linux
+        "linux-musleabi" -> Linux
+        "linux-musleabihf" -> Linux
+        _ -> classifyOS Permissive name
