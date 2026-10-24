@@ -664,6 +664,8 @@ setupWrapper verbosity options mpkg cmd getCommonFlags getFlags getExtraArgs wra
         InLibraryArgs libArgs ->
           case libArgs of
             InLibraryConfigureArgs elabSharedConfig elabReadyPkg@(ReadyPackage elabPkg) ipiTVar -> do
+              let stageToolchain =
+                    getStage (pkgConfigToolchains elabSharedConfig) (elabStage elabPkg)
               -- Start from the pre-configured compiler ProgramDb of the
               -- package's own stage, augmented with all builtin programs
               -- (restored as unconfigured).
@@ -700,7 +702,7 @@ setupWrapper verbosity options mpkg cmd getCommonFlags getFlags getExtraArgs wra
                      verbHandles
                      (setupBuildType setup)
                      setupProgDb
-                     elabSharedConfig
+                     stageToolchain
                      elabReadyPkg
                      ipi
                      extraArgs
