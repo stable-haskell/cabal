@@ -185,6 +185,10 @@ built version.
 
 Use ``cabal path --store-dir`` to show where your global package store is located.
 This is configurable via the global ``store-dir`` option.
+Inside the store, packages are filed by the platform the compiler targets and
+then by the compiler, as ``<platform>/<compiler-id>-<abi>/<unit-id>``, so that
+the host and build compilers of a cross-compilation never share a directory or
+a package database.
 If you need to clear your store for
 whatever reason (e.g., to reclaim disk space or because the global
 store is corrupted), deleting this directory is safe (``build``
