@@ -1,5 +1,9 @@
 cabal-version: 2.4
-name: subonly
+-- Sort after both "async-…" and the macOS vowel-compressed unit id
+-- "sync-…". This package and async are both initially ready, and the
+-- install plan lists them in unit-id order. "subonly" sits between
+-- those two spellings, so the haddock-project golden flipped on macOS.
+name: zsubonly
 version: 0.1.0.0
 build-type: Simple
 
