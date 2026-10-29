@@ -81,7 +81,6 @@ runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = d
   confExists <- doesFileExist configureScriptPath
   unless confExists $
     dieWithException verbosity (ConfigureScriptNotFound configureScriptPath)
-  configureFile <- makeAbsolute configureScriptPath
   env <- getEnvironment
   (ccProg, ccFlags) <- configureCCompiler verbosity programDb
   ccProgShort <- getShortPathName ccProg
