@@ -281,13 +281,13 @@ parseTargetName name
   where
     safeChar c = isAscii c && (isAlphaNum c || c `elem` "_.-")
     hasAlphaNumEndpoints [] = False
-    hasAlphaNumEndpoints (firstChar:rest) = isAlphaNum firstChar && lastIsAlphaNum firstChar rest
+    hasAlphaNumEndpoints (firstChar : rest) = isAlphaNum firstChar && lastIsAlphaNum firstChar rest
     lastIsAlphaNum lastChar [] = isAlphaNum lastChar
-    lastIsAlphaNum _ (nextChar:rest) = lastIsAlphaNum nextChar rest
+    lastIsAlphaNum _ (nextChar : rest) = lastIsAlphaNum nextChar rest
     splitOn sep = foldr step [""]
       where
-        step c (x:xs) | [c] == sep = "" : x : xs
-        step c (x:xs) = (c:x) : xs
+        step c (x : xs) | [c] == sep = "" : x : xs
+        step c (x : xs) = (c : x) : xs
         step _ [] = []
 
 -- | Return the canonical target identity, validating new-protocol metadata.
@@ -302,11 +302,13 @@ compilerTargetName platform comp =
       let expected = machine ++ if abi == "profiling" then "-prof" else ""
       if abi `notElem` ["", "profiling"]
         then Left ("unsupported Target ABI: " ++ abi)
-        else if name /= expected
-          then Left "Target name contradicts Target platform and Target ABI"
-          else if length name + 1 + length (prettyShow (compilerVersion comp)) > 255
-            then Left "target name plus compiler version exceeds the 255-character filesystem component limit"
-          else Right target
+        else
+          if name /= expected
+            then Left "Target name contradicts Target platform and Target ABI"
+            else
+              if length name + 1 + length (prettyShow (compilerVersion comp)) > 255
+                then Left "target name plus compiler version exceeds the 255-character filesystem component limit"
+                else Right target
     (Just _, Nothing, _) -> Left "Target name requires Target platform"
     (Nothing, Just machine, abi) -> do
       _ <- parseTargetName machine
