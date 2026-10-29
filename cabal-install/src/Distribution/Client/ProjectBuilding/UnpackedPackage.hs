@@ -546,7 +546,6 @@ buildInplaceUnpackedPackage
   verbosity
   distDirLayout@DistDirLayout
     { distPackageCacheDirectory
-    , distDirectory
     , distHaddockOutputDir
     }
   maybe_semaphore
