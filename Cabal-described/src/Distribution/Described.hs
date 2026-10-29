@@ -407,18 +407,6 @@ instance Described ExposedModule where
 instance Described Extension where
     describe _ = RETodo
 
-instance Described (ExtraSource Build) where
-    describe _ = REAppend
-        [ describe (Proxy :: Proxy (SymbolicPath Build 'File))
-        , REOpt (reChar '(' <> reSpacedList (describe (Proxy :: Proxy Token')) <> reChar ')')
-        ]
-
-instance Described (ExtraSource Pkg) where
-    describe _ = REAppend
-        [ describe (Proxy :: Proxy (SymbolicPath Pkg 'File))
-        , REOpt (reChar '(' <> reSpacedList (describe (Proxy :: Proxy Token')) <> reChar ')')
-        ]
-
 instance Described FlagAssignment where
     describe _ = REMunch RESpaces1 $
         REUnion [fromString "+", fromString "-"] <> describe (Proxy :: Proxy FlagName)
