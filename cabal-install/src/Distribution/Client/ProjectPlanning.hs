@@ -157,6 +157,7 @@ import Distribution.Client.Toolchain
   , mapWithMachine
   , onMachine
   , overMachine
+  , showMachine
   , toolMachine
   , traverseWithMachine
   )
@@ -980,7 +981,23 @@ rebuildInstallPlan
       phaseConfigureCompiler
         :: ProjectConfig
         -> Rebuild Toolchains
-      phaseConfigureCompiler = configureToolchains verbosity distDirLayout
+      phaseConfigureCompiler projectConfig = do
+        toolchains <- configureToolchains verbosity distDirLayout projectConfig
+        -- An ordinary build has no separate build compiler. Print the host
+        -- compiler in that slot too, so the notice still names both machines.
+        liftIO $ do
+          notice verbosity "Toolchains:"
+          let hostToolchain = onHost toolchains
+              buildToolchain = fromMaybe hostToolchain (onBuild toolchains)
+              report machine toolchain =
+                notice verbosity $
+                  "- "
+                    ++ showMachine machine
+                    ++ " compiler "
+                    ++ showCompilerId (toolchainCompiler toolchain)
+          report Build buildToolchain
+          report Host hostToolchain
+        return toolchains
 
       -- Configuring other programs.
       --

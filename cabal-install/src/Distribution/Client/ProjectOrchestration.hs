@@ -122,6 +122,7 @@ import qualified Distribution.Client.ProjectPlanning as ProjectPlanning
   )
 import Distribution.Client.ProjectPlanning.Machine (WithMachine (..))
 import Distribution.Client.ProjectPlanning.Types
+import Distribution.Solver.Types.Machine (onBuild, onHost, showMachine)
 
 import Distribution.Client.DistDirLayout
 import qualified Distribution.Client.InstallPlan as InstallPlan
@@ -1129,6 +1130,7 @@ printPlan
           filter
             (not . null)
             [ " -"
+            , showMachine (elabMachine elab)
             , if verbosityLevel verbosity >= Deafening
                 then prettyShow (installedUnitId elab)
                 else prettyShow (packageId elab)
@@ -1247,18 +1249,24 @@ printPlan
 
       showBuildProfile :: String
       showBuildProfile =
-        "Build profile: "
-          ++ unwords
-            [ "-w " ++ (showCompilerId . pkgConfigCompiler) elaboratedShared
-            , "-O"
-                ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
-                      Setup.Flag NoOptimisation -> "0"
-                      Setup.Flag NormalOptimisation -> "1"
-                      Setup.Flag MaximumOptimisation -> "2"
-                      Setup.NoFlag -> "1"
-                   )
-            ]
-          ++ "\n"
+        let toolchains = pkgConfigToolchains elaboratedShared
+            hostCompiler = toolchainCompiler (onHost toolchains)
+            -- Same fallback as the toolchain notice: no build machine means
+            -- the host compiler configures the build too.
+            buildCompiler = toolchainCompiler (fromMaybe (onHost toolchains) (onBuild toolchains))
+         in "Build profile: "
+              ++ unwords
+                [ "-w " ++ showCompilerId hostCompiler
+                , "-W " ++ showCompilerId buildCompiler
+                , "-O"
+                    ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
+                          Setup.Flag NoOptimisation -> "0"
+                          Setup.Flag NormalOptimisation -> "1"
+                          Setup.Flag MaximumOptimisation -> "2"
+                          Setup.NoFlag -> "1"
+                       )
+                ]
+              ++ "\n"
 
 writeBuildReports :: BuildTimeSettings -> ProjectBuildContext -> ElaboratedInstallPlan -> BuildOutcomes -> IO ()
 writeBuildReports settings buildContext plan buildOutcomes = do
@@ -1459,7 +1467,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
       case reason of
         DownloadFailed _ -> "Failed to download " ++ pkgstr
         UnpackFailed _ -> "Failed to unpack " ++ pkgstr
-        ConfigureFailed _ -> "Failed to build " ++ pkgstr
+        ConfigureFailed _ -> "Failed to configure " ++ pkgstr
         BuildFailed _ -> "Failed to build " ++ pkgstr
         ReplFailed _ -> "repl failed for " ++ pkgstr
         HaddocksFailed _ -> "Failed to build documentation for " ++ pkgstr
