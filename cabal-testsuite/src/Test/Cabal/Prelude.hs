@@ -1615,7 +1615,7 @@ findDependencyInStoreInStage _stage pkgName = do
     nested <- case firstMatch storeDir topDirs of
       Just dir -> pure (Just dir)
       Nothing ->
-        (listToMaybe . catMaybes)
+        listToMaybe . catMaybes
           <$> mapM
             ( \top -> do
                 let parent = storeDir </> top
