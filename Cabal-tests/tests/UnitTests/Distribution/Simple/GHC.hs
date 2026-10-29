@@ -4,6 +4,7 @@ import Data.List (isInfixOf)
 import Data.Either (isLeft)
 import Control.Exception (SomeException, displayException, try)
 import qualified Data.Map as Map
+import Distribution.Simple.BuildWay (BuildWay (..), buildWayInterfaceExtension, buildWayObjectExtension)
 import Distribution.Simple.Compiler
 import Distribution.Simple.Configure (adjustBuildOptions, configureProfiling, profilingTargetError, profilingTargetVariantError)
 import Distribution.Simple.Errors (CabalException (ProfilingRequiresTargetCompiler), exceptionMessage)
