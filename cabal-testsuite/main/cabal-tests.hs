@@ -8,7 +8,7 @@ import Test.Cabal.TestCode
 
 import Distribution.Verbosity
 import Distribution.Compiler (CompilerFlavor (GHC))
-import Distribution.Simple.Compiler (compilerTargetName, compilerVersion, renderTargetName)
+import Distribution.Simple.Compiler (compilerVersion)
 import Distribution.Simple.Configure (configCompilerEx)
 import Distribution.Simple.Utils     (getDirectoryContentsRecursive)
 import Distribution.Simple.Program
@@ -147,12 +147,11 @@ buildCabalLibsProject projString verb mbGhc dir = do
   let prog_db = userSpecifyPaths [("ghc", path) | Just path <- [mbGhc] ]  defaultProgramDb
   (cabal, _) <- requireProgram verb (simpleProgram "cabal") prog_db
   (ghc, _) <- requireProgram verb ghcProgram prog_db
-  (compiler, platform, _) <- configCompilerEx (Just GHC) (Just (programPath ghc)) Nothing prog_db verb
+  (compiler, _, _) <- configCompilerEx (Just GHC) (Just (programPath ghc)) Nothing prog_db verb
 
   let storeRoot = dir </> "store"
   let pv = compilerVersion compiler
       final_package_db = dir </> "dist-newstyle" </> "packagedb" </> "ghc-" ++ prettyShow pv
-      hostTarget = either error renderTargetName (compilerTargetName platform compiler)
   createDirectoryIfMissing True dir
   writeFile (dir </> "cabal.project-test") projString
 
