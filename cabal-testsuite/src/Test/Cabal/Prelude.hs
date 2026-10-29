@@ -100,7 +100,7 @@ import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Char as Char
 import Data.List (isPrefixOf, stripPrefix)
-import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe, mapMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, mapMaybe)
 import Network.Wait (waitTcpVerbose)
 import System.Directory
 import System.Environment
@@ -1615,8 +1615,8 @@ findDependencyInStoreInStage _stage pkgName = do
     nested <- case firstMatch storeDir topDirs of
       Just dir -> pure (Just dir)
       Nothing ->
-        fmap (listToMaybe . mapMaybe id) $
-          mapM
+        (listToMaybe . catMaybes)
+          <$> mapM
             ( \top -> do
                 let parent = storeDir </> top
                 kids <- listDirectory parent
