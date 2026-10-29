@@ -127,6 +127,7 @@ import Distribution.Version
 import Language.Haskell.Extension
 import System.FilePath
   ( isRelative
+  , takeBaseName
   , takeDirectory
   )
 #ifndef mingw32_HOST_OS
@@ -426,6 +427,10 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
 -- > /usr/local/bin/ghc-pkg-ghc-6.6.1(.exe)
 -- > /usr/local/bin/ghc-pkg-6.6.1(.exe)
 -- > /usr/local/bin/ghc-pkg(.exe)
+--
+-- A target-prefixed compiler such as @wasm32-unknown-wasi-ghc@ is tried
+-- first as @wasm32-unknown-wasi-ghc-pkg@, so a cross bindist does not pick
+-- the build compiler's tool off @PATH@.
 guessToolFromGhcPath
   :: Program
   -> ConfiguredProgram
@@ -442,6 +447,17 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
         versionSuffix path = takeVersionSuffix (dropExeExtension path)
         given_suf = versionSuffix given_path
         real_suf = versionSuffix real_path
+        -- For cross-compilers the ghc binary is typically prefixed with a
+        -- target triple, e.g. wasm32-unknown-wasi-ghc. Try that same prefix
+        -- on the companion tool before the unprefixed name.
+        targetPrefixOf p =
+          let base = takeBaseName p
+              ghcMarker = "ghc" ++ versionSuffix base
+           in if ghcMarker `isSuffixOf` base
+                then Just (take (length base - length ghcMarker) base)
+                else Nothing
+        given_prefix = targetPrefixOf given_path
+        real_prefix = targetPrefixOf real_path
         guessNormal dir = dir </> toolname <.> exeExtension buildPlatform
         guessGhcVersioned dir suf =
           dir
@@ -451,20 +467,25 @@ guessToolFromGhcPath tool ghcProg verbosity searchpath =
           dir
             </> (toolname ++ suf)
               <.> exeExtension buildPlatform
-        mkGuesses dir suf
-          | null suf = [guessNormal dir]
+        guessTargetPrefixed _ Nothing = []
+        guessTargetPrefixed dir (Just pref)
+          | null pref = []
+          | otherwise = [dir </> (pref ++ toolname) <.> exeExtension buildPlatform]
+        mkGuesses dir suf prefix
+          | null suf = guessTargetPrefixed dir prefix ++ [guessNormal dir]
           | otherwise =
-              [ guessGhcVersioned dir suf
-              , guessVersioned dir suf
-              , guessNormal dir
-              ]
+              guessTargetPrefixed dir prefix
+                ++ [ guessGhcVersioned dir suf
+                   , guessVersioned dir suf
+                   , guessNormal dir
+                   ]
         -- order matters here, see https://github.com/haskell/cabal/issues/7390
         guesses =
           ( if real_path == given_path
               then []
-              else mkGuesses real_dir real_suf
+              else mkGuesses real_dir real_suf real_prefix
           )
-            ++ mkGuesses given_dir given_suf
+            ++ mkGuesses given_dir given_suf given_prefix
     info verbosity $
       "looking for tool "
         ++ toolname
