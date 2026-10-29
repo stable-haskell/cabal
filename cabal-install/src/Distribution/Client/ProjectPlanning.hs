@@ -151,7 +151,6 @@ import Distribution.Client.Targets (userToPackageConstraint)
 import Distribution.Client.Toolchain
   ( Machine (..)
   , PerMachine (..)
-  , Toolchain (..)
   , Toolchains
   , isCross
   , mapWithMachine
@@ -2895,17 +2894,17 @@ elaborateInstallPlan
         where
           buildCompiler = toolchainCompiler (fromMaybe (onHost toolchains) (onBuild toolchains))
           hostCompiler = toolchainCompiler (onHost toolchains)
-          normalise = normaliseUnscopedPackageConfig machine buildCompiler hostCompiler
-          global = f (normalise allPackagesConfig)
+          normaliseUnscoped = normaliseUnscopedPackageConfig machine buildCompiler hostCompiler
+          global = f (normaliseUnscoped allPackagesConfig)
           machinecfg = foldMap f (Map.lookup machine machinePackagesConfig)
           local
-            | isLocalToProject pkg = f (normalise localPackagesConfig)
+            | isLocalToProject pkg = f (normaliseUnscoped localPackagesConfig)
             | otherwise = mempty
           perpkg = foldMap f (Map.lookup (packageName pkg) perPackageConfig)
           -- Install-local flags keep CLI precedence for the selected target.
           -- Their profiling fields must not configure its build-machine copy;
-          -- 'normalise' drops them when the two machines have different ABIs.
-          installpkg = foldMap (f . normalise) (Map.lookup (packageName pkg) installPackagesConfig)
+          -- 'normaliseUnscoped' drops them when the two machines have different ABIs.
+          installpkg = foldMap (f . normaliseUnscoped) (Map.lookup (packageName pkg) installPackagesConfig)
 
       -- The project's package databases belong to the host compiler; a
       -- distinct build toolchain gets none of them.
