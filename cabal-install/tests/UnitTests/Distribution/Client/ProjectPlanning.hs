@@ -58,6 +58,7 @@ import Distribution.Simple.Program.Types (ConfiguredProgram (..), ProgramLocatio
 import Distribution.Simple.Setup (CommonSetupFlags (setupWorkingDir), ConfigFlags (..), configureCommand, emptyConfigFlags)
 import qualified Distribution.Simple.SetupHooks.Internal as SetupHooks
 import Distribution.Solver.Types.Machine (Machine (..), toolMachine)
+import Distribution.Solver.Types.OptionalStanza (OptionalStanzaMap (..))
 import Distribution.Solver.Types.Settings (IndependentGoals (..))
 import Distribution.System (Arch (..), OS (..), Platform (..), buildPlatform)
 import Distribution.Types.ComponentName
@@ -243,7 +244,7 @@ testCoverageDependencies = do
   let targetComponent =
         ElaboratedComponent
           { compSolverName = undefined
-          , compComponentName = undefined
+          , compComponentName = Just (CLibName LMainLibName)
           , compLibDependencies = [(ConfiguredId sourceId Nothing siblingId, False), (ConfiguredId externalId Nothing externalComponentId, False)]
           , compLinkedLibDependencies = [DefiniteUnitId (unsafeMkDefUnitId siblingUnitId), DefiniteUnitId (unsafeMkDefUnitId externalUnitId), IndefFullUnitId siblingId Map.empty]
           , compExeDependencies = undefined
@@ -267,10 +268,13 @@ testCoverageDependencies = do
           , elabPkgSourceLocation = undefined
           , elabPkgSourceHash = undefined
           , elabEnabledSpec = undefined
-          , elabStanzasAvailable = undefined
-          , elabStanzasRequested = undefined
           , elabLocalToProject = undefined
-          , elabBuildStyle = undefined
+          , -- setupHsConfigureFlags sanity-checks the build style and the stanza
+            -- sets. This component is an inplace library, so the hash check is
+            -- skipped and these values are not forced further.
+            elabBuildStyle = BuildInplaceOnly InMemory
+          , elabStanzasAvailable = mempty
+          , elabStanzasRequested = OptionalStanzaMap Nothing Nothing
           , elabMachine = Host
           , elabPackageDbs = undefined
           , elabSetupPackageDBStack = undefined
