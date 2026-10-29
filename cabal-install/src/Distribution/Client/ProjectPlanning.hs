@@ -82,6 +82,7 @@ module Distribution.Client.ProjectPlanning
   , setupHsScriptOptions
   , setupHsCommonFlags
   , setupHsConfigureFlags
+  , determineCoverageFor
   , configureTargetArgs
   , setupHsConfigureArgs
   , setupHsBuildFlags
