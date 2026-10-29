@@ -168,7 +168,6 @@ commonArgParser = do
               <> metavar "PATH"
           )
       )
-  argHackageRepoToolPath <- optional
   argBuildPackageDbPaths <- many
       ( option
           str
@@ -177,6 +176,7 @@ commonArgParser = do
               <> metavar "DIR"
           )
       )
+  argHackageRepoToolPath <- optional
       ( option
           str
           ( help "Path to hackage-repo-tool to use for repository manipulation"
