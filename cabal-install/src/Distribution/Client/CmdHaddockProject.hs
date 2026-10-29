@@ -41,7 +41,6 @@ import Distribution.Client.ProjectPlanning
   , setPkgConfigCompilerProgs
   )
 import Distribution.Client.ProjectPlanning.Machine (withoutMachine)
-import Distribution.Client.Toolchain (Machine (Host), Toolchain (..), onMachine)
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedSharedConfig (..)
   , elabDistDirParams
@@ -60,6 +59,7 @@ import Distribution.Client.Setup
   , GlobalFlags (..)
   )
 import Distribution.Client.TargetProblem (TargetProblem (..))
+import Distribution.Client.Toolchain (Machine (Host), Toolchain (..), onMachine)
 
 import Distribution.Simple.BuildPaths
   ( haddockBenchmarkDirPath
@@ -215,118 +215,118 @@ haddockProjectAction flags _extraArgs globalFlags = do
       -- component has a separate output directory; checking sibling interfaces
       -- before their output has been copied would report them as missing.
       forM_ pkgs $ \case
-          Right package | elabLocalToProject package -> do
-            let pkg_descr = elabPkgDescription package
-                packageDir = haddockDirName ForDevelopment pkg_descr
-                destDir = outputDir </> packageDir
-                buildDir = distBuildDirectory distLayout (elabDistDirParams sharedConfig package)
-                docDir = buildDir </> "doc" </> "html" </> packageDir
-            hasDocs <- doesDirectoryExist docDir
-            when hasDocs $ copyDirectoryRecursive verbosity docDir destDir
-          _ -> return ()
+        Right package | elabLocalToProject package -> do
+          let pkg_descr = elabPkgDescription package
+              packageDir = haddockDirName ForDevelopment pkg_descr
+              destDir = outputDir </> packageDir
+              buildDir = distBuildDirectory distLayout (elabDistDirParams sharedConfig package)
+              docDir = buildDir </> "doc" </> "html" </> packageDir
+          hasDocs <- doesDirectoryExist docDir
+          when hasDocs $ copyDirectoryRecursive verbosity docDir destDir
+        _ -> return ()
 
       packageInfos <- fmap (nub . concat) $ for pkgs $ \case
-          Left package | localStyle -> do
-            let packageName = unPackageName (pkgName $ sourcePackageId package)
-                destDir = outputDir </> packageName
-            fmap catMaybes $ for (haddockInterfaces package) $ \interfacePath -> do
-              let docDir = takeDirectory interfacePath
-              a <- doesFileExist interfacePath
+        Left package | localStyle -> do
+          let packageName = unPackageName (pkgName $ sourcePackageId package)
+              destDir = outputDir </> packageName
+          fmap catMaybes $ for (haddockInterfaces package) $ \interfacePath -> do
+            let docDir = takeDirectory interfacePath
+            a <- doesFileExist interfacePath
+            case a of
+              True -> do
+                copyDirectoryRecursive verbosity docDir destDir
+                return $ Just $ Right (packageName, interfacePath, Hidden)
+              False -> return Nothing
+        Left _ -> return []
+        Right package ->
+          case elabLocalToProject package of
+            True -> do
+              let distDirParams = elabDistDirParams sharedConfig package
+                  pkg_descr = elabPkgDescription package
+
+                  packageName = pkgName $ elabPkgSourceId package
+                  unitId = elabUnitId package
+                  packageDir = haddockDirName ForDevelopment pkg_descr
+                  destDir = outputDir </> packageDir
+                  interfacePath = destDir </> haddockPath pkg_descr
+
+                  buildDir = distBuildDirectory distLayout distDirParams
+                  docDir =
+                    buildDir
+                      </> "doc"
+                      </> "html"
+                      </> packageDir
+
+              a <- doesDirectoryExist docDir
+              if a
+                then do
+                  let infos :: [(String, FilePath, Visibility)]
+                      infos =
+                        [ (unPackageName packageName, interfacePath, Visible)
+                        | isJust (library pkg_descr)
+                        ]
+                          ++ [ (sublibDirPath, sublibInterfacePath, Visible)
+                             | lib <- subLibraries pkg_descr
+                             , let sublibDirPath = haddockLibraryDirPath ForDevelopment pkg_descr lib
+                                   sublibInterfacePath =
+                                    outputDir
+                                      </> sublibDirPath
+                                      </> haddockLibraryPath pkg_descr lib
+                             ]
+                          ++ [ (testPath, testInterfacePath, Visible)
+                             | test <- testSuites pkg_descr
+                             , let testPath = haddockTestDirPath ForDevelopment pkg_descr test
+                                   testInterfacePath =
+                                    outputDir
+                                      </> testPath
+                                      </> haddockPath pkg_descr
+                             ]
+                          ++ [ (benchPath, benchInterfacePath, Visible)
+                             | bench <- benchmarks pkg_descr
+                             , let benchPath = haddockBenchmarkDirPath ForDevelopment pkg_descr bench
+                                   benchInterfacePath =
+                                    outputDir
+                                      </> benchPath
+                                      </> haddockPath pkg_descr
+                             ]
+                  infos' <-
+                    mapM
+                      ( \x@(_, path, _) -> do
+                          e <- doesFileExist path
+                          return $
+                            if e
+                              then Right x
+                              else Left path
+                      )
+                      infos
+                  return infos'
+                else do
+                  warn
+                    verbosity
+                    ( "haddocks of "
+                        ++ unUnitId unitId
+                        ++ " not found in the store"
+                    )
+                  return []
+            False
+              | not localStyle ->
+                  return []
+            False -> do
+              let pkg_descr = elabPkgDescription package
+                  unitId = unUnitId (elabUnitId package)
+                  docDir = haddockdir (elabInstallDirs package)
+                  packageDir = haddockDirName ForDevelopment pkg_descr
+                  destDir = outputDir </> packageDir
+                  interfacePath = destDir </> haddockPath pkg_descr
+              a <- doesDirectoryExist docDir
               case a of
                 True -> do
                   copyDirectoryRecursive verbosity docDir destDir
-                  return $ Just $ Right (packageName, interfacePath, Hidden)
-                False -> return Nothing
-          Left _ -> return []
-          Right package ->
-            case elabLocalToProject package of
-              True -> do
-                let distDirParams = elabDistDirParams sharedConfig package
-                    pkg_descr = elabPkgDescription package
-
-                    packageName = pkgName $ elabPkgSourceId package
-                    unitId = elabUnitId package
-                    packageDir = haddockDirName ForDevelopment pkg_descr
-                    destDir = outputDir </> packageDir
-                    interfacePath = destDir </> haddockPath pkg_descr
-
-                    buildDir = distBuildDirectory distLayout distDirParams
-                    docDir =
-                      buildDir
-                        </> "doc"
-                        </> "html"
-                        </> packageDir
-
-                a <- doesDirectoryExist docDir
-                if a
-                  then do
-                    let infos :: [(String, FilePath, Visibility)]
-                        infos =
-                          [ (unPackageName packageName, interfacePath, Visible)
-                          | isJust (library pkg_descr)
-                          ]
-                            ++ [ (sublibDirPath, sublibInterfacePath, Visible)
-                               | lib <- subLibraries pkg_descr
-                               , let sublibDirPath = haddockLibraryDirPath ForDevelopment pkg_descr lib
-                                     sublibInterfacePath =
-                                      outputDir
-                                        </> sublibDirPath
-                                        </> haddockLibraryPath pkg_descr lib
-                               ]
-                            ++ [ (testPath, testInterfacePath, Visible)
-                               | test <- testSuites pkg_descr
-                               , let testPath = haddockTestDirPath ForDevelopment pkg_descr test
-                                     testInterfacePath =
-                                      outputDir
-                                        </> testPath
-                                        </> haddockPath pkg_descr
-                               ]
-                            ++ [ (benchPath, benchInterfacePath, Visible)
-                               | bench <- benchmarks pkg_descr
-                               , let benchPath = haddockBenchmarkDirPath ForDevelopment pkg_descr bench
-                                     benchInterfacePath =
-                                      outputDir
-                                        </> benchPath
-                                        </> haddockPath pkg_descr
-                               ]
-                    infos' <-
-                      mapM
-                        ( \x@(_, path, _) -> do
-                            e <- doesFileExist path
-                            return $
-                              if e
-                                then Right x
-                                else Left path
-                        )
-                        infos
-                    return infos'
-                  else do
-                    warn
-                      verbosity
-                      ( "haddocks of "
-                          ++ unUnitId unitId
-                          ++ " not found in the store"
-                      )
-                    return []
-              False
-                | not localStyle ->
-                    return []
-              False -> do
-                let pkg_descr = elabPkgDescription package
-                    unitId = unUnitId (elabUnitId package)
-                    docDir = haddockdir (elabInstallDirs package)
-                    packageDir = haddockDirName ForDevelopment pkg_descr
-                    destDir = outputDir </> packageDir
-                    interfacePath = destDir </> haddockPath pkg_descr
-                a <- doesDirectoryExist docDir
-                case a of
-                  True -> do
-                    copyDirectoryRecursive verbosity docDir destDir
-                    -- non local packages will be hidden in haddock's
-                    -- generated contents page
-                    return [Right (packageDir, interfacePath, Hidden)]
-                  False -> do
-                    return [Left unitId]
+                  -- non local packages will be hidden in haddock's
+                  -- generated contents page
+                  return [Right (packageDir, interfacePath, Hidden)]
+                False -> do
+                  return [Left unitId]
 
       --
       -- generate index, content, etc.
