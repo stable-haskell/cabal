@@ -1,15 +1,23 @@
-import Distribution.Simple.Compiler (compilerTargetName, renderTargetName)
-import System.FilePath ( joinPath )
+import Distribution.Pretty (prettyShow)
+import Distribution.Simple.Compiler (compilerId)
 
 import Test.Cabal.Prelude
 
 -- https://github.com/haskell/cabal/issues/7679
 -- https://github.com/haskell/cabal/issues/8400
-
+-- list-bin reports the dist build path on this base. Executables are not
+-- copied to store/<machine>/<target>/bin.
 main = cabalTest . void $ do
     env <- getTestEnv
-    target <- either fail (pure . renderTargetName) (compilerTargetName (testPlatform env) (testCompiler env))
     res <- cabal' "list-bin" ["exe:testexe"]
 
-    let path = joinPath ["store", "host", target, "bin", "testexe"]
+    let path =
+          "dist"
+            </> "build"
+            </> prettyShow (testPlatform env)
+            </> prettyShow (compilerId (testCompiler env))
+            </> "SelectedComponent-1.0.0"
+            </> "build"
+            </> "testexe"
+            </> "testexe"
     assertOutputContains path res
