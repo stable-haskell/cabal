@@ -71,7 +71,6 @@ import Distribution.Client.ProjectPlanning.Types
   , dataDirsEnvironmentForPlan
   , elabDistDirParams
   , elabExeDependencyPaths
-  , elabInstallDirs
   , elabOrderLibDependencies
   , elabToolchain
   , isInplaceBuildStyle
