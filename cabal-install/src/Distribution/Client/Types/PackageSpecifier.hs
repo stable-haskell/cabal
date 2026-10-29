@@ -14,8 +14,8 @@ import Distribution.Version (nullVersion, thisVersion)
 
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.LabeledPackageConstraint
-import Distribution.Solver.Types.PackageConstraint
 import Distribution.Solver.Types.Machine (Machine (Host))
+import Distribution.Solver.Types.PackageConstraint
 
 -- | A fully or partially resolved reference to a package.
 data PackageSpecifier pkg

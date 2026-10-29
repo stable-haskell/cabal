@@ -12,9 +12,9 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import Distribution.Backpack (OpenUnitId (..))
 import Distribution.Backpack.ModuleShape (emptyModuleShape)
-import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.CmdInstall (addLocalConfigToPkgs)
 import Distribution.Client.HashValue (hashValue)
+import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.PackageHash
 import Distribution.Client.ProjectConfig (lookupLocalPackageConfig, resolveSolverSettings)
 import Distribution.Client.ProjectConfig.Types
@@ -50,8 +50,8 @@ import Distribution.Simple.InstallDirs (defaultInstallDirs)
 import Distribution.Simple.Program.Db (defaultProgramDb, updateProgram, userSpecifyPath)
 import Distribution.Simple.Program.Types (ConfiguredProgram (..), ProgramLocation (..), simpleConfiguredProgram)
 import Distribution.Simple.Setup (CommonSetupFlags (setupWorkingDir), ConfigFlags (..), configureCommand, emptyConfigFlags)
-import Distribution.Solver.Types.Machine (Machine (..), toolMachine)
 import qualified Distribution.Simple.SetupHooks.Internal as SetupHooks
+import Distribution.Solver.Types.Machine (Machine (..), toolMachine)
 import Distribution.Solver.Types.Settings (IndependentGoals (..))
 import Distribution.System (Arch (..), OS (..), Platform (..), buildPlatform)
 import Distribution.Types.ComponentName
@@ -60,8 +60,8 @@ import Distribution.Types.Flag (mkFlagAssignment, mkFlagName)
 import Distribution.Types.LibraryName
 import Distribution.Types.LocalBuildConfig (PackageBuildDescr (..))
 import qualified Distribution.Types.LocalBuildConfig as LBC
-import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.PackageDescription (emptyPackageDescription)
+import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Version (mkVersion)
 import System.Directory (createDirectory, getTemporaryDirectory, removeFile, removePathForcibly)
@@ -101,128 +101,133 @@ testCoverageDependencies = do
       siblingUnitId = newSimpleUnitId siblingId
       externalUnitId = newSimpleUnitId externalComponentId
       emptyElab :: ElaboratedConfiguredPackage
-      emptyElab = ElaboratedConfiguredPackage
-        { elabUnitId = error "emptyElab.elabUnitId"
-        , elabComponentId = error "emptyElab.elabComponentId"
-        , elabInstantiatedWith = error "emptyElab.elabInstantiatedWith"
-        , elabLinkedInstantiatedWith = error "emptyElab.elabLinkedInstantiatedWith"
-        , elabIsCanonical = error "emptyElab.elabIsCanonical"
-        , elabPkgSourceId = error "emptyElab.elabPkgSourceId"
-        , elabMachine = error "emptyElab.elabMachine"
-        , elabModuleShape = error "emptyElab.elabModuleShape"
-        , elabFlagAssignment = error "emptyElab.elabFlagAssignment"
-        , elabFlagDefaults = error "emptyElab.elabFlagDefaults"
-        , elabPkgDescription = error "emptyElab.elabPkgDescription"
-        , elabGPkgDescription = error "emptyElab.elabGPkgDescription"
-        , elabPkgSourceLocation = error "emptyElab.elabPkgSourceLocation"
-        , elabPkgSourceHash = error "emptyElab.elabPkgSourceHash"
-        , elabLocalToProject = error "emptyElab.elabLocalToProject"
-        , elabBuildStyle = error "emptyElab.elabBuildStyle"
-        , elabEnabledSpec = error "emptyElab.elabEnabledSpec"
-        , elabStanzasAvailable = error "emptyElab.elabStanzasAvailable"
-        , elabStanzasRequested = error "emptyElab.elabStanzasRequested"
-        , elabPackageDbs = error "emptyElab.elabPackageDbs"
-        , elabSetupPackageDBStack = error "emptyElab.elabSetupPackageDBStack"
-        , elabBuildPackageDBStack = error "emptyElab.elabBuildPackageDBStack"
-        , elabRegisterPackageDBStack = error "emptyElab.elabRegisterPackageDBStack"
-        , elabInplaceSetupPackageDBStack = error "emptyElab.elabInplaceSetupPackageDBStack"
-        , elabInplaceBuildPackageDBStack = error "emptyElab.elabInplaceBuildPackageDBStack"
-        , elabInplaceRegisterPackageDBStack = error "emptyElab.elabInplaceRegisterPackageDBStack"
-        , elabPkgDescriptionOverride = error "emptyElab.elabPkgDescriptionOverride"
-        , elabBuildOptions = error "emptyElab.elabBuildOptions"
-        , elabDumpBuildInfo = error "emptyElab.elabDumpBuildInfo"
-        , elabProgramPaths = error "emptyElab.elabProgramPaths"
-        , elabProgramArgs = error "emptyElab.elabProgramArgs"
-        , elabProgramPathExtra = error "emptyElab.elabProgramPathExtra"
-        , elabConfiguredPrograms = error "emptyElab.elabConfiguredPrograms"
-        , elabConfigureScriptArgs = error "emptyElab.elabConfigureScriptArgs"
-        , elabExtraLibDirs = error "emptyElab.elabExtraLibDirs"
-        , elabExtraLibDirsStatic = error "emptyElab.elabExtraLibDirsStatic"
-        , elabExtraFrameworkDirs = error "emptyElab.elabExtraFrameworkDirs"
-        , elabExtraIncludeDirs = error "emptyElab.elabExtraIncludeDirs"
-        , elabProgPrefix = error "emptyElab.elabProgPrefix"
-        , elabProgSuffix = error "emptyElab.elabProgSuffix"
-        , elabInstallDirs = error "emptyElab.elabInstallDirs"
-        , elabHaddockHoogle = error "emptyElab.elabHaddockHoogle"
-        , elabHaddockHtml = error "emptyElab.elabHaddockHtml"
-        , elabHaddockHtmlLocation = error "emptyElab.elabHaddockHtmlLocation"
-        , elabHaddockForeignLibs = error "emptyElab.elabHaddockForeignLibs"
-        , elabHaddockForHackage = error "emptyElab.elabHaddockForHackage"
-        , elabHaddockExecutables = error "emptyElab.elabHaddockExecutables"
-        , elabHaddockTestSuites = error "emptyElab.elabHaddockTestSuites"
-        , elabHaddockBenchmarks = error "emptyElab.elabHaddockBenchmarks"
-        , elabHaddockInternal = error "emptyElab.elabHaddockInternal"
-        , elabHaddockCss = error "emptyElab.elabHaddockCss"
-        , elabHaddockLinkedSource = error "emptyElab.elabHaddockLinkedSource"
-        , elabHaddockQuickJump = error "emptyElab.elabHaddockQuickJump"
-        , elabHaddockHscolourCss = error "emptyElab.elabHaddockHscolourCss"
-        , elabHaddockContents = error "emptyElab.elabHaddockContents"
-        , elabHaddockIndex = error "emptyElab.elabHaddockIndex"
-        , elabHaddockBaseUrl = error "emptyElab.elabHaddockBaseUrl"
-        , elabHaddockResourcesDir = error "emptyElab.elabHaddockResourcesDir"
-        , elabHaddockOutputDir = error "emptyElab.elabHaddockOutputDir"
-        , elabHaddockUseUnicode = error "emptyElab.elabHaddockUseUnicode"
-        , elabTestMachineLog = error "emptyElab.elabTestMachineLog"
-        , elabTestHumanLog = error "emptyElab.elabTestHumanLog"
-        , elabTestShowDetails = error "emptyElab.elabTestShowDetails"
-        , elabTestKeepTix = error "emptyElab.elabTestKeepTix"
-        , elabTestWrapper = error "emptyElab.elabTestWrapper"
-        , elabTestFailWhenNoTestSuites = error "emptyElab.elabTestFailWhenNoTestSuites"
-        , elabTestTestOptions = error "emptyElab.elabTestTestOptions"
-        , elabBenchmarkOptions = error "emptyElab.elabBenchmarkOptions"
-        , elabSetupScriptStyle = error "emptyElab.elabSetupScriptStyle"
-        , elabSetupScriptCliVersion = error "emptyElab.elabSetupScriptCliVersion"
-        , elabConfigureTargets = error "emptyElab.elabConfigureTargets"
-        , elabBuildTargets = error "emptyElab.elabBuildTargets"
-        , elabTestTargets = error "emptyElab.elabTestTargets"
-        , elabBenchTargets = error "emptyElab.elabBenchTargets"
-        , elabReplTarget = error "emptyElab.elabReplTarget"
-        , elabHaddockTargets = error "emptyElab.elabHaddockTargets"
-        , elabBuildHaddocks = error "emptyElab.elabBuildHaddocks"
-        , elabPkgOrComp = error "emptyElab.elabPkgOrComp"
-        }
+      emptyElab =
+        ElaboratedConfiguredPackage
+          { elabUnitId = error "emptyElab.elabUnitId"
+          , elabComponentId = error "emptyElab.elabComponentId"
+          , elabInstantiatedWith = error "emptyElab.elabInstantiatedWith"
+          , elabLinkedInstantiatedWith = error "emptyElab.elabLinkedInstantiatedWith"
+          , elabIsCanonical = error "emptyElab.elabIsCanonical"
+          , elabPkgSourceId = error "emptyElab.elabPkgSourceId"
+          , elabMachine = error "emptyElab.elabMachine"
+          , elabModuleShape = error "emptyElab.elabModuleShape"
+          , elabFlagAssignment = error "emptyElab.elabFlagAssignment"
+          , elabFlagDefaults = error "emptyElab.elabFlagDefaults"
+          , elabPkgDescription = error "emptyElab.elabPkgDescription"
+          , elabGPkgDescription = error "emptyElab.elabGPkgDescription"
+          , elabPkgSourceLocation = error "emptyElab.elabPkgSourceLocation"
+          , elabPkgSourceHash = error "emptyElab.elabPkgSourceHash"
+          , elabLocalToProject = error "emptyElab.elabLocalToProject"
+          , elabBuildStyle = error "emptyElab.elabBuildStyle"
+          , elabEnabledSpec = error "emptyElab.elabEnabledSpec"
+          , elabStanzasAvailable = error "emptyElab.elabStanzasAvailable"
+          , elabStanzasRequested = error "emptyElab.elabStanzasRequested"
+          , elabPackageDbs = error "emptyElab.elabPackageDbs"
+          , elabSetupPackageDBStack = error "emptyElab.elabSetupPackageDBStack"
+          , elabBuildPackageDBStack = error "emptyElab.elabBuildPackageDBStack"
+          , elabRegisterPackageDBStack = error "emptyElab.elabRegisterPackageDBStack"
+          , elabInplaceSetupPackageDBStack = error "emptyElab.elabInplaceSetupPackageDBStack"
+          , elabInplaceBuildPackageDBStack = error "emptyElab.elabInplaceBuildPackageDBStack"
+          , elabInplaceRegisterPackageDBStack = error "emptyElab.elabInplaceRegisterPackageDBStack"
+          , elabPkgDescriptionOverride = error "emptyElab.elabPkgDescriptionOverride"
+          , elabBuildOptions = error "emptyElab.elabBuildOptions"
+          , elabDumpBuildInfo = error "emptyElab.elabDumpBuildInfo"
+          , elabProgramPaths = error "emptyElab.elabProgramPaths"
+          , elabProgramArgs = error "emptyElab.elabProgramArgs"
+          , elabProgramPathExtra = error "emptyElab.elabProgramPathExtra"
+          , elabConfiguredPrograms = error "emptyElab.elabConfiguredPrograms"
+          , elabConfigureScriptArgs = error "emptyElab.elabConfigureScriptArgs"
+          , elabExtraLibDirs = error "emptyElab.elabExtraLibDirs"
+          , elabExtraLibDirsStatic = error "emptyElab.elabExtraLibDirsStatic"
+          , elabExtraFrameworkDirs = error "emptyElab.elabExtraFrameworkDirs"
+          , elabExtraIncludeDirs = error "emptyElab.elabExtraIncludeDirs"
+          , elabProgPrefix = error "emptyElab.elabProgPrefix"
+          , elabProgSuffix = error "emptyElab.elabProgSuffix"
+          , elabInstallDirs = error "emptyElab.elabInstallDirs"
+          , elabHaddockHoogle = error "emptyElab.elabHaddockHoogle"
+          , elabHaddockHtml = error "emptyElab.elabHaddockHtml"
+          , elabHaddockHtmlLocation = error "emptyElab.elabHaddockHtmlLocation"
+          , elabHaddockForeignLibs = error "emptyElab.elabHaddockForeignLibs"
+          , elabHaddockForHackage = error "emptyElab.elabHaddockForHackage"
+          , elabHaddockExecutables = error "emptyElab.elabHaddockExecutables"
+          , elabHaddockTestSuites = error "emptyElab.elabHaddockTestSuites"
+          , elabHaddockBenchmarks = error "emptyElab.elabHaddockBenchmarks"
+          , elabHaddockInternal = error "emptyElab.elabHaddockInternal"
+          , elabHaddockCss = error "emptyElab.elabHaddockCss"
+          , elabHaddockLinkedSource = error "emptyElab.elabHaddockLinkedSource"
+          , elabHaddockQuickJump = error "emptyElab.elabHaddockQuickJump"
+          , elabHaddockHscolourCss = error "emptyElab.elabHaddockHscolourCss"
+          , elabHaddockContents = error "emptyElab.elabHaddockContents"
+          , elabHaddockIndex = error "emptyElab.elabHaddockIndex"
+          , elabHaddockBaseUrl = error "emptyElab.elabHaddockBaseUrl"
+          , elabHaddockResourcesDir = error "emptyElab.elabHaddockResourcesDir"
+          , elabHaddockOutputDir = error "emptyElab.elabHaddockOutputDir"
+          , elabHaddockUseUnicode = error "emptyElab.elabHaddockUseUnicode"
+          , elabTestMachineLog = error "emptyElab.elabTestMachineLog"
+          , elabTestHumanLog = error "emptyElab.elabTestHumanLog"
+          , elabTestShowDetails = error "emptyElab.elabTestShowDetails"
+          , elabTestKeepTix = error "emptyElab.elabTestKeepTix"
+          , elabTestWrapper = error "emptyElab.elabTestWrapper"
+          , elabTestFailWhenNoTestSuites = error "emptyElab.elabTestFailWhenNoTestSuites"
+          , elabTestTestOptions = error "emptyElab.elabTestTestOptions"
+          , elabBenchmarkOptions = error "emptyElab.elabBenchmarkOptions"
+          , elabSetupScriptStyle = error "emptyElab.elabSetupScriptStyle"
+          , elabSetupScriptCliVersion = error "emptyElab.elabSetupScriptCliVersion"
+          , elabConfigureTargets = error "emptyElab.elabConfigureTargets"
+          , elabBuildTargets = error "emptyElab.elabBuildTargets"
+          , elabTestTargets = error "emptyElab.elabTestTargets"
+          , elabBenchTargets = error "emptyElab.elabBenchTargets"
+          , elabReplTarget = error "emptyElab.elabReplTarget"
+          , elabHaddockTargets = error "emptyElab.elabHaddockTargets"
+          , elabBuildHaddocks = error "emptyElab.elabBuildHaddocks"
+          , elabPkgOrComp = error "emptyElab.elabPkgOrComp"
+          }
 
       emptyComp :: ElaboratedComponent
-      emptyComp = ElaboratedComponent
-        { compSolverName = error "emptyComp.compSolverName"
-        , compComponentName = error "emptyComp.compComponentName"
-        , compLibDependencies = error "emptyComp.compLibDependencies"
-        , compLinkedLibDependencies = error "emptyComp.compLinkedLibDependencies"
-        , compExeDependencies = error "emptyComp.compExeDependencies"
-        , compPkgConfigDependencies = error "emptyComp.compPkgConfigDependencies"
-        , compExeDependencyPaths = error "emptyComp.compExeDependencyPaths"
-        , compOrderLibDependencies = error "emptyComp.compOrderLibDependencies"
-        }
-      component = emptyComp
-        { compLibDependencies =
-            [ (ConfiguredId sourceId Nothing siblingId, False)
-            , (ConfiguredId externalId Nothing externalComponentId, False)
-            ]
-        , compLinkedLibDependencies =
-            [ DefiniteUnitId (unsafeMkDefUnitId siblingUnitId)
-            , DefiniteUnitId (unsafeMkDefUnitId externalUnitId)
-            , IndefFullUnitId siblingId Map.empty
-            ]
-        }
-      elab = emptyElab
-        { elabPkgOrComp = ElabComponent component
-        , elabPkgSourceId = sourceId
-        , elabMachine = Host
-        }
-      mkLib pkgId unitId = emptyElab
-        { elabUnitId = unitId
-        , elabPkgSourceId = pkgId
-        , elabLocalToProject = True
-        , elabModuleShape = emptyModuleShape
-        , elabMachine = Host
-        , elabPkgOrComp =
-            ElabComponent
-              emptyComp
-                { compComponentName = Just (CLibName LMainLibName)
-                , compExeDependencies = []
-                , compOrderLibDependencies = []
-                }
-        }
+      emptyComp =
+        ElaboratedComponent
+          { compSolverName = error "emptyComp.compSolverName"
+          , compComponentName = error "emptyComp.compComponentName"
+          , compLibDependencies = error "emptyComp.compLibDependencies"
+          , compLinkedLibDependencies = error "emptyComp.compLinkedLibDependencies"
+          , compExeDependencies = error "emptyComp.compExeDependencies"
+          , compPkgConfigDependencies = error "emptyComp.compPkgConfigDependencies"
+          , compExeDependencyPaths = error "emptyComp.compExeDependencyPaths"
+          , compOrderLibDependencies = error "emptyComp.compOrderLibDependencies"
+          }
+      component =
+        emptyComp
+          { compLibDependencies =
+              [ (ConfiguredId sourceId Nothing siblingId, False)
+              , (ConfiguredId externalId Nothing externalComponentId, False)
+              ]
+          , compLinkedLibDependencies =
+              [ DefiniteUnitId (unsafeMkDefUnitId siblingUnitId)
+              , DefiniteUnitId (unsafeMkDefUnitId externalUnitId)
+              , IndefFullUnitId siblingId Map.empty
+              ]
+          }
+      elab =
+        emptyElab
+          { elabPkgOrComp = ElabComponent component
+          , elabPkgSourceId = sourceId
+          , elabMachine = Host
+          }
+      mkLib pkgId unitId =
+        emptyElab
+          { elabUnitId = unitId
+          , elabPkgSourceId = pkgId
+          , elabLocalToProject = True
+          , elabModuleShape = emptyModuleShape
+          , elabMachine = Host
+          , elabPkgOrComp =
+              ElabComponent
+                emptyComp
+                  { compComponentName = Just (CLibName LMainLibName)
+                  , compExeDependencies = []
+                  , compOrderLibDependencies = []
+                  }
+          }
       plan =
         InstallPlan.new (IndependentGoals False) $
           Graph.fromDistinctList
@@ -386,7 +391,6 @@ testCoverageDependencies = do
     CommandList options -> assertFailure $ "Build Setup flag serialization unexpectedly listed options: " ++ unlines options
     CommandReadyToGo (_, leftovers) -> assertFailure $ "unparsed Build Setup flags: " ++ unwords leftovers
 
-
 -- ----------------------------------------------------------------------------
 -- projectPackageDbsFor
 --
@@ -488,7 +492,6 @@ mkCompiler flavour version =
     , compilerProperties = mempty
     , compilerWiredInUnitIds = Nothing
     }
-
 
 runSyntheticConfigure :: ConfigFlags -> Compiler -> [String] -> Assertion
 runSyntheticConfigure config selectedCompiler expectedArgs = do
