@@ -9,4 +9,4 @@ main = cabalTest $ do
 
         withDirectory "q" $ do
             res <- fails $ cabal' "v2-build" ["--package-db=clear", "--package-db=" ++ pkgDbPath]
-            assertOutputContains "unknown package: host:base" res
+            assertOutputContains "unknown package: base" res
