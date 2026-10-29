@@ -51,6 +51,7 @@ module Test.Cabal.Monad
   , testUserCabalConfigFile
   , testActualFile
   , testVerbosity
+  , legacyCompilerStoreDirNames
 
     -- * Skipping tests
   , skip
@@ -91,6 +92,7 @@ import Distribution.Simple.Compiler
   , PackageDBX (..)
   , compilerFlavor
   , compilerVersion
+  , compilerTargetAbi
   , showCompilerIdWithAbi
   )
 import Distribution.Simple.Configure
@@ -131,6 +133,7 @@ data CommonArgs = CommonArgs
   { argCabalInstallPath :: Maybe FilePath
   , argGhcPath :: Maybe FilePath
   , argBuildCompilerPath :: Maybe FilePath
+  , argBuildPackageDbPaths :: [FilePath]
   , argHackageRepoToolPath :: Maybe FilePath
   , argHaddockPath :: Maybe FilePath
   , argKeepTmpFiles :: Bool
@@ -165,6 +168,14 @@ commonArgParser = do
               <> metavar "PATH"
           )
       )
+  argBuildPackageDbPaths <- many
+      ( option
+          str
+          ( help "Additional build-compiler package DB; native builds also use the host DB"
+              <> long "extra-build-package-db"
+              <> metavar "DIR"
+          )
+      )
   argHackageRepoToolPath <- optional
       ( option
           str
@@ -197,6 +208,7 @@ renderCommonArgs args =
   maybe [] (\x -> ["--with-cabal", x]) (argCabalInstallPath args)
     ++ maybe [] (\x -> ["--with-ghc", x]) (argGhcPath args)
     ++ maybe [] (\x -> ["--with-build-compiler", x]) (argBuildCompilerPath args)
+    ++ map ("--extra-build-package-db=" ++) (argBuildPackageDbPaths args)
     ++ maybe [] (\x -> ["--with-haddock", x]) (argHaddockPath args)
     ++ maybe [] (\x -> ["--with-hackage-repo-tool", x]) (argHackageRepoToolPath args)
     ++ ["--accept" | argAccept args]
@@ -465,6 +477,7 @@ runTestM mode m =
                 , testScriptEnv = senv
                 , testSetupPath = dist_dir </> "build" </> "setup" </> "setup"
                 , testPackageDbPath = case testArgPackageDb args of [] -> Nothing; xs -> Just xs
+                , testExplicitBuildPackageDbPath = case argBuildPackageDbPaths cargs of [] -> Nothing; xs -> Just xs
                 , testSkipSetupTests = argSkipSetupTests (testCommonArgs args)
                 , testBuildCompilerPath = argBuildCompilerPath (testCommonArgs args)
                 , testHaveCabalShared = runnerWithSharedLib senv
@@ -749,6 +762,18 @@ mkNormalizerEnv = do
 
   canonicalizedTestTmpDir <- liftIO $ canonicalizePath (testTmpDir env)
   canonicalizedGblDir <- liftIO $ canonicalizePath tmpDir
+  let readMachineTriple compilerPath = do
+        infoResult <- E.try (readProcess compilerPath ["--info"] "") :: IO (Either E.SomeException String)
+        pure $ case infoResult of
+          Left _ -> Nothing
+          Right compilerInfo ->
+            case reads compilerInfo :: [([(String, String)], String)] of
+              [ (fields, _) ] -> lookup "Target platform" fields
+              _ -> Nothing
+  hostMachineTriple <- liftIO $ readMachineTriple (testCompilerPath env)
+  buildMachineTriple <- maybe (pure Nothing) (liftIO . readMachineTriple) (testBuildCompilerPath env)
+  let distinctBuildMachineTriple = buildMachineTriple >>= \buildTriple -> if Just buildTriple == hostMachineTriple then Nothing else Just buildTriple
+      machineTriples = maybeToList hostMachineTriple ++ [buildTriple | Just buildTriple <- [buildMachineTriple], Just buildTriple == hostMachineTriple]
 
   -- 'cabal' is configured in the package-db, but doesn't specify how to find the program version
   -- Thus we find the program location, if it exists, and query for the program version for
@@ -799,6 +824,8 @@ mkNormalizerEnv = do
           mapMaybe simpleParse (words list_out)
       , normalizerPlatform =
           testPlatform env
+      , normalizerMachineTriples = machineTriples
+      , normalizerDistinctBuildMachineTriple = distinctBuildMachineTriple
       , normalizerCabalVersion =
           cabalVersionLibrary
       , normalizerCabalInstallVersion =
@@ -893,6 +920,8 @@ data TestEnv = TestEnv
   , testPackageDbPath :: Maybe [FilePath]
   -- ^ Setup package-db path which contains Cabal and Cabal-syntax for cabal-install to
   -- use when compiling custom setups, plus the store with possible dependencies of those setup packages.
+  , testExplicitBuildPackageDbPath :: Maybe [FilePath]
+  -- ^ Package DBs built for the selected build compiler. If absent, a native build uses the host DB.
   , testSkipSetupTests :: Bool
   -- ^ Skip Setup tests?
   , testBuildCompilerPath :: Maybe FilePath
@@ -978,6 +1007,19 @@ testLibInstallDir env = libDir </> compilerDir
       Windows -> testPrefixDir env
       _ -> testPrefixDir env </> "lib"
     compilerDir = prettyShow platform ++ "-" ++ showCompilerIdWithAbi (testCompiler env)
+
+-- | Exact legacy store directory names for the selected compiler version and
+-- ABI. Staged stores use 'compilerTargetName'; these names cover only the
+-- recognized pre-staging layout.
+legacyCompilerStoreDirNames :: Compiler -> [FilePath]
+legacyCompilerStoreDirNames compiler =
+  let base = showCompilerIdWithAbi compiler
+      abiSuffix = case compilerTargetAbi compiler of
+        "" -> ""
+        "profiling" -> "-profiling"
+        unsupportedAbi -> error $ "Unsupported legacy compiler ABI: " ++ unsupportedAbi
+      compilerDir = base ++ abiSuffix
+   in [compilerDir]
 
 -- | The absolute path to the build directory that should be used
 -- for the current package in a test.

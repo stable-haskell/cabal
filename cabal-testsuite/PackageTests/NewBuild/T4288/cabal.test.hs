@@ -12,6 +12,8 @@ main = cabalTest $ do
   skipUnless "no v2-build compatible boot-Cabal" =<< hasNewBuildCompatBootCabal
   r <- recordMode DoNotRecord $ cabal' "v2-build" ["T4288"]
   assertOutputContains "This is setup-helper-1.0." r
+  -- An ordinary build does not prefix plan lines with a machine. The setup
+  -- library and the package are both elaborated for the host compiler.
   "In order, the following will be built:\n\
   \ - setup-helper-1.0 (lib:setup-helper) (first run)\n\
   \ - T4288-1.0 (lib:T4288) (first run)"

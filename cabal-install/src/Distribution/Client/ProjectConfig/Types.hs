@@ -160,6 +160,12 @@ data ProjectConfig = ProjectConfig
   -- the same package can be built for both machines, which plain @package *@
   -- cannot tell apart. It sits between the local-package and the named
   -- layer: @package *@ < local packages < @package <machine>:*@ < @package name@.
+  , projectConfigInstallPackages :: MapMappend PackageName PackageConfig
+  -- ^ Local options promoted onto selected install targets after they become
+  -- source distributions. Keep their origin separate from explicit package
+  -- stanzas so target profiling options do not configure a build-machine copy.
+  -- Internal only: tracked in plan caches, but not read from or written to
+  -- project files.
   }
   deriving (Eq, Show, Generic)
   deriving (Semigroup, Monoid) via Generically ProjectConfig
@@ -212,6 +218,8 @@ data ProjectConfigShared = ProjectConfigShared
   -- ^ Path to the compiler for the build machine (cross-compilation).
   , projectConfigBuildHcPkg :: Flag FilePath
   -- ^ Path to the package tool for the build machine (cross-compilation).
+  , projectConfigBuildPackageDBs :: [Maybe PackageDBCWD]
+  -- ^ Package databases for the build machine (cross-compilation).
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!

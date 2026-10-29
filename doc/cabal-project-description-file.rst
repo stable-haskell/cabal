@@ -1190,6 +1190,18 @@ feature was added.
     ``--with-compiler=ghc-7.8``; there is also a short version
     ``-w ghc-7.8``.
 
+    GHC targets that report an intrinsic ``Target ABI`` in ``ghc --info``
+    have separate build directories, compiler ABI tags, stores and package
+    databases, even when they share an architecture and operating system.
+    For ``Target ABI = profiling``, ordinary library objects, interfaces and
+    archives already contain profiling code. Cabal uses ordinary filenames
+    and applies profiling detail options without building an additional
+    ``_p`` library variant. Existing compilers retain the usual profiling ways.
+    Select an ordinary compiler with ``--with-build-compiler`` for Setup
+    scripts and build tools when using such a profiling target.
+    Unscoped profiling options then apply to the target. Explicit
+    ``package build:*`` profiling settings still control build tools.
+
 .. cfg-field:: with-hc-pkg: PATH
                --with-hc-pkg=PATH
     :synopsis: Path to package tool.
@@ -2069,7 +2081,7 @@ will apply ``-Werror`` to all packages, local and remote.
 .. _build-machine-programs:
 
 Build-machine programs
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^
 
 .. cfg-section:: build-program-options
 

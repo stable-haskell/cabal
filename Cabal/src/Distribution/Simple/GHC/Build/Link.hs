@@ -263,13 +263,9 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     uid = componentUnitId clbi
     libBi = libBuildInfo lib
     vanillaLibFilePath = buildTargetDir </> makeRelativePathEx (mkLibName uid)
-    profileLibFilePath = buildTargetDir </> makeRelativePathEx (mkProfLibName uid)
     sharedLibFilePath =
       buildTargetDir
         </> makeRelativePathEx (mkSharedLibName (hostPlatform lbi) compiler_id uid)
-    profSharedLibFilePath =
-      buildTargetDir
-        </> makeRelativePathEx (mkProfSharedLibName (hostPlatform lbi) compiler_id uid)
     staticLibFilePath =
       buildTargetDir
         </> makeRelativePathEx (mkStaticLibName (hostPlatform lbi) compiler_id uid)
@@ -294,7 +290,6 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
           Ld.combineObjectFiles verbosity lbi ldProg target files
 
     ghciLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiLibName uid)
-    ghciProfLibFilePath = buildTargetDir </> makeRelativePathEx (Internal.mkGHCiProfLibName uid)
 
     getObjWayFiles :: BuildWay -> IO [SymbolicPath Pkg File]
     getObjWayFiles w = getObjFiles (buildWayObjectExtension objExtension w) (buildWayObjectExtension objExtension w)
@@ -329,7 +324,7 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     ghcBaseLinkArgs =
       Internal.linkGhcOptions (verbosityLevel verbosity) lbi libBi clbi
         <> mempty
-          { ghcOptExtra = map Text.unpack $ hcStaticOptions GHC libBi
+          { ghcOptExtra = map Text.unpack $ buildWayExtraHcOptions StaticWay comp libBi
           , ghcOptNoAutoLinkPackages = toFlag True
           }
 
@@ -339,29 +334,11 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
     ghcSharedLinkArgs :: [SymbolicPath Pkg File] -> GhcOptions
     ghcSharedLinkArgs dynObjectFiles =
       ghcBaseLinkArgs
-        { ghcOptShared = toFlag True
+        { ghcOptExtra = map Text.unpack $ buildWayExtraHcOptions DynWay comp libBi
+        , ghcOptShared = toFlag True
         , ghcOptDynLinkMode = toFlag GhcDynamicOnly
         , ghcOptInputFiles = toNubListR $ map coerceSymbolicPath dynObjectFiles
         , ghcOptOutputFile = toFlag sharedLibFilePath
-        , ghcOptDylibName = mempty
-        , ghcOptLinkLibs = map Text.unpack $ extraLibs libBi
-        , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
-        , ghcOptLinkFrameworks = toNubListR $ map getSymbolicPath $ PD.frameworks libBi
-        , ghcOptLinkFrameworkDirs =
-            toNubListR $ PD.extraFrameworkDirs libBi
-        , ghcOptRPaths = rpaths
-        }
-    ghcProfSharedLinkArgs pdynObjectFiles =
-      ghcBaseLinkArgs
-        { ghcOptShared = toFlag True
-        , ghcOptProfilingMode = toFlag True
-        , ghcOptProfilingAuto =
-            Internal.profDetailLevelFlag
-              True
-              (withProfLibDetail lbi)
-        , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-        , ghcOptInputFiles = toNubListR pdynObjectFiles
-        , ghcOptOutputFile = toFlag profSharedLibFilePath
         , ghcOptDylibName = mempty
         , ghcOptLinkLibs = map Text.unpack $ extraLibs libBi
         , ghcOptLinkLibPath = toNubListR cleanedExtraLibDirs
@@ -387,22 +364,12 @@ linkLibrary buildTargetDir cleanedExtraLibDirs verbosity runGhcProg lib lbi clbi
         }
 
   staticObjectFiles <- getObjWayFiles StaticWay
-  profObjectFiles <- getObjWayFiles ProfWay
   dynamicObjectFiles <- getObjWayFiles DynWay
-  profDynamicObjectFiles <- getObjWayFiles ProfDynWay
 
   -- See doc/internal/bytecode-libraries.md for how the chosen companion
   -- way determines which .gbc files get packed into the .bytecodelib.
   let
     linkWay = \case
-      ProfWay -> do
-        Ar.createArLibArchive verbosity lbi profileLibFilePath profObjectFiles
-        when (withGHCiLib lbi) $ do
-          combineObjectFiles
-            ghciProfLibFilePath
-            profObjectFiles
-      ProfDynWay -> do
-        runGhcProg $ ghcProfSharedLinkArgs profDynamicObjectFiles
       DynWay -> do
         runGhcProg $ ghcSharedLinkArgs dynamicObjectFiles
         -- The .gbc files were built with DynWay if both are enabled.
@@ -604,9 +571,67 @@ getRPaths pbci = do
       let hostPref = case hostOS of
             OSX -> "@loader_path"
             _ -> "$ORIGIN"
-          relPath p = if isRelative p then hostPref </> p else p
+          -- The artifact's eventual install directory; absolute rpaths are
+          -- expressed as `@loader_path`/`$ORIGIN`-relative to this when the
+          -- user has opted into relocatable mode (`relocatable: True` or
+          -- `--enable-relocatable`).
+          --
+          -- Mirrors the executable/library split in
+          -- 'Distribution.Simple.LocalBuildInfo.depLibraryPaths'.
+          installDirs =
+            absoluteComponentInstallDirs
+              (localPkgDescr lbi)
+              lbi
+              (componentUnitId clbi)
+              NoCopyDest
+          isExe = case clbi of
+            ExeComponentLocalBuildInfo{} -> True
+            _ -> False
+          relDir
+            | isExe = bindir installDirs
+            | otherwise = libdir installDirs
+          -- Convert an rpath entry to its loader-relative form.
+          --
+          -- \* Already-relative paths get the `@loader_path` / `$ORIGIN`
+          --   prefix as before.
+          -- \* Absolute paths are rewritten to a relative-form expression
+          --   (`@loader_path/../../...`) computed against the binary's
+          --   install dir, so the resulting binary does not bake a
+          --   build-host absolute path into LC_RPATH / DT_RUNPATH.
+          --
+          --   This matters on macOS 15 (Sequoia), whose dyld treats an
+          --   unresolvable absolute rpath as fatal — older dyld silently
+          --   falls through to subsequent rpath entries. Pre-fix, a
+          --   bindist produced under e.g.
+          --   `/Volumes/WorkSpace/_work/ghc/ghc/_build/stage2/store/...`
+          --   would abort-trap on launch when relocated off the build
+          --   host. Post-fix, the same entry becomes
+          --   `@loader_path/../../<sibling-pkg>/lib`, which dyld treats
+          --   as a normal missing-directory rpath when the bindist
+          --   layout no longer matches the store layout.
+          --
+          --   Not gated on `relocatable lbi`: that flag also triggers
+          --   `checkRelocatable` (which refuses cabal-store layouts
+          --   where deps live in sibling prefixes) and changes how
+          --   library-dirs are emitted in .conf files. Both behaviors
+          --   are independent of rpath generation and incompatible with
+          --   the stable-haskell GHC bindist assembly pipeline.
+          relPath p
+            | isRelative p = hostPref </> p
+            | otherwise = hostPref </> shortRelativePath relDir p
           rpaths =
-            toNubListR (map relPath libraryPaths)
+            -- Always search the artifact's own directory ($ORIGIN /
+            -- @loader_path) first, so a sibling library installed alongside it
+            -- is found by the dynamic loader. depLibraryPaths can yield the
+            -- parent directory for a same-directory dependency (relativized to
+            -- "$ORIGIN/.."), which leaves the dependency unfound. glibc papers
+            -- over this via the runtime LD_LIBRARY_PATH GHC sets before
+            -- dlopen, but musl reads LD_LIBRARY_PATH only at process startup,
+            -- so the missing self-rpath is fatal there: a Backpack signature
+            -- implementation (libHSp) installed next to the instantiated unit
+            -- (libHSindef) fails to load (testsuite T14304 on Alpine/musl).
+            toNubListR [hostPref]
+              <> toNubListR (map relPath libraryPaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
       return rpaths
     else return mempty
@@ -627,8 +652,6 @@ data StaticRtsInfo = StaticRtsInfo
   , statRtsEventlogLib :: FilePath
   , statRtsThreadedDebugLib :: FilePath
   , statRtsThreadedEventlogLib :: FilePath
-  , statRtsProfilingLib :: FilePath
-  , statRtsThreadedProfilingLib :: FilePath
   }
 
 data RtsInfo = RtsInfo
@@ -671,8 +694,6 @@ extractRtsInfo lbi =
               , statRtsEventlogLib = "HSrts_l"
               , statRtsThreadedDebugLib = "HSrts_thr_debug"
               , statRtsThreadedEventlogLib = "HSrts_thr_l"
-              , statRtsProfilingLib = "HSrts_p"
-              , statRtsThreadedProfilingLib = "HSrts_thr_p"
               }
         , rtsLibPaths = InstalledPackageInfo.libraryDirs rts
         }

@@ -24,6 +24,7 @@ import Distribution.Client.Compat.Prelude
 import Prelude ()
 
 import Distribution.Client.FileMonitor (MonitorChangedReason (..))
+import Distribution.Client.HashValue (HashValue, showHashValue)
 import Distribution.Client.Types (DocsResult, TestsResult)
 
 import Distribution.Client.ProjectPlanning.Machine (WithMachine)
@@ -66,8 +67,10 @@ data BuildStatus
     --   downloaded, unpacked and built.
     BuildStatusDownload
   | -- | The package has not been unpacked yet, so it will have to be
-    --   unpacked and built.
-    BuildStatusUnpack FilePath
+    --   unpacked and built. The hash identifies the exact tarball contents
+    --   and any .cabal revision override, keeping distinct source trees with
+    --   the same package ID in separate directories.
+    BuildStatusUnpack FilePath HashValue
   | -- | The package exists in a local dir already, and just needs building
     --   or rebuilding. So this can only happen for 'BuildInplaceOnly' style
     --   packages.
@@ -91,7 +94,7 @@ buildStatusToString :: BuildStatus -> String
 buildStatusToString BuildStatusPreExisting = "BuildStatusPreExisting"
 buildStatusToString BuildStatusInstalled = "BuildStatusInstalled"
 buildStatusToString BuildStatusDownload = "BuildStatusDownload"
-buildStatusToString (BuildStatusUnpack fp) = "BuildStatusUnpack " ++ show fp
+buildStatusToString (BuildStatusUnpack fp unpackHash) = "BuildStatusUnpack " ++ show fp ++ " " ++ showHashValue unpackHash
 buildStatusToString (BuildStatusRebuild fp _) = "BuildStatusRebuild " ++ show fp
 buildStatusToString (BuildStatusUpToDate _) = "BuildStatusUpToDate"
 

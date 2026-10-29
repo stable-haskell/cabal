@@ -19,6 +19,7 @@ module Distribution.Client.DistDirLayout
     -- * 'StoreDirLayout'
   , StoreDirLayout (..)
   , defaultStoreDirLayout
+  , betterPlatform
 
     -- * 'CabalDirLayout'
   , CabalDirLayout (..)
@@ -35,6 +36,7 @@ import Distribution.Client.Config
   ( defaultLogsDir
   , defaultStoreDir
   )
+import Distribution.Client.Toolchain (Toolchain (..))
 import Distribution.Compiler
 import Distribution.Package
   ( ComponentId
@@ -48,6 +50,8 @@ import Distribution.Simple.Compiler
   , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
+  , compilerTargetName
+  , renderTargetName
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
 import Distribution.System
@@ -341,6 +345,11 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock :: Compiler -> Platform -> UnitId -> FilePath
     storeIncomingLock compiler platform unitid =
       storeIncomingDirectory compiler platform </> prettyShow unitid <.> "lock"
+
+-- | Return the canonical logical target name used in store and dist paths.
+betterPlatform :: Toolchain -> String
+betterPlatform toolchain =
+  either error renderTargetName (compilerTargetName (toolchainPlatform toolchain) (toolchainCompiler toolchain))
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

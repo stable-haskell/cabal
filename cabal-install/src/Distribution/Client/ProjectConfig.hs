@@ -60,6 +60,7 @@ module Distribution.Client.ProjectConfig
   , projectConfigWithSolverRepoContext
   , SolverSettings (..)
   , resolveSolverSettings
+  , lookupLocalPackageConfig
   , BuildTimeSettings (..)
   , resolveBuildTimeSettings
   , resolveNumJobsSetting
@@ -258,6 +259,29 @@ import Distribution.Solver.Types.ProjectConfigPath
 -- Resolving configuration to settings
 --
 
+-- | Look up a 'PackageConfig' field in the 'ProjectConfig' for a specific
+-- 'PackageName'. This returns the configuration that applies to all local
+-- packages plus any package-specific configuration for this package.
+lookupLocalPackageConfig
+  :: Monoid a
+  => (PackageConfig -> a)
+  -> ProjectConfig
+  -> PackageName
+  -> a
+lookupLocalPackageConfig
+  field
+  ProjectConfig
+    { projectConfigLocalPackages
+    , projectConfigSpecificPackage
+    , projectConfigInstallPackages
+    }
+  pkgname =
+    field projectConfigLocalPackages
+      <> maybe
+        mempty
+        field
+        (Map.lookup pkgname (getMapMappend (projectConfigSpecificPackage <> projectConfigInstallPackages)))
+
 -- | Use a 'RepoContext' based on the 'BuildTimeSettings'.
 projectConfigWithBuilderRepoContext
   :: Verbosity
@@ -310,12 +334,15 @@ resolveSolverSettings
     { projectConfigShared
     , projectConfigLocalPackages
     , projectConfigSpecificPackage
+    , projectConfigInstallPackages
     } =
     SolverSettings{..}
     where
       -- TODO: [required eventually] some of these settings need validation, e.g.
       -- the flag assignments need checking.
       cabalPkgname = mkPackageName "Cabal"
+
+      specificPackages = getMapMappend (projectConfigSpecificPackage <> projectConfigInstallPackages)
 
       profilingDynamicConstraint =
         ( UserConstraint
@@ -329,7 +356,7 @@ resolveSolverSettings
       profDynEnabledAnyLocally =
         or
           [ fromFlagOrDefault False (packageConfigProfShared ppc)
-          | (_, ppc) <- Map.toList (getMapMappend projectConfigSpecificPackage)
+          | (_, ppc) <- Map.toList specificPackages
           ]
 
       -- Add a setup.Cabal >= 3.13 constraint if prof+dyn is enabled globally
@@ -348,7 +375,7 @@ resolveSolverSettings
       solverSettingFlagAssignments =
         fmap
           packageConfigFlagAssignment
-          (getMapMappend projectConfigSpecificPackage)
+          specificPackages
       solverSettingCabalVersion = flagToMaybe projectConfigCabalVersion
       solverSettingSolver = fromFlag projectConfigSolver
       solverSettingAllowOlder = fromMaybe mempty projectConfigAllowOlder

@@ -935,6 +935,9 @@ data ConfigExFlags = ConfigExFlags
   -- ^ Extra program arguments for the build machine (@--build-PROG-option(s)@).
   -- The counterpart of 'configProgramArgs', which applies to the host machine
   -- only.
+  , configBuildPackageDBs :: [Maybe PackageDB]
+  -- ^ Package databases for the build machine (cross-compilation). Project-file
+  -- only (@build-package-dbs@); no command-line option.
   }
   deriving (Eq, Show, Generic)
   deriving (Semigroup, Monoid) via Generically ConfigExFlags

@@ -1,0 +1,13 @@
+cabal-version: 3.6
+name: archive-components
+version: 0.1
+
+library internal
+  default-language: Haskell2010
+  build-depends: base
+  exposed-modules: Internal
+
+library
+  default-language: Haskell2010
+  build-depends: base, archive-components:internal
+  exposed-modules: Public

@@ -1,6 +1,8 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
 -- | This module deals with building and incrementally rebuilding a collection
@@ -109,6 +111,7 @@ import System.Directory
 import Prelude ()
 
 import Distribution.Client.ProjectBuilding
+import Distribution.Client.ProjectBuilding.UnpackedPackage (createHackageDocumentationArchives)
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectPlanOutput
 import Distribution.Client.ProjectPlanning hiding
@@ -119,6 +122,7 @@ import qualified Distribution.Client.ProjectPlanning as ProjectPlanning
   )
 import Distribution.Client.ProjectPlanning.Machine (WithMachine (..))
 import Distribution.Client.ProjectPlanning.Types
+import Distribution.Solver.Types.Machine (isCross, onBuild, onHost, showMachine)
 
 import Distribution.Client.DistDirLayout
 import qualified Distribution.Client.InstallPlan as InstallPlan
@@ -535,6 +539,7 @@ runProjectPostBuildPhase
     -- Finally if there were any build failures then report them and throw
     -- an exception to terminate the program
     dieOnBuildFailures verbosity currentCommand elaboratedPlanToExecute buildOutcomes
+    createHackageDocumentationArchives verbosity distDirLayout elaboratedShared elaboratedPlanToExecute
 
 -- Note that it is a deliberate design choice that the 'buildTargets' is
 -- not passed to phase 1, and the various bits of input config is not
@@ -1125,6 +1130,9 @@ printPlan
           filter
             (not . null)
             [ " -"
+            , if isCross (pkgConfigToolchains elaboratedShared)
+                then showMachine (elabMachine elab)
+                else ""
             , if verbosityLevel verbosity >= Deafening
                 then prettyShow (installedUnitId elab)
                 else prettyShow (packageId elab)
@@ -1243,18 +1251,27 @@ printPlan
 
       showBuildProfile :: String
       showBuildProfile =
-        "Build profile: "
-          ++ unwords
-            [ "-w " ++ (showCompilerId . pkgConfigCompiler) elaboratedShared
-            , "-O"
-                ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
-                      Setup.Flag NoOptimisation -> "0"
-                      Setup.Flag NormalOptimisation -> "1"
-                      Setup.Flag MaximumOptimisation -> "2"
-                      Setup.NoFlag -> "1"
-                   )
-            ]
-          ++ "\n"
+        let toolchains = pkgConfigToolchains elaboratedShared
+            hostCompiler = toolchainCompiler (onHost toolchains)
+            -- -W names the build compiler only when it is a different machine.
+            buildCompilerArg =
+              [ "-W " ++ showCompilerId (toolchainCompiler toolchain)
+              | toolchain <- maybeToList (onBuild toolchains)
+              ]
+         in "Build profile: "
+              ++ unwords
+                ( ["-w " ++ showCompilerId hostCompiler]
+                    ++ buildCompilerArg
+                    ++ [ "-O"
+                          ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
+                                Setup.Flag NoOptimisation -> "0"
+                                Setup.Flag NormalOptimisation -> "1"
+                                Setup.Flag MaximumOptimisation -> "2"
+                                Setup.NoFlag -> "1"
+                             )
+                       ]
+                )
+              ++ "\n"
 
 writeBuildReports :: BuildTimeSettings -> ProjectBuildContext -> ElaboratedInstallPlan -> BuildOutcomes -> IO ()
 writeBuildReports settings buildContext plan buildOutcomes = do
@@ -1455,7 +1472,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
       case reason of
         DownloadFailed _ -> "Failed to download " ++ pkgstr
         UnpackFailed _ -> "Failed to unpack " ++ pkgstr
-        ConfigureFailed _ -> "Failed to build " ++ pkgstr
+        ConfigureFailed _ -> "Failed to configure " ++ pkgstr
         BuildFailed _ -> "Failed to build " ++ pkgstr
         ReplFailed _ -> "repl failed for " ++ pkgstr
         HaddocksFailed _ -> "Failed to build documentation for " ++ pkgstr

@@ -110,6 +110,10 @@ projectConfigMachinePackages :: Lens' ProjectConfig (MapMappend Machine PackageC
 projectConfigMachinePackages f s = fmap (\x -> s{T.projectConfigMachinePackages = x}) (f (T.projectConfigMachinePackages s))
 {-# INLINEABLE projectConfigMachinePackages #-}
 
+projectConfigInstallPackages :: Lens' ProjectConfig (MapMappend PackageName PackageConfig)
+projectConfigInstallPackages f s = fmap (\x -> s{T.projectConfigInstallPackages = x}) (f (T.projectConfigInstallPackages s))
+{-# INLINEABLE projectConfigInstallPackages #-}
+
 projectConfigVerbosity :: Lens' ProjectConfigBuildOnly (Flag VerbosityFlags)
 projectConfigVerbosity f s = fmap (\x -> s{T.projectConfigVerbosity = x}) (f (T.projectConfigVerbosity s))
 {-# INLINEABLE projectConfigVerbosity #-}
@@ -229,6 +233,10 @@ projectConfigBuildHcPath f s = fmap (\x -> s{T.projectConfigBuildHcPath = x}) (f
 projectConfigBuildHcPkg :: Lens' ProjectConfigShared (Flag FilePath)
 projectConfigBuildHcPkg f s = fmap (\x -> s{T.projectConfigBuildHcPkg = x}) (f (T.projectConfigBuildHcPkg s))
 {-# INLINEABLE projectConfigBuildHcPkg #-}
+
+projectConfigBuildPackageDBs :: Lens' ProjectConfigShared [Maybe PackageDBCWD]
+projectConfigBuildPackageDBs f s = fmap (\x -> s{T.projectConfigBuildPackageDBs = x}) (f (T.projectConfigBuildPackageDBs s))
+{-# INLINEABLE projectConfigBuildPackageDBs #-}
 
 projectConfigHaddockIndex :: Lens' ProjectConfigShared (Flag PathTemplate)
 projectConfigHaddockIndex f s = fmap (\x -> s{T.projectConfigHaddockIndex = x}) (f (T.projectConfigHaddockIndex s))

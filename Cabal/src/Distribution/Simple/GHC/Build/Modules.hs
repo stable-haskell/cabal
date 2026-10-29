@@ -6,12 +6,13 @@ module Distribution.Simple.GHC.Build.Modules
   , BuildWay (..)
   , buildWayObjectExtension
   , componentInputs
+  , buildWayExtraHcOptions
   ) where
 
 import Control.Monad.IO.Class
 import Distribution.Compat.Prelude
 
-import Data.List (sortOn, (\\))
+import Data.List (sortOn)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -49,51 +50,17 @@ import System.FilePath ()
 Note [Building Haskell Modules accounting for TH]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-There are multiple ways in which we may want to build our Haskell modules:
-  * The static way (-static)
-  * The dynamic/shared way (-dynamic)
-  * The profiled way (-prof)
+There are two artifact ways: static and dynamic/shared. Both use the selected
+compiler's target ABI, including when that ABI is profiling.
 
-For libraries, we may /want/ to build modules in all ways, or in any combination, depending on user options.
-For executables, we just /want/ to build the executable in the requested way.
+Template Haskell may need the compiler's default static/dynamic way in addition
+to the requested way. Build that way first so the target interpreter can load
+its objects. Profiling does not add another set of artifacts or substitute the
+ordinary host compiler's ABI for the target interpreter's ABI.
 
-In practice, however, we may /need/ to build modules in additional ways beyonds the ones that were requested.
-This can happen because of Template Haskell.
-
-When we're using Template Haskell, we /need/ to additionally build modules with
-the used GHC's default/vanilla ABI. This is because the code that TH needs to
-run at compile time needs to be the vanilla ABI so it can be loaded up and run
-by the compiler. With dynamic-by-default GHC the TH object files loaded at
-compile-time need to be .dyn_o instead of .o.
-
-  * If the GHC is dynamic by default, that means we may need to also build
-  the dynamic way in addition the wanted way.
-
-  * If the GHC is static by default, we may need to build statically additionally.
-
-Of course, if the /wanted/ way is the way additionally /needed/ for TH, we don't need to do extra work.
-
-If it turns out that in the end we need to build both statically and
-dynamically, we want to make use of GHC's -static -dynamic-too capability, which
-builds modules in the two ways in a single invocation.
-
-If --dynamic-too is not supported by the GHC, then we need to be careful about
-the order in which modules are built. Specifically, we must first build the
-modules for TH with the vanilla ABI, and only afterwards the desired
-(non-default) ways.
-
-A few examples:
-
-To build an executable with profiling, with a dynamic by default GHC, and TH is used:
-  * Build dynamic (needed) objects
-  * Build profiled objects
-
-To build a library with profiling and dynamically, with a static by default GHC, and TH is used:
-  * Build dynamic (wanted) and static (needed) objects together with --dynamic-too
-  * Build profiled objects
-
-To build an executable statically, with a static by default GHC, regardless of whether TH is used:
-  * Simply build static objects
+When both artifact ways are needed, use -dynamic-too if supported; otherwise
+build the compiler's default way first. Profiling instrumentation and package
+options are selected independently from the explicit target ABI.
 
 -}
 
@@ -185,7 +152,15 @@ buildHaskellModules numJobs ghcProg mbMainFile inputModules buildTargetDir neede
           , ghcOptInputModules = toNubListR inputModules
           , ghcOptInputFiles = toNubListR hsMains
           , ghcOptInputScripts = toNubListR scriptMains
-          , ghcOptExtra = map Text.unpack $ buildWayExtraHcOptions way GHC bi
+          , ghcOptExtra = map Text.unpack $ buildWayExtraHcOptions way comp bi
+          , ghcOptProfilingMode = if compilerTargetsProfiling comp then toFlag True else NoFlag
+          , ghcOptProfilingAuto =
+              if compilerTargetsProfiling comp
+                then
+                  Internal.profDetailLevelFlag
+                    isLib
+                    ((if isLib then withProfLibDetail else withProfExeDetail) lbi)
+                else NoFlag
           , ghcOptHiSuffix = needsWaySuffixFlag (buildWayInterfaceExtension way) "hi"
           , ghcOptObjSuffix = needsWaySuffixFlag (buildWayObjectExtension "o" way) "o"
           , ghcOptHPCDir = hpcdir (buildWayHpcWay way) -- maybe this should not be passed for vanilla?
@@ -214,26 +189,6 @@ buildHaskellModules numJobs ghcProg mbMainFile inputModules buildTargetDir neede
           ghcOptFPic = toFlag True -- use -fPIC
         , ghcOptObjectMode = bytecodeToo withBytecode
         }
-    profOpts =
-      (baseOpts ProfWay)
-        { ghcOptProfilingMode = toFlag True
-        , ghcOptProfilingAuto =
-            Internal.profDetailLevelFlag
-              (if isLib then True else False)
-              ((if isLib then withProfLibDetail else withProfExeDetail) lbi)
-        }
-    profDynOpts =
-      (baseOpts ProfDynWay)
-        { ghcOptDynLinkMode = toFlag GhcDynamicOnly -- use -dynamic
-        , -- TODO: Does it hurt to set -fPIC for executables?
-          ghcOptFPic = toFlag True -- use -fPIC
-        , ghcOptProfilingMode = toFlag True
-        , ghcOptProfilingAuto =
-            Internal.profDetailLevelFlag
-              (if isLib then True else False)
-              ((if isLib then withProfLibDetail else withProfExeDetail) lbi)
-        }
-
     -- Options for building both static and dynamic way at the same time, using
     -- the GHC flag -static and -dynamic-too
     dynTooOpts =
@@ -247,30 +202,11 @@ buildHaskellModules numJobs ghcProg mbMainFile inputModules buildTargetDir neede
         -- (Note that `baseOtps StaticWay = hcStaticOptions`, not hcSharedOpts)
         }
 
-    profDynTooOpts =
-      (baseOpts ProfWay)
-        { ghcOptDynLinkMode = toFlag GhcStaticAndDynamic -- use -dynamic-too
-        , -- TODO: Does it hurt to set -fPIC for executables?
-          ghcOptFPic = toFlag True -- use -fPIC
-        , ghcOptProfilingMode = toFlag True
-        , ghcOptProfilingAuto =
-            Internal.profDetailLevelFlag
-              (if isLib then True else False)
-              ((if isLib then withProfLibDetail else withProfExeDetail) lbi)
-        , ghcOptDynHiSuffix = toFlag (buildWayInterfaceExtension ProfDynWay)
-        , ghcOptDynObjSuffix = toFlag (buildWayObjectExtension "o" ProfDynWay)
-        , ghcOptHPCDir = hpcdir Hpc.ProfDyn
-        -- Should we pass hcSharedOpts in the -dynamic-too ghc invocation?
-        -- (Note that `baseOtps StaticWay = hcStaticOptions`, not hcSharedOpts)
-        }
-
     -- Determines how to build for each way, also serves as the base options
     -- for loading modules in 'linkOrLoadComponent'
     buildOpts way = case way of
       StaticWay -> staticOpts
       DynWay -> dynOpts
-      ProfWay -> profOpts
-      ProfDynWay -> profDynOpts
 
   when
     ( withBytecode
@@ -288,13 +224,7 @@ buildHaskellModules numJobs ghcProg mbMainFile inputModules buildTargetDir neede
         StaticWay `Set.member` neededLibWaysSet
           && DynWay `Set.member` neededLibWaysSet
           && supportsDynamicToo comp
-          && null (hcSharedOptions GHC bi)
-
-      useProfDynamicToo =
-        ProfWay `Set.member` neededLibWaysSet
-          && ProfDynWay `Set.member` neededLibWaysSet
-          && supportsDynamicToo comp
-          && null (hcSharedOptions GHC bi)
+          && null (buildWayExtraHcOptions DynWay comp bi)
 
       defaultGhcWay = compilerBuildWay comp
 
@@ -306,26 +236,7 @@ buildHaskellModules numJobs ghcProg mbMainFile inputModules buildTargetDir neede
       orderedBuilds
         -- We need to make sure that the way which is the way the compiler is built
         -- is built first so that Template Haskell works.
-        | useProfDynamicToo && useDynamicToo =
-            if defaultGhcWay `elem` [ProfDynWay, ProfWay]
-              then [buildProfAndProfDynamicToo, buildStaticAndDynamicToo]
-              else [buildStaticAndDynamicToo, buildProfAndProfDynamicToo]
-        | useProfDynamicToo && not useDynamicToo =
-            if defaultGhcWay `elem` [ProfDynWay, ProfWay]
-              then
-                [buildProfAndProfDynamicToo]
-                  ++ (runGhcProg . buildOpts <$> neededLibWays \\ [ProfDynWay, ProfWay])
-              else
-                (runGhcProg . buildOpts <$> neededLibWays \\ [ProfDynWay, ProfWay])
-                  ++ [buildProfAndProfDynamicToo]
-        | useDynamicToo =
-            if defaultGhcWay `elem` [StaticWay, DynWay]
-              then
-                [buildStaticAndDynamicToo]
-                  ++ (runGhcProg . buildOpts <$> neededLibWays \\ [StaticWay, DynWay])
-              else
-                (runGhcProg . buildOpts <$> neededLibWays \\ [StaticWay, DynWay])
-                  ++ [buildStaticAndDynamicToo]
+        | useDynamicToo = [buildStaticAndDynamicToo]
         -- Otherwise, we need to ensure the defaultGhcWay is built first
         | otherwise =
             runGhcProg . buildOpts <$> sortOn order neededLibWays
@@ -343,39 +254,27 @@ buildHaskellModules numJobs ghcProg mbMainFile inputModules buildTargetDir neede
             copyDirectoryRecursive verbosity (i dynDir) (i vanillaDir)
           _ -> return ()
 
-      buildProfAndProfDynamicToo = do
-        runGhcProg profDynTooOpts
-        case (hpcdir Hpc.ProfDyn, hpcdir Hpc.Prof) of
-          (Flag profDynDir, Flag profDir) ->
-            -- When the vanilla and shared library builds are done
-            -- in one pass, only one set of HPC module interfaces
-            -- are generated. This set should suffice for both
-            -- static and dynamically linked executables. We copy
-            -- the modules interfaces so they are available under
-            -- both ways.
-            copyDirectoryRecursive verbosity (i profDynDir) (i profDir)
-          _ -> return ()
-     in
-      -- REVIEW:ADD? info verbosity "Building Haskell Sources..."
-      sequence_ orderedBuilds
+    sequence_ orderedBuilds
   return buildOpts
 
 -- | Returns the corresponding 'Hpc.Way' for a 'BuildWay'
 buildWayHpcWay :: BuildWay -> Hpc.Way
 buildWayHpcWay = \case
   StaticWay -> Hpc.Vanilla
-  ProfWay -> Hpc.Prof
   DynWay -> Hpc.Dyn
-  ProfDynWay -> Hpc.ProfDyn
 
 -- | Returns a function to extract the extra haskell compiler options from a
--- 'BuildInfo' and 'CompilerFlavor'
-buildWayExtraHcOptions :: BuildWay -> CompilerFlavor -> BuildInfo -> [Text]
-buildWayExtraHcOptions = \case
-  StaticWay -> hcStaticOptions
-  ProfWay -> hcProfOptions
-  DynWay -> hcSharedOptions
-  ProfDynWay -> hcProfSharedOptions
+-- 'BuildInfo' and the compiler's target ABI: a compiler whose target ABI
+-- is profiling passes profiling options for the static and dynamic ways
+-- instead of the vanilla and shared ones.
+buildWayExtraHcOptions :: BuildWay -> Compiler -> BuildInfo -> [Text]
+buildWayExtraHcOptions way comp
+  | compilerTargetsProfiling comp = case way of
+      StaticWay -> hcProfOptions GHC
+      DynWay -> hcProfSharedOptions GHC
+  | otherwise = case way of
+      StaticWay -> hcStaticOptions GHC
+      DynWay -> hcSharedOptions GHC
 
 -- | Returns a pair of the main file and Haskell modules of the component being
 -- built. The main file is not necessarily a Haskell file. It could also be

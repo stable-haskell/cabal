@@ -10,14 +10,18 @@ module Test.Cabal.Plan
   , ConfiguredGlobal (..)
   , Machine (..)
   , Revision (..)
+  , decodePlan
   , planDistDir
+  , planDistDirForMachine
   , buildInfoFile
+  , buildInfoFileForMachine
   ) where
 
 import Control.Monad
 import Data.Aeson
 import Data.Aeson.Types
 import Data.Maybe (fromMaybe)
+import qualified Data.ByteString.Lazy as BS
 import qualified Data.Text as Text
 import Distribution.Package
 import Distribution.Parsec (eitherParsec, simpleParsec)
@@ -28,6 +32,9 @@ import Distribution.Types.Version
 -- TODO: index this
 data Plan = Plan {planInstallPlan :: [InstallItem]}
   deriving (Show)
+
+decodePlan :: BS.ByteString -> Either String Plan
+decodePlan = eitherDecode
 
 data InstallItem
   = APreExisting
@@ -49,6 +56,8 @@ data ConfiguredInplace = ConfiguredInplace
 
 data ConfiguredGlobal = ConfiguredGlobal
   { configuredGlobalBinFile :: Maybe FilePath
+  , configuredGlobalDistDir :: Maybe FilePath
+  , configuredGlobalBuildInfo :: Maybe FilePath
   , configuredGlobalPackageName :: PackageName
   , configuredGlobalVersion :: Version
   , configuredGlobalRevision :: Revision
@@ -85,14 +94,23 @@ instance FromJSON InstallItem where
     t <- v .: "type"
     case t :: String of
       "pre-existing" -> return APreExisting
-      "configured" -> do
-        s <- v .: "style"
-        case s :: String of
-          "global" -> AConfiguredGlobal `fmap` parseJSON obj
-          "inplace" -> AConfiguredInplace `fmap` parseJSON obj
-          "local" -> AConfiguredInplace `fmap` parseJSON obj
-          _ -> fail $ "unrecognized value of 'style' field: " ++ s
+      "configured" -> configured
+      "installed" -> configured
       _ -> fail "unrecognized value of 'type' field"
+    where
+      configured = do
+        s <- v .:? "style"
+        case s :: Maybe String of
+          -- A plan entry always carries a style. Entries that only name a
+          -- machine are read as installed/global, which is what the plan
+          -- reader fixtures use.
+          Nothing -> do
+            _ <- v .: "machine" :: Parser Machine
+            AConfiguredGlobal <$> parseJSON obj
+          Just "global" -> AConfiguredGlobal <$> parseJSON obj
+          Just "inplace" -> AConfiguredInplace <$> parseJSON obj
+          Just "local" -> AConfiguredInplace <$> parseJSON obj
+          Just other -> fail $ "unrecognized value of 'style' field: " ++ other
   parseJSON invalid = typeMismatch "InstallItem" invalid
 
 instance FromJSON ConfiguredInplace where
@@ -110,12 +128,14 @@ instance FromJSON ConfiguredInplace where
 instance FromJSON ConfiguredGlobal where
   parseJSON (Object v) = do
     bin_file <- v .:? "bin-file"
+    dist_dir <- v .:? "dist-dir"
+    build_info <- v .:? "build-info"
     pkg_name <- v .: "pkg-name"
     pkg_version <- v .: "pkg-version"
     pkg_revision <- v .: "pkg-revision"
     component_name <- v .:? "component-name"
     machine <- parseMachine v
-    return (ConfiguredGlobal bin_file pkg_name pkg_version pkg_revision component_name machine)
+    return (ConfiguredGlobal bin_file dist_dir build_info pkg_name pkg_version pkg_revision component_name machine)
   parseJSON invalid = typeMismatch "ConfiguredGlobal" invalid
 
 instance FromJSON PackageName where
@@ -135,13 +155,33 @@ instance FromJSON ComponentName where
   parseJSON invalid = typeMismatch "ComponentName" invalid
 
 data DistDirOrBinFile = DistDir FilePath | BinFile FilePath
+  deriving (Eq, Show)
 
 planDistDir :: Plan -> PackageName -> ComponentName -> DistDirOrBinFile
 planDistDir plan pkg_name cname =
   -- Under cross-compilation a component can be in the plan on both machines;
   -- the host-machine copy is the one a test normally means (it is what the
   -- user targeted), so prefer it when that resolves the ambiguity.
-  case preferHost (concatMap p (planInstallPlan plan)) of
+  selectLocation preferHost plan pkg_name cname
+  where
+    preferHost xs = case [x | (Host, x) <- xs] of
+      [x] -> [x]
+      _ -> map snd xs
+
+-- | Select one machine's copy. Build copies must be requested explicitly,
+-- since their executable ABI need not match the target's.
+planDistDirForMachine :: Machine -> Plan -> PackageName -> ComponentName -> DistDirOrBinFile
+planDistDirForMachine machine plan pkg_name cname =
+  selectLocation (map snd . filter ((== machine) . fst)) plan pkg_name cname
+
+selectLocation
+  :: ([(Machine, DistDirOrBinFile)] -> [DistDirOrBinFile])
+  -> Plan
+  -> PackageName
+  -> ComponentName
+  -> DistDirOrBinFile
+selectLocation choose plan pkg_name cname =
+  case choose (concatMap p (planInstallPlan plan)) of
     [x] -> x
     [] ->
       error $
@@ -159,9 +199,6 @@ planDistDir plan pkg_name cname =
           ++ prettyShow pkg_name
           ++ " in install plan"
   where
-    preferHost xs = case [x | (Host, x) <- xs] of
-      [x] -> [x]
-      _ -> map snd xs
     p APreExisting = []
     p (AConfiguredGlobal conf) = do
       guard (configuredGlobalPackageName conf == pkg_name)
@@ -169,7 +206,7 @@ planDistDir plan pkg_name cname =
         Nothing -> True
         Just cname' -> cname == cname'
       case configuredGlobalBinFile conf of
-        Nothing -> []
+        Nothing -> maybe [] (pure . (configuredGlobalMachine conf,) . DistDir) (configuredGlobalDistDir conf)
         Just bin_file -> return (configuredGlobalMachine conf, BinFile bin_file)
     p (AConfiguredInplace conf) = do
       guard (configuredInplacePackageName conf == pkg_name)
@@ -180,7 +217,24 @@ planDistDir plan pkg_name cname =
 
 buildInfoFile :: Plan -> PackageName -> ComponentName -> FilePath
 buildInfoFile plan pkg_name cname =
-  case concatMap p (planInstallPlan plan) of
+  selectBuildInfo preferHost plan pkg_name cname
+  where
+    preferHost xs = case [x | (Host, x) <- xs] of
+      [x] -> [x]
+      _ -> map snd xs
+
+buildInfoFileForMachine :: Machine -> Plan -> PackageName -> ComponentName -> FilePath
+buildInfoFileForMachine machine plan pkg_name cname =
+  selectBuildInfo (map snd . filter ((== machine) . fst)) plan pkg_name cname
+
+selectBuildInfo
+  :: ([(Machine, Maybe FilePath)] -> [Maybe FilePath])
+  -> Plan
+  -> PackageName
+  -> ComponentName
+  -> FilePath
+selectBuildInfo choose plan pkg_name cname =
+  case choose (concatMap p (planInstallPlan plan)) of
     [Just x] -> x
     [Nothing] ->
       error $
@@ -207,10 +261,15 @@ buildInfoFile plan pkg_name cname =
           ++ " in install plan"
   where
     p APreExisting = []
-    p (AConfiguredGlobal _) = []
+    p (AConfiguredGlobal conf) = do
+      guard (configuredGlobalPackageName conf == pkg_name)
+      guard $ case configuredGlobalComponentName conf of
+        Nothing -> True
+        Just cname' -> cname == cname'
+      return (configuredGlobalMachine conf, configuredGlobalBuildInfo conf)
     p (AConfiguredInplace conf) = do
       guard (configuredInplacePackageName conf == pkg_name)
       guard $ case configuredInplaceComponentName conf of
         Nothing -> True
         Just cname' -> cname == cname'
-      return $ configuredInplaceBuildInfo conf
+      return (configuredInplaceMachine conf, configuredInplaceBuildInfo conf)

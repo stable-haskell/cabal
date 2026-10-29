@@ -60,9 +60,10 @@ import Test.Cabal.Script
 import Test.Cabal.TestCode
 
 import Distribution.Package
+import Distribution.Pretty (prettyShow, showToken)
 import Distribution.PackageDescription
 import Distribution.Parsec (eitherParsec, simpleParsec)
-import Distribution.Simple.Compiler (PackageDBCWD, PackageDBStackCWD, PackageDBX (..))
+import Distribution.Simple.Compiler (PackageDBCWD, PackageDBStackCWD, PackageDBX (..), compilerTargetsProfiling)
 import Distribution.Simple.Configure
   ( getPersistBuildConfig
   )
@@ -86,6 +87,7 @@ import Text.Regex.TDFA ((=~))
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (withAsync)
+import Control.Exception (bracket, evaluate)
 import Control.Monad (foldM, forM_, liftM2, liftM4, unless, void, when)
 import Control.Monad.Catch (bracket_)
 import Control.Monad.IO.Class (MonadIO (..))
@@ -98,7 +100,7 @@ import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Char as Char
 import Data.List (isPrefixOf, stripPrefix)
-import Data.Maybe (fromMaybe, isJust, mapMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, mapMaybe)
 import Network.Wait (waitTcpVerbose)
 import System.Directory
 import System.Environment
@@ -427,9 +429,143 @@ cabalGArgs global_args cmd args input = do
           ++ [cmd, marked_verbose]
           ++ extra_args
           ++ args
-  defaultRecordMode RecordMarked $ do
-    recordHeader ["cabal", cmd]
-    cabal_raw' cabal_args input
+  withBuildPackageDbConfig env cmd (global_args' ++ args) $
+    defaultRecordMode RecordMarked $ do
+      recordHeader ["cabal", cmd]
+      cabal_raw' cabal_args input
+
+-- The command-line --package-db option applies to Host. A project build may
+-- also need the same staged packages for its Build compiler, which is selected
+-- independently. Reuse the Host DB only for native runs; a distinct Build
+-- compiler needs its own explicitly staged DB.
+withBuildPackageDbConfig :: TestEnv -> String -> [String] -> TestM a -> TestM a
+withBuildPackageDbConfig env cmd args action
+  -- These commands write or remove project state and do not build Setup.
+  -- An overlay must not replace their resulting user configuration.
+  | cmd `elem` ["configure", "v2-configure", "clean", "v2-clean"] = action
+  | not (usesProjectConfig cmd) = action
+  | otherwise = do
+      hasProjectFile <- liftIO $ doesFileExist projectFilePath
+      let projectDirectory = takeDirectory projectFilePath
+      projectDirectoryExists <- liftIO $ doesDirectoryExist projectDirectory
+      currentDirContents <-
+        if projectDirectoryExists then liftIO $ listDirectory projectDirectory else pure []
+      let hasPackageDescription = any ((== ".cabal") . takeExtension) currentDirContents
+      if not (hasProjectFile || hasPackageDescription)
+        then action
+        else do
+          projectConfig <- liftIO $ readProjectBuildConfig projectFilePath localConfigPath
+          let projectHasBuildConfig = projectHasBuildConfiguration projectConfig
+          let overridesBuildCompiler =
+                any
+                  (\arg ->
+                     any
+                       (`isPrefixOf` arg)
+                       [ "--with-build-compiler"
+                       , "--with-build-hc"
+                       , "--build-compiler"
+                       , "--with-build-hc-pkg"
+                       ]
+                  )
+                  args
+              nativeBuildCompiler =
+                isNothing (testBuildCompilerPath env) && not overridesBuildCompiler && not projectHasBuildConfig
+              packageDbs =
+                case testExplicitBuildPackageDbPath env of
+                  Just dbs -> dbs ++ [db | nativeBuildCompiler, db <- fromMaybe [] (testPackageDbPath env)]
+                  Nothing
+                    | nativeBuildCompiler -> fromMaybe [] (testPackageDbPath env)
+                    | otherwise -> []
+          if null packageDbs
+            then action
+            else
+              liftIO $
+                bracket
+                  (installLocalConfig localConfigPath packageDbs)
+                  (restoreLocalConfig localConfigPath)
+                  (\_ -> runReaderT action env)
+  where
+    projectFilePath =
+      projectConfigFileFromArgs (testCurrentDir env) (fromMaybe "cabal.project" (testCabalProjectFile env)) args
+    localConfigPath = projectFilePath ++ ".local"
+    usesProjectConfig command =
+      "v2-" `isPrefixOf` command
+        || command `elem` ["build", "test", "bench", "run", "repl", "haddock", "haddock-project", "install", "freeze", "list-bin", "exec"]
+    installLocalConfig path packageDbs = do
+      existed <- doesFileExist path
+      original <- if existed then readFile path else pure ""
+      -- Force the saved contents before replacing the file, so lazy IO cannot
+      -- observe the temporary overlay during restoration.
+      _ <- evaluate (length original)
+      writeFile path (original ++ localConfigLine packageDbs)
+      pure (existed, original)
+    localConfigLine packageDbs = "\nbuild-package-dbs: " ++ intercalate ", " (map showConfigToken packageDbs) ++ "\n"
+    showConfigToken path
+      | path == "." = show path
+      | otherwise = prettyShow (showToken path)
+    restoreLocalConfig path (existed, original) =
+      if existed
+        then writeFile path original
+        else removeFile path
+
+-- Match Cabal's final CLI selection, without interpreting executable arguments
+-- after @--@ as project options.
+projectConfigFileFromArgs :: FilePath -> FilePath -> [String] -> FilePath
+projectConfigFileFromArgs currentDir fallback args =
+  resolve projectDir projectFile
+  where
+    projectDir = resolve currentDir (fromMaybe "." (lastOptionValue "--project-dir" args))
+    projectFile = fromMaybe fallback (lastOptionValue "--project-file" args)
+    resolve base path
+      | isAbsolute path = path
+      | otherwise = normalise (base </> path)
+    lastOptionValue option = go Nothing
+      where
+        go selected [] = selected
+        go selected ("--" : _) = selected
+        go _ (arg : value : rest) | arg == option = go (Just value) rest
+        go selected (arg : rest)
+          | Just value <- stripPrefix (option ++ "=") arg = go (Just value) rest
+          | otherwise = go selected rest
+
+-- Imported project settings may select a separate Build toolchain. We do not
+-- resolve imports here; treating them as unknown is safer than inheriting a
+-- Host package DB on an unverified native assumption.
+readProjectBuildConfig :: FilePath -> FilePath -> IO String
+readProjectBuildConfig projectPath localPath = do
+  projectText <- readIfPresent projectPath
+  localText <- readIfPresent localPath
+  pure (projectText ++ "\n" ++ localText)
+  where
+    readIfPresent path = do
+      exists <- doesFileExist path
+      if exists
+        then do
+          contents <- readFile path
+          _ <- evaluate (length contents)
+          pure contents
+        else pure ""
+
+projectHasBuildConfiguration :: String -> Bool
+projectHasBuildConfiguration = any (`elem` buildConfigFields) . projectFieldNames
+  where
+    buildConfigFields = buildCompilerFields ++ ["build-package-dbs", "import", "optional-import"]
+
+projectMaySelectSeparateBuildCompiler :: String -> Bool
+projectMaySelectSeparateBuildCompiler = any (`elem` (buildCompilerFields ++ ["import", "optional-import"])) . projectFieldNames
+
+buildCompilerFields :: [String]
+buildCompilerFields = ["with-build-compiler", "build-compiler", "with-build-hc-pkg"]
+
+projectFieldNames :: String -> [String]
+projectFieldNames = mapMaybe fieldName . lines
+  where
+    fieldName line =
+      let content = dropWhile Char.isSpace line
+          (name, rest) = break (== ':') content
+       in if null rest || "--" `isPrefixOf` content
+            then Nothing
+            else Just (map Char.toLower (reverse (dropWhile Char.isSpace (reverse name))))
 
 cabal_raw' :: [String] -> Maybe String -> TestM Result
 cabal_raw' cabal_args input = runProgramM cabalProgram cabal_args input
@@ -1141,8 +1277,10 @@ testCompilerWithArgs args = do
   return (resultExitCode r == ExitSuccess)
 
 hasProfiledLibraries, hasProfiledSharedLibraries, hasSharedLibraries :: TestM Bool
-hasProfiledLibraries = testCompilerWithArgs ["-prof"]
-hasProfiledSharedLibraries = testCompilerWithArgs ["-prof", "-dynamic"]
+hasProfiledLibraries = compilerTargetsProfiling . testCompiler <$> getTestEnv
+hasProfiledSharedLibraries = do
+  intrinsic <- hasProfiledLibraries
+  if intrinsic then hasSharedLibraries else pure False
 hasSharedLibraries = testCompilerWithArgs ["-dynamic"]
 
 skipIfNoSharedLibraries :: TestM ()
@@ -1435,29 +1573,65 @@ withShorterPathForNewBuildStore test =
     "cabal-test-store"
     (`withStoreDir` test)
 
--- | Find where a package locates in the store dir. This works only if there is exactly one 1 ghc version
--- and exactly 1 directory for the given package in the store dir.
+-- | Find a package directory in the cabal store.
+--
+-- The store is keyed by platform and compiler. Host and build lookups share
+-- that directory and select the package by name. This works when the store
+-- contains one compiler directory and one directory for the package prefix.
 findDependencyInStore
   :: String
   -- ^ package name prefix
   -> TestM FilePath
   -- ^ package dir
-findDependencyInStore pkgName = do
-  storeDir <- testStoreDir <$> getTestEnv
+findDependencyInStore = findDependencyInStoreInStage "host"
+
+-- | Find a package installed for the Build compiler. This is useful for
+-- packages used as build tools, whose store entries are separate from Host
+-- libraries even in a native build.
+findBuildDependencyInStore
+  :: String
+  -- ^ package name prefix
+  -> TestM FilePath
+  -- ^ package dir
+findBuildDependencyInStore = findDependencyInStoreInStage "build"
+
+findDependencyInStoreInStage :: String -> String -> TestM FilePath
+findDependencyInStoreInStage _stage pkgName = do
+  env <- getTestEnv
+  let storeDir = testStoreDir env
+      -- Match the compiler directory for this compiler's ABI. An opposite-ABI
+      -- directory (for example ghc-<ver>-profiling next to a native compiler)
+      -- must not be selected just because it is the first entry.
+      accepted = legacyCompilerStoreDirNames (testCompiler env)
+      firstMatch parent names = case filter (`elem` accepted) names of
+        dir : _ -> Just (parent </> dir)
+        [] -> Nothing
   liftIO $ do
     -- The store is laid out store/<platform>/<compiler-id>-<abi>/, so package
     -- directories sit two levels below the store root. A store written
     -- without the platform segment is tolerated, since not every store a test
     -- looks at is written by the cabal under test.
-    storeTopDir : _ <- listDirectory storeDir
-    let storeDirForPlatform = storeDir </> storeTopDir
-    dbHere <- doesDirectoryExist (storeDirForPlatform </> "package.db")
-    storeDirForPlatformAndGhc <-
-      if dbHere
-        then pure storeDirForPlatform
-        else do
-          storeDirForGhcVersion : _ <- listDirectory storeDirForPlatform
-          pure (storeDirForPlatform </> storeDirForGhcVersion)
+    topDirs <- listDirectory storeDir
+    nested <- case firstMatch storeDir topDirs of
+      Just dir -> pure (Just dir)
+      Nothing ->
+        listToMaybe . catMaybes
+          <$> mapM
+            ( \top -> do
+                let parent = storeDir </> top
+                kids <- listDirectory parent
+                pure (firstMatch parent kids)
+            )
+            topDirs
+    storeDirForPlatformAndGhc <- case nested of
+      Just dir -> pure dir
+      Nothing ->
+        ioError $
+          userError $
+            "no legacy compiler store matching "
+              ++ show accepted
+              ++ " under "
+              ++ storeDir
     packageDirs <- listDirectory storeDirForPlatformAndGhc
     -- Ideally, we should call 'hashedInstalledPackageId' from 'Distribution.Client.PackageHash'.
     -- But 'PackageHashInputs', especially 'PackageHashConfigInputs', is too hard to construct.

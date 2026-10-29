@@ -11,6 +11,8 @@ module Distribution.Client.CmdRun
     -- * Internals exposed for testing
   , matchesMultipleProblem
   , noExesProblem
+  , collectRuntimeLibraryDirs
+  , sameMachineDependencies
   , selectPackageTargets
   , selectComponentTarget
   ) where
@@ -30,6 +32,10 @@ import Distribution.Client.CmdErrorMessages
   , targetSelectorFilter
   , targetSelectorPluralPkgs
   )
+import Distribution.Client.DistDirLayout
+  ( DistDirLayout
+  , distBuildDirectory
+  )
 import Distribution.Client.Errors
 import Distribution.Client.GlobalFlags
   ( defaultGlobalFlags
@@ -38,6 +44,7 @@ import Distribution.Client.InstallPlan
   ( foldPlanPackage
   , toList
   )
+import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.NixStyleOptions
   ( NixStyleFlags (..)
   , cfgVerbosity
@@ -53,12 +60,20 @@ import qualified Distribution.Client.ProjectOrchestration as Orchestration (targ
 import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
+  , ElaboratedPlanPackage
   , binDirectoryFor
   )
+import Distribution.Client.ProjectPlanning.Machine (Machine, WithMachine (..))
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedPackageOrComponent (..)
+  , ElaboratedSharedConfig
+  , Toolchain (..)
   , dataDirsEnvironmentForPlan
+  , elabDistDirParams
   , elabExeDependencyPaths
+  , elabOrderLibDependencies
+  , elabToolchain
+  , isInplaceBuildStyle
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -97,7 +112,8 @@ import Distribution.Simple.Program.Run
   , runProgramInvocation
   )
 import Distribution.Simple.Utils
-  ( dieWithException
+  ( addLibraryPath
+  , dieWithException
   , info
   , notice
   , sortNub
@@ -105,6 +121,20 @@ import Distribution.Simple.Utils
   , wrapText
   )
 
+import qualified Distribution.InstalledPackageInfo as IPI
+  ( libraryDynDirs
+  )
+import qualified Distribution.Simple.InstallDirs as InstallDirs
+  ( dynlibdir
+  )
+import Distribution.System
+  ( OS (..)
+  , Platform (..)
+  )
+
+import Distribution.Package
+  ( installedDepends
+  )
 import Distribution.Types.ComponentName
   ( componentNameRaw
   )
@@ -135,9 +165,13 @@ import GHC.Environment
 import System.Directory
   ( doesFileExist
   )
+import System.Environment
+  ( getEnvironment
+  )
 import System.FilePath
   ( isPathSeparator
   , isValid
+  , searchPathSeparator
   , (</>)
   )
 
@@ -335,9 +369,37 @@ runAction flags targetAndArgs globalFlags = do
                 $ baseCtx
              )
           ++ internalToolDepsOfThisExe
+      -- Installed libraries are loaded from their install directories. An
+      -- inplace library is still in its build directory, which is where
+      -- 'cabal run' executes the binary. Library edges stay on this
+      -- component's machine, so a Build toolchain's libraries do not leak
+      -- into a Host executable's runtime environment.
+      runtimeLibraryDirs =
+        planDynamicLibraryDependencyDirs
+          (distDirLayout baseCtx)
+          (elaboratedShared buildCtx)
+          elaboratedPlan
+          pkg
+      (Platform _ targetOS) = toolchainPlatform (elabToolchain (elaboratedShared buildCtx) pkg)
 
     logExtraProgramSearchPath verbosity extraPath
     progPath <- programSearchPathAsPATHVar (map ProgramSearchPathDir extraPath ++ defaultProgramSearchPath)
+    let progInvokePathValue =
+          if targetOS == Windows && not (null runtimeLibraryDirs)
+            then progPath ++ [searchPathSeparator] ++ intercalate [searchPathSeparator] runtimeLibraryDirs
+            else progPath
+
+    runtimeLibraryEnv <-
+      if null runtimeLibraryDirs || targetOS == Windows
+        then return []
+        else do
+          env <- getEnvironment
+          let libraryPathVariable = if targetOS == OSX then "DYLD_LIBRARY_PATH" else "LD_LIBRARY_PATH"
+          return $
+            maybeToList
+              ( (libraryPathVariable,) . Just
+                  <$> lookup libraryPathVariable (addLibraryPath targetOS runtimeLibraryDirs env)
+              )
 
     if dryRun
       then notice verbosity "Running of executable suppressed by flag(s)"
@@ -348,11 +410,75 @@ runAction flags targetAndArgs globalFlags = do
             { progInvokePath = exePath
             , progInvokeArgs = args
             , progInvokeEnv =
-                ("PATH", Just progPath)
-                  : dataDirsEnvironmentForPlan
+                ("PATH", Just progInvokePathValue)
+                  : runtimeLibraryEnv
+                  ++ dataDirsEnvironmentForPlan
                     (distDirLayout baseCtx)
                     elaboratedPlan
             }
+
+planDynamicLibraryDependencyDirs
+  :: DistDirLayout
+  -> ElaboratedSharedConfig
+  -> ElaboratedInstallPlan
+  -> ElaboratedConfiguredPackage
+  -> [FilePath]
+planDynamicLibraryDependencyDirs layout config plan pkg =
+  collectRuntimeLibraryDirs lookupPackage [WithMachine (elabMachine pkg) (elabUnitId pkg)]
+  where
+    lookupPackage key = do
+      planPkg <- InstallPlan.lookup plan key
+      return
+        ( planPackageDynamicLibraryDirs layout config planPkg
+        , sameMachineLibraryDependencies planPkg
+        )
+
+collectRuntimeLibraryDirs :: Ord key => (key -> Maybe ([FilePath], [key])) -> [key] -> [FilePath]
+collectRuntimeLibraryDirs lookupPackage = go Set.empty Set.empty
+  where
+    go _ _ [] = []
+    go seenPackages seenDirs (key : pending)
+      | Set.member key seenPackages = go seenPackages seenDirs pending
+      | otherwise =
+          case lookupPackage key of
+            Nothing -> go (Set.insert key seenPackages) seenDirs pending
+            Just (libraryDirs, dependencies) ->
+              filter (`Set.notMember` seenDirs) libraryDirs
+                ++ go
+                  (Set.insert key seenPackages)
+                  (Set.union seenDirs (Set.fromList libraryDirs))
+                  (dependencies ++ pending)
+
+sameMachineDependencies :: Machine -> [WithMachine a] -> [WithMachine a]
+sameMachineDependencies machine = filter isSelectedMachine
+  where
+    isSelectedMachine (WithMachine dependencyMachine _) = dependencyMachine == machine
+
+sameMachineLibraryDependencies :: ElaboratedPlanPackage -> [WithMachine UnitId]
+sameMachineLibraryDependencies =
+  foldPlanPackage
+    (\(WithMachine machine pkg) -> map (WithMachine machine) (installedDepends pkg))
+    (\pkg -> sameMachineDependencies (elabMachine pkg) (map (WithMachine (elabMachine pkg)) (elabOrderLibDependencies pkg)))
+
+-- An inplace library's shared object is in its build directory. The install
+-- dynlibdir is where a copied library will live, and 'cabal run' executes the
+-- inplace binary before that copy.
+planPackageDynamicLibraryDirs
+  :: DistDirLayout
+  -> ElaboratedSharedConfig
+  -> ElaboratedPlanPackage
+  -> [FilePath]
+planPackageDynamicLibraryDirs layout config =
+  foldPlanPackage
+    (IPI.libraryDynDirs . unwrapMachine)
+    ( \pkg ->
+        [ if isInplaceBuildStyle (elabBuildStyle pkg)
+            then distBuildDirectory layout (elabDistDirParams config pkg) </> "build"
+            else InstallDirs.dynlibdir (elabInstallDirs pkg)
+        ]
+    )
+  where
+    unwrapMachine (WithMachine _ pkg) = pkg
 
 -- | Split @cabal run@ arguments (@exe cmd@ arguments in the examples) into
 -- target selectors and target executable arguments.

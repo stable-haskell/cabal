@@ -18,7 +18,7 @@ import Distribution.Client.ProjectOrchestration
   , resolveTargetsFromSolver
   )
 import Distribution.Client.ProjectPlanning
-import Distribution.Client.ProjectPlanning.Machine (withoutMachine)
+import Distribution.Client.ProjectPlanning.Machine (Machine (..), WithMachine (..), withoutMachine)
 import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.TargetProblem
   ( TargetProblem (..)
@@ -56,7 +56,7 @@ import qualified Distribution.Client.CmdHaddockProject as CmdHaddockProject
 import Distribution.Client.Config (createDefaultConfigFile)
 import Distribution.Client.GlobalFlags (defaultGlobalFlags)
 import Distribution.Client.Setup (globalStoreDir)
-import Distribution.InstalledPackageInfo (InstalledPackageInfo)
+import Distribution.InstalledPackageInfo (InstalledPackageInfo, haddockInterfaces)
 import Distribution.ModuleName (ModuleName)
 import Distribution.Package
 import Distribution.PackageDescription
@@ -2711,6 +2711,8 @@ testConfigOptionComments = do
   "  -- happy-location" `assertHasCommentLine` "happy-location"
   "  -- hpc-location" `assertHasCommentLine` "hpc-location"
   "  -- hscolour-location" `assertHasCommentLine` "hscolour-location"
+  -- JHC is still a built-in program on this base, so its config fields stay
+  -- commented, the same as the other compilers.
   "  -- jhc-location" `assertHasCommentLine` "jhc-location"
   "  -- ld-location" `assertHasCommentLine` "ld-location"
   "  -- pkg-config-location" `assertHasCommentLine` "pkg-config-location"
@@ -2767,7 +2769,17 @@ cleanHaddockProject testdir = do
 
 testHaddockProjectDependencies :: ProjectConfig -> Assertion
 testHaddockProjectDependencies config = do
-  (_, _, sharedConfig) <- planProject testdir config
+  (_, elaboratedPlan, sharedConfig) <- planProject testdir config
+  let hostTimePackages =
+        [ timeIpi
+        | InstallPlan.PreExisting (WithMachine Host timeIpi) <- InstallPlan.toList elaboratedPlan
+        , packageName timeIpi == mkPackageName "time"
+        ]
+  timePackage <- case hostTimePackages of
+    [timeIpi] -> return timeIpi
+    [] -> assertFailure "The selected Host install plan has no installed time package."
+    _ -> assertFailure "The selected Host install plan has multiple installed time packages."
+  timeHasHaddockInterfaces <- or <$> mapM doesFileExist (haddockInterfaces timePackage)
   -- `haddock-project` is only supported by `haddock-2.26.1` and above which is
   -- shipped with `ghc-9.4`
   -- And doesn't work with older ghc on Windows for some reason (file in the
@@ -2789,7 +2801,20 @@ testHaddockProjectDependencies config = do
 
       let haddock = "haddocks" </> "time" </> "time.haddock"
       hasHaddock <- doesFileExist haddock
-      unless hasHaddock $ assertFailure ("File `" ++ haddock ++ "` does not exist.")
+      -- `time` is a boot package, and some supported compiler package DBs do
+      -- not ship its Haddock interface. The project command can only copy
+      -- installed dependency docs that exist at paths advertised by the
+      -- selected Host package metadata; the standalone HaddockProject fixture
+      -- covers copying docs from a source dependency on every platform.
+      if timeHasHaddockInterfaces
+        then unless hasHaddock $ assertFailure ("File `" ++ haddock ++ "` does not exist.")
+        else assertBool ("File `" ++ haddock ++ "` should not exist without an installed Haddock interface.") (not hasHaddock)
+      let localHaddock = "haddocks" </> "a" </> "a.haddock"
+      hasLocalHaddock <- doesFileExist localHaddock
+      assertBool ("File `" ++ localHaddock ++ "` should exist for the local package.") hasLocalHaddock
+      let projectIndex = "haddocks" </> "doc-index.html"
+      hasProjectIndex <- doesFileExist projectIndex
+      assertBool ("File `" ++ projectIndex ++ "` should exist.") hasProjectIndex
     cleanHaddockProject testdir
   where
     testdir = "haddock-project/dependencies"
