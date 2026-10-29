@@ -21,7 +21,6 @@ import qualified Distribution.Client.SetupHooks.CallHooksExe as ExternalHooksExe
   ( buildTypePreBuildHooks
   , buildTypeSetupHooks
   )
-import Distribution.Client.Toolchain (Toolchain (..))
 import Distribution.Client.Types
 
 import qualified Distribution.PackageDescription as PD
