@@ -67,7 +67,6 @@ import Distribution.Types.LibraryName
 import Distribution.Types.LocalBuildConfig (PackageBuildDescr (..))
 import qualified Distribution.Types.LocalBuildConfig as LBC
 import Distribution.Types.PackageDescription (emptyPackageDescription)
-import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Version (mkVersion)
 import System.Directory (createDirectory, getTemporaryDirectory, removeFile, removePathForcibly)
