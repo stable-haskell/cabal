@@ -195,7 +195,7 @@ rebuildTargetsDryRun
   -> ElaboratedSharedConfig
   -> ElaboratedInstallPlan
   -> IO BuildStatusMap
-rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
+rebuildTargetsDryRun distDirLayout shared =
   -- Do the various checks to work out the 'BuildStatus' of each package.
   foldMInstallPlanDepOrder dryRunPkg
   where
