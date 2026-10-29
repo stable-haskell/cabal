@@ -668,6 +668,8 @@ testBuildOptions =
     , LBC.exeCoverage = True
     , LBC.libCoverage = False
     , LBC.relocatable = False
+    , LBC.programPrefix = Nothing
+    , LBC.programSuffix = Nothing
     }
 
 packageHashTargetTests :: [TestTree]

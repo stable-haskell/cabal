@@ -178,6 +178,8 @@ profilingOptions =
     , LBC.exeCoverage = False
     , LBC.libCoverage = False
     , LBC.relocatable = False
+    , LBC.programPrefix = Nothing
+    , LBC.programSuffix = Nothing
     }
 
 ordinaryCompiler :: Compiler
