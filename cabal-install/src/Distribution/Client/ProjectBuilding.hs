@@ -50,7 +50,6 @@ import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.Store
 import Distribution.Client.Toolchain
   ( Machine (..)
-  , Toolchain (..)
   , toolMachine
   )
 
