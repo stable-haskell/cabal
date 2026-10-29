@@ -100,7 +100,7 @@ import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Char as Char
 import Data.List (isPrefixOf, stripPrefix)
-import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
+import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe, mapMaybe)
 import Network.Wait (waitTcpVerbose)
 import System.Directory
 import System.Environment
@@ -1597,10 +1597,42 @@ findBuildDependencyInStore = findDependencyInStoreInStage "build"
 
 findDependencyInStoreInStage :: String -> String -> TestM FilePath
 findDependencyInStoreInStage _stage pkgName = do
-  storeDir <- testStoreDir <$> getTestEnv
+  env <- getTestEnv
+  let storeDir = testStoreDir env
+      -- Match the compiler directory for this compiler's ABI. An opposite-ABI
+      -- directory (for example ghc-<ver>-profiling next to a native compiler)
+      -- must not be selected just because it is the first entry.
+      accepted = legacyCompilerStoreDirNames (testCompiler env)
+      firstMatch parent names = case filter (`elem` accepted) names of
+        dir : _ -> Just (parent </> dir)
+        [] -> Nothing
   liftIO $ do
-    storeDirForGhcVersion : _ <- listDirectory storeDir
-    packageDirs <- listDirectory (storeDir </> storeDirForGhcVersion)
+    -- The store is laid out store/<compiler-id>-<abi>/. A store with an extra
+    -- platform segment, store/<platform>/<compiler-id>-<abi>/, is tolerated
+    -- too, since not every store a test looks at is written by the cabal
+    -- under test.
+    topDirs <- listDirectory storeDir
+    nested <- case firstMatch storeDir topDirs of
+      Just dir -> pure (Just dir)
+      Nothing ->
+        fmap (listToMaybe . mapMaybe id) $
+          mapM
+            ( \top -> do
+                let parent = storeDir </> top
+                kids <- listDirectory parent
+                pure (firstMatch parent kids)
+            )
+            topDirs
+    storeDirForPlatformAndGhc <- case nested of
+      Just dir -> pure dir
+      Nothing ->
+        ioError $
+          userError $
+            "no legacy compiler store matching "
+              ++ show accepted
+              ++ " under "
+              ++ storeDir
+    packageDirs <- listDirectory storeDirForPlatformAndGhc
     -- Ideally, we should call 'hashedInstalledPackageId' from 'Distribution.Client.PackageHash'.
     -- But 'PackageHashInputs', especially 'PackageHashConfigInputs', is too hard to construct.
     let pkgName' =

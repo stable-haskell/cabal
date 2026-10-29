@@ -12,4 +12,6 @@ main = cabalTest $ withRepo "repo" $ do
   -- cabal shouldn't build a package from the repo, even when given a constraint
   -- that only matches a non-local package.
   r <- fails $ cabal' "v2-build" ["pkg", "-c", "pkg==2.0"]
-  assertOutputContains "rejecting: host:pkg == host:source:pkg-2.0" r
+  -- Host has an empty solver qualifier, so the rejection names the package
+  -- and version directly.
+  assertOutputContains "rejecting: pkg-2.0" r
