@@ -7,4 +7,4 @@ Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
 In order, the following will be built:
  - host plain-0.1.0.0 (lib:plain) (first run)
 Error: [Cabal-7125]
-Failed to configure plain-0.1.0.0. The failure occurred during the configure step. The build process segfaulted (i.e. SIGSEGV).
+Failed to configure plain-0.1.0.0-inplace. The failure occurred during the configure step. The build process segfaulted (i.e. SIGSEGV).
