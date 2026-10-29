@@ -2,19 +2,13 @@
 Downloading the latest package list from test-local-repo
 # cabal haddock-project
 Warning: haddock-project command is experimental, it might break in the future
-Toolchains:
-- build compiler ghc-<GHCVER>
-- host compiler ghc-<GHCVER>
 Resolving dependencies...
-Toolchains:
-- build compiler ghc-<GHCVER>
-- host compiler ghc-<GHCVER>
-Build profile: -w ghc-<GHCVER> -W ghc-<GHCVER> -O1
+Build profile: -w ghc-<GHCVER> -O1
 In order, the following will be built:
- - host async-2.2.4 (lib) (requires build)
- - host subonly-0.1.0.0 (lib:nested) (configuration changed)
- - host a-0.1.0.0 (lib:nested) (configuration changed)
- - host a-0.1.0.0 (lib) (configuration changed)
+ - async-2.2.4 (lib) (requires build)
+ - subonly-0.1.0.0 (lib:nested) (configuration changed)
+ - a-0.1.0.0 (lib:nested) (configuration changed)
+ - a-0.1.0.0 (lib) (configuration changed)
 Configuring library for async-2.2.4...
 Preprocessing library for async-2.2.4...
 Building library for async-2.2.4...

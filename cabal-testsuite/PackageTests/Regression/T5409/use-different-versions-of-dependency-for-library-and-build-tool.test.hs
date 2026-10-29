@@ -18,11 +18,13 @@ main = cabalTest $ withShorterPathForNewBuildStore $ do
       r1 <- recordMode DoNotRecord $
             cabal' "v2-build" ["pkg:my-exe"]
 
+      -- Both versions are host packages on an ordinary build. The exe still
+      -- prints library 1 and build-tool 2, which is the behaviour under test.
       "In order, the following will be built:\n\
-      \ - build build-tool-pkg-2 (lib) (requires build)\n\
-      \ - host build-tool-pkg-1 (lib) (requires build)\n\
-      \ - build build-tool-pkg-2 (exe:build-tool-exe) (requires build)\n\
-      \ - host pkg-1.0 (exe:my-exe) (first run)"
+      \ - build-tool-pkg-1 (lib) (requires build)\n\
+      \ - build-tool-pkg-2 (lib) (requires build)\n\
+      \ - build-tool-pkg-2 (exe:build-tool-exe) (requires build)\n\
+      \ - pkg-1.0 (exe:my-exe) (first run)"
         & flip (assertOn isInfixOf multilineNeedleHaystack) r1
 
       withPlan $ do
