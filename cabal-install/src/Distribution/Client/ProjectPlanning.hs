@@ -3188,8 +3188,22 @@ elaborateLibraryWays toolchains libDepGraph lookupFlag =
 -- | Warn when a package requests a library way its machine compiler cannot build.
 -- Uses the flat per-package predicates (not the downward closure) — we only
 -- warn about packages that themselves request the way.
+--
+-- Profiling is a target ABI. A request on a compiler that does not report
+-- that ABI is an error, same as Setup configure. The elaborated options drop
+-- the request when the compiler cannot build profiling libraries, so this
+-- check has to look at the flags rather than those options.
 libraryWayWarnings :: Toolchains -> PerPkgConfigFlag -> Machine -> PackageId -> LogProgress ()
 libraryWayWarnings toolchains lookupFlag machine pkgid = do
+  when
+    ( requestedProfiling && not (compilerTargetsProfiling compiler)
+    )
+    $ dieProgress
+      ( text
+          ( CabalErrors.exceptionMessage
+              (CabalErrors.ProfilingRequiresTargetCompiler (compilerId compiler))
+          )
+      )
   when
     (needsProfilingLib lookupFlag compiler pkgid && not (compilerCanBuildProfilingLibs compiler))
     (warnProgress (text "Compiler does not support building p libraries, profiling is disabled"))
@@ -3201,6 +3215,14 @@ libraryWayWarnings toolchains lookupFlag machine pkgid = do
     (warnProgress (text "Compiler does not support building p_dyn libraries, profiling dynamic libraries are disabled."))
   where
     compiler = toolchainCompiler (onMachine toolchains machine)
+    requestedProfiling =
+      needsProfilingLib lookupFlag compiler pkgid
+        || needsProfilingLibShared lookupFlag compiler pkgid
+        || fromFlagOrDefault
+          False
+          ( lookupFlag pkgid packageConfigProf
+              <> lookupFlag pkgid packageConfigProfExe
+          )
 
 -- | Unscoped profiling options describe the selected target. When its ABI
 -- is intrinsically profiled, remove those options from the global/local
