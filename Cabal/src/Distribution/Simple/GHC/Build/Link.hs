@@ -61,8 +61,6 @@ import System.FilePath
   ( isRelative
   )
 
-import Distribution.Simple.InstallDirs (bindir, libdir)
-
 -- | Links together the object files of the Haskell modules and extra sources
 -- using the context in which the component is being built.
 --
@@ -580,19 +578,23 @@ getRPaths pbci = do
           --
           -- Mirrors the executable/library split in
           -- 'Distribution.Simple.LocalBuildInfo.depLibraryPaths'.
-          installDirs = absoluteComponentInstallDirs
-            (localPkgDescr lbi) lbi (componentUnitId clbi) NoCopyDest
+          installDirs =
+            absoluteComponentInstallDirs
+              (localPkgDescr lbi)
+              lbi
+              (componentUnitId clbi)
+              NoCopyDest
           isExe = case clbi of
             ExeComponentLocalBuildInfo{} -> True
             _ -> False
           relDir
-            | isExe     = bindir installDirs
+            | isExe = bindir installDirs
             | otherwise = libdir installDirs
           -- Convert an rpath entry to its loader-relative form.
           --
-          -- * Already-relative paths get the `@loader_path` / `$ORIGIN`
+          -- \* Already-relative paths get the `@loader_path` / `$ORIGIN`
           --   prefix as before.
-          -- * Absolute paths are rewritten to a relative-form expression
+          -- \* Absolute paths are rewritten to a relative-form expression
           --   (`@loader_path/../../...`) computed against the binary's
           --   install dir, so the resulting binary does not bake a
           --   build-host absolute path into LC_RPATH / DT_RUNPATH.
@@ -616,7 +618,7 @@ getRPaths pbci = do
           --   the stable-haskell GHC bindist assembly pipeline.
           relPath p
             | isRelative p = hostPref </> p
-            | otherwise    = hostPref </> shortRelativePath relDir p
+            | otherwise = hostPref </> shortRelativePath relDir p
           rpaths =
             -- Always search the artifact's own directory ($ORIGIN /
             -- @loader_path) first, so a sibling library installed alongside it
