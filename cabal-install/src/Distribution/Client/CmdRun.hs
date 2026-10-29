@@ -32,6 +32,10 @@ import Distribution.Client.CmdErrorMessages
   , targetSelectorFilter
   , targetSelectorPluralPkgs
   )
+import Distribution.Client.DistDirLayout
+  ( DistDirLayout
+  , distBuildDirectory
+  )
 import Distribution.Client.Errors
 import Distribution.Client.GlobalFlags
   ( defaultGlobalFlags
@@ -62,10 +66,15 @@ import Distribution.Client.ProjectPlanning
 import Distribution.Client.ProjectPlanning.Machine (Machine, WithMachine (..))
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedPackageOrComponent (..)
+  , ElaboratedSharedConfig
   , Toolchain (..)
+  , dataDirsEnvironmentForPlan
+  , elabDistDirParams
   , elabExeDependencyPaths
+  , elabInstallDirs
   , elabOrderLibDependencies
   , elabToolchain
+  , isInplaceBuildStyle
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -361,14 +370,17 @@ runAction flags targetAndArgs globalFlags = do
                 $ baseCtx
              )
           ++ internalToolDepsOfThisExe
-      -- Libraries used by a stored executable must be found from their
-      -- installed locations. Its linker paths may still point into the
-      -- build tree, which is no longer where 'cabal run' executes it from.
-      -- Library edges are stage-preserving, so keeping only this
-      -- component's stage prevents Build-toolchain libraries from
-      -- leaking into a Host executable's runtime environment.
+      -- Installed libraries are loaded from their install directories. An
+      -- inplace library is still in its build directory, which is where
+      -- 'cabal run' executes the binary. Library edges stay on this
+      -- component's machine, so a Build toolchain's libraries do not leak
+      -- into a Host executable's runtime environment.
       runtimeLibraryDirs =
-        planDynamicLibraryDependencyDirs elaboratedPlan pkg
+        planDynamicLibraryDependencyDirs
+          (distDirLayout baseCtx)
+          (elaboratedShared buildCtx)
+          elaboratedPlan
+          pkg
       (Platform _ targetOS) = toolchainPlatform (elabToolchain (elaboratedShared buildCtx) pkg)
 
     logExtraProgramSearchPath verbosity extraPath
@@ -398,16 +410,29 @@ runAction flags targetAndArgs globalFlags = do
           emptyProgramInvocation
             { progInvokePath = exePath
             , progInvokeArgs = args
-            , progInvokeEnv = ("PATH", Just progInvokePathValue) : runtimeLibraryEnv
+            , progInvokeEnv =
+                ("PATH", Just progInvokePathValue)
+                  : runtimeLibraryEnv
+                  ++ dataDirsEnvironmentForPlan
+                    (distDirLayout baseCtx)
+                    elaboratedPlan
             }
 
-planDynamicLibraryDependencyDirs :: ElaboratedInstallPlan -> ElaboratedConfiguredPackage -> [FilePath]
-planDynamicLibraryDependencyDirs plan pkg =
+planDynamicLibraryDependencyDirs
+  :: DistDirLayout
+  -> ElaboratedSharedConfig
+  -> ElaboratedInstallPlan
+  -> ElaboratedConfiguredPackage
+  -> [FilePath]
+planDynamicLibraryDependencyDirs layout config plan pkg =
   collectRuntimeLibraryDirs lookupPackage [WithMachine (elabMachine pkg) (elabUnitId pkg)]
   where
     lookupPackage key = do
       planPkg <- InstallPlan.lookup plan key
-      return (planPackageDynamicLibraryDirs planPkg, sameMachineLibraryDependencies planPkg)
+      return
+        ( planPackageDynamicLibraryDirs layout config planPkg
+        , sameMachineLibraryDependencies planPkg
+        )
 
 collectRuntimeLibraryDirs :: Ord key => (key -> Maybe ([FilePath], [key])) -> [key] -> [FilePath]
 collectRuntimeLibraryDirs lookupPackage = go Set.empty Set.empty
@@ -436,11 +461,23 @@ sameMachineLibraryDependencies =
     (\(WithMachine machine pkg) -> map (WithMachine machine) (installedDepends pkg))
     (\pkg -> sameMachineDependencies (elabMachine pkg) (map (WithMachine (elabMachine pkg)) (elabOrderLibDependencies pkg)))
 
-planPackageDynamicLibraryDirs :: ElaboratedPlanPackage -> [FilePath]
-planPackageDynamicLibraryDirs =
+-- An inplace library's shared object is in its build directory. The install
+-- dynlibdir is where a copied library will live, and 'cabal run' executes the
+-- inplace binary before that copy.
+planPackageDynamicLibraryDirs
+  :: DistDirLayout
+  -> ElaboratedSharedConfig
+  -> ElaboratedPlanPackage
+  -> [FilePath]
+planPackageDynamicLibraryDirs layout config =
   foldPlanPackage
     (IPI.libraryDynDirs . unwrapMachine)
-    (\pkg -> [InstallDirs.dynlibdir (elabInstallDirs pkg)])
+    ( \pkg ->
+        [ if isInplaceBuildStyle (elabBuildStyle pkg)
+            then distBuildDirectory layout (elabDistDirParams config pkg) </> "build"
+            else InstallDirs.dynlibdir (elabInstallDirs pkg)
+        ]
+    )
   where
     unwrapMachine (WithMachine _ pkg) = pkg
 
