@@ -1575,8 +1575,11 @@ withShorterPathForNewBuildStore test =
     "cabal-test-store"
     (`withStoreDir` test)
 
--- | Find a package in either the traditional compiler-version store layout or
--- the project-local @store/host/<triple>/lib@ layout.
+-- | Find a package directory in the cabal store.
+--
+-- The store is keyed by platform and compiler. Host and build lookups share
+-- that directory and select the package by name. This works when the store
+-- contains one compiler directory and one directory for the package prefix.
 findDependencyInStore
   :: String
   -- ^ package name prefix
@@ -1595,8 +1598,8 @@ findBuildDependencyInStore
 findBuildDependencyInStore = findDependencyInStoreInStage "build"
 
 findDependencyInStoreInStage :: String -> String -> TestM FilePath
-findDependencyInStoreInStage stage pkgName = do
-  env <- getTestEnv
+findDependencyInStoreInStage _stage pkgName = do
+  storeDir <- testStoreDir <$> getTestEnv
   liftIO $ do
     storeDirForGhcVersion : _ <- listDirectory storeDir
     packageDirs <- listDirectory (storeDir </> storeDirForGhcVersion)
