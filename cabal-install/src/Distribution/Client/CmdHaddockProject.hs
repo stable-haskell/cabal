@@ -35,17 +35,10 @@ import Distribution.Client.ProjectPlanning
   , ElaboratedInstallPlan
   , ElaboratedSharedConfig (..)
   , TargetAction (..)
-  , pkgConfigCompiler
-  , pkgConfigCompilerProgs
-  , pkgConfigPlatform
-  , setPkgConfigCompilerProgs
   )
 import Distribution.Client.ProjectPlanning.Machine (withoutMachine)
 import Distribution.Client.ProjectPlanning.Types
-  ( ElaboratedSharedConfig (..)
-  , elabDistDirParams
-  , elabInstallDirs
-  , elabLocalToProject
+  ( elabDistDirParams
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -112,7 +105,6 @@ import Distribution.Verbosity as Verbosity
   , mkVerbosity
   , normal
   )
-import Distribution.Version (mkVersion, orLaterVersion)
 
 import Distribution.Client.Errors
 import System.Directory (doesDirectoryExist, doesFileExist)

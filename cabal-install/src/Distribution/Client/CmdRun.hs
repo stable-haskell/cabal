@@ -64,7 +64,6 @@ import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedPackageOrComponent (..)
   , Toolchain (..)
   , elabExeDependencyPaths
-  , elabInstallDirs
   , elabOrderLibDependencies
   , elabToolchain
   )
