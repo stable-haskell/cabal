@@ -334,6 +334,7 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock :: Compiler -> UnitId -> FilePath
     storeIncomingLock compiler unitid =
       storeIncomingDirectory compiler </> prettyShow unitid <.> "lock"
+
 -- | Return the canonical logical target name used in store and dist paths.
 betterPlatform :: Toolchain -> String
 betterPlatform toolchain =

@@ -6,8 +6,8 @@ import qualified Data.Text as Text
 import Distribution.Compat.Prelude
 import Prelude ()
 
-import qualified Distribution.Compat.Graph as Graph
 import qualified Data.Map as Map
+import qualified Distribution.Compat.Graph as Graph
 import Distribution.PackageDescription as PD hiding (buildInfo)
 import Distribution.Simple.Build.Inputs
 import Distribution.Simple.Compiler
@@ -132,15 +132,15 @@ build numJobs verbHandles pkg_descr pbci = do
       unsupportedVariant =
         if not (compilerTargetsProfiling targetCompiler)
           then Nothing
-          else
-            case () of
-              _ | any (`elem` requestedGhcOptions) [Text.pack "-dynamic", Text.pack "-dynamic-too"]
-                    && profilingDynamicSupported targetCompiler == Just False ->
-                    Just "dynamic profiling objects"
-                | Text.pack "-debug" `elem` requestedGhcOptions
-                    && profilingDebugSupported targetCompiler == Just False ->
-                    Just "debug profiling objects"
-                | otherwise -> Nothing
+          else case () of
+            _
+              | any (`elem` requestedGhcOptions) [Text.pack "-dynamic", Text.pack "-dynamic-too"]
+                  && profilingDynamicSupported targetCompiler == Just False ->
+                  Just "dynamic profiling objects"
+              | Text.pack "-debug" `elem` requestedGhcOptions
+                  && profilingDebugSupported targetCompiler == Just False ->
+                  Just "debug profiling objects"
+              | otherwise -> Nothing
   for_ unsupportedVariant $ \variant ->
     liftIO $
       dieWithException verbosity $
