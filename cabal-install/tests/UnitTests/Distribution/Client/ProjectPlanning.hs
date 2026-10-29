@@ -58,7 +58,7 @@ import Distribution.Simple.Program.Types (ConfiguredProgram (..), ProgramLocatio
 import Distribution.Simple.Setup (CommonSetupFlags (setupWorkingDir), ConfigFlags (..), configureCommand, emptyConfigFlags)
 import qualified Distribution.Simple.SetupHooks.Internal as SetupHooks
 import Distribution.Solver.Types.Machine (Machine (..), toolMachine)
-import Distribution.Solver.Types.OptionalStanza (OptionalStanzaMap (..))
+import Distribution.Solver.Types.OptionalStanza (optStanzaTabulate)
 import Distribution.Solver.Types.Settings (IndependentGoals (..))
 import Distribution.System (Arch (..), OS (..), Platform (..), buildPlatform)
 import Distribution.Types.ComponentName
@@ -274,7 +274,7 @@ testCoverageDependencies = do
             -- skipped and these values are not forced further.
             elabBuildStyle = BuildInplaceOnly InMemory
           , elabStanzasAvailable = mempty
-          , elabStanzasRequested = OptionalStanzaMap Nothing Nothing
+          , elabStanzasRequested = optStanzaTabulate (const Nothing)
           , elabMachine = Host
           , elabPackageDbs = undefined
           , elabSetupPackageDBStack = undefined
