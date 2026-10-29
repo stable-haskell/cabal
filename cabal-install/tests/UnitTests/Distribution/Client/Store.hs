@@ -17,6 +17,7 @@ import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
+import qualified Data.Map as Map
 import Distribution.Client.DistDirLayout (betterPlatform, defaultStoreDirLayout)
 import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
 import Distribution.Client.RebuildMonad
@@ -24,7 +25,6 @@ import Distribution.Client.Store
 import Distribution.Client.Toolchain (Machine (..), Toolchain (..))
 import qualified Distribution.Client.Utils.Json as Json
 import Distribution.Simple.Program.Db (emptyProgramDb)
-import qualified Data.Map as Map
 
 import Test.Tasty
 import Test.Tasty.HUnit
