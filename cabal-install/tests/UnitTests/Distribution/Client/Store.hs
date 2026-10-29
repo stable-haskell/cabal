@@ -13,6 +13,7 @@ import System.FilePath
 import Distribution.Package (UnitId, mkUnitId)
 import Distribution.Simple.Compiler (AbiTag (..), Compiler (..), CompilerFlavor (..), CompilerId (..))
 import Distribution.Simple.Utils (withTempDirectory)
+import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
@@ -54,10 +55,10 @@ testTargetAbi = do
       profiledCompiler = compiler{compilerAbiTag = AbiTag "profiling"}
       platform = Platform X86_64 Linux
       layout = defaultStoreDirLayout "store"
-  storeDirectory layout compiler platform @?= "store" </> "x86_64-linux" </> "ghc-9.14.1"
-  storeDirectory layout profiledCompiler platform @?= "store" </> "x86_64-linux" </> "ghc-9.14.1-profiling"
+  storeDirectory layout compiler @?= "store" </> "ghc-9.14.1"
+  storeDirectory layout profiledCompiler @?= "store" </> "ghc-9.14.1-profiling"
   assertBool "package databases must not alias" $
-    storePackageDBPath layout compiler platform /= storePackageDBPath layout profiledCompiler platform
+    storePackageDBPath layout compiler /= storePackageDBPath layout profiledCompiler
   -- A qualified target identity renders canonically for plan output and
   -- path helpers, independently of the host architecture.
   let nativeToolchain = Toolchain compiler platform emptyProgramDb
@@ -76,8 +77,8 @@ testTargetAbi = do
   betterPlatform nativeToolchain @?= "x86_64-linux"
   betterPlatform profiledToolchain @?= "aarch64-apple-darwin-prof"
   assertBool "incoming locks must use the selected target namespace" $
-    storeIncomingLock layout compiler platform (mkUnitId "foo-1.0-xyz")
-      /= storeIncomingLock layout profiledCompiler platform (mkUnitId "foo-1.0-xyz")
+    storeIncomingLock layout compiler (mkUnitId "foo-1.0-xyz")
+      /= storeIncomingLock layout profiledCompiler (mkUnitId "foo-1.0-xyz")
   case lookup "target-name" (toolchainJsonFields Host profiledToolchain) of
     Just (Json.String targetName) -> targetName @?= "aarch64-apple-darwin-prof"
     _ -> assertFailure "plan JSON omitted the canonical target-name field"
@@ -121,7 +122,7 @@ testInstallSerial =
           return (destprefix, [])
 
     -- newStoreEntry places temporary files inside the machine store's incoming directory.
-    createDirectoryIfMissing True (storeIncomingDirectory storeDirLayout compiler platform)
+    createDirectoryIfMissing True (storeIncomingDirectory storeDirLayout compiler)
 
     assertNewStoreEntry
       tmp

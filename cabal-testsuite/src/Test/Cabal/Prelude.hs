@@ -1643,7 +1643,7 @@ findDependencyInStoreInStage _stage pkgName = do
     let libDir = case filter (pkgName' `isPrefixOf`) packageDirs of
           [] -> error $ "Could not find " <> pkgName' <> " when searching for " <> pkgName' <> " in\n" <> show packageDirs
           (dir : _) -> dir
-    pure (storeDir </> storeDirForGhcVersion </> libDir)
+    pure (storeDirForPlatformAndGhc </> libDir)
 
 -- | It can be easier to paste expected output verbatim into a text file,
 -- especially if it is a multiline string, rather than encoding it as a multiline
