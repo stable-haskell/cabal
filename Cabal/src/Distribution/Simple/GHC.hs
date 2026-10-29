@@ -84,7 +84,7 @@ import Distribution.Compat.Prelude
 import Prelude ()
 
 import Control.Arrow ((***))
-import Control.Monad (forM_, guard)
+import Control.Monad (forM_)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
 import qualified Data.Text as Text
