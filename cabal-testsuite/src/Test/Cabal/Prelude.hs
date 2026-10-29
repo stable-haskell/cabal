@@ -63,11 +63,9 @@ import Distribution.Package
 import Distribution.Pretty (prettyShow, showToken)
 import Distribution.PackageDescription
 import Distribution.Parsec (eitherParsec, simpleParsec)
-import Distribution.Compiler (CompilerFlavor (GHC))
 import Distribution.Simple.Compiler (PackageDBCWD, PackageDBStackCWD, PackageDBX (..), compilerTargetsProfiling)
 import Distribution.Simple.Configure
-  ( configCompilerEx
-  , getPersistBuildConfig
+  ( getPersistBuildConfig
   )
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Simple.Program
@@ -101,7 +99,7 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Char as Char
-import Data.List (intercalate, isInfixOf, isPrefixOf, stripPrefix)
+import Data.List (isPrefixOf, stripPrefix)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Network.Wait (waitTcpVerbose)
 import System.Directory
