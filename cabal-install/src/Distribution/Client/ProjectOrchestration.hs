@@ -122,7 +122,7 @@ import qualified Distribution.Client.ProjectPlanning as ProjectPlanning
   )
 import Distribution.Client.ProjectPlanning.Machine (WithMachine (..))
 import Distribution.Client.ProjectPlanning.Types
-import Distribution.Solver.Types.Machine (onBuild, onHost, showMachine)
+import Distribution.Solver.Types.Machine (isCross, onBuild, onHost, showMachine)
 
 import Distribution.Client.DistDirLayout
 import qualified Distribution.Client.InstallPlan as InstallPlan
@@ -1130,7 +1130,9 @@ printPlan
           filter
             (not . null)
             [ " -"
-            , showMachine (elabMachine elab)
+            , if isCross (pkgConfigToolchains elaboratedShared)
+                then showMachine (elabMachine elab)
+                else ""
             , if verbosityLevel verbosity >= Deafening
                 then prettyShow (installedUnitId elab)
                 else prettyShow (packageId elab)
@@ -1251,21 +1253,24 @@ printPlan
       showBuildProfile =
         let toolchains = pkgConfigToolchains elaboratedShared
             hostCompiler = toolchainCompiler (onHost toolchains)
-            -- Same fallback as the toolchain notice: no build machine means
-            -- the host compiler configures the build too.
-            buildCompiler = toolchainCompiler (fromMaybe (onHost toolchains) (onBuild toolchains))
+            -- -W names the build compiler only when it is a different machine.
+            buildCompilerArg =
+              [ "-W " ++ showCompilerId (toolchainCompiler toolchain)
+              | toolchain <- maybeToList (onBuild toolchains)
+              ]
          in "Build profile: "
               ++ unwords
-                [ "-w " ++ showCompilerId hostCompiler
-                , "-W " ++ showCompilerId buildCompiler
-                , "-O"
-                    ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
-                          Setup.Flag NoOptimisation -> "0"
-                          Setup.Flag NormalOptimisation -> "1"
-                          Setup.Flag MaximumOptimisation -> "2"
-                          Setup.NoFlag -> "1"
-                       )
-                ]
+                ( ["-w " ++ showCompilerId hostCompiler]
+                    ++ buildCompilerArg
+                    ++ [ "-O"
+                          ++ ( case globalOptimization <> localOptimization of -- if local is not set, read global
+                                Setup.Flag NoOptimisation -> "0"
+                                Setup.Flag NormalOptimisation -> "1"
+                                Setup.Flag MaximumOptimisation -> "2"
+                                Setup.NoFlag -> "1"
+                             )
+                       ]
+                )
               ++ "\n"
 
 writeBuildReports :: BuildTimeSettings -> ProjectBuildContext -> ElaboratedInstallPlan -> BuildOutcomes -> IO ()

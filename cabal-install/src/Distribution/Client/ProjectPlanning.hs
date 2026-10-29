@@ -983,20 +983,20 @@ rebuildInstallPlan
         -> Rebuild Toolchains
       phaseConfigureCompiler projectConfig = do
         toolchains <- configureToolchains verbosity distDirLayout projectConfig
-        -- An ordinary build has no separate build compiler. Print the host
-        -- compiler in that slot too, so the notice still names both machines.
-        liftIO $ do
-          notice verbosity "Toolchains:"
-          let hostToolchain = onHost toolchains
-              buildToolchain = fromMaybe hostToolchain (onBuild toolchains)
-              report machine toolchain =
-                notice verbosity $
-                  "- "
-                    ++ showMachine machine
-                    ++ " compiler "
-                    ++ showCompilerId (toolchainCompiler toolchain)
-          report Build buildToolchain
-          report Host hostToolchain
+        -- A cross build has a separate build compiler. Say so. An ordinary
+        -- build keeps the historical plan text: the host compiler is the
+        -- only one, and naming it twice is noise.
+        when (isCross toolchains) $
+          liftIO $ do
+            notice verbosity "Toolchains:"
+            let report machine toolchain =
+                  notice verbosity $
+                    "- "
+                      ++ showMachine machine
+                      ++ " compiler "
+                      ++ showCompilerId (toolchainCompiler toolchain)
+            report Build (fromMaybe (onHost toolchains) (onBuild toolchains))
+            report Host (onHost toolchains)
         return toolchains
 
       -- Configuring other programs.
