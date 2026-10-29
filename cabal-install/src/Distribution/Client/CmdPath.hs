@@ -41,12 +41,12 @@ import Distribution.Client.ProjectConfig.Types
   )
 import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
-import Distribution.Client.Toolchain (Machine (Host), Toolchain (..), onMachine)
 import Distribution.Client.RebuildMonad (runRebuild)
 import Distribution.Client.ScriptUtils
 import Distribution.Client.Setup
   ( yesNoOpt
   )
+import Distribution.Client.Toolchain (Machine (Host), Toolchain (..), onMachine)
 import Distribution.Client.Utils.Json
   ( (.=)
   )

@@ -32,7 +32,6 @@ import qualified Distribution.Client.InstallPlan as InstallPlan
 import qualified Distribution.Client.Utils.Json as J
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 
-import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
 import qualified Distribution.Compat.Binary as Binary
 import Distribution.Compat.Graph (Graph, Node)
 import qualified Distribution.Compat.Graph as Graph
@@ -53,6 +52,7 @@ import Distribution.Simple.GHC
   , writeGhcEnvironmentFileWithTarget
   )
 import Distribution.Simple.Utils
+import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
 import Distribution.System
 import Distribution.Types.Version
   ( mkVersion
@@ -206,7 +206,6 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
           ++ [ "pkg-src-sha256" J..= J.String (showHashValue hash)
              | Just hash <- [elabPkgSourceHash elab]
              ]
-
           ++ case elabPkgOrComp elab of
             ElabPackage pkg ->
               let components =

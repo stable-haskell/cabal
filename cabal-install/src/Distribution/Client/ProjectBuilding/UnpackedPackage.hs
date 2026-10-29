@@ -94,9 +94,9 @@ import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
 import qualified Distribution.Simple.Setup as Cabal
 import Distribution.Solver.Types.Machine (Machine (Host), PerMachine, overMachine)
-import Distribution.Utils.Generic (ordNub)
 import Distribution.Types.BuildType
 import Distribution.Types.PackageDescription.Lens (componentModules)
+import Distribution.Utils.Generic (ordNub)
 
 import Distribution.Client.Errors
 import Distribution.Simple.Utils

@@ -3046,8 +3046,8 @@ compilerShouldUseSharedLibByDefault compiler =
     GHC ->
       GHC.compilerBuildWay compiler == DynWay
         && ( if compilerTargetsProfiling compiler
-               then compilerCanBuildProfilingSharedLibs compiler
-               else compilerCanBuildSharedLibs compiler
+              then compilerCanBuildProfilingSharedLibs compiler
+              else compilerCanBuildSharedLibs compiler
            )
     _ -> False
 
