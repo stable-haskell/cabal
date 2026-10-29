@@ -8,5 +8,5 @@ main = do
     -- this test should load pkg-b too.
     res <- cabalWithStdin "v2-repl" ["--enable-multi-repl","pkg-c", "pkg-a"] "Quu.quu"
 
-    assertOutputContains "- host pkg-b-0 (lib)" res
+    assertOutputContains "- pkg-b-0 (interactive)" res
     assertOutputContains "168" res
