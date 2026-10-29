@@ -25,9 +25,7 @@ import Distribution.Client.ProjectConfig.Types
   , SolverSettings (..)
   )
 import Distribution.Client.ProjectPlanning
-  ( ComponentTarget (..)
-  , SubComponentTarget (..)
-  , configureTargetArgs
+  ( configureTargetArgs
   , determineCoverageFor
   , normaliseUnscopedPackageConfig
   , nubComponentTargets
@@ -36,7 +34,7 @@ import Distribution.Client.ProjectPlanning
   , setupHsConfigureFlags
   )
 import Distribution.Client.ProjectPlanning.Types
-import Distribution.Client.Toolchain (PerMachine (..), Toolchain (..))
+import Distribution.Client.Toolchain (PerMachine (..))
 import Distribution.Client.Types (ConfiguredId (..), GenericReadyPackage (ReadyPackage))
 import qualified Distribution.Compat.Graph as Graph
 import Distribution.Compiler (CompilerFlavor (..))
