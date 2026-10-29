@@ -18,7 +18,7 @@ import Distribution.Verbosity
 import Distribution.Version (mkVersion)
 
 import qualified Data.Map as Map
-import Distribution.Client.DistDirLayout (betterPlatform, defaultStoreDirLayout)
+import Distribution.Client.DistDirLayout (betterPlatform)
 import Distribution.Client.ProjectPlanOutput (toolchainJsonFields)
 import Distribution.Client.RebuildMonad
 import Distribution.Client.Store
