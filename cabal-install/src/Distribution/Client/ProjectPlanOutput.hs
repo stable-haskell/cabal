@@ -354,9 +354,6 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig =
     style2str False (BuildInplaceOnly InMemory) = "interactive"
     style2str False BuildAndInstall = "global"
 
-    jdisplay :: Pretty a => a -> J.Value
-    jdisplay = J.String . prettyShow
-
 -----------------------------------------------------------------------------
 -- Project status
 --
