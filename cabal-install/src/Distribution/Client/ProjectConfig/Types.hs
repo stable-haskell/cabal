@@ -58,7 +58,6 @@ import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.Machine (Machine)
 import Distribution.Solver.Types.Settings
 
-
 import Distribution.Package
   ( PackageId
   , PackageName

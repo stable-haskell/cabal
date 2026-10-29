@@ -713,8 +713,7 @@ relocatableInstalledPackageInfo pkg abi_hash lib lbi clbi pkgroot =
 
     installDirs =
       ("${pkgroot}" </>) . shortRelativePath (getSymbolicPath pkgroot)
-        <$>
-        haddockLibraryInstallDirs
+        <$> haddockLibraryInstallDirs
           lib
           (absoluteComponentInstallDirs pkg lbi (componentUnitId clbi) NoCopyDest)
 
