@@ -598,17 +598,9 @@ buildInplaceUnpackedPackage
             withFileMonitor runRepl
           PBHaddockPhase{runHaddock} -> do
             withFileMonitor runHaddock
+            -- Hackage archives are written once per package, after every
+            -- component has finished. See 'createHackageDocumentationArchives'.
             let haddockTarget = elabHaddockForHackage pkg
-            when (haddockTarget == Cabal.ForHackage) $ do
-              let dest = distDirectory </> name <.> "tar.gz"
-                  name = haddockDirName haddockTarget (elabPkgDescription pkg)
-                  docDir =
-                    distBuildDirectory distDirLayout dparams
-                      </> "doc"
-                      </> "html"
-              Tar.createTarGzFile dest docDir name
-              notice verbosity $ "Documentation tarball created: " ++ dest
-
             when (buildSettingHaddockOpen && haddockTarget /= Cabal.ForHackage) $ do
               let dest = docDir </> "index.html"
                   name = haddockDirName haddockTarget (elabPkgDescription pkg)
