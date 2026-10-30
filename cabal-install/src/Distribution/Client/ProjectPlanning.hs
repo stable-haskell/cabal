@@ -2557,9 +2557,42 @@ elaborateInstallPlan
       -- 'PackageId') build-stage dependencies into the shared-lib set.
       pkgsUseSharedLibrary :: Stage -> Compiler -> Set PackageId
       pkgsUseSharedLibrary stage compiler =
-        packagesWithLibDepsDownwardClosedProperty stage (needsSharedLib stage compiler)
+        packagesWithLibDepsDownwardClosedProperty stage (needsSharedLib dynFLibPkgs stage compiler)
+        where
+          dynFLibPkgs = pkgsWithDynForeignLib stage
 
-      needsSharedLib stage compiler pkgid =
+      -- Packages (of the given stage) with a buildable foreign library that
+      -- links the dyn way of its Haskell dependencies: 'ForeignLibNativeShared'
+      -- without 'ForeignLibStandalone' (Cabal's @withDynFLib@).  Those
+      -- dependencies -- the package's own library included -- need shared
+      -- libraries even when the compiler would not build them by default.
+      pkgsWithDynForeignLib :: Stage -> Set PackageId
+      pkgsWithDynForeignLib stage =
+        Set.fromList
+          [ srcpkgPackageId solverPkgSource
+          | ResolverPackage.Configured SolverPackage{solverPkgStage, solverPkgSource, solverPkgFlags, solverPkgStanzas} <-
+              SolverInstallPlan.toList solverPlan
+          , solverPkgStage == stage
+          , let toolchain = getStage toolchains stage
+          , Right (pd, _) <-
+              [ PD.finalizePD
+                  solverPkgFlags
+                  (enableStanzas solverPkgStanzas)
+                  (const Satisfied)
+                  (toolchainPlatform toolchain)
+                  (compilerInfo (toolchainCompiler toolchain))
+                  []
+                  (srcpkgDescription solverPkgSource)
+              ]
+          , any dynForeignLib (PD.foreignLibs pd)
+          ]
+        where
+          dynForeignLib flib =
+            PD.buildable (PD.foreignLibBuildInfo flib)
+              && PD.foreignLibType flib == PD.ForeignLibNativeShared
+              && PD.ForeignLibStandalone `notElem` PD.foreignLibOptions flib
+
+      needsSharedLib dynFLibPkgs stage compiler pkgid =
         fromMaybe
           compilerShouldUseSharedLibByDefault
           -- Case 1: --enable-shared or --disable-shared is passed explicitly, honour that.
@@ -2577,7 +2610,13 @@ elaborateInstallPlan
                 -- But don't necessarily turn off shared library generation if
                 -- --disable-executable-dynamic is passed. The shared objects might
                 -- be needed for something different.
-                _ -> Nothing
+                _
+                  -- Case 4: a foreign library linked against the dyn way of
+                  -- its dependencies needs their shared libraries.
+                  | canBuildSharedLibs
+                  , pkgid `Set.member` dynFLibPkgs ->
+                      Just True
+                  | otherwise -> Nothing
           )
         where
           pkgSharedLib = perPkgOptionMaybeStaged stage pkgid packageConfigSharedLib
