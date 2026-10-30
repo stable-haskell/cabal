@@ -185,6 +185,7 @@ import Distribution.Solver.Types.PkgConfigDb
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
+import qualified Distribution.Solver.Types.ResolverPackage as ResolverPackage
 import Distribution.Solver.Types.SourcePackage
 
 import Distribution.ModuleName
@@ -3297,22 +3298,64 @@ elaborateLibraryWays
 elaborateLibraryWays toolchains libDepGraph lookupFlag =
   LibraryWays
     { pkgsUseSharedLibrary =
-        downwardClosedProperty compilerCanBuildSharedLibs needsSharedLib
+        downwardClosedProperty compilerCanBuildSharedLibs needsSharedLibOrDynFLib
     , pkgsUseProfilingLibrary =
-        downwardClosedProperty compilerCanBuildProfilingLibs needsProfilingLib
+        downwardClosedProperty compilerCanBuildProfilingLibs (const needsProfilingLib)
     , pkgsUseProfilingLibraryShared =
-        downwardClosedProperty compilerCanBuildProfilingSharedLibs needsProfilingLibShared
+        downwardClosedProperty compilerCanBuildProfilingSharedLibs (const needsProfilingLibShared)
     }
   where
     compilerFor :: Machine -> Compiler
     compilerFor s = toolchainCompiler (onMachine toolchains s)
+
+    -- A package with a buildable foreign library that links the dyn way of
+    -- its Haskell dependencies ('ForeignLibNativeShared' without
+    -- 'ForeignLibStandalone', Cabal's @withDynFLib@) needs shared libraries
+    -- of those dependencies -- its own library included -- even when the
+    -- compiler would not build them by default. An explicit @shared:@ still
+    -- wins.
+    needsSharedLibOrDynFLib :: Machine -> PerPkgConfigFlag -> Compiler -> PackageId -> Bool
+    needsSharedLibOrDynFLib machine flag compiler pkgid =
+      case perPkgConfigMaybe flag pkgid packageConfigSharedLib of
+        Just v -> v
+        Nothing ->
+          (machine, pkgid) `Set.member` pkgsWithDynForeignLib
+            || needsSharedLib flag compiler pkgid
+
+    pkgsWithDynForeignLib :: Set (Machine, PackageId)
+    pkgsWithDynForeignLib =
+      Set.fromList
+        [ (solverPkgMachine, srcpkgPackageId solverPkgSource)
+        | NonSetupLibDepSolverPlanPackage
+            ( ResolverPackage.Configured
+                SolverPackage{solverPkgMachine, solverPkgSource, solverPkgFlags, solverPkgStanzas}
+              ) <-
+            Graph.toList libDepGraph
+        , let toolchain = onMachine toolchains solverPkgMachine
+        , Right (pd, _) <-
+            [ PD.finalizePD
+                solverPkgFlags
+                (enableStanzas solverPkgStanzas)
+                (const Satisfied)
+                (toolchainPlatform toolchain)
+                (compilerInfo (toolchainCompiler toolchain))
+                []
+                (srcpkgDescription solverPkgSource)
+            ]
+        , any dynForeignLib (PD.foreignLibs pd)
+        ]
+      where
+        dynForeignLib flib =
+          PD.buildable (PD.foreignLibBuildInfo flib)
+            && PD.foreignLibType flib == PD.ForeignLibNativeShared
+            && PD.ForeignLibStandalone `notElem` PD.foreignLibOptions flib
 
     -- Seed the closure with every node whose own machine compiler makes it want
     -- the way, take the downward (library-dependency) closure, key the result
     -- by (machine, package), and keep only machines whose compiler can build it.
     downwardClosedProperty
       :: (Compiler -> Bool)
-      -> (PerPkgConfigFlag -> Compiler -> PackageId -> Bool)
+      -> (Machine -> PerPkgConfigFlag -> Compiler -> PackageId -> Bool)
       -> Set (Machine, PackageId)
     downwardClosedProperty capable needs =
       Set.fromList
@@ -3322,7 +3365,8 @@ elaborateLibraryWays toolchains libDepGraph lookupFlag =
           libDepGraph
           [ Graph.nodeKey pkg
           | pkg <- Graph.toList libDepGraph
-          , needs (lookupFlag (solverNodeMachine pkg)) (compilerFor (solverNodeMachine pkg)) (packageId pkg)
+          , let machine = solverNodeMachine pkg
+          , needs machine (lookupFlag machine) (compilerFor machine) (packageId pkg)
           -- TODO: [nice to have] this does not check config consistency, e.g. a
           -- package explicitly turning off profiling but something depending on
           -- it that needs profiling. That needs a separate config
