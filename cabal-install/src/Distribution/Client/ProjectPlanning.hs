@@ -185,6 +185,7 @@ import Distribution.Solver.Types.PkgConfigDb
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 import Distribution.Solver.Types.SolverPackage
+import qualified Distribution.Solver.Types.ResolverPackage as ResolverPackage
 import Distribution.Solver.Types.SourcePackage
 
 import Distribution.ModuleName
@@ -3300,22 +3301,64 @@ elaborateLibraryWays
 elaborateLibraryWays toolchains libDepGraph lookupFlag =
   LibraryWays
     { pkgsUseSharedLibrary =
-        downwardClosedProperty compilerCanBuildSharedLibs needsSharedLib
+        downwardClosedProperty compilerCanBuildSharedLibs needsSharedLibOrDynFLib
     , pkgsUseProfilingLibrary =
-        downwardClosedProperty compilerCanBuildProfilingLibs needsProfilingLib
+        downwardClosedProperty compilerCanBuildProfilingLibs (const needsProfilingLib)
     , pkgsUseProfilingLibraryShared =
-        downwardClosedProperty compilerCanBuildProfilingSharedLibs needsProfilingLibShared
+        downwardClosedProperty compilerCanBuildProfilingSharedLibs (const needsProfilingLibShared)
     }
   where
     compilerFor :: Stage -> Compiler
     compilerFor s = toolchainCompiler (getStage toolchains s)
+
+    -- A package with a buildable foreign library that links the dyn way of
+    -- its Haskell dependencies ('ForeignLibNativeShared' without
+    -- 'ForeignLibStandalone', Cabal's @withDynFLib@) needs shared libraries
+    -- of those dependencies -- its own library included -- even when the
+    -- compiler would not build them by default. An explicit @shared:@ still
+    -- wins.
+    needsSharedLibOrDynFLib :: Stage -> PerPkgConfigFlag -> Compiler -> PackageId -> Bool
+    needsSharedLibOrDynFLib stage flag compiler pkgid =
+      case perPkgConfigMaybe flag pkgid packageConfigSharedLib of
+        Just v -> v
+        Nothing ->
+          (stage, pkgid) `Set.member` pkgsWithDynForeignLib
+            || needsSharedLib flag compiler pkgid
+
+    pkgsWithDynForeignLib :: Set (Stage, PackageId)
+    pkgsWithDynForeignLib =
+      Set.fromList
+        [ (solverPkgStage, srcpkgPackageId solverPkgSource)
+        | NonSetupLibDepSolverPlanPackage
+            ( ResolverPackage.Configured
+                SolverPackage{solverPkgStage, solverPkgSource, solverPkgFlags, solverPkgStanzas}
+              ) <-
+            Graph.toList libDepGraph
+        , let toolchain = getStage toolchains solverPkgStage
+        , Right (pd, _) <-
+            [ PD.finalizePD
+                solverPkgFlags
+                (enableStanzas solverPkgStanzas)
+                (const Satisfied)
+                (toolchainPlatform toolchain)
+                (compilerInfo (toolchainCompiler toolchain))
+                []
+                (srcpkgDescription solverPkgSource)
+            ]
+        , any dynForeignLib (PD.foreignLibs pd)
+        ]
+      where
+        dynForeignLib flib =
+          PD.buildable (PD.foreignLibBuildInfo flib)
+            && PD.foreignLibType flib == PD.ForeignLibNativeShared
+            && PD.ForeignLibStandalone `notElem` PD.foreignLibOptions flib
 
     -- Seed the closure with every node whose own stage compiler makes it want
     -- the way, take the downward (library-dependency) closure, key the result
     -- by (stage, package), and keep only stages whose compiler can build it.
     downwardClosedProperty
       :: (Compiler -> Bool)
-      -> (PerPkgConfigFlag -> Compiler -> PackageId -> Bool)
+      -> (Stage -> PerPkgConfigFlag -> Compiler -> PackageId -> Bool)
       -> Set (Stage, PackageId)
     downwardClosedProperty capable needs =
       Set.fromList
@@ -3325,7 +3368,8 @@ elaborateLibraryWays toolchains libDepGraph lookupFlag =
           libDepGraph
           [ Graph.nodeKey pkg
           | pkg <- Graph.toList libDepGraph
-          , needs (lookupFlag (solverNodeStage pkg)) (compilerFor (solverNodeStage pkg)) (packageId pkg)
+          , let stage = solverNodeStage pkg
+          , needs stage (lookupFlag stage) (compilerFor stage) (packageId pkg)
           -- TODO: [nice to have] this does not check config consistency, e.g. a
           -- package explicitly turning off profiling but something depending on
           -- it that needs profiling. That needs a separate config
