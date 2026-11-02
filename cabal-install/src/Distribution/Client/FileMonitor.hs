@@ -579,7 +579,7 @@ probeMonitorStateFiles
       Just mtime' -> do
         -- directory modification time changed:
         -- a matching file may have been added or deleted
-        matches <- liftIO $ filter (matchGlobPieces glob) <$> listDirectory (root </> dirName)
+        matches <- liftIO (matchGlobEntries (root </> dirName) glob)
 
         traverse_ probeMergeResult $
           mergeBy
@@ -657,8 +657,11 @@ probeMonitorStateDirs
                 let subdir = root </> dirName </> entry
                  in liftIO $ doesDirectoryExist subdir
             )
-            . maybe id (filter . matchGlobPieces) globMaybe
-            =<< liftIO (listDirectory (root </> dirName))
+            =<< liftIO
+              ( case globMaybe of
+                  Just glob -> matchGlobEntries (root </> dirName) glob
+                  Nothing -> listDirectory (root </> dirName)
+              )
 
         children' <-
           traverse probeMergeResult $
@@ -781,7 +784,7 @@ probeMonitorStateGlobRel
       Just mtime' -> do
         -- directory modification time changed:
         -- a matching file may have been added or deleted
-        matches <- liftIO $ filter (matchGlobPieces glob) <$> listDirectory (root </> dirName)
+        matches <- liftIO (matchGlobEntries (root </> dirName) glob)
 
         traverse_ probeMergeResult $
           mergeBy
@@ -1046,6 +1049,44 @@ buildMonitorStateGlob
         "."
         globPath
 
+-- | The entries of @absdir@ that match @glob@.
+--
+-- A 'GlobPieces' that is a single 'Literal' can match at most one entry, so
+-- stat that one path instead of listing the directory and filtering it.
+--
+-- Listing costs O(entries in @absdir@), and cabal-install builds -- and, when
+-- a directory mtime changes, re-probes -- a monitor for every @packages:@
+-- entry.  A project whose entries are absolute paths into one large directory
+-- therefore rescans that directory once per entry.  Concretely, a generated
+-- cabal.project with 31 @/nix/store/<hash>-<name>-src@ entries lists a
+-- /nix/store of ~362k names 31 times, decoding every name each time.  Page-
+-- cached on a local disk that is merely wasteful; over a virtiofs share (a
+-- Linux builder VM on a macOS host) each getdents64 is a round trip to the
+-- host and the command stops making observable progress at all.
+--
+-- Note this cannot be fixed by laziness: 'listDirectory' reads the whole
+-- directory inside a 'bracket' before returning, and every caller forces the
+-- entire spine anyway (@filter@ feeding @sort@/@filterM@).
+--
+-- Globs that can match more than one entry -- including the @**@ recursive
+-- ones, which have to enumerate regardless -- keep the listing.
+--
+-- One behavioural note.  The listing branch compares the pattern against the
+-- name the filesystem reports, using exact string equality, so on a case-
+-- insensitive or name-normalising filesystem (APFS, HFS+, NTFS) a literal
+-- that differs from the on-disk entry only in case does not match; the stat
+-- accepts it.  That is the behaviour 'Distribution.Simple.Glob' already has
+-- for a literal -- it resolves those through 'doesDirectoryExist' /
+-- 'doesFileExist' via @splitConstantPrefix@ -- so this brings the monitor
+-- into line with the matcher that decided the glob matched in the first
+-- place, rather than away from it.
+matchGlobEntries :: FilePath -> GlobPieces -> IO [FilePath]
+matchGlobEntries absdir [Literal fname] = do
+  exists <- doesPathExist (absdir </> fname)
+  return [fname | exists]
+matchGlobEntries absdir glob =
+  filter (matchGlobPieces glob) <$> listDirectory absdir
+
 buildMonitorStateGlobRel
   :: Maybe MonitorTimestamp
   -- ^ start time of update
@@ -1070,10 +1111,10 @@ buildMonitorStateGlobRel
   dir
   globPath = do
     let absdir = root </> dir
-    dirEntries <- listDirectory absdir
     dirMTime <- getModTime absdir
     case globPath of
       GlobDirRecursive glob -> do
+        dirEntries <- listDirectory absdir
         -- evaluate globPath' over the current directory
         let files = filter (matchGlobPieces glob) dirEntries
         filesStates <-
@@ -1106,8 +1147,8 @@ buildMonitorStateGlobRel
         return $! MonitorStateGlobRecursive glob dirMTime filesStates subdirStates
       GlobDir glob globPath' -> do
         subdirs <-
-          filterM (\subdir -> doesDirectoryExist (absdir </> subdir)) $
-            filter (matchGlobPieces glob) dirEntries
+          filterM (\subdir -> doesDirectoryExist (absdir </> subdir))
+            =<< matchGlobEntries absdir glob
         subdirStates <-
           for (sort subdirs) $ \subdir -> do
             fstate <-
@@ -1122,7 +1163,7 @@ buildMonitorStateGlobRel
             return (subdir, fstate)
         return $! MonitorStateGlobDirs glob globPath' dirMTime subdirStates
       GlobFile glob -> do
-        let files = filter (matchGlobPieces glob) dirEntries
+        files <- matchGlobEntries absdir glob
         filesStates <-
           for (sort files) $ \file -> do
             fstate <-
