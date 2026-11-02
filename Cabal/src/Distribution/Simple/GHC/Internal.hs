@@ -86,7 +86,7 @@ import Distribution.Utils.NubList (NubListR, toNubListR)
 import Distribution.Utils.Path
 import Distribution.Verbosity
 import Language.Haskell.Extension
-import System.Directory (listDirectory)
+import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getEnv)
 import System.FilePath
   ( takeDirectory
@@ -674,11 +674,25 @@ getHaskellObjects _implInfo lib lbi clbi pref wanted_obj_ext allow_split_objs
             , '.' : wanted_obj_ext == obj_ext
             ]
       return objs
-  | otherwise =
-      return
-        [ pref </> makeRelativePathEx (ModuleName.toFilePath x <.> wanted_obj_ext)
-        | x <- allLibModules lib clbi
-        ]
+  | otherwise = do
+      -- A `signatures:` module carries no code of its own.  Once the
+      -- component is INSTANTIATED, GHC fills the signature in from the
+      -- implementing unit and, on most backends, still emits a small object
+      -- for it which belongs in the archive.  The JS backend emits nothing,
+      -- and `ar` then dies on a member that was never written:
+      --
+      --   [1 of 2] Compiling Module[sig] ( .../autogen/Module.hsig, .../Module.o )
+      --   llvm-ar: error: .../Module.o: No such file or directory
+      --
+      -- Whether a filled-in signature has an object is a backend detail, so
+      -- ask the file system instead of assuming.  ONLY signature modules are
+      -- treated this way: a missing object for any ordinary module is a real
+      -- failure, and must keep reaching `ar` as one.
+      let objOf x = pref </> makeRelativePathEx (ModuleName.toFilePath x <.> wanted_obj_ext)
+          keep x
+            | x `elem` signatures lib = doesFileExist (i (objOf x))
+            | otherwise = return True
+      map objOf <$> filterM keep (allLibModules lib clbi)
   where
     i = interpretSymbolicPathLBI lbi
 
