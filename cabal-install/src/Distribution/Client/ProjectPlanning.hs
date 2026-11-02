@@ -249,6 +249,8 @@ import qualified Distribution.Compat.Graph as Graph
 import Control.Exception (assert)
 import Control.Monad (mapM_, sequence)
 import Control.Monad.IO.Class (liftIO)
+import qualified System.Environment as Env
+import qualified System.IO.Unsafe as Unsafe
 import Control.Monad.State as State (State, execState, runState, state)
 import Data.Foldable (fold)
 import Data.Functor ((<&>))
@@ -5100,7 +5102,16 @@ setupHsBuildFlags par_strat elab _ common =
     { buildCommonFlags = common
     , buildProgramPaths = mempty -- unused, set at configure time
     , buildProgramArgs = mempty -- unused, set at configure time
-    , buildNumJobs = mempty -- TODO: [nice to have] sometimes want to use toFlag (Just numBuildJobs),
+    -- haskell.nix: read `HASKELLNIX_BUILD_NUM_JOBS` from the env so
+    -- slice builders can pass `-jN` through to `Setup build`.
+    -- Build-phase flag, so it doesn't affect `pkgHashConfigureOptions`
+    -- and the slice's UnitId stays stable.
+    , buildNumJobs = Unsafe.unsafePerformIO $ do
+        mv <- Env.lookupEnv "HASKELLNIX_BUILD_NUM_JOBS"
+        case mv of
+          Just s | [(n, "")] <- (reads s :: [(Int, String)]) ->
+            pure (Cabal.toFlag (Just n))
+          _ -> pure mempty
     , buildUseSemaphore =
         if setupCliVersion (elabSetupScriptCliVersion elab) >= mkVersion [3, 11, 0, 0]
           then -- Cabal 3.11 is the first version that supports parallelism semaphores
