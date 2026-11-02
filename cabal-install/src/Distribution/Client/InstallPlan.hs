@@ -761,10 +761,21 @@ completed plan (Processing processingSet completedSet failedSet) pkgid =
   where
     completedSet' = Set.insert pkgid completedSet
 
-    -- each direct reverse dep where all direct deps are completed
+    -- each direct reverse dep where all direct deps are completed.
+    --
+    -- Skip reverse deps that are already Installed / PreExisting —
+    -- those aren't in `processingSet`, never will be, and there's
+    -- nothing to "mark ready" for them.  When a plan composes
+    -- pre-installed units (e.g. haskell.nix v2 slicing pre-populates
+    -- the cabal store with sliced deps), the re-solve may produce a
+    -- mixed Installed+Configured plan where a Configured package
+    -- reverse-depends on an already-Installed one; the default
+    -- filter would pull the Installed pkg into `newlyReady` and then
+    -- blow up in `asReadyPackage`.
     newlyReady =
       [ dep
       | dep <- revDirectDeps plan pkgid
+      , case dep of Configured{} -> True; _ -> False
       , all
           ((`Set.member` completedSet') . nodeKey)
           (directDeps plan (nodeKey dep))
