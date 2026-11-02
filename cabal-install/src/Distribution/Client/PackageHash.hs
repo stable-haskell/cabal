@@ -64,6 +64,8 @@ import Distribution.Types.PkgconfigVersion (PkgconfigVersion)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import System.Environment (lookupEnv)
+import System.IO.Unsafe (unsafePerformIO)
 
 -------------------------------
 -- Calculating package hashes
@@ -77,9 +79,22 @@ import qualified Data.Set as Set
 -- See 'hashedInstalledPackageIdLong' vs 'hashedInstalledPackageIdShort'.
 hashedInstalledPackageId :: PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageId
-  | buildOS == Windows = hashedInstalledPackageIdShort
-  | buildOS == OSX = hashedInstalledPackageIdLong
+  | os == Windows = hashedInstalledPackageIdShort
+  | os == OSX = hashedInstalledPackageIdLong
   | otherwise = hashedInstalledPackageIdLong
+  where
+    os = effectiveInstalledPackageIdOS
+
+-- | OS used to pick the unit-id format.  Defaults to 'buildOS' (the
+-- platform cabal-install is running on).  haskell.nix overrides this
+-- via the @CABAL_INSTALLED_PACKAGE_ID_OS@ env var so that plan-nix
+-- unit-ids agree with slice-build unit-ids regardless of where the
+-- planner happens to execute.
+{-# NOINLINE effectiveInstalledPackageIdOS #-}
+effectiveInstalledPackageIdOS :: OS
+effectiveInstalledPackageIdOS = unsafePerformIO $ do
+  m <- lookupEnv "CABAL_INSTALLED_PACKAGE_ID_OS"
+  pure $ fromMaybe buildOS (m >>= simpleParsec)
 
 -- | Calculate a 'InstalledPackageId' for a package using our nix-style
 -- inputs hashing method.
