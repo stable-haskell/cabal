@@ -9,6 +9,7 @@ import Prelude ()
 import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy.Char8 as BS
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Distribution.Backpack
@@ -120,13 +121,28 @@ linkOrLoadComponent
         | src <- extraSources
         ]
 
+      -- `withFullyStaticExe` is `executable-static: True`.  A Stable Haskell
+      -- GHC has a `-fully-static` flag for that, which also links its own
+      -- runtime dependencies statically; upstream GHC does not, and only
+      -- gets the linker's `-static`.  The fork brands its `ghc --info` with
+      -- `Edition`, and upstream emits no such field.
+      ghcHasFullyStatic =
+        Map.lookup "Edition" (compilerProperties (compiler lbi))
+          == Just "Stable Haskell"
+
       -- TODO: Shouldn't we use withStaticLib for libraries and something else
       -- for foreign libs in the three cases where we use `withFullyStaticExe` below?
       linkerOpts rpaths =
         mempty
-          { ghcOptLinkOptions =
+          { ghcOptExtraDefault =
+              [ "-fully-static"
+              | withFullyStaticExe lbi
+              , ghcHasFullyStatic
+              ]
+          , ghcOptLinkOptions =
               [ "-static"
               | withFullyStaticExe lbi
+              , not ghcHasFullyStatic
               ]
                 -- Pass extra `ld-options` given
                 -- through to GHC's linker.
