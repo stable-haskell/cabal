@@ -258,7 +258,13 @@ toUnix s = let tmp = normalise s
                parts = FilePath.splitDirectories rest
            in  l ++ intercalate "/" parts
 #else
-toUnix s = intercalate "/" $ FilePath.splitDirectories s
+-- A POSIX path is already a Unix path. Splitting and rejoining it is not
+-- the identity: 'FilePath.splitDirectories' keeps the root as its own
+-- component, so @"/build/pkg"@ comes back as @"//build/pkg"@. That leaks
+-- into the script's @$srcdir@ and every @-I$srcdir/...@ it derives, and a
+-- compiler wrapper that only admits include paths under a known prefix
+-- (nixpkgs' cc-wrapper: the store and @$NIX_BUILD_TOP@) drops them.
+toUnix s = s
 #endif
 
 badAutoconfCharacters :: [(Char, String)]
