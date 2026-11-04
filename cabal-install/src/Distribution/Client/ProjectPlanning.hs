@@ -905,9 +905,10 @@ See #9840 for more information about the problems surrounding the lossy
 -- dependencies of executables and setup scripts.
 --
 -- | Change Configured packages whose unit is already present in the dist
--- store (per its unit receipt) to Installed.  Only non-local packages are
--- eligible (a local directory package always builds from its source dir),
--- and only when every dependency is itself pre-existing, installed, or
+-- store (per its unit receipt) to Installed.  Units built in place are not
+-- eligible (they build from their source dir and never reach the store); a
+-- local package installed into the store under @inplace-builds: False@ is,
+-- like any other store unit.  And only when every dependency is itself pre-existing, installed, or
 -- being improved — computed bottom-up over the plan, mirroring what the
 -- old store-entry-based improvement pass did for the flat cabal store.
 improveInstallPlanWithStoreUnits
@@ -923,14 +924,11 @@ improveInstallPlanWithStoreUnits storeUnits installPlan =
       foldl' step Set.empty (InstallPlan.reverseTopologicalOrder installPlan)
     step acc (InstallPlan.Configured elab)
       | hasReceipt elab
-      , not (isLocal elab)
+      , not (isInplaceBuildStyle (elabBuildStyle elab))
       , all (depOk acc) (Graph.nodeNeighbors elab) =
           Set.insert (Graph.nodeKey elab) acc
     step acc _ = acc
     hasReceipt elab = WithMachine (elabMachine elab) (elabUnitId elab) `Set.member` storeUnits
-    isLocal elab = case elabPkgSourceLocation elab of
-      LocalUnpackedPackage _ -> True
-      _ -> False
     depOk acc key =
       key `Set.member` acc
         || case InstallPlan.lookup installPlan key of
