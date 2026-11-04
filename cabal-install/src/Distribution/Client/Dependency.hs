@@ -496,14 +496,16 @@ dependOnWiredIns compiler params =
     -- with. That is the right default even with --allow-boot-library-installs:
     -- reinstalling ghc or ghc-internal under a compiler gives a broken
     -- toolchain. The one legitimate exception is a project that provides such
-    -- a package itself, as a target: GHC's own source tree building its
-    -- libraries with the stage1 compiler. That package will be built from the
-    -- project's source whatever the pin says, so with
-    -- --allow-boot-library-installs the pin would only make the plan
-    -- unsolvable. Dependencies that are not targets stay pinned.
-    rebuiltFromSource pkgName =
+    -- a package itself: GHC's own source tree building its libraries with the
+    -- stage1 compiler. A stage1 compiler reports the wired-in unit ids of the
+    -- libraries it was itself linked against (the bootstrap compiler's), not
+    -- of the ones it builds, so under --allow-boot-library-installs the pin
+    -- can only make the plan unsolvable. That holds whether the package is a
+    -- target of this plan or was built earlier and arrives installed, as it
+    -- does when each library is planned on its own (haskell.nix slices), so
+    -- --allow-boot-library-installs drops the pins altogether.
+    rebuiltFromSource _pkgName =
       asBool (depResolverAllowBootLibInstalls params)
-        && pkgName `Set.member` depResolverTargets params
 
 -- | Some packages are specific to a given compiler version and should never be
 -- reinstalled.
