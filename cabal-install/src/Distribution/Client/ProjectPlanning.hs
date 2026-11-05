@@ -839,21 +839,23 @@ machineStanzaConfig Build pkgconf =
 -- indistinguishable keys. It deliberately ignores the 'ProgramDb', so the same
 -- compiler named two ways (@ghc@ and its absolute path) compares equal.
 --
--- The compiler's own target triple (GHC's @Target platform@) is compared as
--- well. Cabal's 'Platform' has no libc or ABI component, so a compiler
--- targeting @x86_64-unknown-linux-musl@ and one targeting
--- @x86_64-unknown-linux@ have the same 'Platform' even though their outputs
--- cannot be mixed. Collapsing them made build tools host units, solved
--- against the host compiler's package db, which does not have their
--- dependencies.
+-- GHC's @Target platform@ and @cross compiling@ fields are compared as well.
+-- Cabal's 'Platform' has no libc or ABI component, and GHC drops the libc
+-- from its target triple too, so a compiler for x86_64 Linux musl and one for
+-- x86_64 Linux glibc have the same 'Platform' and the same @Target platform@
+-- (@x86_64-unknown-linux@) even though their outputs cannot be mixed. Only
+-- @cross compiling@ tells a @-target@ cross compiler from the native build
+-- compiler. Collapsing them made build tools host units, solved against the
+-- host compiler's package db, which does not have their dependencies.
 sameCompiler :: Toolchain -> Toolchain -> Bool
 sameCompiler a b =
   compilerId (toolchainCompiler a) == compilerId (toolchainCompiler b)
     && compilerAbiTag (toolchainCompiler a) == compilerAbiTag (toolchainCompiler b)
     && toolchainPlatform a == toolchainPlatform b
-    && targetTriple a == targetTriple b
+    && ghcInfo "Target platform" a == ghcInfo "Target platform" b
+    && ghcInfo "cross compiling" a == ghcInfo "cross compiling" b
   where
-    targetTriple = Map.lookup "Target platform" . compilerProperties . toolchainCompiler
+    ghcInfo key = Map.lookup key . compilerProperties . toolchainCompiler
 
 {- Note [Caching the result of configuring the compiler]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
