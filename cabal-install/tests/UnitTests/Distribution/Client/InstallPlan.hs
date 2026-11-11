@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 module UnitTests.Distribution.Client.InstallPlan (tests) where
 
 import Distribution.Client.Compat.Prelude
@@ -143,7 +141,7 @@ isReversePartialTopologicalOrder g vs =
 
 allConfiguredPackages
   :: HasUnitId srcpkg
-  => GenericInstallPlan ipkg srcpkg
+  => GenericInstallPlan k ipkg srcpkg
   -> Set UnitId
 allConfiguredPackages plan =
   Set.fromList
@@ -157,7 +155,7 @@ allConfiguredPackages plan =
 
 data TestInstallPlan
   = TestInstallPlan
-      (GenericInstallPlan TestPkg TestPkg)
+      (GenericInstallPlan UnitId TestPkg TestPkg)
       Graph
       (UnitId -> Vertex)
       (Vertex -> UnitId)
@@ -168,8 +166,7 @@ instance Show TestInstallPlan where
 data TestPkg = TestPkg PackageId UnitId [UnitId]
   deriving (Eq, Show)
 
-instance IsNode TestPkg where
-  type Key TestPkg = UnitId
+instance IsNode UnitId TestPkg where
   nodeKey (TestPkg _ ipkgid _) = ipkgid
   nodeNeighbors (TestPkg _ _ deps) = deps
 
@@ -223,16 +220,16 @@ arbitraryTestInstallPlan = do
 -- It takes generators for installed and source packages and the chance that
 -- each package is installed (for those packages with no prerequisites).
 arbitraryInstallPlan
-  :: forall ipkg srcpkg
-   . ( IsGraph ipkg srcpkg
-     , Show (Key ipkg)
-     , Pretty (Key ipkg)
+  :: forall k ipkg srcpkg
+   . ( IsGraph k ipkg srcpkg
+     , Show k
+     , Pretty k
      )
   => (Vertex -> [Vertex] -> Gen ipkg)
   -> (Vertex -> [Vertex] -> Gen srcpkg)
   -> Float
   -> Graph
-  -> Gen (InstallPlan.GenericInstallPlan ipkg srcpkg)
+  -> Gen (InstallPlan.GenericInstallPlan k ipkg srcpkg)
 arbitraryInstallPlan mkIPkg mkSrcPkg ipkgProportion graph = do
   (ipkgvs, srcpkgvs) <-
     bimap (map fst) (map fst) . partition snd

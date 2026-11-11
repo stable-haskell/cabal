@@ -13,6 +13,7 @@ module Distribution.Client.Utils.Newtypes
 where
 
 import Distribution.Client.Compat.Prelude
+import Prelude ()
 import Distribution.Client.Targets (UserConstraint)
 import Distribution.Client.Types.AllowNewer (AllowNewer (..), AllowOlder (..))
 import Distribution.Compat.CharParsing

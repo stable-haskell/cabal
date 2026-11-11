@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      :  Distribution.Solver.Types.PkgConfigDb
 -- Copyright   :  (c) Iñaki García Etxebarria 2016
@@ -20,7 +21,9 @@ import Distribution.Solver.Compat.Prelude
 import Prelude ()
 
 import           Control.Exception        (handle)
+#ifndef __MHS__
 import           Control.Monad            (mapM)
+#endif
 import           Data.ByteString          (ByteString)
 import qualified Data.ByteString.Lazy     as LBS
 import qualified Data.Map                 as M
@@ -39,6 +42,9 @@ import Distribution.Simple.Program.Run
 import Distribution.Simple.Utils                (info)
 import Distribution.Types.PkgconfigVersion
 import Distribution.Types.PkgconfigVersionRange
+#ifdef __MHS__
+import Distribution.Utils.Generic               (validateUTF8)
+#endif
 import Distribution.Verbosity                   (Verbosity)
 
 -- | The list of packages installed in the system visible to
@@ -86,9 +92,15 @@ readPkgConfigDb verbosity progdb = handle ioErrorHandler $ do
               -- in multi-byte UTF-8 sequences.
               . map ((\bsname ->
                        let sbsname = LBS.toStrict bsname
+#ifdef __MHS__
+                       in case validateUTF8 sbsname of
+                            Just _ -> Left (T.unpack (decodeUtf8LenientCompat sbsname))
+                            Nothing -> Right (T.unpack (decodeUtf8LenientCompat sbsname))) . LBS.takeWhile (not . isAsciiSpace))
+#else
                        in case T.decodeUtf8' sbsname of
                             Left _ -> Left (T.unpack (decodeUtf8LenientCompat sbsname))
                             Right name -> Right (T.unpack name)) . LBS.takeWhile (not . isAsciiSpace))
+#endif
               $ pkgList
         unless (null failedPkgNames) $
           info verbosity ("Some pkg-config packages have names containing invalid unicode: " ++ intercalate ", " failedPkgNames)

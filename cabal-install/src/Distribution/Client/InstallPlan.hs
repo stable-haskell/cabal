@@ -1,4 +1,6 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- |
 -- Module      :  Distribution.Client.InstallPlan
@@ -94,6 +96,7 @@ import Distribution.Package
   ( HasMungedPackageId (..)
   , HasUnitId (..)
   , Package (..)
+  , UnitId
   )
 import Distribution.Pretty (defaultStyle)
 import Distribution.Solver.Types.SolverPackage
@@ -177,11 +180,10 @@ data GenericPlanPackage ipkg srcpkg
   deriving (Eq, Show, Generic)
 
 -- | @ipkg@ and @srcpkg@ are the two node types of a single graph: both are
--- 'IsNode's sharing a common key type. The shared key is spelled @'Key' ipkg@.
-type IsGraph ipkg srcpkg = (IsNode ipkg, IsNode srcpkg, Key ipkg ~ Key srcpkg)
+-- 'IsNode's sharing a common key type @k@.
+type IsGraph k ipkg srcpkg = (IsNode k ipkg, IsNode k srcpkg)
 
-instance IsGraph ipkg srcpkg => IsNode (GenericPlanPackage ipkg srcpkg) where
-  type Key (GenericPlanPackage ipkg srcpkg) = Key ipkg
+instance IsGraph k ipkg srcpkg => IsNode k (GenericPlanPackage ipkg srcpkg) where
   nodeKey (PreExisting ipkg) = nodeKey ipkg
   nodeKey (Configured spkg) = nodeKey spkg
   nodeKey (Installed spkg) = nodeKey spkg
@@ -225,7 +227,7 @@ instance
   configuredId (Configured spkg) = configuredId spkg
   configuredId (Installed spkg) = configuredId spkg
 
-displayGenericPlanPackage :: (IsGraph ipkg srcpkg, Pretty (Key ipkg)) => GenericPlanPackage ipkg srcpkg -> String
+displayGenericPlanPackage :: (IsGraph k ipkg srcpkg, Pretty k) => GenericPlanPackage ipkg srcpkg -> String
 displayGenericPlanPackage (PreExisting pkg) = "PreExisting " ++ prettyShow (nodeKey pkg)
 displayGenericPlanPackage (Configured pkg) = "Configured " ++ prettyShow (nodeKey pkg)
 displayGenericPlanPackage (Installed pkg) = "Installed " ++ prettyShow (nodeKey pkg)
@@ -243,7 +245,7 @@ foldPlanPackage f _ (PreExisting ipkg) = f ipkg
 foldPlanPackage _ g (Configured srcpkg) = g srcpkg
 foldPlanPackage _ g (Installed srcpkg) = g srcpkg
 
-depends :: IsNode a => a -> [Key a]
+depends :: IsNode k a => a -> [k]
 depends = nodeNeighbors
 
 type PlanPackage =
@@ -251,26 +253,27 @@ type PlanPackage =
     InstalledPackageInfo
     (ConfiguredPackage UnresolvedPkgLoc)
 
-data GenericInstallPlan ipkg srcpkg = GenericInstallPlan
-  { planGraph :: !(Graph (GenericPlanPackage ipkg srcpkg))
+data GenericInstallPlan k ipkg srcpkg = GenericInstallPlan
+  { planGraph :: !(Graph k (GenericPlanPackage ipkg srcpkg))
   , planIndepGoals :: !IndependentGoals
   }
 
 -- | 'GenericInstallPlan' specialised to most commonly used types.
 type InstallPlan =
   GenericInstallPlan
+    UnitId
     InstalledPackageInfo
     (ConfiguredPackage UnresolvedPkgLoc)
 
 -- | Smart constructor that deals with caching the 'Graph' representation.
 mkInstallPlan
-  :: ( IsGraph ipkg srcpkg
-     , Pretty (Key ipkg)
+  :: ( IsGraph k ipkg srcpkg
+     , Pretty k
      )
   => String
-  -> Graph (GenericPlanPackage ipkg srcpkg)
+  -> Graph k (GenericPlanPackage ipkg srcpkg)
   -> IndependentGoals
-  -> GenericInstallPlan ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
 mkInstallPlan loc graph indepGoals =
   assert
     (valid loc graph)
@@ -287,24 +290,25 @@ internalError loc msg =
       ++ if null msg then "" else ": " ++ msg
 
 instance
-  (Structured ipkg, Structured srcpkg)
-  => Structured (GenericInstallPlan ipkg srcpkg)
+  (Structured k, Structured ipkg, Structured srcpkg)
+  => Structured (GenericInstallPlan k ipkg srcpkg)
   where
   structure p =
     Nominal
       (typeRep p)
       0
       "GenericInstallPlan"
-      [ structure (Proxy :: Proxy ipkg)
+      [ structure (Proxy :: Proxy k)
+      , structure (Proxy :: Proxy ipkg)
       , structure (Proxy :: Proxy srcpkg)
       ]
 
 instance
-  ( IsGraph ipkg srcpkg
+  ( IsGraph k ipkg srcpkg
   , Binary ipkg
   , Binary srcpkg
   )
-  => Binary (GenericInstallPlan ipkg srcpkg)
+  => Binary (GenericInstallPlan k ipkg srcpkg)
   where
   put
     GenericInstallPlan
@@ -332,24 +336,28 @@ showPlanGraph graph =
     vcat (map dispPlanPackage graph)
   where
     dispPlanPackage (ShowPlanNode herald neighbours) =
+#ifdef __MHS__
+      sep [herald, nest 2 (vcat neighbours)]
+#else
       hang herald 2 (vcat neighbours)
+#endif
 
 -- | Generic way to show a 'GenericInstallPlan' which elicits quite a lot of information
 showInstallPlan_gen
-  :: forall ipkg srcpkg
+  :: forall k ipkg srcpkg
    . (GenericPlanPackage ipkg srcpkg -> ShowPlanNode)
-  -> GenericInstallPlan ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
   -> String
 showInstallPlan_gen toShow = showPlanGraph . fmap toShow . Foldable.toList . planGraph
 
 showInstallPlan
-  :: forall ipkg srcpkg
-   . ( IsGraph ipkg srcpkg
+  :: forall k ipkg srcpkg
+   . ( IsGraph k ipkg srcpkg
      , Package ipkg
      , Package srcpkg
-     , Pretty (Key ipkg)
+     , Pretty k
      )
-  => GenericInstallPlan ipkg srcpkg
+  => GenericInstallPlan k ipkg srcpkg
   -> String
 showInstallPlan = showInstallPlan_gen toShow
   where
@@ -371,33 +379,33 @@ showPlanPackageTag (Installed _) = "Installed"
 
 -- | Build an installation plan from a valid set of resolved packages.
 new
-  :: ( IsGraph ipkg srcpkg
-     , Pretty (Key ipkg)
+  :: ( IsGraph k ipkg srcpkg
+     , Pretty k
      )
   => IndependentGoals
-  -> Graph (GenericPlanPackage ipkg srcpkg)
-  -> GenericInstallPlan ipkg srcpkg
+  -> Graph k (GenericPlanPackage ipkg srcpkg)
+  -> GenericInstallPlan k ipkg srcpkg
 new indepGoals graph = mkInstallPlan "new" graph indepGoals
 
 toGraph
-  :: GenericInstallPlan ipkg srcpkg
-  -> Graph (GenericPlanPackage ipkg srcpkg)
+  :: GenericInstallPlan k ipkg srcpkg
+  -> Graph k (GenericPlanPackage ipkg srcpkg)
 toGraph = planGraph
 
 toList
-  :: GenericInstallPlan ipkg srcpkg
+  :: GenericInstallPlan k ipkg srcpkg
   -> [GenericPlanPackage ipkg srcpkg]
 toList = Foldable.toList . planGraph
 
 toMap
-  :: GenericInstallPlan ipkg srcpkg
-  -> Map (Key ipkg) (GenericPlanPackage ipkg srcpkg)
+  :: GenericInstallPlan k ipkg srcpkg
+  -> Map k (GenericPlanPackage ipkg srcpkg)
 toMap = Graph.toMap . planGraph
 
-keys :: GenericInstallPlan ipkg srcpkg -> [Key ipkg]
+keys :: GenericInstallPlan k ipkg srcpkg -> [k]
 keys = Graph.keys . planGraph
 
-keysSet :: GenericInstallPlan ipkg srcpkg -> Set (Key ipkg)
+keysSet :: GenericInstallPlan k ipkg srcpkg -> Set k
 keysSet = Graph.keysSet . planGraph
 
 -- | Remove packages from the install plan. This will result in an
@@ -406,13 +414,13 @@ keysSet = Graph.keysSet . planGraph
 -- the dependencies of a package or set of packages without actually
 -- installing the package itself, as when doing development.
 remove
-  :: ( IsGraph ipkg srcpkg
-     , Pretty (Key ipkg)
-     , Show (Key ipkg)
+  :: ( IsGraph k ipkg srcpkg
+     , Pretty k
+     , Show k
      )
   => (GenericPlanPackage ipkg srcpkg -> Bool)
-  -> GenericInstallPlan ipkg srcpkg
-  -> GenericInstallPlan ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
 remove shouldRemove plan =
   mkInstallPlan "remove" newGraph (planIndepGoals plan)
   where
@@ -426,10 +434,10 @@ remove shouldRemove plan =
 -- To preserve invariants, the package must have all of its dependencies
 -- already installed too (that is 'PreExisting' or 'Installed').
 installed
-  :: IsGraph ipkg srcpkg
+  :: IsGraph k ipkg srcpkg
   => (srcpkg -> Bool)
-  -> GenericInstallPlan ipkg srcpkg
-  -> GenericInstallPlan ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
 installed shouldBeInstalled installPlan =
   foldl'
     markInstalled
@@ -447,9 +455,9 @@ installed shouldBeInstalled installPlan =
 
 -- | Lookup a package in the plan.
 lookup
-  :: IsGraph ipkg srcpkg
-  => GenericInstallPlan ipkg srcpkg
-  -> Key ipkg
+  :: IsGraph k ipkg srcpkg
+  => GenericInstallPlan k ipkg srcpkg
+  -> k
   -> Maybe (GenericPlanPackage ipkg srcpkg)
 lookup plan pkgid = Graph.lookup pkgid (planGraph plan)
 
@@ -457,8 +465,8 @@ lookup plan pkgid = Graph.lookup pkgid (planGraph plan)
 --
 -- Note that the package must exist in the plan or it is an error.
 directDeps
-  :: GenericInstallPlan ipkg srcpkg
-  -> Key ipkg
+  :: GenericInstallPlan k ipkg srcpkg
+  -> k
   -> [GenericPlanPackage ipkg srcpkg]
 directDeps plan pkgid =
   case Graph.neighbors (planGraph plan) pkgid of
@@ -469,8 +477,8 @@ directDeps plan pkgid =
 --
 -- Note that the package must exist in the plan or it is an error.
 revDirectDeps
-  :: GenericInstallPlan ipkg srcpkg
-  -> Key ipkg
+  :: GenericInstallPlan k ipkg srcpkg
+  -> k
   -> [GenericPlanPackage ipkg srcpkg]
 revDirectDeps plan pkgid =
   case Graph.revNeighbors (planGraph plan) pkgid of
@@ -485,15 +493,15 @@ revDirectDeps plan pkgid =
 -- and 'executionOrder' produce reverse topological orderings of the package
 -- dependency graph, it is not necessarily exactly the same order.
 reverseTopologicalOrder
-  :: GenericInstallPlan ipkg srcpkg
+  :: GenericInstallPlan k ipkg srcpkg
   -> [GenericPlanPackage ipkg srcpkg]
 reverseTopologicalOrder plan = Graph.revTopSort (planGraph plan)
 
 -- | Return the packages in the plan that are direct or indirect dependencies of
 -- the given packages.
 dependencyClosure
-  :: GenericInstallPlan ipkg srcpkg
-  -> [Key ipkg]
+  :: GenericInstallPlan k ipkg srcpkg
+  -> [k]
   -> [GenericPlanPackage ipkg srcpkg]
 dependencyClosure plan =
   fromMaybe []
@@ -502,8 +510,8 @@ dependencyClosure plan =
 -- | Return the packages in the plan that depend directly or indirectly on the
 -- given packages.
 reverseDependencyClosure
-  :: GenericInstallPlan ipkg srcpkg
-  -> [Key ipkg]
+  :: GenericInstallPlan k ipkg srcpkg
+  -> [k]
   -> [GenericPlanPackage ipkg srcpkg]
 reverseDependencyClosure plan =
   fromMaybe []
@@ -523,16 +531,16 @@ reverseDependencyClosure plan =
 -- because that's not enough information.
 
 fromSolverInstallPlan
-  :: ( IsGraph ipkg srcpkg
-     , Pretty (Key ipkg)
-     , Show (Key ipkg)
+  :: ( IsGraph k ipkg srcpkg
+     , Pretty k
+     , Show k
      )
   => ( (SolverId -> [GenericPlanPackage ipkg srcpkg])
        -> SolverInstallPlan.SolverPlanPackage
        -> [GenericPlanPackage ipkg srcpkg]
      )
   -> SolverInstallPlan
-  -> GenericInstallPlan ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
 fromSolverInstallPlan f plan =
   mkInstallPlan
     "fromSolverInstallPlan"
@@ -566,16 +574,16 @@ fromSolverInstallPlan f plan =
 -- by the reverse top-sort (we assume the graph is not broken).
 
 fromSolverInstallPlanWithProgress
-  :: ( IsGraph ipkg srcpkg
-     , Pretty (Key ipkg)
-     , Show (Key ipkg)
+  :: ( IsGraph k ipkg srcpkg
+     , Pretty k
+     , Show k
      )
   => ( (SolverId -> [GenericPlanPackage ipkg srcpkg])
        -> SolverInstallPlan.SolverPlanPackage
        -> LogProgress [GenericPlanPackage ipkg srcpkg]
      )
   -> SolverInstallPlan
-  -> LogProgress (GenericInstallPlan ipkg srcpkg)
+  -> LogProgress (GenericInstallPlan k ipkg srcpkg)
 fromSolverInstallPlanWithProgress f plan = do
   (_, _, pkgs'') <-
     foldM
@@ -704,9 +712,9 @@ data Processing key = Processing !(Set key) !(Set key) !(Set key)
 -- all the packages that are ready will now be processed and so we can consider
 -- them to be in the processing state.
 ready
-  :: IsGraph ipkg srcpkg
-  => GenericInstallPlan ipkg srcpkg
-  -> ([GenericReadyPackage srcpkg], Processing (Key ipkg))
+  :: IsGraph k ipkg srcpkg
+  => GenericInstallPlan k ipkg srcpkg
+  -> ([GenericReadyPackage srcpkg], Processing k)
 ready plan =
   assert (processingInvariant plan processing) (readyPackages, processing)
   where
@@ -730,12 +738,12 @@ isInstalled _ = False
 -- and return any packages that are newly in the processing state (ie ready to
 -- process), along with the updated 'Processing' state.
 completed
-  :: forall ipkg srcpkg
-   . (IsGraph ipkg srcpkg, Pretty (Key ipkg))
-  => GenericInstallPlan ipkg srcpkg
-  -> Processing (Key ipkg)
-  -> Key ipkg
-  -> ([GenericReadyPackage srcpkg], Processing (Key ipkg))
+  :: forall k ipkg srcpkg
+   . (IsGraph k ipkg srcpkg, Pretty k)
+  => GenericInstallPlan k ipkg srcpkg
+  -> Processing k
+  -> k
+  -> ([GenericReadyPackage srcpkg], Processing k)
 completed plan (Processing processingSet completedSet failedSet) pkgid =
   assert (pkgid `Set.member` processingSet) $
     assert
@@ -767,11 +775,11 @@ completed plan (Processing processingSet completedSet failedSet) pkgid =
     asReadyPackage pkg = internalError "completed" $ "not in configured state: " ++ displayGenericPlanPackage pkg
 
 failed
-  :: (IsGraph ipkg srcpkg, Pretty (Key ipkg))
-  => GenericInstallPlan ipkg srcpkg
-  -> Processing (Key ipkg)
-  -> Key ipkg
-  -> ([srcpkg], Processing (Key ipkg))
+  :: (IsGraph k ipkg srcpkg, Pretty k)
+  => GenericInstallPlan k ipkg srcpkg
+  -> Processing k
+  -> k
+  -> ([srcpkg], Processing k)
 failed plan (Processing processingSet completedSet failedSet) pkgid =
   assert (pkgid `Set.member` processingSet) $
     assert (all (`Set.notMember` processingSet) (drop 1 newlyFailedIds)) $
@@ -797,9 +805,9 @@ failed plan (Processing processingSet completedSet failedSet) pkgid =
     asConfiguredPackage pkg = internalError "failed" $ "not in configured state: " ++ displayGenericPlanPackage pkg
 
 processingInvariant
-  :: IsGraph ipkg srcpkg
-  => GenericInstallPlan ipkg srcpkg
-  -> Processing (Key ipkg)
+  :: IsGraph k ipkg srcpkg
+  => GenericInstallPlan k ipkg srcpkg
+  -> Processing k
   -> Bool
 processingInvariant plan (Processing processingSet completedSet failedSet) =
   -- All the packages in the three sets are actually in the graph
@@ -878,8 +886,8 @@ processingInvariant plan (Processing processingSet completedSet failedSet) =
 -- source packages in the dependency graph, albeit not necessarily exactly the
 -- same ordering as that produced by 'reverseTopologicalOrder'.
 executionOrder
-  :: (IsGraph ipkg srcpkg, Pretty (Key ipkg))
-  => GenericInstallPlan ipkg srcpkg
+  :: (IsGraph k ipkg srcpkg, Pretty k)
+  => GenericInstallPlan k ipkg srcpkg
   -> [GenericReadyPackage srcpkg]
 executionOrder plan =
   let (newpkgs, processing) = ready plan
@@ -904,7 +912,7 @@ type BuildOutcomes key failure result = Map key (Either failure result)
 
 -- | Lookup the build result for a single package.
 lookupBuildOutcome
-  :: (IsNode pkg, Key pkg ~ key)
+  :: IsNode key pkg
   => pkg
   -> BuildOutcomes key failure result
   -> Maybe (Either failure result)
@@ -925,31 +933,30 @@ lookupBuildOutcome = Map.lookup . nodeKey
 -- possible after a failure then there may be packages which are skipped and
 -- these will have no 'BuildOutcome'.
 execute
-  :: forall m ipkg srcpkg result failure
-   . ( IsGraph ipkg srcpkg
+  :: forall m k ipkg srcpkg result failure
+   . ( IsGraph k ipkg srcpkg
      , Monad m
-     , Pretty (Key srcpkg)
+     , Pretty k
      )
-  => JobControl m (Key ipkg, Either failure result)
+  => JobControl m (k, Either failure result)
   -> Bool
   -- ^ Keep going after failure
   -> (srcpkg -> failure)
   -- ^ Value for dependents of failed packages
-  -> GenericInstallPlan ipkg srcpkg
+  -> GenericInstallPlan k ipkg srcpkg
   -> (GenericReadyPackage srcpkg -> m (Either failure result))
-  -> m (BuildOutcomes (Key ipkg) failure result)
+  -> m (BuildOutcomes k failure result)
 execute jobCtl keepGoing depFailure plan installPkg =
   let (newpkgs, processing) = ready plan
    in tryNewTasks mempty False False processing newpkgs
   where
     tryNewTasks
-      :: Key srcpkg ~ key
-      => BuildOutcomes key failure result
+      :: BuildOutcomes k failure result
       -> Bool
       -> Bool
-      -> Processing key
+      -> Processing k
       -> [GenericReadyPackage srcpkg]
-      -> m (BuildOutcomes key failure result)
+      -> m (BuildOutcomes k failure result)
 
     tryNewTasks !results tasksFailed tasksRemaining !processing newpkgs
       -- we were in the process of cancelling and now we're finished
@@ -976,11 +983,10 @@ execute jobCtl keepGoing depFailure plan installPkg =
             waitForTasks results tasksFailed processing
 
     waitForTasks
-      :: Key srcpkg ~ key
-      => BuildOutcomes key failure result
+      :: BuildOutcomes k failure result
       -> Bool
-      -> Processing key
-      -> m (BuildOutcomes key failure result)
+      -> Processing k
+      -> m (BuildOutcomes k failure result)
     waitForTasks !results tasksFailed !processing = do
       (pkgid, result) <- collectJob jobCtl
 
@@ -1024,29 +1030,29 @@ execute jobCtl keepGoing depFailure plan installPkg =
 --
 -- * if the result is @False@ use 'problems' to get a detailed list.
 valid
-  :: ( IsGraph ipkg srcpkg
-     , Pretty (Key ipkg)
+  :: ( IsGraph k ipkg srcpkg
+     , Pretty k
      )
   => String
-  -> Graph (GenericPlanPackage ipkg srcpkg)
+  -> Graph k (GenericPlanPackage ipkg srcpkg)
   -> Bool
 valid loc graph =
   case problems graph of
     [] -> True
     ps -> internalError loc ('\n' : unlines (map showPlanProblem ps))
 
-data PlanProblem ipkg srcpkg
-  = PackageMissingDeps (GenericPlanPackage ipkg srcpkg) (NonEmpty (Key ipkg))
+data PlanProblem k ipkg srcpkg
+  = PackageMissingDeps (GenericPlanPackage ipkg srcpkg) (NonEmpty k)
   | PackageCycle [GenericPlanPackage ipkg srcpkg]
   | PackageStateInvalid
       (GenericPlanPackage ipkg srcpkg)
       (GenericPlanPackage ipkg srcpkg)
 
 showPlanProblem
-  :: ( IsGraph ipkg srcpkg
-     , Pretty (Key ipkg)
+  :: ( IsGraph k ipkg srcpkg
+     , Pretty k
      )
-  => PlanProblem ipkg srcpkg
+  => PlanProblem k ipkg srcpkg
   -> String
 showPlanProblem (PackageMissingDeps pkg missingDeps) =
   "Package "
@@ -1071,9 +1077,9 @@ showPlanProblem (PackageStateInvalid pkg pkg') =
 -- error messages. This is mainly intended for debugging purposes.
 -- Use 'showPlanProblem' for a human readable explanation.
 problems
-  :: IsGraph ipkg srcpkg
-  => Graph (GenericPlanPackage ipkg srcpkg)
-  -> [PlanProblem ipkg srcpkg]
+  :: IsGraph k ipkg srcpkg
+  => Graph k (GenericPlanPackage ipkg srcpkg)
+  -> [PlanProblem k ipkg srcpkg]
 problems graph =
   [ PackageMissingDeps
     pkg

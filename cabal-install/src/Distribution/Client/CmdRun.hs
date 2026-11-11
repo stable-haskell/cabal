@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | cabal-install CLI command: run
@@ -130,12 +131,23 @@ import Distribution.Verbosity
   ( normal
   , silent
   )
+#ifdef __MHS__
+import System.Environment
+  ( getArgs
+  )
+#else
 import GHC.Environment
   ( getFullArgs
   )
-import System.Directory
+#endif
+import Distribution.Compat.Directory
   ( doesFileExist
   )
+
+#ifdef __MHS__
+getFullArgs :: IO [String]
+getFullArgs = getArgs
+#endif
 import System.FilePath
   ( isPathSeparator
   , isValid

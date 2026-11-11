@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -115,15 +115,36 @@ import qualified Data.List.NonEmpty as NE
 import Control.Concurrent.STM (TVar, atomically, modifyTVar)
 import Control.Exception (ErrorCall, Handler (..), SomeAsyncException, assert, catches, onException)
 import Data.IORef (newIORef, readIORef, writeIORef)
+#ifndef __MHS__
 import GHC.Clock (getMonotonicTime)
-import System.Directory (canonicalizePath, createDirectoryIfMissing)
-import System.FilePath (takeDirectory, (<.>), (</>))
+#endif
+#ifdef __MHS__
+import System.CPUTime (getCPUTime)
+#endif
+import Distribution.Compat.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, listDirectory)
+import System.FilePath (dropDrive, normalise, takeDirectory, (<.>), (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
+#ifdef __MHS__
+type SemaphoreIdentifier = String
+#else
 import System.Semaphore (SemaphoreIdentifier)
+#endif
 import Text.Printf (printf)
 
 import GHC.Stack
+#ifndef __MHS__
 import Web.Browser (openBrowser)
+#endif
+
+#ifdef __MHS__
+-- | MHS fallback for 'GHC.Clock.getMonotonicTime', via CPU time.
+getMonotonicTime :: IO Double
+getMonotonicTime = (/ 1e12) . fromIntegral <$> getCPUTime
+
+-- | MHS fallback for @open-browser@: print the URL instead of opening it.
+openBrowser :: String -> IO Bool
+openBrowser url = putStrLn url >> return True
+#endif
 
 -- | Each unpacked package is processed in the following phases:
 --
@@ -140,23 +161,22 @@ import Web.Browser (openBrowser)
 -- the phases will be carried out differently. For example, when installing,
 -- the test, benchmark, and repl phase are ignored.
 data PackageBuildingPhase r where
-  PBConfigurePhase :: {runConfigure :: IO (Maybe Cabal.LocalBuildInfo)} -> PackageBuildingPhase (Maybe Cabal.LocalBuildInfo)
-  PBBuildPhase :: {runBuild :: IO [MonitorFilePath]} -> PackageBuildingPhase ()
-  PBHaddockPhase :: {runHaddock :: IO [MonitorFilePath]} -> PackageBuildingPhase ()
-  PBReplPhase :: {runRepl :: IO [MonitorFilePath]} -> PackageBuildingPhase ()
+  PBConfigurePhase :: IO (Maybe Cabal.LocalBuildInfo) -> PackageBuildingPhase (Maybe Cabal.LocalBuildInfo)
+  PBBuildPhase :: IO [MonitorFilePath] -> PackageBuildingPhase ()
+  PBHaddockPhase :: IO [MonitorFilePath] -> PackageBuildingPhase ()
+  PBReplPhase :: IO [MonitorFilePath] -> PackageBuildingPhase ()
   PBInstallPhase
-    :: { runCopy :: Cabal.CopyDest -> IO ()
-       , runRegister
-          :: PackageDBStackCWD
-          -> Cabal.RegisterOptions
-          -> IO InstalledPackageInfo
-       , getInstalledPackageInfo :: IO InstalledPackageInfo
-        -- ^ Compute the 'InstalledPackageInfo' from the build output,
-        -- without registering with @ghc-pkg@. Deterministic.
-       }
+    :: (Cabal.CopyDest -> IO ())
+    -> ( PackageDBStackCWD
+         -> Cabal.RegisterOptions
+         -> IO InstalledPackageInfo
+       )
+    -> IO InstalledPackageInfo
+    -- ^ Compute the 'InstalledPackageInfo' from the build output,
+    -- without registering with @ghc-pkg@. Deterministic.
     -> PackageBuildingPhase ()
-  PBTestPhase :: {runTest :: IO ()} -> PackageBuildingPhase ()
-  PBBenchPhase :: {runBench :: IO ()} -> PackageBuildingPhase ()
+  PBTestPhase :: IO () -> PackageBuildingPhase ()
+  PBBenchPhase :: IO () -> PackageBuildingPhase ()
 
 -- | Structures the phases of building and registering a package amongst others
 -- (see t'PackageBuildingPhase'). Delegates logic specific to a certain
@@ -251,7 +271,7 @@ buildAndRegisterUnpackedPackage
           return ipkg0{Installed.installedUnitId = uid}
     timedDelegate $
       PBInstallPhase
-        { runCopy = \dest ->
+        ( \dest ->
             annotateFailure mlogFile InstallFailed $
               setup
                 Cabal.copyCommand
@@ -259,7 +279,8 @@ buildAndRegisterUnpackedPackage
                 (return . copyFlags dest)
                 copyArgs
                 (InLibraryArgs $ InLibraryPostConfigureArgs SCopyPhase mbLBI)
-        , runRegister = \pkgDBStack registerOpts ->
+        )
+        ( \pkgDBStack registerOpts ->
             annotateFailure mlogFile InstallFailed $ do
               -- We register ourselves, rather than via Setup.hs.
               ipkg <- getIpkg
@@ -273,8 +294,8 @@ buildAndRegisterUnpackedPackage
                   ipkg
                   registerOpts
               return ipkg
-        , getInstalledPackageInfo = getIpkg
-        }
+        )
+        getIpkg
 
     -- Test phase
     whenTest $
@@ -451,13 +472,13 @@ buildAndRegisterUnpackedPackage
           cacheLock
 
       setup
-        :: (HasCallStack, RightFlagsForPhase flags setupSpec)
+        :: HasCallStack
         => CommandUI flags
         -> (flags -> CommonSetupFlags)
         -> (Version -> IO flags)
         -> (Version -> [String])
-        -> SetupRunnerArgs setupSpec
-        -> IO (SetupRunnerRes setupSpec)
+        -> SetupRunnerArgs flags result
+        -> IO result
       setup cmd getCommonFlags flags args wrapperArgs =
         withLogging $ \mLogFileHandle ->
           setupWrapper
@@ -478,13 +499,12 @@ buildAndRegisterUnpackedPackage
             wrapperArgs
 
       setupInteractive
-        :: RightFlagsForPhase flags setupSpec
-        => CommandUI flags
+        :: CommandUI flags
         -> (flags -> CommonSetupFlags)
         -> (Version -> IO flags)
         -> (Version -> [String])
-        -> SetupRunnerArgs setupSpec
-        -> IO (SetupRunnerRes setupSpec)
+        -> SetupRunnerArgs flags result
+        -> IO result
       setupInteractive =
         setupWrapper
           verbosity
@@ -584,17 +604,17 @@ buildInplaceUnpackedPackage
         builddir
         Nothing -- no log file for inplace builds!
         $ \case
-          PBConfigurePhase{runConfigure} ->
+          PBConfigurePhase runConfigure ->
             whenReconfigure $ do
               mbLBI <- runConfigure
               invalidatePackageRegFileMonitor packageFileMonitor
               updatePackageConfigFileMonitor packageFileMonitor (getSymbolicPath srcdir) pkg
               return mbLBI
-          PBBuildPhase{runBuild} ->
+          PBBuildPhase runBuild ->
             whenRebuild $ withFileMonitor runBuild
-          PBReplPhase{runRepl} ->
+          PBReplPhase runRepl ->
             withFileMonitor runRepl
-          PBHaddockPhase{runHaddock} -> do
+          PBHaddockPhase runHaddock -> do
             withFileMonitor runHaddock
             let haddockTarget = elabHaddockForHackage pkg
             when (haddockTarget == Cabal.ForHackage) $ do
@@ -620,7 +640,7 @@ buildInplaceUnpackedPackage
                       FindOpenProgramLocationErr $
                         "Unsupported OS: " <> show os
                 )
-          PBInstallPhase{runCopy = _runCopy, runRegister} -> do
+          PBInstallPhase _runCopy runRegister _getInstalledPackageInfo -> do
             -- PURPOSELY omitted: no copy!
 
             whenReRegister $ do
@@ -640,8 +660,8 @@ buildInplaceUnpackedPackage
                   else return Nothing
 
               updatePackageRegFileMonitor packageFileMonitor (getSymbolicPath srcdir) mipkg
-          PBTestPhase{runTest} -> runTest
-          PBBenchPhase{runBench} -> runBench
+          PBTestPhase runTest -> runTest
+          PBBenchPhase runBench -> runBench
 
     return
       BuildResult
@@ -825,18 +845,18 @@ buildAndInstallUnpackedPackage
         builddir
         mlogFile
         $ \case
-          PBConfigurePhase{runConfigure} -> do
+          PBConfigurePhase runConfigure -> do
             noticeProgress ProgressStarting
             runConfigure
-          PBBuildPhase{runBuild} -> do
+          PBBuildPhase runBuild -> do
             noticeProgress ProgressBuilding
             _monitors <- runBuild
             return ()
-          PBHaddockPhase{runHaddock} -> do
+          PBHaddockPhase runHaddock -> do
             noticeProgress ProgressHaddock
             _monitors <- runHaddock
             return ()
-          PBInstallPhase{runCopy, runRegister, getInstalledPackageInfo} -> do
+          PBInstallPhase runCopy runRegister getInstalledPackageInfo -> do
             noticeProgress ProgressInstalling
 
             -- Create an IORef used to retrieve the InstalledPackageInfo computed

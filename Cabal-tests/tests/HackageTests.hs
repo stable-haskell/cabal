@@ -30,7 +30,7 @@ import Distribution.Simple.Utils                   (fromUTF8BS, toUTF8BS)
 import Distribution.Fields.ParseResult
 import Distribution.Parsec.Source
 import Numeric                                     (showFFloat)
-import System.Directory                            (getXdgDirectory, XdgDirectory(XdgCache, XdgConfig), getAppUserDataDirectory, doesDirectoryExist)
+import Distribution.Compat.Directory                            (getXdgDirectory, XdgDirectory(XdgCache, XdgConfig), getAppUserDataDirectory, doesDirectoryExist)
 import System.Environment                          (lookupEnv)
 import System.Exit                                 (exitFailure)
 import System.FilePath                             ((</>))

@@ -62,7 +62,7 @@ instance Pretty ComponentId where
 instance Parsec ComponentId where
   parsec = mkComponentId `fmap` P.munch1 abi_char
     where
-      abi_char c = isAlphaNum c || c `elem` "-_."
+      abi_char c = isAlphaNum c || c `elem` ['-', '_', '.']
 
 instance NFData ComponentId where
   rnf = rnf . unComponentId

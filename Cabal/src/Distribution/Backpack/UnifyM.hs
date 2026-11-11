@@ -58,7 +58,7 @@ import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import Data.STRef
 import qualified Data.Set as Set
-import Data.Traversable
+import Distribution.Utils.LogProgress
 import Text.PrettyPrint
 
 -- TODO: more detailed trace output on high verbosity would probably

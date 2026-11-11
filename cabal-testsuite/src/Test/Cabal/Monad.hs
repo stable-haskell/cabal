@@ -121,12 +121,12 @@ import Data.Monoid (mempty)
 import Distribution.Simple.Utils hiding (info)
 import GHC.Stack
 import Options.Applicative
-import System.Directory
+import Distribution.Compat.Directory
 import System.Exit
 import System.FilePath
 import System.IO
 import System.IO.Error (isDoesNotExistError)
-import System.Process hiding (env)
+import Distribution.Compat.Process hiding (env)
 import Test.Cabal.Run
 
 data CommonArgs = CommonArgs

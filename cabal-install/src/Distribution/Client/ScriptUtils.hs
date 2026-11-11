@@ -206,7 +206,7 @@ import Distribution.Client.Errors
 import Distribution.Utils.Path
   ( unsafeMakeSymbolicPath
   )
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , doesFileExist
   , getTemporaryDirectory

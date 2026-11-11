@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
 module Distribution.Backpack.ConfiguredComponent
   ( ConfiguredComponent (..)
@@ -35,7 +37,11 @@ import qualified Data.Set as Set
 import Data.Traversable (mapAccumM)
 import qualified Distribution.Compat.NonEmptySet as NonEmptySet
 import Distribution.Pretty
+#ifdef __MHS__
+import Text.PrettyPrint (Doc, hsep, quotes, text, vcat, ($$))
+#else
 import Text.PrettyPrint (Doc, hang, hsep, quotes, text, vcat, ($$))
+#endif
 import qualified Text.PrettyPrint as PP
 
 -- | A configured component, we know exactly what its 'ComponentId' is,

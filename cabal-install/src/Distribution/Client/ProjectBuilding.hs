@@ -1,6 +1,6 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoMonoLocalBinds #-}
 
 module Distribution.Client.ProjectBuilding
@@ -94,9 +94,13 @@ import Control.Exception (handle, try)
 import Data.Either (isLeft)
 import qualified Distribution.Client.IndexUtils as IndexUtils
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
-import System.Directory (doesDirectoryExist, doesFileExist, renameDirectory)
+import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist, renameDirectory)
 import System.FilePath (makeRelative, normalise, takeDirectory, takeFileName, (<.>), (</>))
+#ifdef __MHS__
+type SemaphoreIdentifier = String
+#else
 import System.Semaphore (SemaphoreIdentifier)
+#endif
 
 import Distribution.Client.Errors
 import Distribution.Simple.Flag (fromFlagOrDefault)
@@ -265,21 +269,21 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
 -- visiting function is passed the results for all the immediate package
 -- dependencies. This can be used to propagate information from dependencies.
 foldMInstallPlanDepOrder
-  :: forall m ipkg srcpkg b
-   . (Monad m, IsGraph ipkg srcpkg)
+  :: forall m k ipkg srcpkg b
+   . (Monad m, IsGraph k ipkg srcpkg)
   => ( GenericPlanPackage ipkg srcpkg
        -> [b]
        -> m b
      )
-  -> GenericInstallPlan ipkg srcpkg
-  -> m (Map (Key ipkg) b)
+  -> GenericInstallPlan k ipkg srcpkg
+  -> m (Map k b)
 foldMInstallPlanDepOrder visit =
   go Map.empty . InstallPlan.reverseTopologicalOrder
   where
     go
-      :: Map (Key ipkg) b
+      :: Map k b
       -> [GenericPlanPackage ipkg srcpkg]
-      -> m (Map (Key ipkg) b)
+      -> m (Map k b)
     go !results [] = return results
     go !results (pkg : pkgs) = do
       -- we go in the right order so the results map has entries for all deps

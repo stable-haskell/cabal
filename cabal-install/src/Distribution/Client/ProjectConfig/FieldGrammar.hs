@@ -16,6 +16,7 @@ import qualified Distribution.Client.ProjectConfig.Lens as L
 import Distribution.Client.ProjectConfig.Types (PackageConfig (..), ProjectConfig (..), ProjectConfigBuildOnly (..), ProjectConfigProvenance (..), ProjectConfigShared (..))
 import Distribution.Client.Utils.Parsec
 import Distribution.Compat.Prelude
+import Prelude ()
 import Distribution.FieldGrammar
 import Distribution.Simple.Flag
 import Distribution.Simple.InstallDirs

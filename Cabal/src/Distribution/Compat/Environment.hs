@@ -9,7 +9,14 @@ import Prelude ()
 
 import System.Environment (lookupEnv, unsetEnv)
 import qualified System.Environment as System
+#ifdef __MHS__
+-- MicroHS provides no 'System.Environment.Blank'; its
+-- 'System.Environment.setEnv' always overwrites, like 'Blank.setEnv' with
+-- the overwrite flag set, so we use it directly.
+import System.Environment (setEnv)
+#else
 import qualified System.Environment.Blank as Blank (setEnv)
+#endif
 
 getEnvironment :: IO [(String, String)]
 #ifdef mingw32_HOST_OS
@@ -26,4 +33,8 @@ getEnvironment = System.getEnvironment
 
 -- | @setEnv name value@ sets the specified environment variable to @value@.
 setEnv :: String -> String -> IO ()
+#ifdef __MHS__
+setEnv = System.setEnv
+#else
 setEnv key value = Blank.setEnv key value True
+#endif

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
@@ -121,12 +122,31 @@ import Distribution.Version (thisVersion)
 
 import Distribution.Compat.Graph (IsNode (..))
 
-import Control.Monad
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 
 import System.FilePath (takeDirectory)
+
+#ifdef __MHS__
+buildVerbosity :: BuildFlags -> Flag VerbosityFlags
+buildVerbosity = setupVerbosity . buildCommonFlags
+
+buildDistPref :: BuildFlags -> Flag (SymbolicPath Pkg (Dir Dist))
+buildDistPref = setupDistPref . buildCommonFlags
+
+buildWorkingDir :: BuildFlags -> Flag (SymbolicPath CWD (Dir Pkg))
+buildWorkingDir = setupWorkingDir . buildCommonFlags
+
+buildTargets :: BuildFlags -> [String]
+buildTargets = setupTargets . buildCommonFlags
+
+replVerbosity :: ReplFlags -> Flag VerbosityFlags
+replVerbosity = setupVerbosity . replCommonFlags
+
+replDistPref :: ReplFlags -> Flag (SymbolicPath Pkg (Dir Dist))
+replDistPref = setupDistPref . replCommonFlags
+#endif
 
 -- -----------------------------------------------------------------------------
 
@@ -216,7 +236,7 @@ build_setupHooks
       par_strat <-
         toFlag <$> case buildUseSemaphore flags of
           Flag sem_name -> case numJobs of
-            Flag{} -> do
+            Flag _ -> do
               warn verbosity "Ignoring -j due to --semaphore"
               return $ UseSem sem_name
             NoFlag -> return $ UseSem sem_name

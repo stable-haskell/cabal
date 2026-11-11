@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 
 -- |
@@ -45,7 +44,7 @@ import Distribution.Types.PackageName (PackageName)
 import Distribution.Types.TestType (TestType, knownTestTypes)
 import Distribution.Types.UnqualComponentName
 import Distribution.Types.Version (Version)
-import Distribution.Utils.Path (FileOrDir (..), Pkg, RelativePath, getSymbolicPath)
+import Distribution.Utils.Path (File, Pkg, RelativePath, getSymbolicPath)
 import Language.Haskell.Extension (Extension)
 
 import qualified Data.Either as Either

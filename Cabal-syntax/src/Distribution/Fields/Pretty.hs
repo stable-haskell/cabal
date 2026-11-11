@@ -19,6 +19,7 @@ module Distribution.Fields.Pretty
   , prettySectionArgs
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
 import Distribution.Pretty (showToken)
 import Prelude ()

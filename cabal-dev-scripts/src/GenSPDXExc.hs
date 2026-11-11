@@ -69,6 +69,7 @@ generate'
     -> IO String
 generate' lss template = template $ Input
     { inputLicenseIds       = licenseIds
+    , inputLicenseIdNames   = licenseIdNames
     , inputLicenses         = licenseValues
     , inputLicenseList_all  = mkLicenseList (== allVers)
     , inputLicenseList_perv = tabulate $ \ver -> mkLicenseList
@@ -98,6 +99,21 @@ generate' lss template = template $ Input
                 | vers == allVers = ""
                 | otherwise       = foldMap (\v -> ", " <> prettyVer v) vers
         in pfx <> c <> " -- ^ @" <> licenseId l <> "@, " <> licenseName l <> versInfo
+
+    -- Constructor names for the hand-written Data 'toConstr' table,
+    -- in declaration order (8 per line, matching the checked-in files).
+    licenseIdNames :: Text
+    licenseIdNames =
+        let grps = groupsOf 8 [ c | (c, _, _) <- constructorNames ]
+            render i grp =
+                (if i == 0 then "  [ " else "  , ")
+                <> T.intercalate ", " (map (\c -> "\"" <> c <> "\"") grp)
+                <> (if i == length grps - 1 then " ]" else "")
+        in T.intercalate "\n" $ zipWith render [0 :: Int ..] grps
+      where
+        groupsOf :: Int -> [a] -> [[a]]
+        groupsOf _ [] = []
+        groupsOf n xs = take n xs : groupsOf n (drop n xs)
 
     mkLicenseList :: (Set.Set SPDXLicenseListVersion -> Bool) -> Text
     mkLicenseList p = mkList [ n | (n, _, vers) <- constructorNames, p vers ]

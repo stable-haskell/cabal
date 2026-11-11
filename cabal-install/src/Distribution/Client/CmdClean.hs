@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Distribution.Client.CmdClean (cleanCommand, cleanAction) where
@@ -76,14 +77,13 @@ import Control.Concurrent
 import Control.Exception
   ( throw
   )
-import Control.Monad
-  ( forM
-  , forM_
-  , mapM
-  )
+import Data.Foldable (forM_)
+import Data.Traversable (forM)
 import qualified Data.Set as Set
+#ifndef __MHS__
 import qualified GHC.IO.Exception as GHC
-import System.Directory
+#endif
+import Distribution.Compat.Directory
   ( canonicalizePath
   , doesDirectoryExist
   , doesFileExist
@@ -94,10 +94,13 @@ import System.FilePath
   ( (</>)
   )
 import System.IO.Error
-  ( ioeGetErrorType
-  , isPermissionError
+  (
+#ifndef __MHS__
+    ioeGetErrorType,
+#endif
+    isPermissionError
   )
-import qualified System.Process as Process
+import qualified Distribution.Compat.Process as Process
 
 data CleanFlags = CleanFlags
   { cleanSaveConfig :: Flag Bool
@@ -199,7 +202,11 @@ cleanAction (ProjectFlags{..}, CleanFlags{..}) extraArgs _ = do
               -- Permission error is usually when some files are (temporarily) locked.
               -- Unsatisfied constraints (directory is non empty) error happens
               -- when some files inside the directory were not removed (perhaps because they are locked).
+#ifdef __MHS__
+              if isPermissionError e
+#else
               if isPermissionError e || ioeGetErrorType e == GHC.UnsatisfiedConstraints
+#endif
                 then threadDelay 1000 >> removePathForcibly distRoot
                 else throw e
           )

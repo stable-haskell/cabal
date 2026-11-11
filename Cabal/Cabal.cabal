@@ -24,6 +24,10 @@ build-type:     Simple
 extra-doc-files:
   README.md ChangeLog.md
 
+extra-source-files:
+  cbits/mhs_spawn.h
+  cbits/mhs_handle.h
+
 source-repository head
   type:     git
   location: https://github.com/haskell/cabal/
@@ -34,32 +38,70 @@ flag git-rev
   default: False
   manual: True
 
+flag mhs
+  description: MicroHs build (uses -mhs package variants for array/binary/pretty)
+  default:     False
+  manual:      True
+
 library
   default-language: GHC2021
   -- Disabling ImportQualifiedPost, otherwise fourmolu jumps ahead to apply it everywhere
   default-extensions: NoImportQualifiedPost
   hs-source-dirs: src
 
+  -- C helpers for the MHS (MicroHs) build, which cannot use the
+  -- @process@ package.  The POSIX bodies are used there; other
+  -- platforms compile the stubs.  The matching headers
+  -- (cbits/mhs_spawn.h and cbits/mhs_handle.h, shipped in
+  -- extra-source-files) carry the prototypes for MicroHs-generated
+  -- FFI call sites.
+  c-sources:
+    cbits/mhs_spawn.c
+    cbits/mhs_handle.c
+  include-dirs: cbits
+
+  -- Common deps available as separate MHS packages with the same
+  -- bounds on both backends (transformers/mtl/parsec stay in the
+  -- unconditional block below; they exist as mtl-2.3.2,
+  -- parsec-3.1.18.0, transformers-0.6.2.0 under MHS).
   build-depends:
     , Cabal-syntax ^>= 3.19
-    , array      >= 0.4.0.1  && < 0.6
     , base       >= 4.18     && < 5
-    , bytestring >= 0.10.8   && < 0.13
     , containers >= 0.5.8.2  && < 0.9
-    , deepseq    >= 1.4      && < 1.7
-    , directory  >= 1.3.8.5  && < 1.4
     , filepath   >= 1.4.301  && < 1.6
-    , pretty     >= 1.1.1    && < 1.2
-    , process    >= 1.6.29.0 && < 1.7
-    , text       >= 2.0.2    && < 2.2
     , time       >= 1.4.0.1  && < 1.17
 
-  if os(windows)
+  -- MicroHs ships array/binary/pretty as -mhs variants; base-0.16.12.0
+  -- provides bytestring, text, directory, deepseq, process, stm, so
+  -- those (plus unix, which has no MHS package) are GHC-only.
+  if flag(mhs)
     build-depends:
-      , Win32 >= 2.4.0.0 && < 2.15
+      array-mhs  >= 0.5.8   && < 0.6,
+      binary-mhs >= 0.8.1   && < 0.9,
+      pretty-mhs >= 1.1.3.6 && < 1.2
   else
     build-depends:
-      , unix  >= 2.8.6.0 && < 2.9
+      , array      >= 0.4.0.1  && < 0.6
+      , binary     >= 0.8.1    && < 0.9
+      , bytestring >= 0.10.8   && < 0.13
+      , deepseq    >= 1.4      && < 1.7
+      , directory  >= 1.2.7    && < 1.4
+      , pretty     >= 1.1.1    && < 1.2
+      , process    >= 1.6.29.0 && < 1.7
+      , text       >= 2.0.2    && < 2.2
+
+  -- No unix/Win32 under MHS: base-0.16.12.0 provides System.Directory
+  -- and System.Process (via Distribution.Compat.Directory / MhsProcess
+  -- shims); unix-only code is behind !__MHS__. os-string-2.0.10 exists
+  -- in the MHS package db but Cabal/ has no System.OsString/OsPath
+  -- imports, so it is not required.
+  if !flag(mhs)
+    if os(windows)
+      build-depends:
+        , Win32 >= 2.4.0.0 && < 2.15
+    else
+      build-depends:
+        , unix  >= 2.8.6.0 && < 2.9
 
   if flag(git-rev)
     build-depends:
@@ -193,6 +235,7 @@ library
     Distribution.Compat.Binary,
     Distribution.Compat.CharParsing,
     Distribution.Compat.DList,
+    Distribution.Compat.Directory,
     Distribution.Compat.Exception,
     Distribution.Compat.Graph,
     Distribution.Compat.Lens,
@@ -342,6 +385,7 @@ library
     Distribution.Compat.Async
     Distribution.Compat.CopyFile
     Distribution.Compat.GetShortPathName
+    Distribution.Compat.Internal.MhsProcess
     Distribution.GetOpt
     Distribution.Lex
     Distribution.PackageDescription.Check.Common
@@ -410,3 +454,23 @@ library
     TypeOperators
     TypeSynonymInstances
     UndecidableInstances
+
+-- Process capture regression tests: dual-backend (GHC reference and
+-- MicroHs) coverage for Distribution.Compat.Process capture
+-- discipline, environment replacement, locale-correct text handling
+-- and explicit CreatePipe rejection.  POSIX-only: the tests drive
+-- @sh@/@env@/@cat@.  The same Main.hs also compiles directly with
+-- @mhs@ (see the module header for the exact command).
+test-suite process-capture-tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is: ProcessCaptureTests.hs
+  -- POSIX-only: the tests drive sh/env/cat.
+  if !(os(linux) || os(darwin))
+    buildable: False
+  default-language: GHC2021
+  ghc-options: -Wall
+  build-depends:
+    , base       >= 4.17 && < 5
+    , bytestring >= 0.10.0.0 && < 0.13
+    , Cabal      ^>= 3.19

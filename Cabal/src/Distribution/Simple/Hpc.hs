@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.Hpc
 -- Copyright   :  Thomas Tuegel 2011
@@ -48,7 +46,7 @@ import Distribution.Utils.Path
 import Distribution.Verbosity (Verbosity ())
 import Distribution.Version (anyVersion)
 
-import System.Directory (createDirectoryIfMissing, doesFileExist)
+import Distribution.Compat.Directory (createDirectoryIfMissing, doesFileExist)
 
 -- -------------------------------------------------------------------------
 -- Haskell Program Coverage

@@ -55,7 +55,7 @@ import Distribution.Simple.Setup
   )
 import Distribution.Simple.Utils (debug, warn)
 import Distribution.Solver.Types.ConstraintSource
-import System.Directory (doesFileExist)
+import Distribution.Compat.Directory (doesFileExist)
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError)
 import Text.PrettyPrint (($+$))

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -33,7 +34,9 @@ import Control.Monad
 import Control.Monad.IO.Class
   ( liftIO
   )
-import GHC.Exception
+import Control.Exception
+  ( Exception (..)
+  )
 import System.Environment
   ( getArgs
   )
@@ -46,7 +49,6 @@ import System.IO
 -- bytestring
 import Data.ByteString.Lazy as LBS
   ( ByteString
-  , hGetContents
   , hPutStr
   , null
   )
@@ -54,11 +56,13 @@ import Data.ByteString.Lazy as LBS
 -- containers
 import qualified Data.Map as Map
 
+#ifndef __MHS__
 -- process
 import System.Process.CommunicationHandle
   ( openCommunicationHandleRead
   , openCommunicationHandleWrite
   )
+#endif
 
 -- transformers
 import Control.Monad.Trans.Except
@@ -79,9 +83,17 @@ import Distribution.Utils.Structured
   ( MD5
   , structureHash
   )
+#ifdef __MHS__
+import Distribution.Utils.MD5 (showMD5)
+
+instance Show MD5 where
+  show = showMD5
+#endif
 
 -- Cabal
+import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
 import Distribution.Compat.Prelude
+import Prelude ()
 import Distribution.Simple.SetupHooks.Internal
 import Distribution.Simple.SetupHooks.Rule
 import Distribution.Simple.Utils
@@ -128,8 +140,12 @@ hooksVersion :: HooksVersion
 hooksVersion =
   HooksVersion
     { hooksAPIVersion = cabalVersion
-    , cabalABIHash = structureHash $ Proxy @CabalABI
-    , hooksABIHash = structureHash $ Proxy @HooksABI
+    , cabalABIHash = structureHash (Proxy :: Proxy CabalABI)
+#ifndef __MHS__
+    , hooksABIHash = structureHash (Proxy :: Proxy HooksABI)
+#else
+    , hooksABIHash = structureHash (Proxy :: Proxy CabalABI)
+#endif
     }
 
 -- | Tracks the parts of the Cabal API relevant to its binary interface.
@@ -156,7 +172,9 @@ data HooksABI = HooksABI
   }
   deriving stock (Generic)
 
+#ifndef __MHS__
 deriving anyclass instance Structured HooksABI
+#endif
 
 --------------------------------------------------------------------------------
 -- Error types (internal)
@@ -199,11 +217,11 @@ setupHooksExeExceptionCode = \case
 setupHooksExeExceptionMessage :: SetupHooksExeException -> String
 setupHooksExeExceptionMessage = \case
   NoHookType ->
-    "Missing argument to Hooks executable.\n\
-    \Expected two arguments: communication handle and hook type."
+    "Missing argument to Hooks executable.\n"
+      ++ "Expected two arguments: communication handle and hook type."
   NoHandle Nothing ->
-    "Missing argument to Hooks executable.\n\
-    \Expected two arguments: communication handle and hook type."
+    "Missing argument to Hooks executable.\n"
+      ++ "Expected two arguments: communication handle and hook type."
   NoHandle (Just h) ->
     "Invalid handle reference passed to Hooks executable: '" ++ h ++ "'."
   BadHooksExeArgs hookName reason ->
@@ -220,21 +238,21 @@ badHooksExeArgsMessage hookName = \case
   UnknownHookType knownHookNames ->
     "Unknown hook type "
       ++ hookName
-      ++ ".\n\
-         \Known hook types are: "
+      ++ ".\n"
+      ++ "Known hook types are: "
       ++ show knownHookNames
       ++ "."
   CouldNotDecodeInput _bytes offset err ->
     "Failed to decode the input to the "
       ++ hookName
-      ++ " hook.\n\
-         \Decoding failed at position "
+      ++ " hook.\n"
+      ++ "Decoding failed at position "
       ++ show offset
       ++ " with error: "
       ++ err
-      ++ ".\n\
-         \This could be due to a mismatch between the Cabal version of cabal-install\
-         \ and of the hooks executable."
+      ++ ".\n"
+      ++ "This could be due to a mismatch between the Cabal version of cabal-install"
+      ++ " and of the hooks executable."
   NoDynDepsCmd rId ->
     unlines
       [ "Unexpected rule " <> show rId <> " in the " <> hookName <> " hook."
@@ -242,7 +260,6 @@ badHooksExeArgsMessage hookName = \case
       ]
 
 instance Exception (VerboseException SetupHooksExeException) where
-  displayException :: VerboseException SetupHooksExeException -> String
   displayException (VerboseException stack timestamp verb err) =
     withOutputMarker
       verb
@@ -292,6 +309,10 @@ hooksMain setupHooks = runHooksM $ do
 
     -- Get the communication handles and the name of the hook to run
     getHooksMainArgs :: HooksM ((Handle, Handle), String)
+#ifdef __MHS__
+    getHooksMainArgs =
+      error "Distribution.Simple.SetupHooks.HooksMain: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#else
     getHooksMainArgs =
       liftIO getArgs >>= \case
         inputFdRef : outputFdRef : hookNm : _ ->
@@ -305,6 +326,7 @@ hooksMain setupHooks = runHooksM $ do
             (_, Nothing) ->
               throwE $ NoHandle (Just $ "hook output communication handle '" ++ outputFdRef ++ "'")
         _ -> throwE $ NoHandle Nothing
+#endif
 
 type HooksM = ExceptT SetupHooksExeException IO
 
@@ -324,7 +346,7 @@ runHookHandle
   -- ^ The hook to run
   -> HooksM ()
 runHookHandle (hRead, hWrite) hookName hook = do
-  inputsData <- liftIO $ LBS.hGetContents hRead
+  inputsData <- liftIO $ hGetContentsLBS hRead
   let mb_inputs = Binary.decodeOrFail inputsData
   case mb_inputs of
     Left (_, offset, err) ->

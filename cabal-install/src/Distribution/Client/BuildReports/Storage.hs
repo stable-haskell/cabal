@@ -66,7 +66,7 @@ import qualified Data.List as L
 import Data.List.NonEmpty
   ( groupBy
   )
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   )
 import System.FilePath

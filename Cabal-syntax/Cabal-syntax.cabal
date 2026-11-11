@@ -18,10 +18,18 @@ build-type:     Simple
 extra-doc-files:
   README.md ChangeLog.md
 
+extra-source-files:
+  cbits/mhs_posix.h
+
 source-repository head
   type:     git
   location: https://github.com/haskell/cabal/
   subdir:   Cabal-syntax
+
+flag mhs
+  description: MicroHs build (uses -mhs package variants for array/binary/pretty)
+  default:     False
+  manual:      True
 
 library
   default-language: GHC2021
@@ -30,9 +38,7 @@ library
   hs-source-dirs: src
 
   build-depends:
-    , array      >= 0.4.0.1  && < 0.6
     , base       >= 4.18     && < 5
-    , binary     >= 0.8.1    && < 0.9
     , bytestring >= 0.10.4.0 && < 0.13
     , containers >= 0.5.2    && < 0.9
     , deepseq    >= 1.4      && < 1.7
@@ -40,12 +46,22 @@ library
     , filepath   >= 1.4.301  && < 1.6
     , mtl        >= 2.1      && < 2.4
     , parsec     >= 3.1.13.0 && < 3.2
-    , pretty     >= 1.1.1    && < 1.2
     , text       >= 2.0.2    && < 2.2
     , time       >= 1.4.0.1  && < 1.17
     -- transformers-0.4.0.0 doesn't have record syntax e.g. for Identity
     -- See also https://github.com/ekmett/transformers-compat/issues/35
     , transformers (>= 0.3      && < 0.4) || (>=0.4.1.0 && <0.7)
+
+  if flag(mhs)
+    build-depends:
+      array-mhs  >= 0.5.8   && < 0.6,
+      binary-mhs >= 0.8.1   && < 0.9,
+      pretty-mhs >= 1.1.3.6 && < 1.2
+  else
+    build-depends:
+      array      >= 0.4.0.1 && < 0.6,
+      binary     >= 0.8.1   && < 0.9,
+      pretty     >= 1.1.1   && < 1.2
 
   ghc-options:
     -Wall
@@ -70,9 +86,12 @@ library
     Distribution.Compat.Binary
     Distribution.Compat.CharParsing
     Distribution.Compat.DList
+    Distribution.Compat.Directory
     Distribution.Compat.Exception
     Distribution.Compat.Graph
+    Distribution.Compat.Internal.LazyByteString
     Distribution.Compat.Lens
+    Distribution.Compat.MhsInstances
     Distribution.Compat.NonEmptySet
     Distribution.Compat.Parsing
     Distribution.Compat.Prelude
@@ -202,6 +221,17 @@ library
     Distribution.Utils.Structured
     Distribution.Version
     Language.Haskell.Extension
+
+  other-modules:
+    Distribution.Compat.Internal.MhsPosix
+
+  -- C helpers for the MHS (MicroHs) build of Distribution.Compat.Directory.
+  -- The POSIX bodies are used there; other platforms compile the stubs.
+  -- The matching header (cbits/mhs_posix.h, shipped in
+  -- extra-source-files) carries the prototypes (with platform types
+  -- from the standard headers) for MicroHs-generated FFI call sites.
+  c-sources: cbits/mhs_posix.c
+  include-dirs: cbits
 
   other-extensions:
     BangPatterns

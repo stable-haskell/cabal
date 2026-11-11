@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
@@ -35,7 +34,7 @@ import Distribution.Utils.Path
 import Distribution.Verbosity
 
 -- Base
-import System.Directory (createDirectoryIfMissing, doesFileExist, makeAbsolute)
+import Distribution.Compat.Directory (createDirectoryIfMissing, doesFileExist, makeAbsolute)
 import qualified System.FilePath as FilePath
 #ifdef mingw32_HOST_OS
 import System.FilePath    (normalise, splitDrive)

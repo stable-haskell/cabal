@@ -72,7 +72,7 @@ import Control.Monad
 import Control.Monad.Reader as Reader
 import Control.Monad.State as State
 import qualified Data.Map.Strict as Map
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath
 
 -- | A monad layered on top of 'IO' to help with re-running actions when the

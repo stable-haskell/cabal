@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PatternSynonyms #-}
 
@@ -40,6 +41,10 @@ module Distribution.Client.Utils
   , concatMapM
   , occursOnlyOrBefore
   , giveRTSWarning
+#ifdef __MHS__
+  , atomicModifyIORef
+  , getArgsWithResponseFiles
+#endif
   ) where
 
 import Distribution.Client.Compat.Prelude
@@ -48,9 +53,15 @@ import Prelude ()
 import qualified Control.Exception as Exception
   ( finally
   )
+#ifdef __MHS__
+import qualified Control.Exception as Safe
+  ( bracket
+  )
+#else
 import qualified Control.Exception.Safe as Safe
   ( bracket
   )
+#endif
 import Control.Monad
   ( zipWithM_
   )
@@ -71,6 +82,8 @@ import Distribution.Simple.Setup (Flag, pattern Flag, pattern NoFlag)
 import Distribution.Simple.Utils (dieWithException, findPackageDesc, noticeNoWrap, removeFileForcibly)
 import Distribution.Utils.Path
   ( CWD
+  , Dir
+  , File
   , FileOrDir (..)
   , Pkg
   , RelativePath
@@ -83,21 +96,25 @@ import Distribution.Utils.Path
   )
 import Distribution.Version
 
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , doesDirectoryExist
   , doesFileExist
   , listDirectory
   )
-import qualified System.Directory as Directory
+import qualified Distribution.Compat.Directory as Directory
 import System.FilePath
 import System.IO
   ( Handle
   , hClose
   , hGetEncoding
   , hSetEncoding
-  , openTempFile
   )
+#ifdef __MHS__
+import Distribution.Compat.Internal.TempFile (openTempFile)
+#else
+import System.IO (openTempFile)
+#endif
 import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.Set as Set
@@ -107,6 +124,13 @@ import Data.Time.Clock.POSIX (getCurrentTime)
 import Data.Time.LocalTime (getCurrentTimeZone, localDay)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription)
+#ifdef __MHS__
+-- MicroHS provides 'System.Environment.getArgs' and 'Data.IORef', but
+-- none of the GHC-only modules below.
+import Data.IORef (IORef, readIORef, writeIORef)
+import Distribution.Compat.ResponseFile (expandResponse)
+import System.Environment (getArgs)
+#else
 import GHC.Conc.Sync (getNumProcessors)
 import GHC.IO.Encoding
   ( TextEncoding (TextEncoding)
@@ -116,7 +140,8 @@ import GHC.IO.Encoding.Failure
   ( CodingFailureMode (TransliterateCodingFailure)
   , recoverEncode
   )
-import qualified System.Directory as Dir
+#endif
+import qualified Distribution.Compat.Directory as Dir
 import qualified System.IO.Error as IOError
 
 -- | Generic merging utility. For sorted input lists this is a full outer join.
@@ -224,8 +249,31 @@ logDirChange l (Just d) m = do
 -- The number of processors is not going to change during the duration of the
 -- program, so unsafePerformIO is safe here.
 numberOfProcessors :: Int
+#ifdef __MHS__
+-- MicroHS provides no 'GHC.Conc.Sync.getNumProcessors' and its runtime is
+-- single-threaded, so there is always exactly one processor.
+numberOfProcessors = 1
+#else
 numberOfProcessors = unsafePerformIO getNumProcessors
 {-# NOINLINE numberOfProcessors #-}
+#endif
+
+#ifdef __MHS__
+-- | Like 'GHC.ResponseFile.getArgsWithResponseFiles', which MicroHS does
+-- not provide: the command line arguments with @\@file@ response files
+-- expanded. See 'Distribution.Compat.ResponseFile.expandResponse'.
+getArgsWithResponseFiles :: IO [String]
+getArgsWithResponseFiles = expandResponse =<< getArgs
+
+-- | Single-threaded 'atomicModifyIORef' for MHS-ported modules: MicroHS has
+-- no preemptive threads, so a read followed by a write is already atomic.
+atomicModifyIORef :: IORef a -> (a -> (a, b)) -> IO b
+atomicModifyIORef ref f = do
+  a <- readIORef ref
+  let (a', b) = f a
+  writeIORef ref a'
+  return b
+#endif
 
 -- | Determine the number of jobs to use given the value of the '-j' flag.
 determineNumJobs :: Flag (Maybe Int) -> Int
@@ -368,6 +416,11 @@ existsAndIsMoreRecentThan a b = do
 -- error. This function will ignore file handles that have a Unicode encoding
 -- set. It's a no-op for versions of `base` less than 4.4.
 relaxEncodingErrors :: Handle -> IO ()
+#ifdef __MHS__
+-- MicroHS provides no 'GHC.IO.Encoding' API; handles are always UTF-8, so
+-- there is nothing to relax.
+relaxEncodingErrors _ = return ()
+#else
 relaxEncodingErrors handle = do
   maybeEncoding <- hGetEncoding handle
   case maybeEncoding of
@@ -377,6 +430,7 @@ relaxEncodingErrors handle = do
            in hSetEncoding handle (TextEncoding name decoder (fmap relax encoder))
     _ ->
       return ()
+#endif
 
 -- | Like 'tryFindPackageDesc', but with error specific to add-source deps.
 tryReadAddSourcePackageDesc

@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -----------------------------------------------------------------------------
 
 -- Module      :  Distribution.Simple.Errors
@@ -638,11 +640,21 @@ exceptionMessage e = case e of
             ]
           _ -> []
     where
+#ifdef __MHS__
+      plural = case libs of
+        _ : _ : _ -> True
+        _ -> False
+      missing =
+        case libs of
+          _ : _ -> True
+          [] -> case hdr of Just (Left _) -> True; _ -> False
+#else
       plural = length libs >= 2
       -- Is there something missing? (as opposed to broken)
       missing =
         not (null libs)
           || case hdr of Just (Left _) -> True; _ -> False
+#endif
       messageSingular =
         "This problem can usually be solved by installing the system "
           ++ "package that provides this library (you may need the "

@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -15,6 +15,9 @@
 -- Definition of the sdist command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.SDist
+#ifdef __MHS__
+  ( SDistFlags (..)
+#else
   ( SDistFlags
       ( SDistCommonFlags
       , sDistVerbosity
@@ -24,6 +27,7 @@ module Distribution.Simple.Setup.SDist
       , sDistTargets
       , ..
       )
+#endif
   , emptySDistFlags
   , defaultSDistFlags
   , sdistCommand
@@ -54,6 +58,7 @@ data SDistFlags = SDistFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically SDistFlags
 
+#ifndef __MHS__
 pattern SDistCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -77,6 +82,7 @@ pattern SDistCommonFlags
         , setupTargets = sDistTargets
         }
     )
+#endif
 
 defaultSDistFlags :: SDistFlags
 defaultSDistFlags =

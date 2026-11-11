@@ -13,7 +13,7 @@ import Distribution.Simple
 import Distribution.Simple.Flag
 import Distribution.Simple.Utils (removeFileForcibly)
 import Distribution.Verbosity
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath
 import Test.Tasty
 import Test.Tasty.HUnit

@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
 
@@ -264,10 +264,14 @@ import Distribution.Version
   , orLaterVersion
   )
 
+#ifdef __MHS__
+import Control.Exception (try)
+#else
 import Control.Exception (AssertionFailed, assert, try)
+#endif
 import Data.Monoid (Any (..))
 import Distribution.Client.Types
-import System.Directory
+import Distribution.Compat.Directory
   ( doesFileExist
   , withCurrentDirectory
   )
@@ -286,7 +290,7 @@ import System.IO
   , stderr
   , stdout
   )
-import System.Process (createProcess, env, proc, waitForProcess)
+import Distribution.Compat.Process (createProcess, env, proc, waitForProcess)
 
 -- | Entry point
 --
@@ -326,6 +330,9 @@ main args = do
 
 -- | Check whether assertions are enabled and print a warning in that case.
 warnIfAssertionsAreEnabled :: IO ()
+#ifdef __MHS__
+warnIfAssertionsAreEnabled = return ()
+#else
 warnIfAssertionsAreEnabled =
   assert False (return ())
     `catch` (\(_e :: AssertionFailed) -> hPutStrLn stderr assertionsEnabledMsg)
@@ -336,6 +343,7 @@ warnIfAssertionsAreEnabled =
 
     assertionsEnabledMsg =
       "Warning: this is a debug build of cabal-install with assertions enabled."
+#endif
 
 -- | Core worker, similar to 'defaultMainHelper' in Cabal/Distribution.Simple
 --
@@ -979,7 +987,7 @@ testAction (buildFlags, testFlags) extraArgs globalFlags = do
           { testCommonFlags =
               (testCommonFlags testFlags){setupDistPref = toFlag distPref}
           }
-      mbWorkDir = flagToMaybe $ testWorkingDir testFlags
+      mbWorkDir = flagToMaybe $ setupWorkingDir $ testCommonFlags testFlags
 
   -- The package was just configured, so the LBI must be available.
   names <-
@@ -1103,7 +1111,7 @@ benchmarkAction
                   { setupDistPref = toFlag distPref
                   }
             }
-        mbWorkDir = flagToMaybe $ benchmarkWorkingDir benchmarkFlags
+        mbWorkDir = flagToMaybe $ setupWorkingDir $ benchmarkCommonFlags benchmarkFlags
 
     -- The package was just configured, so the LBI must be available.
     names <-
@@ -1421,7 +1429,7 @@ uploadAction uploadFlags extraArgs globalFlags = do
         []
         globalFlags
       distPref <- findSavedDistPref config NoFlag
-      let mbWorkDir = flagToMaybe $ configWorkingDir $ savedConfigureFlags config
+      let mbWorkDir = flagToMaybe $ setupWorkingDir $ configCommonFlags $ savedConfigureFlags config
       pkg <- fmap LBI.localPkgDescr (getPersistBuildConfig mbWorkDir distPref)
       return $ getSymbolicPath distPref </> display (packageId pkg) ++ "-docs" <.> "tar.gz"
 

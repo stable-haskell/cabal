@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE PatternSynonyms #-}
 
@@ -49,6 +49,11 @@ module Distribution.Types.LocalBuildInfo
       )
 
     -- * Convenience accessors
+#ifdef __MHS__
+  , mkFlatLocalBuildInfo
+  , localBuildDescr
+  , localBuildConfig
+#endif
   , localComponentId
   , localUnitId
   , localCompatPackageKey
@@ -134,6 +139,160 @@ import qualified System.FilePath as FilePath (takeDirectory)
 
 -- | Data cached after configuration step.  See also
 -- 'Distribution.Simple.Setup.ConfigFlags'.
+#ifdef __MHS__
+-- MicroHs cannot parse record pattern synonyms, so the backwards-compatible
+-- flat view is a real datatype here instead of a pattern synonym. All use
+-- sites mention only 'LocalBuildInfo' and its field names, so they keep working
+-- unchanged; use 'mkFlatLocalBuildInfo' to build one from the nested representation.
+data LocalBuildInfo = LocalBuildInfo
+  { configFlags :: ConfigFlags
+  , flagAssignment :: FlagAssignment
+  , componentEnabledSpec :: ComponentRequestedSpec
+  , extraConfigArgs :: [String]
+  , installDirTemplates :: InstallDirTemplates
+  , compiler :: Compiler
+  , hostPlatform :: Platform
+  , pkgDescrFile :: Maybe (SymbolicPath Pkg File)
+  , componentGraph :: Graph UnitId ComponentLocalBuildInfo
+  , componentNameMap :: Map ComponentName [ComponentLocalBuildInfo]
+  , promisedPkgs :: Map (PackageName, ComponentName) PromisedComponent
+  , installedPkgs :: InstalledPackageIndex
+  , localPkgDescr :: PackageDescription
+  , withPrograms :: ProgramDb
+  , withPackageDB :: PackageDBStack
+  , withVanillaLib :: Bool
+  , withProfLib :: Bool
+  , withProfLibShared :: Bool
+  , withSharedLib :: Bool
+  , withStaticLib :: Bool
+  , withBytecodeLib :: Bool
+  , withDynExe :: Bool
+  , withFullyStaticExe :: Bool
+  , withProfExe :: Bool
+  , withProfLibDetail :: ProfDetailLevel
+  , withProfExeDetail :: ProfDetailLevel
+  , withOptimization :: OptimisationLevel
+  , withDebugInfo :: DebugInfoLevel
+  , withGHCiLib :: Bool
+  , splitSections :: Bool
+  , splitObjs :: Bool
+  , stripExes :: Bool
+  , stripLibs :: Bool
+  , exeCoverage :: Bool
+  , libCoverage :: Bool
+  , extraCoverageFor :: [UnitId]
+  , relocatable :: Bool
+  , programPrefix :: Maybe PathTemplate
+  , programSuffix :: Maybe PathTemplate
+  }
+  deriving (Generic, Read, Show)
+
+-- | Build the flat 'LocalBuildInfo' view from the nested representation.
+mkFlatLocalBuildInfo :: LBC.LocalBuildDescr -> LBC.LocalBuildConfig -> LocalBuildInfo
+mkFlatLocalBuildInfo lbd lbc = LocalBuildInfo
+    { configFlags = LBC.configFlags pbd
+    , flagAssignment = LBC.flagAssignment pbd
+    , componentEnabledSpec = LBC.componentEnabledSpec pbd
+    , extraConfigArgs = LBC.extraConfigArgs lbc
+    , installDirTemplates = LBC.installDirTemplates pbd
+    , compiler = LBC.compiler pbd
+    , hostPlatform = LBC.hostPlatform pbd
+    , pkgDescrFile = LBC.pkgDescrFile pbd
+    , componentGraph = LBC.componentGraph cbd
+    , componentNameMap = LBC.componentNameMap cbd
+    , promisedPkgs = LBC.promisedPkgs cbd
+    , installedPkgs = LBC.installedPkgs cbd
+    , localPkgDescr = LBC.localPkgDescr pbd
+    , withPrograms = LBC.withPrograms lbc
+    , withPackageDB = LBC.withPackageDB pbd
+    , withVanillaLib = LBC.withVanillaLib bopts
+    , withProfLib = LBC.withProfLib bopts
+    , withProfLibShared = LBC.withProfLibShared bopts
+    , withSharedLib = LBC.withSharedLib bopts
+    , withStaticLib = LBC.withStaticLib bopts
+    , withBytecodeLib = LBC.withBytecodeLib bopts
+    , withDynExe = LBC.withDynExe bopts
+    , withFullyStaticExe = LBC.withFullyStaticExe bopts
+    , withProfExe = LBC.withProfExe bopts
+    , withProfLibDetail = LBC.withProfLibDetail bopts
+    , withProfExeDetail = LBC.withProfExeDetail bopts
+    , withOptimization = LBC.withOptimization bopts
+    , withDebugInfo = LBC.withDebugInfo bopts
+    , withGHCiLib = LBC.withGHCiLib bopts
+    , splitSections = LBC.splitSections bopts
+    , splitObjs = LBC.splitObjs bopts
+    , stripExes = LBC.stripExes bopts
+    , stripLibs = LBC.stripLibs bopts
+    , exeCoverage = LBC.exeCoverage bopts
+    , libCoverage = LBC.libCoverage bopts
+    , extraCoverageFor = LBC.extraCoverageFor pbd
+    , relocatable = LBC.relocatable bopts
+    , programPrefix = LBC.programPrefix bopts
+    , programSuffix = LBC.programSuffix bopts
+    }
+  where
+    pbd = LBC.packageBuildDescr lbd
+    cbd = LBC.componentBuildDescr lbd
+    bopts = LBC.withBuildOptions lbc
+
+localBuildDescr :: LocalBuildInfo -> LBC.LocalBuildDescr
+localBuildDescr lbi =
+  LBC.LocalBuildDescr
+    { LBC.packageBuildDescr =
+      LBC.PackageBuildDescr
+        { LBC.configFlags = configFlags lbi
+        , LBC.flagAssignment = flagAssignment lbi
+        , LBC.componentEnabledSpec = componentEnabledSpec lbi
+        , LBC.compiler = compiler lbi
+        , LBC.hostPlatform = hostPlatform lbi
+        , LBC.localPkgDescr = localPkgDescr lbi
+        , LBC.installDirTemplates = installDirTemplates lbi
+        , LBC.withPackageDB = withPackageDB lbi
+        , LBC.pkgDescrFile = pkgDescrFile lbi
+        , LBC.extraCoverageFor = extraCoverageFor lbi
+        }
+    , LBC.componentBuildDescr =
+      LBC.ComponentBuildDescr
+        { LBC.componentGraph = componentGraph lbi
+        , LBC.componentNameMap = componentNameMap lbi
+        , LBC.promisedPkgs = promisedPkgs lbi
+        , LBC.installedPkgs = installedPkgs lbi
+        }
+    }
+
+localBuildConfig :: LocalBuildInfo -> LBC.LocalBuildConfig
+localBuildConfig lbi =
+  LBC.LocalBuildConfig
+    { LBC.extraConfigArgs = extraConfigArgs lbi
+    , LBC.withPrograms = withPrograms lbi
+    , LBC.withBuildOptions =
+      LBC.BuildOptions
+        { LBC.withVanillaLib = withVanillaLib lbi
+        , LBC.withProfLib = withProfLib lbi
+        , LBC.withProfLibShared = withProfLibShared lbi
+        , LBC.withSharedLib = withSharedLib lbi
+        , LBC.withStaticLib = withStaticLib lbi
+        , LBC.withBytecodeLib = withBytecodeLib lbi
+        , LBC.withDynExe = withDynExe lbi
+        , LBC.withFullyStaticExe = withFullyStaticExe lbi
+        , LBC.withProfExe = withProfExe lbi
+        , LBC.withProfLibDetail = withProfLibDetail lbi
+        , LBC.withProfExeDetail = withProfExeDetail lbi
+        , LBC.withOptimization = withOptimization lbi
+        , LBC.withDebugInfo = withDebugInfo lbi
+        , LBC.withGHCiLib = withGHCiLib lbi
+        , LBC.splitSections = splitSections lbi
+        , LBC.splitObjs = splitObjs lbi
+        , LBC.stripExes = stripExes lbi
+        , LBC.stripLibs = stripLibs lbi
+        , LBC.exeCoverage = exeCoverage lbi
+        , LBC.libCoverage = libCoverage lbi
+        , LBC.relocatable = relocatable lbi
+        , LBC.programPrefix = programPrefix lbi
+        , LBC.programSuffix = programSuffix lbi
+        }
+    }
+#else
 data LocalBuildInfo = NewLocalBuildInfo
   { localBuildDescr :: LBC.LocalBuildDescr
   -- ^ Information about a package determined by Cabal
@@ -157,7 +316,7 @@ pattern LocalBuildInfo
   -> Compiler
   -> Platform
   -> Maybe (SymbolicPath Pkg File)
-  -> Graph ComponentLocalBuildInfo
+  -> Graph UnitId ComponentLocalBuildInfo
   -> Map ComponentName [ComponentLocalBuildInfo]
   -> Map (PackageName, ComponentName) PromisedComponent
   -> InstalledPackageIndex
@@ -286,6 +445,7 @@ pattern LocalBuildInfo
             }
         }
     }
+#endif
 
 instance Binary LocalBuildInfo
 instance Structured LocalBuildInfo

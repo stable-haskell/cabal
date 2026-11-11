@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -47,7 +46,7 @@ import Distribution.Simple.Setup.Config
 import Distribution.Types.ExposedModule
 import Distribution.Types.InstalledPackageInfo (InstalledPackageInfo (libraryDirs), exposedModules)
 import Distribution.Types.LocalBuildInfo (LocalBuildInfo (..))
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , listDirectory
   )

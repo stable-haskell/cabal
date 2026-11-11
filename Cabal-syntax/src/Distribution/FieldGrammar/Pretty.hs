@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Distribution.FieldGrammar.Pretty
   ( PrettyFieldGrammar
   , prettyFieldGrammar
@@ -21,7 +22,18 @@ import Distribution.FieldGrammar.Class
 newtype PrettyFieldGrammar s a = PrettyFG
   { fieldGrammarPretty :: CabalSpecVersion -> s -> [PrettyField ()]
   }
+#ifndef __MHS__
   deriving (Functor)
+#endif
+
+#ifdef __MHS__
+-- MicroHs cannot derive Functor here ('a' is phantom and its deriving
+-- machinery refers to an undefined helper), so spell out the same
+-- mapping by hand. Semantics are identical to the derived instance:
+-- the function field is carried over unchanged.
+instance Functor (PrettyFieldGrammar s) where
+  fmap _ (PrettyFG pp) = PrettyFG pp
+#endif
 
 instance Applicative (PrettyFieldGrammar s) where
   pure _ = PrettyFG (\_ _ -> mempty)

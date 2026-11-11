@@ -1,5 +1,4 @@
-{-# LANGUAGE DataKinds #-}
-
+{-# LANGUAGE CPP #-}
 module Distribution.Simple.Test.LibV09
   ( runTest
   -- Test stub
@@ -41,7 +40,7 @@ import Distribution.Verbosity
 
 import qualified Control.Exception as CE
 import qualified Data.ByteString.Lazy as LBS
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , createDirectoryIfMissing
   , doesFileExist
@@ -49,8 +48,11 @@ import System.Directory
   , removePathForcibly
   , setCurrentDirectory
   )
+#ifdef __MHS__
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
+#endif
 import System.IO (hClose, hPutStr)
-import qualified System.Process as Process
+import qualified Distribution.Compat.Process as Process
 
 runTest
   :: VerbosityHandles
@@ -118,6 +120,21 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
           Flag path -> (path, cmd : opts)
           NoFlag -> (cmd, opts)
 
+#ifdef __MHS__
+    -- MHS: capture sequentially (stage input, spawn, wait, read)
+    -- instead of streaming through a pipe; complete by construction.
+    -- Standard output and error are concatenated (in that order)
+    -- rather than interleaved as with a real pipe.
+    (exitcode, captured) <-
+      Process.captureProcess
+        ((proc cmd' opts') {Process.env = Just shellEnv'})
+        (Process.TextInput (show (tempLog, PD.testName suite)))
+    outLog <- readFileLBS (Process.capturedOutPath captured)
+    errLog <- readFileLBS (Process.capturedErrPath captured)
+    let logText = outLog <> errLog
+    _ <- evaluate (force logText)
+    Process.capturedRelease captured
+#else
     -- TODO: this setup is broken,
     -- if the test output is too big, we will deadlock.
     (rOut, wOut) <- Process.createPipe
@@ -140,6 +157,7 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
         -- Force the IO manager to drain the test output pipe
         _ <- evaluate (force logText)
         return logText
+#endif
     unless (exitcode == ExitSuccess) $
       debug verbosity $
         cmd ++ " returned " ++ show exitcode

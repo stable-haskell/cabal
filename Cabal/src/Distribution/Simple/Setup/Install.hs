@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -16,6 +16,9 @@
 -- Definition of the install command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.Install
+#ifdef __MHS__
+  ( InstallFlags (..)
+#else
   ( InstallFlags
       ( InstallCommonFlags
       , installVerbosity
@@ -25,6 +28,7 @@ module Distribution.Simple.Setup.Install
       , installTargets
       , ..
       )
+#endif
   , emptyInstallFlags
   , defaultInstallFlags
   , installCommand
@@ -60,6 +64,7 @@ data InstallFlags = InstallFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically InstallFlags
 
+#ifndef __MHS__
 pattern InstallCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -83,6 +88,7 @@ pattern InstallCommonFlags
         , setupTargets = installTargets
         }
     )
+#endif
 
 defaultInstallFlags :: InstallFlags
 defaultInstallFlags =

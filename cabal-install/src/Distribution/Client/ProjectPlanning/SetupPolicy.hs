@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 -- | Setup.hs script policy
 --
 -- Handling for Setup.hs scripts is a bit tricky, part of it lives in the
@@ -161,9 +159,7 @@ instance Package NonSetupLibDepSolverPlanPackage where
   packageId (NonSetupLibDepSolverPlanPackage spkg) =
     packageId spkg
 
-instance IsNode NonSetupLibDepSolverPlanPackage where
-  type Key NonSetupLibDepSolverPlanPackage = SolverId
-
+instance IsNode SolverId NonSetupLibDepSolverPlanPackage where
   nodeKey (NonSetupLibDepSolverPlanPackage spkg) =
     nodeKey spkg
 
@@ -181,7 +177,7 @@ instance IsNode NonSetupLibDepSolverPlanPackage where
 packageSetupScriptSpecVersion
   :: SetupScriptStyle
   -> PackageDescription
-  -> Graph.Graph NonSetupLibDepSolverPlanPackage
+  -> Graph.Graph SolverId NonSetupLibDepSolverPlanPackage
   -> ComponentDeps [SolverId]
   -> SetupCliVersion
 -- We're going to be using the internal Cabal library, so the spec version of

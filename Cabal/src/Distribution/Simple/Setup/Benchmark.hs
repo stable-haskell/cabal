@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -15,6 +15,9 @@
 -- Definition of the benchmarking command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.Benchmark
+#ifdef __MHS__
+  ( BenchmarkFlags (..)
+#else
   ( BenchmarkFlags
       ( BenchmarkCommonFlags
       , benchmarkVerbosity
@@ -24,6 +27,7 @@ module Distribution.Simple.Setup.Benchmark
       , benchmarkTargets
       , ..
       )
+#endif
   , emptyBenchmarkFlags
   , defaultBenchmarkFlags
   , benchmarkCommand
@@ -53,6 +57,7 @@ data BenchmarkFlags = BenchmarkFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically BenchmarkFlags
 
+#ifndef __MHS__
 pattern BenchmarkCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -76,6 +81,7 @@ pattern BenchmarkCommonFlags
         , setupTargets = benchmarkTargets
         }
     )
+#endif
 
 instance Binary BenchmarkFlags
 instance Structured BenchmarkFlags

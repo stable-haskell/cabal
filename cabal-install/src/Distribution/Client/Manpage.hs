@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      :  Distribution.Client.Manpage
 -- Copyright   :  (c) Maciek Makowski 2015
@@ -40,7 +41,7 @@ import Distribution.Simple.Utils
 import Distribution.Verbosity
 import System.Environment (lookupEnv)
 import System.IO (hClose, hPutStr)
-import qualified System.Process as Process
+import qualified Distribution.Compat.Process as Process
 
 data FileInfo
   = -- | path, description
@@ -92,6 +93,18 @@ manpageCmd pname commands flags
           [] -> dieWithException verbosity EmptyValuePagerEnvVariable
           (p : pa) -> pure (p, pa)
         -- Pipe output of @nroff@ into @less@
+#ifdef __MHS__
+        -- MHS: stage the input before spawn; a 'CreatePipe' stdin
+        -- would hand the child an empty file while the parent has
+        -- not written yet, with no way to synchronize.
+        (inH, cleanupIn) <- Process.newStagedInput formatted
+        (ec2, _) <-
+          rawSystemProcAction
+            verbosity
+            (proc pager pagerArgs){Process.std_in = Process.UseHandle inH}
+            $ \_ _ _ -> return ()
+        cleanupIn
+#else
         (ec2, _) <- rawSystemProcAction
           verbosity
           (proc pager pagerArgs){Process.std_in = Process.CreatePipe}
@@ -99,6 +112,7 @@ manpageCmd pname commands flags
             let wIn = fromCreatePipe mIn
             hPutStr wIn formatted
             hClose wIn
+#endif
         exitWith ec2
   where
     contents :: String

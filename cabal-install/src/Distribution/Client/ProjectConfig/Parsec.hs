@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Parsing project configuration.
@@ -23,6 +24,9 @@ import Distribution.Client.Types.SourceRepo (sourceRepositoryPackageGrammar)
 import Distribution.Client.Utils.Parsec
 import Distribution.Compat.Lens
 import Distribution.Compat.Prelude
+#ifdef __MHS__
+import Prelude (mapM_)
+#endif
 import Distribution.FieldGrammar
 import Distribution.FieldGrammar.Parsec (NamelessField (..), namelessFieldAnn)
 import Distribution.Fields (Field (..), FieldLine (..), FieldName, Name (..), SectionArg (..), readFields')
@@ -56,7 +60,7 @@ import qualified Data.Set as Set
 import Distribution.Client.Errors.Parser (ProjectFileSource (..))
 import qualified Distribution.Compat.CharParsing as P
 import Network.URI (URI, uriFragment, uriPath, uriScheme)
-import System.Directory (makeAbsolute)
+import Distribution.Compat.Directory (makeAbsolute)
 import System.FilePath (splitFileName)
 import qualified Text.Parsec
 import Text.PrettyPrint (render)

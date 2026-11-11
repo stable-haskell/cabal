@@ -126,7 +126,7 @@ import Distribution.Simple.Utils
 import Distribution.Utils.Path
   ( getSymbolicPath
   )
-import qualified System.Directory as IO
+import qualified Distribution.Compat.Directory as IO
   ( canonicalizePath
   , doesDirectoryExist
   , doesFileExist
@@ -146,11 +146,43 @@ import qualified System.FilePath as FilePath
   , (<.>)
   , (</>)
   )
+#ifndef __MHS__
 import Text.EditDistance
   ( defaultEditCosts
   , restrictedDamerauLevenshteinDistance
   )
+#endif
 import qualified Prelude (foldr1)
+
+#ifdef __MHS__
+-- | MHS fallback for the @edit-distance@ package: plain Levenshtein
+-- distance (dynamic programming, quadratic in the input lengths, which
+-- is fine for short target names).
+defaultEditCosts :: ()
+defaultEditCosts = ()
+
+restrictedDamerauLevenshteinDistance :: () -> String -> String -> Int
+restrictedDamerauLevenshteinDistance _ = levDist
+  where
+    levDist :: String -> String -> Int
+    levDist xs ys = table !! lx !! ly
+      where
+        lx = length xs
+        ly = length ys
+        table =
+          [ [ dist i j | j <- [0 .. ly] ]
+          | i <- [0 .. lx]
+          ]
+        dist 0 j = j
+        dist i 0 = i
+        dist i j =
+          minimum
+            [ table !! (i - 1) !! j + 1
+            , table !! i !! (j - 1) + 1
+            , table !! (i - 1) !! (j - 1)
+                + if xs !! (i - 1) == ys !! (j - 1) then 0 else 1
+            ]
+#endif
 
 -- ------------------------------------------------------------
 

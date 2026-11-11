@@ -20,6 +20,12 @@ lib: ## Builds the Cabal libraries.
 exe: ## Builds the cabal-install executables.
 	$(CABALBUILD) cabal-install:exes
 
+# minimal-toolchain (mhs) build, see cabal.mhs.project. Requires the
+# pregenerated Distribution.Fields.Lexer (alex is needed to regenerate it).
+.PHONY: mhs-build
+mhs-build: ## Build with the minimal (mhs/stable-haskell) toolchain profile.
+	$(CABALBUILD) --project-file=cabal.mhs.project all
+
 .PHONY: init
 init: ## Set up git hooks and ignored revisions.
 	@git config core.hooksPath .githooks

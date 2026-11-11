@@ -19,6 +19,7 @@ import Distribution.Client.Types.SourceRepo (SourceRepoList)
 import Distribution.Client.Types.WriteGhcEnvironmentFilesPolicy (WriteGhcEnvironmentFilesPolicy)
 import Distribution.Compat.Lens
 import Distribution.Compat.Prelude
+import Prelude ()
 import Distribution.Compiler (CompilerFlavor (..))
 import Distribution.Package
   ( PackageName

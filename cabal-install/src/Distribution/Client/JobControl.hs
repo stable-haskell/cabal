@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      :  Distribution.Client.JobControl
 -- Copyright   :  (c) Duncan Coutts 2012
@@ -47,7 +48,16 @@ import Distribution.Compat.Stack
 import Distribution.Simple.Compiler
 import Distribution.Simple.Utils
 import Distribution.Types.ParStrat
+#ifndef __MHS__
 import System.Semaphore
+#endif
+
+#ifdef __MHS__
+-- | MHS fallback: @semaphore-compat@ is unavailable, so the semaphore
+-- identifier is just its (opaque) name and semaphore job control
+-- degrades to plain parallel job control (see 'newSemaphoreJobControl').
+type SemaphoreIdentifier = String
+#endif
 
 -- | A simple concurrency abstraction. Jobs can be spawned and can complete
 -- in any order. This allows both serial and parallel implementations.
@@ -173,6 +183,10 @@ readAllTChan qvar = go []
 -- This uses the GHC -jsem option to allow GHC to take additional semaphore slots
 -- if we are not using them all.
 newSemaphoreJobControl :: WithCallStack (Verbosity -> Int -> IO (JobControl IO a))
+#ifdef __MHS__
+-- No @-jsem@ support in the MHS build: cap jobs locally instead.
+newSemaphoreJobControl _ = newParallelJobControl
+#else
 newSemaphoreJobControl _ n
   | n < 1 || n > 1000 =
       error $ "newParallelJobControl: not a sensible number of jobs: " ++ show n
@@ -250,6 +264,7 @@ newSemaphoreJobControl verbosity maxJobLimit = do
       atomically $ do
         xs <- readAllTChan inqVar
         modifyTVar' countVar (subtract (length xs))
+#endif
 
 -------------------------
 -- Job limits and locks
@@ -290,6 +305,10 @@ newJobControlFromParStrat
 newJobControlFromParStrat verbosity mcompiler parStrat numJobsCap = case parStrat of
   Serial -> newSerialJobControl
   NumJobs n -> newParallelJobControl (capJobs (fromMaybe numberOfProcessors n))
+#ifdef __MHS__
+  -- No @-jsem@ support in the MHS build: cap jobs locally instead.
+  UseSem n -> newParallelJobControl (capJobs n)
+#else
   UseSem n ->
     case mcompiler of
       Just compiler
@@ -315,17 +334,23 @@ newJobControlFromParStrat verbosity mcompiler parStrat numJobsCap = case parStra
       Nothing ->
         -- Don't warn in the Nothing case, as there isn't really a "selected" compiler.
         newParallelJobControl (capJobs n)
+#endif
   where
     capJobs n = min (fromMaybe maxBound numJobsCap) n
 
 -- | Check if the compiler's semaphore version is compatible with ours,
 -- per 'versionsAreCompatible'. A compiler that doesn't report a
 -- @"Semaphore version"@ field is treated as v1.
+#ifdef __MHS__
+isJsemCompatible :: Compiler -> Bool
+isJsemCompatible _ = False
+#else
 isJsemCompatible :: Compiler -> Bool
 isJsemCompatible compiler =
   versionsAreCompatible (SemaphoreProtocolVersion v) semaphoreVersion
   where
     v = fromMaybe 1 (jsemVersion compiler)
+#endif
 
 withJobControl :: IO (JobControl IO a) -> (JobControl IO a -> IO b) -> IO b
 withJobControl mkJC = bracket mkJC cleanupJobControl

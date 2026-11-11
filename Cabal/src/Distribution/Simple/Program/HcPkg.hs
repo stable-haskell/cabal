@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -72,7 +71,7 @@ import Distribution.Types.UnitId (mkLegacyUnitId, unUnitId)
 import Distribution.Utils.Path
   ( CWD
   , FileLike ((<.>))
-  , FileOrDir (Dir)
+  , Dir
   , PathLike ((</>))
   , Pkg
   , PkgDB

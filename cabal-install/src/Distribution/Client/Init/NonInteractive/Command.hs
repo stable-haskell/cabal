@@ -474,7 +474,7 @@ buildToolsHeuristics
   -> CabalSpecVersion
   -> m [Dependency]
 buildToolsHeuristics flags fp v = case buildTools flags of
-  Flag{} -> getBuildTools flags
+  Flag _ -> getBuildTools flags
   NoFlag -> retrieveBuildTools v fp
 
 -- | Retrieve the list of dependencies

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -36,6 +37,7 @@ import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
 import qualified Distribution.Compat.Binary as Binary
 import Distribution.Compat.Graph (Graph, Node)
 import qualified Distribution.Compat.Graph as Graph
+import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
 import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import Distribution.Package
 import qualified Distribution.PackageDescription as PD
@@ -69,8 +71,9 @@ import Prelude ()
 import Control.Monad ((<=<))
 
 import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Lazy as BS
+#ifndef __MHS__
 import Data.Either (fromRight)
+#endif
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -79,6 +82,12 @@ import System.FilePath
 import System.IO
 
 import Distribution.Simple.Program.GHC (packageDbArgsDb)
+
+#ifdef __MHS__
+fromRight :: b -> Either a b -> b
+fromRight _ (Right x) = x
+fromRight d (Left _) = d
+#endif
 
 -----------------------------------------------------------------------------
 -- Writing plan.json files
@@ -521,7 +530,7 @@ data PostBuildProjectStatus = PostBuildProjectStatus
   -- or data file generation failing.
   --
   -- This is a subset of 'packagesInvalidByChangedLibDeps'.
-  , packagesLibDepGraph :: Graph (Node (WithMachine UnitId) ElaboratedPlanPackage)
+  , packagesLibDepGraph :: Graph (WithMachine UnitId) (Node (WithMachine UnitId) ElaboratedPlanPackage)
   -- ^ A subset of the plan graph, including only dependency-on-library
   -- edges. That is, dependencies /on/ libraries, not dependencies /of/
   -- libraries. This tells us all the libraries that packages link to.
@@ -644,7 +653,7 @@ postBuildProjectStatus
 
       -- The plan graph but only counting dependency-on-library edges. A
       -- library dependency is always on the same machine as the package.
-      packagesLibDepGraph :: Graph (Node (WithMachine UnitId) ElaboratedPlanPackage)
+      packagesLibDepGraph :: Graph (WithMachine UnitId) (Node (WithMachine UnitId) ElaboratedPlanPackage)
       packagesLibDepGraph =
         Graph.fromDistinctList
           [ Graph.N pkg (Graph.nodeKey pkg) libdeps
@@ -795,7 +804,7 @@ readPackagesUpToDateCacheFile DistDirLayout{distProjectCacheFile} =
       withBinaryFile
         (distProjectCacheFile "up-to-date")
         ReadMode
-        (Binary.decodeOrFailIO <=< BS.hGetContents)
+        (Binary.decodeOrFailIO <=< hGetContentsLBS)
   where
     handleDecodeFailure = fmap (fromRight Set.empty)
 

@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Distribution.Utils.LogProgress
   ( LogProgress
   , runLogProgress
@@ -5,6 +7,9 @@ module Distribution.Utils.LogProgress
   , infoProgress
   , dieProgress
   , addProgressCtx
+#ifdef __MHS__
+  , hang
+#endif
   ) where
 
 import Distribution.Compat.Prelude
@@ -13,13 +18,18 @@ import Prelude ()
 import Distribution.Simple.Utils
 import Distribution.Utils.Progress
 import Distribution.Verbosity
-import GHC.Stack (HasCallStack, callStack, prettyCallStack)
+import Distribution.Compat.Stack (HasCallStack, callStack, prettyCallStack)
 import System.IO (hFlush, hPutStr, hPutStrLn)
 import Text.PrettyPrint
 
 type CtxMsg = Doc
 data LogMsg = WarnMsg Doc | InfoMsg Doc
 type ErrMsg = Doc
+
+#ifdef __MHS__
+hang :: Doc -> Int -> Doc -> Doc
+hang d1 n d2 = sep [d1, nest n d2]
+#endif
 
 data LogEnv = LogEnv
   { le_verbosity :: Verbosity

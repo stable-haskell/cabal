@@ -1,9 +1,14 @@
+{-# LANGUAGE CPP #-}
 -- | Implementation of base-62 encoding, which we use when computing hashes
 -- for fully instantiated unit ids.
 module Distribution.Utils.Base62 (hashToBase62) where
 
 import Data.Char (chr)
+#ifdef __MHS__
+import Distribution.Utils.MD5 (Fingerprint (..), fingerprintString)
+#else
 import GHC.Fingerprint (Fingerprint (..), fingerprintString)
+#endif
 import Numeric (showIntAtBase)
 
 -- | Hash a string using GHC's fingerprinting algorithm (a 128-bit

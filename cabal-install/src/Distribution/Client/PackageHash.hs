@@ -139,6 +139,7 @@ hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
       | length s <= n = s
       | otherwise = take (n - 1) s ++ "_"
 
+
 -- | All the information that contributes to a package's hash, and thus its
 -- 'InstalledPackageId'.
 data PackageHashInputs = PackageHashInputs

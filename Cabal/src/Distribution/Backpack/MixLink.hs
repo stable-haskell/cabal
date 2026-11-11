@@ -18,9 +18,10 @@ import Distribution.Pretty
 import Distribution.Types.ComponentId
 import qualified Distribution.Utils.UnionFind as UnionFind
 
-import Control.Monad
+import Control.Monad hiding (mapM, sequence)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
+import Distribution.Utils.LogProgress
 import Text.PrettyPrint
 
 -----------------------------------------------------------------------

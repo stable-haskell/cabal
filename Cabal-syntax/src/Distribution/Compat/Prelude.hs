@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE Trustworthy #-}
 
 -- | This module does two things:
@@ -18,11 +19,15 @@ module Distribution.Compat.Prelude
   , TypeRep
   , typeRep
   , Data
+#ifdef __MHS__
+  , Generic (..)
+#else
   , Generic
+#endif
   , Generically (..)
   , NFData (..)
   , Binary (..)
-  , Structured
+  , Structured (..)
   , Alternative (..)
   , MonadPlus (..)
   , IsString (..)
@@ -38,6 +43,10 @@ module Distribution.Compat.Prelude
 
     -- * Data.Either
   , partitionEithers
+#ifdef __MHS__
+  , lefts
+  , rights
+#endif
 
     -- * Data.Maybe
   , catMaybes
@@ -72,23 +81,36 @@ module Distribution.Compat.Prelude
   , init
 
     -- * Data.Foldable
-  , Foldable
+  -- NOTE: only the class methods are re-exported here (as plain
+  -- functions), never the class itself. MicroHs merges a re-exported
+  -- class method with a same-named local definition ('foldr1'
+  -- and 'foldl1' below) into an ambiguous export. Modules needing
+  -- the class (instances, deriving) import it directly. 'fold' is
+  -- deliberately not re-exported: several modules define a local
+  -- 'fold' ('Distribution.Utils.Progress', 'VersionRange', 'Graph'),
+  -- and every use of 'Data.Foldable.fold' imports it directly.
   , foldMap
+  , foldMap'
   , foldr
+  , foldr'
+  , foldl
+  , foldl'
+  , toList
   , null
   , length
+  , elem
+  , maximum
+  , minimum
+  , sum
+  , product
   , find
-  , foldl'
-  , traverse_
   , for_
+  , traverse_
   , any
   , all
-  , toList
 
     -- * Data.Traversable
-  , Traversable
-  , traverse
-  , sequenceA
+  , Traversable (..)
   , for
 
     -- * Data.Function
@@ -178,6 +200,21 @@ module Distribution.Compat.Prelude
 {- FOURMOLU_DISABLE -}
 import Prelude                       as BasePrelude hiding
     ( mapM, mapM_, sequence, any, all, head, tail, last, init
+    -- 'foldr' is also imported from 'Data.Foldable' below; hiding
+    -- Prelude's copy keeps the export list unambiguous. (Under GHC both
+    -- names denote the same entity, so this changes nothing there.)
+    , foldr
+    -- Same for the other list functions that 'Data.Foldable'
+    -- re-exports generically below (all identical to Prelude's
+    -- since the Foldable-Traversable Proposal).
+    , foldl
+    , length
+    , null
+    , elem
+    , maximum
+    , minimum
+    , product
+    , sum
     -- partial functions
     , read
     , foldr1, foldl1
@@ -187,23 +224,35 @@ import Prelude                       as BasePrelude hiding
     , Foldable(..)
     )
 {- FOURMOLU_ENABLE -}
-import Data.Foldable as BasePrelude (elem, foldl, maximum, minimum, product, sum)
-
 -- AMP
 import Data.Foldable
-  ( Foldable (foldMap, foldr, toList)
+  -- NOTE: only the class methods are re-exported here (as plain
+  -- functions), never the class itself. MicroHs merges a re-exported
+  -- class method with a same-named local definition ('foldr1'
+  -- and 'foldl1' below) into an ambiguous export. Modules needing
+  -- the class (instances, deriving) import it directly.
+  ( foldMap
+  , foldMap'
+  , foldr
+  , foldr'
+  , foldl
+  , foldl'
+  , toList
+  , null
+  , length
+  , elem
+  , maximum
+  , minimum
+  , sum
+  , product
   , all
   , any
   , find
-  , foldl'
   , for_
-  , length
-  , null
   , traverse_
   )
-import Data.Traversable (Traversable (sequenceA, traverse), for)
+import Data.Traversable (Traversable (..), for)
 
-import qualified Data.Foldable1
 
 -- Extra exports
 import Control.Applicative (Alternative (..), Const (..))
@@ -214,6 +263,13 @@ import Control.Monad (MonadPlus (..), ap, filterM, foldM, guard, join, liftM, li
 import Data.Char (chr, isAlpha, isAlphaNum, isDigit, isSpace, isUpper, ord, toLower, toUpper)
 import Data.Data (Data)
 import Data.Either (partitionEithers)
+#ifdef __MHS__
+lefts :: [Either a b] -> [a]
+lefts xs = [x | Left x <- xs]
+
+rights :: [Either a b] -> [b]
+rights xs = [x | Right x <- xs]
+#endif
 import Data.Function (on)
 import Data.Functor.Identity (Identity (..))
 import Data.Int (Int16, Int32, Int64, Int8)
@@ -229,7 +285,7 @@ import Data.Typeable (TypeRep, Typeable, typeRep)
 import Data.Void (Void, absurd, vacuous)
 import Data.Word (Word, Word16, Word32, Word64, Word8)
 import Distribution.Compat.Binary (Binary (..))
-import GHC.Generics (Generic, Generically (..))
+import GHC.Generics (Generic (..), Generically (..))
 import System.Exit (ExitCode (..), exitFailure, exitSuccess, exitWith)
 import Text.Read (readMaybe)
 
@@ -237,9 +293,16 @@ import qualified Text.PrettyPrint as Disp
 
 import Distribution.Compat.Exception
 import Distribution.Compat.NonEmptySet (NonEmptySet)
-import Distribution.Utils.Structured (Structured)
+import Distribution.Utils.Structured (Structured (..))
 
 import qualified Debug.Trace
+
+#ifdef __MHS__
+-- | Re-export the MicroHs compatibility instances (see
+-- 'Distribution.Compat.MhsInstances') so that every module importing
+-- this 'Prelude' can derive 'Data' over sets and maps.
+import Distribution.Compat.MhsInstances ()
+#endif
 
 -- | New name for 'Text.PrettyPrint.<>'
 (<<>>) :: Disp.Doc -> Disp.Doc -> Disp.Doc
@@ -247,11 +310,14 @@ import qualified Debug.Trace
 
 {-# INLINE foldr1 #-}
 foldr1 :: (a -> a -> a) -> NonEmpty a -> a
-foldr1 = Data.Foldable1.foldr1
+foldr1 f (x :| xs) = go x xs
+  where
+    go y [] = y
+    go y (z : zs) = f y (go z zs)
 
 {-# INLINE foldl1 #-}
 foldl1 :: (a -> a -> a) -> NonEmpty a -> a
-foldl1 = Data.Foldable1.foldl1
+foldl1 f (x :| xs) = foldl f x xs
 
 -------------------------------------------------------------------------------
 -- Trace
@@ -265,17 +331,38 @@ trace = Debug.Trace.trace
 {-# DEPRECATED trace "Don't leave me in the code" #-}
 
 traceShowId :: Show a => a -> a
+#ifdef __MHS__
+-- MicroHs's 'Debug.Trace' has no 'traceShow'.
+traceShowId x = Debug.Trace.trace (show x) x
+#else
 traceShowId x = Debug.Trace.traceShow x x
+#endif
 {-# DEPRECATED traceShowId "Don't leave me in the code" #-}
 
 traceShow :: Show a => a -> b -> b
+#ifdef __MHS__
+traceShow x y = Debug.Trace.trace (show x) y
+#else
 traceShow = Debug.Trace.traceShow
+#endif
 {-# DEPRECATED traceShow "Don't leave me in the code" #-}
 
 traceM :: Applicative f => String -> f ()
+#ifdef __MHS__
+-- MicroHs's 'Debug.Trace.traceM' needs 'Monad', so define the more
+-- general 'Applicative' version via 'trace'.
+traceM s = trace s (pure ())
+#else
 traceM = Debug.Trace.traceM
+#endif
 {-# DEPRECATED traceM "Don't leave me in the code" #-}
 
 traceShowM :: (Show a, Applicative f) => a -> f ()
+#ifdef __MHS__
+-- MicroHs's 'Debug.Trace' has no 'traceShowM', and its 'traceM'
+-- needs 'Monad', so go through 'trace' directly.
+traceShowM x = Debug.Trace.trace (show x) (pure ())
+#else
 traceShowM = Debug.Trace.traceShowM
+#endif
 {-# DEPRECATED traceShowM "Don't leave me in the code" #-}

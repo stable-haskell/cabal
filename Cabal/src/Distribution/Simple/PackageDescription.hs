@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -----------------------------------------------------------------------------
 
 -- |
@@ -45,7 +43,7 @@ import Distribution.Simple.Errors
 import Distribution.Simple.Utils (dieWithException, equating, warn)
 import Distribution.Utils.Path
 import Distribution.Verbosity (Verbosity, VerbosityLevel (..), verbosityLevel)
-import System.Directory (doesFileExist)
+import Distribution.Compat.Directory (doesFileExist)
 import Text.Printf (printf)
 
 readGenericPackageDescription

@@ -61,7 +61,7 @@ import Distribution.Simple.Flag
 import Distribution.Simple.InstallDirs.Internal
 import Distribution.System
 
-import System.Directory (getAppUserDataDirectory)
+import Distribution.Compat.Directory (getAppUserDataDirectory)
 import System.FilePath
   ( dropDrive
   , isPathSeparator
@@ -105,7 +105,36 @@ data InstallDirs dir = InstallDirs
   , sysconfdir :: dir
   }
   deriving (Eq, Read, Show, Functor, Generic)
+#ifndef __MHS__
   deriving (Semigroup, Monoid) via Generically (InstallDirs dir)
+#endif
+
+#ifdef __MHS__
+instance Semigroup dir => Semigroup (InstallDirs dir) where
+  (<>) = combineInstallDirs (<>)
+
+instance Monoid dir => Monoid (InstallDirs dir) where
+  mempty =
+    InstallDirs
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+      mempty
+  mappend = (<>)
+#endif
 
 instance Binary dir => Binary (InstallDirs dir)
 instance NFData dir => NFData (InstallDirs dir)
@@ -561,25 +590,25 @@ foreign import capi unsafe "shlobj.h SHGetFolderPathW"
 -- FieldGrammar
 
 installDirsGrammar :: ParsecFieldGrammar' (InstallDirs (Flag PathTemplate))
-installDirsGrammar = do
-  prefix <- optionalFieldDef "prefix" installDirsPrefixLens mempty
-  bindir <- optionalFieldDef "bindir" installDirsBindirLens mempty
-  libdir <- optionalFieldDef "libdir" installDirsLibdirLens mempty
-  libsubdir <- optionalFieldDef "libsubdir" installDirsLibsubdirLens mempty
-  dynlibdir <- optionalFieldDef "dynlibdir" installDirsDynlibdirLens mempty
-  bytecodelibdir <- optionalFieldDef "bytecodelibdir" installDirsBytecodelibdirLens mempty
-  let flibdir = NoFlag
-  libexecdir <- optionalFieldDef "libexecdir" installDirsLibexecdirLens mempty
-  libexecsubdir <- optionalFieldDef "libexecsubdir" installDirsLibexecsubdirLens mempty
-  let includedir = NoFlag
-  datadir <- optionalFieldDef "datadir" installDirsDatadirLens mempty
-  datasubdir <- optionalFieldDef "datasubdir" installDirsDatasubdirLens mempty
-  docdir <- optionalFieldDef "docdir" installDirsDocdirLens mempty
-  let mandir = NoFlag
-  htmldir <- optionalFieldDef "htmldir" installDirsHtmldirLens mempty
-  haddockdir <- optionalFieldDef "haddockdir" installDirsHaddockdirLens mempty
-  sysconfdir <- optionalFieldDef "sysconfdir" installDirsSysconfdirLens mempty
-  pure InstallDirs{..}
+installDirsGrammar =
+  mkInstallDirs
+    <$> optionalFieldDef "prefix" installDirsPrefixLens mempty
+    <*> optionalFieldDef "bindir" installDirsBindirLens mempty
+    <*> optionalFieldDef "libdir" installDirsLibdirLens mempty
+    <*> optionalFieldDef "libsubdir" installDirsLibsubdirLens mempty
+    <*> optionalFieldDef "dynlibdir" installDirsDynlibdirLens mempty
+    <*> optionalFieldDef "bytecodelibdir" installDirsBytecodelibdirLens mempty
+    <*> optionalFieldDef "libexecdir" installDirsLibexecdirLens mempty
+    <*> optionalFieldDef "libexecsubdir" installDirsLibexecsubdirLens mempty
+    <*> optionalFieldDef "datadir" installDirsDatadirLens mempty
+    <*> optionalFieldDef "datasubdir" installDirsDatasubdirLens mempty
+    <*> optionalFieldDef "docdir" installDirsDocdirLens mempty
+    <*> optionalFieldDef "htmldir" installDirsHtmldirLens mempty
+    <*> optionalFieldDef "haddockdir" installDirsHaddockdirLens mempty
+    <*> optionalFieldDef "sysconfdir" installDirsSysconfdirLens mempty
+  where
+    mkInstallDirs prefix bindir libdir libsubdir dynlibdir bytecodelibdir libexecdir libexecsubdir datadir datasubdir docdir htmldir haddockdir sysconfdir =
+      InstallDirs{flibdir = NoFlag, includedir = NoFlag, mandir = NoFlag, ..}
 
 -- ---------------------------------------------------------------------------
 -- Lenses

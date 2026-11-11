@@ -31,7 +31,7 @@ import Distribution.Simple.Program
 import Foreign.C.Error (Errno (..), ePIPE)
 import System.Exit
 import System.IO
-import System.Process
+import Distribution.Compat.Process
 import Text.Read (readMaybe)
 import Prelude hiding (log)
 

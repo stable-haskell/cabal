@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GADTs #-}
 
 -- | @since 2.2.0
@@ -12,6 +13,7 @@ module Distribution.Utils.IOData
   ) where
 
 import qualified Data.ByteString.Lazy as LBS
+import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
 import Distribution.Compat.Prelude hiding (null)
 import qualified System.IO
 import qualified Prelude
@@ -62,16 +64,26 @@ data IODataMode mode where
 
 instance a ~ Char => KnownIODataMode [a] where
   hGetIODataContents h = do
+#ifdef __MHS__
+    -- MicroHs handles have no text/binary mode switch.
+    System.IO.hGetContents h
+#else
     System.IO.hSetBinaryMode h False
     System.IO.hGetContents h
+#endif
 
   toIOData = IODataText
   iodataMode = IODataModeText
 
 instance KnownIODataMode LBS.ByteString where
   hGetIODataContents h = do
+#ifndef __MHS__
     System.IO.hSetBinaryMode h True
-    LBS.hGetContents h
+#endif
+    -- 'hGetContentsLBS' is 'LBS.hGetContents' on GHC; under MHS it
+    -- avoids 'hGetSome', which MicroHs does not implement (and
+    -- MicroHs handles have no text/binary mode switch to set).
+    hGetContentsLBS h
 
   toIOData = IODataBinary
   iodataMode = IODataModeBinary
@@ -86,10 +98,20 @@ instance KnownIODataMode LBS.ByteString where
 -- @since 2.2
 hPutContents :: System.IO.Handle -> IOData -> Prelude.IO ()
 hPutContents h (IODataText c) = do
+#ifdef __MHS__
+  -- MicroHs handles have no text/binary mode switch.
+  System.IO.hPutStr h c
+#else
   System.IO.hSetBinaryMode h False
   System.IO.hPutStr h c
+#endif
   System.IO.hClose h
 hPutContents h (IODataBinary c) = do
+#ifdef __MHS__
+  -- MicroHs handles have no text/binary mode switch.
+  LBS.hPutStr h c
+#else
   System.IO.hSetBinaryMode h True
   LBS.hPutStr h c
+#endif
   System.IO.hClose h

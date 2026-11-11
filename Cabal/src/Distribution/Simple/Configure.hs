@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -71,7 +71,8 @@ module Distribution.Simple.Configure
   , platformDefines
   ) where
 
-import Control.Monad
+import Control.Monad hiding (forM_, mapM, mapM_, sequence, sequence_)
+import Data.Foldable (mapM_)
 import Distribution.Compat.Prelude
 import Prelude ()
 
@@ -160,7 +161,7 @@ import Distribution.Simple.Errors
 import Distribution.Types.AnnotatedId
 import Distribution.Utils.Path
 import Distribution.Utils.Structured (structuredDecodeOrFailIO, structuredEncode)
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , createDirectoryIfMissing
   , doesFileExist
@@ -191,6 +192,20 @@ import Text.PrettyPrint
 import qualified Data.Maybe as M
 import qualified Data.Set as Set
 import qualified Distribution.Compat.NonEmptySet as NES
+
+#ifdef __MHS__
+configVerbosity :: ConfigFlags -> Flag VerbosityFlags
+configVerbosity = setupVerbosity . configCommonFlags
+
+configDistPref :: ConfigFlags -> Flag (SymbolicPath Pkg (Dir Dist))
+configDistPref = setupDistPref . configCommonFlags
+
+configWorkingDir :: ConfigFlags -> Flag (SymbolicPath CWD (Dir Pkg))
+configWorkingDir = setupWorkingDir . configCommonFlags
+
+configTargets :: ConfigFlags -> [String]
+configTargets = setupTargets . configCommonFlags
+#endif
 
 type UseExternalInternalDeps = Bool
 
@@ -1516,10 +1531,16 @@ configureComponents
               }
 
           lbi =
+#ifdef __MHS__
+            -- MicroHs cannot parse the record pattern synonym for
+            -- 'LocalBuildInfo', which is a real flat record there.
+            mkFlatLocalBuildInfo lbd lbc
+#else
             NewLocalBuildInfo
               { localBuildDescr = lbd
               , localBuildConfig = lbc
               }
+#endif
 
       when (LBC.relocatable $ LBC.withBuildOptions lbc) $
         checkRelocatable verbosity pkg_descr lbi
@@ -2304,7 +2325,7 @@ getPackageDBContents verbosity comp mbWorkDir packageDB progdb = do
 getInstalledPackagesMonitorFiles
   :: Verbosity
   -> Compiler
-  -> Maybe (SymbolicPath CWD ('Dir from))
+  -> Maybe (SymbolicPath CWD (Dir from))
   -> PackageDBStackS from
   -> ProgramDb
   -> Platform

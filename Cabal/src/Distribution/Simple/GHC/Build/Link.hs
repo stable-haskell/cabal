@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Distribution.Simple.GHC.Build.Link where
@@ -6,7 +5,7 @@ module Distribution.Simple.GHC.Build.Link where
 import Distribution.Compat.Prelude
 import Prelude ()
 
-import Control.Monad
+import Control.Monad hiding (mapM, sequence)
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.Set as Set
@@ -52,7 +51,7 @@ import Distribution.Utils.Path
 import Distribution.Verbosity
 import Distribution.Version
 
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , doesDirectoryExist
   , renameFile

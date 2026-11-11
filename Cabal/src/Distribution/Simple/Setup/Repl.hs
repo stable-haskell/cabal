@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -15,6 +15,9 @@
 -- Definition of the repl command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.Repl
+#ifdef __MHS__
+  ( ReplFlags (..)
+#else
   ( ReplFlags
       ( ReplCommonFlags
       , replVerbosity
@@ -24,6 +27,7 @@ module Distribution.Simple.Setup.Repl
       , replTargets
       , ..
       )
+#endif
   , defaultReplFlags
   , replCommand
   , ReplOptions (..)
@@ -57,6 +61,7 @@ data ReplOptions = ReplOptions
   deriving (Show, Generic)
   deriving (Semigroup) via Generically ReplOptions
 
+#ifndef __MHS__
 pattern ReplCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -80,6 +85,7 @@ pattern ReplCommonFlags
         , setupTargets = replTargets
         }
     )
+#endif
 
 instance Binary ReplOptions
 instance Structured ReplOptions

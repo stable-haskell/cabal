@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -15,6 +15,9 @@
 -- Definition of the clean command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.Clean
+#ifdef __MHS__
+  ( CleanFlags (..)
+#else
   ( CleanFlags
       ( CleanCommonFlags
       , cleanVerbosity
@@ -24,6 +27,7 @@ module Distribution.Simple.Setup.Clean
       , cleanTargets
       , ..
       )
+#endif
   , emptyCleanFlags
   , defaultCleanFlags
   , cleanCommand
@@ -51,6 +55,7 @@ data CleanFlags = CleanFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically CleanFlags
 
+#ifndef __MHS__
 pattern CleanCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -74,6 +79,7 @@ pattern CleanCommonFlags
         , setupTargets = cleanTargets
         }
     )
+#endif
 
 instance Binary CleanFlags
 instance Structured CleanFlags

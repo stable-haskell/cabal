@@ -40,7 +40,7 @@ import Distribution.Simple.Program.Find
 import Distribution.Simple.Program.Run
 import Distribution.Simple.Register (internalPackageDBPath)
 
-import Distribution.Simple.Setup (ConfigFlags (..))
+import Distribution.Simple.Setup (CommonSetupFlags (..), ConfigFlags (..))
 import Distribution.Simple.Utils
   ( addLibraryPath
   , dieWithException
@@ -137,7 +137,7 @@ run :: Verbosity -> LocalBuildInfo -> Executable -> [String] -> IO ()
 run verbosity lbi exe@Executable{exeName} exeArgs = do
   let exeName' = prettyShow exeName
   curDir <- absoluteWorkingDirLBI lbi
-  let distPref = fromFlag $ configDistPref $ configFlags lbi
+  let distPref = fromFlag $ setupDistPref $ configCommonFlags $ configFlags lbi
       buildPref = buildDir lbi
       pkg_descr = localPkgDescr lbi
       i = interpretSymbolicPathLBI lbi -- See Note [Symbolic paths] in Distribution.Utils.Path

@@ -62,7 +62,7 @@ import Distribution.Utils.NubList
 import Distribution.Verbosity
 import GHC.Stack (HasCallStack)
 import Network.URI (parseURI)
-import System.Directory (canonicalizePath, doesFileExist)
+import Distribution.Compat.Directory (canonicalizePath, doesFileExist)
 import System.FilePath ((</>))
 import Prelude ()
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -28,7 +29,9 @@ module Distribution.Client.BuildReports.Anonymous
   --    showList,
   ) where
 
+#ifndef __MHS__
 import Data.Either (rights)
+#endif
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 

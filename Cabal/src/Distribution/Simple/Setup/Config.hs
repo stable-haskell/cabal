@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -17,6 +16,9 @@
 -- Definition of the configure command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.Config
+#ifdef __MHS__
+  ( ConfigFlags (..)
+#else
   ( ConfigFlags
       ( ConfigCommonFlags
       , configVerbosity
@@ -26,6 +28,7 @@ module Distribution.Simple.Setup.Config
       , configTargets
       , ..
       )
+#endif
   , emptyConfigFlags
   , defaultConfigFlags
   , configureCommand
@@ -236,6 +239,7 @@ data ConfigFlags = ConfigFlags
   deriving (Generic, Read, Show)
   deriving (Semigroup, Monoid) via Generically ConfigFlags
 
+#ifndef __MHS__
 pattern ConfigCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -259,6 +263,7 @@ pattern ConfigCommonFlags
         , setupTargets = configTargets
         }
     )
+#endif
 
 instance Binary ConfigFlags
 instance Structured ConfigFlags

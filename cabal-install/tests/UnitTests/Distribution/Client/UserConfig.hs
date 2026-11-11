@@ -7,7 +7,7 @@ module UnitTests.Distribution.Client.UserConfig
 import Control.Exception (bracket)
 import Control.Monad (replicateM_)
 import Data.List (sort)
-import System.Directory
+import Distribution.Compat.Directory
   ( doesFileExist
   , getCurrentDirectory
   , getTemporaryDirectory

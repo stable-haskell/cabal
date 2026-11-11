@@ -1,3 +1,6 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 module Distribution.Types.CondTree
   ( CondTree (..)
   , CondBranch (..)
@@ -17,6 +20,7 @@ module Distribution.Types.CondTree
   , ignoreConditions
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
 import Prelude ()
 
@@ -52,7 +56,17 @@ data CondTree v a = CondNode
   { condTreeData :: a
   , condTreeComponents :: [CondBranch v a]
   }
-  deriving (Show, Eq, Data, Generic, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Generic, Functor, Foldable, Traversable
+#ifndef __MHS__
+    , Data
+#endif
+    )
+
+#ifdef __MHS__
+-- MicroHs cannot derive 'Data' for parameterised types (it drops the
+-- required context), so the instances are spelled out explicitly.
+deriving instance (Data v, Data a) => Data (CondTree v a)
+#endif
 
 instance (Binary v, Binary a) => Binary (CondTree v a)
 instance (Structured v, Structured a) => Structured (CondTree v a)
@@ -72,7 +86,15 @@ data CondBranch v a = CondBranch
   , condBranchIfTrue :: CondTree v a
   , condBranchIfFalse :: Maybe (CondTree v a)
   }
-  deriving (Show, Eq, Data, Generic, Functor, Traversable, Foldable)
+  deriving (Show, Eq, Generic, Functor, Traversable, Foldable
+#ifndef __MHS__
+    , Data
+#endif
+    )
+
+#ifdef __MHS__
+deriving instance (Data v, Data a) => Data (CondBranch v a)
+#endif
 
 instance (Binary v, Binary a) => Binary (CondBranch v a)
 instance (Structured v, Structured a) => Structured (CondBranch v a)

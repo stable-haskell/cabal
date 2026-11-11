@@ -46,7 +46,7 @@ import Options.Applicative
   , value
   )
 import qualified Options.Applicative as Opt
-import System.Directory (getCurrentDirectory)
+import Distribution.Compat.Directory (getCurrentDirectory)
 import System.Exit (exitSuccess)
 import System.Info (arch, os)
 import System.Process.Typed (proc, readProcessStdout_)

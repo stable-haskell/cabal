@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.PackageDescription.Check
 -- Copyright   :  Lennart Kolmodin 2008, Francesco Ariis 2022
@@ -51,6 +49,7 @@ import Data.Text (Text)
 import Distribution.CabalSpecVersion
 import Distribution.Compat.Lens
 import Distribution.Compiler
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.FieldGrammar.Parsec (freeTextIgnoreDotlineVers)
 import Distribution.License
 import Distribution.ModuleName (toFilePath)
@@ -80,9 +79,9 @@ import System.FilePath (splitExtension, takeFileName)
 
 import qualified Data.ByteString.Lazy as BS
 import qualified Distribution.SPDX as SPDX
-import qualified System.Directory as System
+import qualified Distribution.Compat.Directory as System
 
-import qualified System.Directory (listDirectory)
+import qualified Distribution.Compat.Directory (listDirectory)
 import qualified System.FilePath.Windows as FilePath.Windows (isValid)
 
 import qualified Data.Set as Set
@@ -94,7 +93,8 @@ import qualified Distribution.Compat.Lens as L
 import qualified Distribution.Types.BuildInfo.Lens as L
 import qualified Distribution.Types.GenericPackageDescription.Lens as L
 
-import Control.Monad
+import Control.Monad hiding (forM_, mapM, mapM_, sequence, sequence_)
+import Data.Foldable (forM_, mapM_, sequence_)
 
 -- $setup
 -- >>> import Control.Arrow ((&&&))
@@ -178,14 +178,14 @@ checkPackageFilesGPD verbosity gpd root =
       CheckPackageContentOps
         { doesFileExist = System.doesFileExist . relative
         , doesDirectoryExist = System.doesDirectoryExist . relative
-        , listDirectory = System.Directory.listDirectory . relative
-        , getFileContents = BS.readFile . relative
+        , listDirectory = Distribution.Compat.Directory.listDirectory . relative
+        , getFileContents = readFileLBS . relative
         }
 
     checkPreIO =
       CheckPreDistributionOps
         { runDirFileGlobM = \fp g -> runDirFileGlob verbosity (Just . specVersion $ packageDescription gpd) (root </> fp) g
-        , listDirectoryM = System.Directory.listDirectory . relative
+        , listDirectoryM = Distribution.Compat.Directory.listDirectory . relative
         }
 
     relative :: FilePath -> FilePath

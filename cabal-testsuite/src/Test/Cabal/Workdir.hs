@@ -7,6 +7,7 @@ import Distribution.Simple.Configure
 import Distribution.Simple.Setup
 import Distribution.Utils.Path
   ( Dist
+  , Dir
   , FileOrDir (..)
   , Pkg
   , SymbolicPath
@@ -14,7 +15,7 @@ import Distribution.Utils.Path
   , makeSymbolicPath
   )
 
-import System.Directory
+import Distribution.Compat.Directory
 import System.Environment (getExecutablePath)
 import System.FilePath
 

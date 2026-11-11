@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 module Distribution.Types.ForeignLib.Lens
   ( ForeignLib
   , module Distribution.Types.ForeignLib.Lens

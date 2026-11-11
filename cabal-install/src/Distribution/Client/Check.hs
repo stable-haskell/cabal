@@ -26,12 +26,12 @@ import Distribution.Parsec
 import Distribution.Simple.Utils (defaultPackageDescCwd, dieWithException, notice, warn, warnError)
 import Distribution.Utils.Path (getSymbolicPath)
 
-import qualified Control.Monad as CM
+import qualified Data.Foldable as CM
 import qualified Data.ByteString as BS
 import qualified Data.Function as F
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
-import qualified System.Directory as Dir
+import qualified Distribution.Compat.Directory as Dir
 
 readGenericPackageDescriptionCheck :: Verbosity -> FilePath -> IO ([PWarningWithSource CabalFileSource], GenericPackageDescription)
 readGenericPackageDescriptionCheck verbosity fpath = do

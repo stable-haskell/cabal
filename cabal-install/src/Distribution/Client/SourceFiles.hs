@@ -10,6 +10,7 @@
 -- We can only use this code for non-Custom scripts; Custom scripts
 -- may have arbitrary extra dependencies (esp. new preprocessors) which
 -- we cannot "see" easily.
+{-# LANGUAGE CPP #-}
 module Distribution.Client.SourceFiles (needElaboratedConfiguredPackage) where
 
 import Control.Monad ((>=>))
@@ -84,7 +85,9 @@ needComponent pkg_descr comp =
 needSetup :: Rebuild ()
 needSetup = do
   void $ findFirstFileMonitored id ["Setup.hs", "Setup.lhs"]
+#ifndef __MHS__
   void $ findFirstFileMonitored id ["SetupHooks.hs", "SetupHooks.lhs"]
+#endif
 
 needLibrary :: PackageDescription -> Library -> Rebuild ()
 needLibrary

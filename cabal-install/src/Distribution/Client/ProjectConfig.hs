@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -89,6 +90,11 @@ import Distribution.Simple.Utils
   )
 import Text.PrettyPrint (cat, colon, comma, empty, hsep, nest, quotes, render, text, vcat)
 import Prelude ()
+
+#ifdef __MHS__
+instance Ord (Proxy a) where
+  compare _ _ = EQ
+#endif
 
 import Distribution.Client.Glob
   ( isTrivialRootedGlob
@@ -215,8 +221,12 @@ import Distribution.Utils.NubList
 import Distribution.Verbosity
 import Distribution.Version
 
+#ifdef __MHS__
+import qualified Distribution.Client.Compat.Tar as Tar
+#else
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
+#endif
 import qualified Distribution.Client.GZipUtils as GZipUtils
 import qualified Distribution.Client.Tar as Tar
 
@@ -236,7 +246,7 @@ import Network.URI
   , parseAbsoluteURI
   , uriToString
   )
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , doesDirectoryExist
   , doesFileExist
@@ -246,6 +256,7 @@ import System.Directory
   , listDirectory
   , pathIsSymbolicLink
   )
+import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
 import System.FilePath hiding (combine)
 import System.IO
   ( IOMode (ReadMode)
@@ -628,7 +639,7 @@ findProjectRoot verbosity mprojectDir mprojectFile = do
 
 probeProjectRoot :: Maybe FilePath -> IO (Either BadProjectRoot ProjectRoot)
 probeProjectRoot mprojectFile = do
-  startdir <- System.Directory.getCurrentDirectory
+  startdir <- Distribution.Compat.Directory.getCurrentDirectory
   homedir <- getHomeDirectory
   probe startdir homedir
   where
@@ -1792,7 +1803,7 @@ instance Exception CabalFileSearchFailure
 extractTarballPackageCabalFile :: FilePath -> IO (FilePath, BS.ByteString)
 extractTarballPackageCabalFile tarballFile =
   withBinaryFile tarballFile ReadMode $ \hnd -> do
-    content <- LBS.hGetContents hnd
+    content <- hGetContentsLBS hnd
     case extractTarballPackageCabalFilePure tarballFile content of
       Left (Left e) -> throwIO e
       Left (Right e) -> throwIO e
@@ -1812,7 +1823,7 @@ extractTarballPackageCabalFilePure
 extractTarballPackageCabalFilePure tarballFile =
   check
     . accumEntryMap
-    . Tar.filterEntries isCabalFile
+    . Tar.foldEntries (\e es -> if isCabalFile e then Tar.Next e es else es) Tar.Done Tar.Fail
     . Tar.read
     . GZipUtils.maybeDecompress
   where

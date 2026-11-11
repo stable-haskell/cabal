@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -34,6 +35,9 @@ module Distribution.Client.ProjectConfig.Legacy
   ) where
 
 import Distribution.Client.Compat.Prelude
+#ifdef __MHS__
+import Prelude (mapM_)
+#endif
 
 import Distribution.Types.Flag (FlagName, parsecFlagAssignment)
 
@@ -200,7 +204,7 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Network.URI (URI (..), nullURIAuth)
-import System.Directory (makeAbsolute)
+import Distribution.Compat.Directory (makeAbsolute)
 import System.FilePath (splitFileName)
 import Text.PrettyPrint
   ( Doc

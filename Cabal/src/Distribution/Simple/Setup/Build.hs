@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -15,6 +15,9 @@
 -- Definition of the build command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.Build
+#ifdef __MHS__
+  ( BuildFlags (..)
+#else
   ( BuildFlags
       ( BuildCommonFlags
       , buildVerbosity
@@ -24,6 +27,7 @@ module Distribution.Simple.Setup.Build
       , buildTargets
       , ..
       )
+#endif
   , emptyBuildFlags
   , defaultBuildFlags
   , buildCommand
@@ -59,6 +63,7 @@ data BuildFlags = BuildFlags
   deriving (Read, Show, Generic)
   deriving (Semigroup, Monoid) via Generically BuildFlags
 
+#ifndef __MHS__
 pattern BuildCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -82,6 +87,7 @@ pattern BuildCommonFlags
         , setupTargets = buildTargets
         }
     )
+#endif
 
 instance Binary BuildFlags
 instance Structured BuildFlags

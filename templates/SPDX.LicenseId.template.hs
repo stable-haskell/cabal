@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {- FOURMOLU_DISABLE -}
 module Distribution.SPDX.LicenseId (
     LicenseId (..),
@@ -27,6 +28,10 @@ import qualified Data.Map.Strict as Map
 import qualified Distribution.Compat.CharParsing as P
 import qualified Text.PrettyPrint as Disp
 
+#ifdef __MHS__
+import Data.Data (Constr, Data (..), DataType, Fixity (Prefix), constrIndex, mkConstrTag, mkDataType)
+#endif
+
 -------------------------------------------------------------------------------
 -- LicenseId
 -------------------------------------------------------------------------------
@@ -34,7 +39,20 @@ import qualified Text.PrettyPrint as Disp
 -- | SPDX License identifiers list v3.28
 data LicenseId
 {{ licenseIds }}
-  deriving (Eq, Ord, Enum, Bounded, Show, Read, Data)
+  deriving (Eq,
+#ifdef __MHS__
+    -- No Ord: MicroHs compiles the derived Ord for this ~700-constructor
+    -- type pathologically slowly (see instance below).
+    -- No derived Data: costs as much as derived Ord at scale (~9s
+    -- user at 150 constructors); a hand-written instance below keeps
+    -- the Data LicenseId instance that downstream deriving
+    -- (LicenseExpression) requires. Nothing in the tree calls Data
+    -- methods on LicenseId.
+    Enum, Bounded, Show, Read
+#else
+    Ord, Enum, Bounded, Show, Read, Data
+#endif
+    )
 
 instance Binary LicenseId where
     -- Word16 is encoded in big endianness
@@ -45,6 +63,46 @@ instance Binary LicenseId where
         if i > fromIntegral (fromEnum (maxBound :: LicenseId))
         then fail "Too large LicenseId tag"
         else return (toEnum (fromIntegral i))
+
+#ifdef __MHS__
+-- MicroHs takes pathologically long to compile the derived Ord for
+-- this ~700-constructor type (measured end to end: ~548s user for a
+-- 700-constructor synthetic analogue vs ~0.4s with this instance;
+-- root cause not isolated to a compiler phase). Compare via the
+-- derived Enum tags instead. Semantics are identical to derived Ord
+-- for a plain enumeration (declaration order); Binary (which also
+-- uses fromEnum) and all constructors are unchanged.
+instance Ord LicenseId where
+  compare a b = compare (fromEnum a) (fromEnum b)
+#endif
+
+#ifdef __MHS__
+-- Hand-written Data mirrors the derived instance (declaration-order
+-- tags, constructor names as declared) without the measured
+-- end-to-end compile cost (~9s user at 150 constructors for derived
+-- Data; root cause not isolated to a compiler phase).
+-- toConstr/fromConstr round-trip via the tag index; gfoldl is trivial
+-- for nullary constructors. Nothing in the tree calls Data methods
+-- on LicenseId; the instance exists for downstream deriving.
+instance Data LicenseId where
+  gfoldl k z x = z x
+  gunfold _k z c = z (toEnum (constrIndex c - 1))
+  toConstr x = licenseIdConstrs !! fromEnum x
+  dataTypeOf _ = tyLicenseId
+
+tyLicenseId :: DataType
+tyLicenseId = mkDataType "Distribution.SPDX.LicenseId" licenseIdConstrs
+
+licenseIdConstrs :: [Constr]
+licenseIdConstrs =
+  [ mkConstrTag tyLicenseId name i [] Prefix
+  | (i, name) <- zip [1 ..] licenseIdConstrNames
+  ]
+
+licenseIdConstrNames :: [String]
+licenseIdConstrNames =
+{{ licenseIdNames }}
+#endif
 
 -- note: remember to bump version each time the definition changes
 instance Structured LicenseId where

@@ -85,9 +85,9 @@ import qualified System.IO
 
 import qualified Distribution.Compat.Environment as P
 import Distribution.FieldGrammar.Newtypes (SpecLicense)
-import qualified System.Directory as P
+import qualified Distribution.Compat.Directory as P
 import System.FilePath
-import qualified System.Process as Process
+import qualified Distribution.Compat.Process as Process
 
 -- -------------------------------------------------------------------- --
 -- Flags

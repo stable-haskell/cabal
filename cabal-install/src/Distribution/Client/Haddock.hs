@@ -43,7 +43,7 @@ import Distribution.Simple.Utils
   , withTempDirectory
   )
 import Distribution.Version (mkVersion, orLaterVersion)
-import System.Directory (createDirectoryIfMissing, renameFile)
+import Distribution.Compat.Directory (createDirectoryIfMissing, renameFile)
 import System.FilePath (splitFileName, (</>))
 
 regenerateHaddockIndex

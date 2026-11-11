@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
@@ -82,9 +82,11 @@ import Distribution.Verbosity
 import Distribution.Version
 
 import Data.Bool (bool)
+#ifndef __MHS__
 import Data.Either (lefts, rights)
+#endif
 import qualified Data.Text as T
-import System.Directory (doesDirectoryExist, doesFileExist)
+import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath (isAbsolute, joinPath, normalise, splitDirectories)
 import System.IO (hClose, hPutStrLn, hSetEncoding, utf8)
 
@@ -259,7 +261,7 @@ haddock_setupHooks
             ++ " --benchmarks or --foreign-libraries flags."
         return []
     where
-      verb = mkVerbosity verbHandles $ fromFlag $ haddockVerbosity haddockFlags
+      verb = mkVerbosity verbHandles $ fromFlag $ setupVerbosity $ haddockCommonFlags haddockFlags
 haddock_setupHooks
   preBuildHook
   verbHandles
@@ -267,8 +269,8 @@ haddock_setupHooks
   lbi
   suffixes
   flags' = do
-    let verbosity = mkVerbosity verbHandles (fromFlag $ haddockVerbosity flags)
-        mbWorkDir = flagToMaybe $ haddockWorkingDir flags
+    let verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity $ haddockCommonFlags flags)
+        mbWorkDir = flagToMaybe $ setupWorkingDir $ haddockCommonFlags flags
         comp = compiler lbi
         platform = hostPlatform lbi
         config = configFlags lbi
@@ -331,7 +333,7 @@ haddock_setupHooks
           suffixes
           (defaultHscolourFlags <> haddockToHscolour flags)
 
-    targets <- readTargetInfos verbosity pkg_descr lbi (haddockTargets flags)
+    targets <- readTargetInfos verbosity pkg_descr lbi (setupTargets $ haddockCommonFlags flags)
 
     let
       targets' =

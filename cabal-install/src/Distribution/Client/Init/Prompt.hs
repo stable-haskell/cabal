@@ -22,9 +22,8 @@ module Distribution.Client.Init.Prompt
   , promptList
   ) where
 
-import Prelude hiding (break, getLine, putStr, putStrLn)
-
 import Distribution.Client.Compat.Prelude hiding (break, empty, getLine, putStr, putStrLn)
+import Prelude ()
 import Distribution.Client.Init.Types
 import qualified System.IO
 

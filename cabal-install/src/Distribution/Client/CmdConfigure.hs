@@ -11,7 +11,7 @@ import Distribution.Client.Compat.Prelude
 import Prelude ()
 
 import qualified Data.Text as Text
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath
 
 import Distribution.Client.ProjectConfig

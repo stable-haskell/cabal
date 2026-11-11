@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -83,7 +84,8 @@ import Distribution.ModuleName
 import Distribution.Simple.FileMonitor.Types
 import Distribution.Types.UnitId
 import Distribution.Utils.Path
-  ( FileOrDir (..)
+  ( Dir
+  , File
   , Pkg
   , RelativePath
   , SymbolicPath
@@ -95,7 +97,6 @@ import Distribution.Utils.ShortText
   )
 import Distribution.Utils.Structured
   ( Structure (..)
-  , Structured (..)
   , nominalStructure
   )
 import Distribution.Verbosity
@@ -119,6 +120,7 @@ import qualified Data.Map.Strict as Map
   )
 
 import qualified Data.Kind as Hs
+#ifndef __MHS__
 import Data.Type.Bool
   ( If
   )
@@ -145,6 +147,7 @@ import qualified Type.Reflection as Typeable
   , withTypeable
   , pattern App
   )
+#endif
 
 import System.FilePath
   ( normalise
@@ -197,6 +200,7 @@ data RulesNameSpace = RulesNameSpace
   deriving anyclass (Binary, Structured)
 
 -- | Internal function: create a 'RulesNameSpace' from a 'StaticPtrInfo'.
+#ifndef __MHS__
 staticPtrNameSpace :: StaticPtrInfo -> RulesNameSpace
 staticPtrNameSpace
   StaticPtrInfo
@@ -209,6 +213,11 @@ staticPtrNameSpace
       , rulesModuleName = fromString modName
       , rulesSrcLoc = srcLoc
       }
+#else
+staticPtrNameSpace :: StaticPtrInfo -> RulesNameSpace
+staticPtrNameSpace _ =
+  error "staticPtrNameSpace: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 -- | 'Rule's are defined with rich types by the package.
 --
@@ -222,12 +231,27 @@ data Scope
   | -- | Build-system space (manipulation of raw data).
     System
 
+#ifndef __MHS__
 data SScope (scope :: Scope) where
   SUser :: SScope User
   SSystem :: SScope System
+#else
+-- MicroHs has no DataKinds promotion: the scope index is erased.
+data SScope scope = SUser | SSystem
+  deriving stock (Show, Eq)
+#endif
 
+#ifndef __MHS__
 type Rule = RuleData User
 type RuleBinary = RuleData System
+#else
+-- MicroHs has no DataKinds promotion, so the scope index is erased:
+-- 'Rule' and 'RuleBinary' coincide. Hooks execution is unsupported in
+-- the MHS build (all Hooks entry points fail loudly); only the 'Eq'
+-- instance below is exercised, never at runtime in the probe.
+type Rule = RuleData ()
+type RuleBinary = RuleData ()
+#endif
 
 -- | A rule consists of:
 --
@@ -236,7 +260,11 @@ type RuleBinary = RuleData System
 --
 -- Use 'staticRule' or 'dynamicRule' to construct a rule, overriding specific
 -- fields, rather than directly using the 'Rule' constructor.
+#ifndef __MHS__
 data RuleData (scope :: Scope)
+#else
+data RuleData scope
+#endif
   = -- | Please use the 'staticRule' or 'dynamicRule' smart constructors
     -- instead of this constructor, in order to avoid relying on internal
     -- implementation details.
@@ -248,6 +276,7 @@ data RuleData (scope :: Scope)
     , results :: !(NE.NonEmpty Location)
     -- ^ Results of this rule.
     }
+#ifndef __MHS__
   deriving stock (Generic)
 
 deriving stock instance Show (RuleData User)
@@ -257,6 +286,22 @@ deriving anyclass instance Binary (RuleData User)
 deriving anyclass instance Binary (RuleData System)
 deriving anyclass instance Structured (RuleData User)
 deriving anyclass instance Structured (RuleData System)
+#else
+-- MicroHs stub: 'Show' is needed for error messages and 'Eq' for the
+-- (retained) rule-cache comparison in 'Internal.ruleUpToDate'. 'Binary'
+-- is never executed in the MHS build (Hooks execution, including rule-cache
+-- serialisation, is unsupported) but 'ruleBinary' needs the instance to
+-- exist. There is no 'Structured' instance: 'Structured' would demand a
+-- 'Typeable' instance for a bare variable, and nothing retained in the
+-- MHS build needs it.
+instance Show (RuleData scope) where
+  showsPrec _ _ = showString "<RuleData>"
+instance Eq (RuleData scope) where
+  _ == _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+instance Binary (RuleData scope) where
+  put _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+  get = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 -- | Trimmed down 'Show' instance, mostly for error messages.
 instance Show RuleBinary where
@@ -279,6 +324,7 @@ instance Show RuleBinary where
 -- Prefer using this smart constructor instead of v'Rule' whenever possible.
 --
 -- See also 'dynamicRule' which adds support for dynamic dependencies.
+#ifndef __MHS__
 staticRule
   :: forall arg
    . Typeable arg
@@ -299,6 +345,20 @@ staticRule cmd dep res =
     , staticDependencies = dep
     , results = res
     }
+#else
+staticRule
+  :: forall arg
+   . Typeable arg
+  => Command arg (IO ())
+  -- ^ command to execute the rule
+  -> [Dependency]
+  -- ^ static dependencies of the rule
+  -> NE.NonEmpty Location
+  -- ^ rule results
+  -> Rule
+staticRule _ _ _ =
+  error "staticRule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 -- | A rule with dynamic dependencies, which consists of two parts:
 --
@@ -310,6 +370,7 @@ staticRule cmd dep res =
 -- Prefer using this smart constructor instead of v'Rule' whenever possible.
 --
 -- Use 'staticRule' if you do not have any dynamic dependencies.
+#ifndef __MHS__
 dynamicRule
   :: forall depsArg depsRes arg
    . (Typeable depsArg, Typeable depsRes, Typeable arg)
@@ -339,6 +400,27 @@ dynamicRule dict depsCmd action dep res =
     , staticDependencies = dep
     , results = res
     }
+#else
+dynamicRule
+  :: forall depsArg depsRes arg
+   . (Typeable depsArg, Typeable depsRes, Typeable arg)
+  => StaticPtr (Dict (Binary depsRes, Show depsRes, Eq depsRes))
+  -- ^ evidence that the result of the dynamic dependency command
+  -- is serialisable
+  -> Command depsArg (IO ([Dependency], depsRes))
+  -- ^ dynamic dependency computation, returning dynamic dependencies
+  -- and an additional piece of data to be consumed by the main rule command
+  -> Command arg (depsRes -> IO ())
+  -- ^ main rule command; takes in the piece of data returned by the dyn-deps
+  -- command
+  -> [Dependency]
+  -- ^ static dependencies of the rule
+  -> NE.NonEmpty Location
+  -- ^ rule results
+  -> Rule
+dynamicRule _ _ _ _ _ =
+  error "dynamicRule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 -----------------------
 -- Rule inputs/outputs
@@ -353,6 +435,15 @@ dynamicRule dict depsCmd action dep res =
 --  - for a file dependency, @dir@ is one of the Cabal search directories,
 --  - for an output, @dir@ is a directory such as @autogenComponentModulesDir@
 --    or @componentBuildDir@.
+#ifdef __MHS__
+-- MicroHs cannot parse record syntax in GADT constructors, so this is
+-- the positional equivalent (the field names are unused elsewhere).
+data Location where
+  Location
+    :: !(SymbolicPath Pkg (Dir baseDir))
+    -> !(RelativePath baseDir File)
+    -> Location
+#else
 data Location where
   Location
     :: { locationBaseDir :: !(SymbolicPath Pkg (Dir baseDir))
@@ -361,6 +452,7 @@ data Location where
         -- ^ File path relative to base directory (including file extension).
        }
     -> Location
+#endif
 
 instance Eq Location where
   Location b1 l1 == Location b2 l2 =
@@ -374,6 +466,7 @@ instance Ord Location where
 instance Binary Location where
   put (Location base loc) = put (base, loc)
   get = Location <$> get <*> get
+#ifndef __MHS__
 instance Structured Location where
   structure _ =
     Structure
@@ -390,6 +483,10 @@ instance Structured Location where
       ]
     where
       tr = Typeable.SomeTypeRep $ Typeable.typeRep @Location
+#else
+instance Structured Location where
+  structure _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 -- | Get a (relative or absolute) un-interpreted path to a 'Location'.
 location :: Location -> SymbolicPath Pkg File
@@ -558,6 +655,7 @@ computeRules verbosity inputs (Rules rs) = do
 ------------
 -- Commands
 
+#ifndef __MHS__
 -- | A static pointer (in user scope) or its key (in system scope).
 data family Static (scope :: Scope) :: Hs.Type -> Hs.Type
 
@@ -586,6 +684,49 @@ instance Binary (Static User fnTy) where
             [ "Failed to look up static pointer key for action."
             , "NB: Binary instances for 'User' types cannot be used in external executables."
             ]
+#else
+-- MicroHs has no DataKinds promotion, data families, StaticPtr or
+-- Type.Reflection. Static pointers are represented opaquely; any use
+-- fails loudly. The MHS build does not support build-type 'Hooks'.
+data Static scope a = MhsStatic
+  deriving stock (Show, Eq, Ord)
+
+instance Binary (Static scope a) where
+  put _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+  get = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+-- NOTE: no 'Structured' instance for 'Static': 'Structured' demands a
+-- 'Typeable' instance, which cannot be conjured for the erased scope
+-- variable, and nothing retained in the MHS build needs it.
+
+-- | Opaque stand-in for 'GHC.StaticPtr.StaticPtr'.
+data StaticPtr a = MhsStaticPtr
+  deriving stock (Show, Eq, Ord)
+
+instance Binary (StaticPtr a) where
+  put _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+  get = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+-- | Opaque stand-in for 'GHC.StaticPtr.StaticKey'.
+type StaticKey = String
+
+staticKey :: StaticPtr a -> StaticKey
+staticKey _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+deRefStaticPtr :: StaticPtr a -> a
+deRefStaticPtr _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+data StaticPtrInfo = MhsStaticPtrInfo
+
+staticPtrInfo :: StaticPtr a -> StaticPtrInfo
+staticPtrInfo _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+unsafeLookupStaticPtr :: StaticKey -> IO (Maybe (StaticPtr a))
+unsafeLookupStaticPtr _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+systemStatic :: Static scope a -> Static scope' a
+systemStatic _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 -- | A command consists of a statically-known action together with a
 -- (possibly dynamic) argument to that action.
@@ -593,11 +734,19 @@ instance Binary (Static User fnTy) where
 -- For example, the action can consist of running an executable
 -- (such as @happy@ or @c2hs@), while the argument consists of the variable
 -- component of the command, e.g. the specific file to run @happy@ on.
+#ifndef __MHS__
 type Command = CommandData User
+#else
+type Command arg res = CommandData () arg res
+#endif
 
 -- | Internal datatype used for commands, both for the Hooks API ('Command')
 -- and for the build system.
+#ifndef __MHS__
 data CommandData (scope :: Scope) (arg :: Hs.Type) (res :: Hs.Type) = Command
+#else
+data CommandData scope arg res = Command
+#endif
   { actionPtr :: !(Static scope (arg -> res))
   -- ^ The (statically-known) action to execute.
   , actionArg :: !(ScopedArgument scope arg)
@@ -615,6 +764,7 @@ mkCommand
   -> StaticPtr (arg -> res)
   -> arg
   -> Command arg res
+#ifndef __MHS__
 mkCommand dict action arg =
   Command
     { actionPtr = UserStatic action
@@ -626,6 +776,13 @@ mkCommand dict action arg =
 runCommand :: Command args res -> res
 runCommand (Command{actionPtr = UserStatic ptr, actionArg = ScopedArgument arg}) =
   deRefStaticPtr ptr arg
+#else
+mkCommand _ _ _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+-- | Run a 'Command'.
+runCommand :: Command args res -> res
+runCommand _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 -- | Commands to execute a rule:
 --
@@ -635,6 +792,7 @@ runCommand (Command{actionPtr = UserStatic ptr, actionArg = ScopedArgument arg})
 --
 -- Prefer using 'staticRule' and 'dynamicRule' instead of the (internal)
 -- constructors of 'RuleCommands'.
+#ifndef __MHS__
 data
   RuleCommands
     (scope :: Scope)
@@ -685,6 +843,28 @@ data
         -- ^ A 'TypeRep' for the triple @(depsArg,depsRes,arg)@.
        }
     -> RuleCommands scope deps ruleCmd
+#else
+-- MicroHs has no DataKinds promotion: the scope index is a plain type
+-- variable, and the 'TypeRep' witnesses (which need Type.Reflection)
+-- are erased to '()'. MicroHs GADTs have no record syntax, so the
+-- constructors are positional. Hooks execution is unsupported in the
+-- MHS build.
+data RuleCommands scope deps ruleCmd where
+  -- | A rule with statically-known dependencies.
+  -- Fields: the command to execute the rule; erased 'TypeRep' witness.
+  StaticRuleCommand
+    :: forall arg deps ruleCmd scope
+     . ruleCmd scope arg (IO ())
+    -> ()
+    -> RuleCommands scope deps ruleCmd
+  DynamicRuleCommands
+    :: forall depsArg depsRes arg deps ruleCmd scope
+     . Static scope (Dict (Binary depsRes, Show depsRes, Eq depsRes))
+    -> deps scope depsArg depsRes
+    -> ruleCmd scope arg (depsRes -> IO ())
+    -> ()
+    -> RuleCommands scope deps ruleCmd
+#endif
 
 -- NB: whenever you change this datatype, you **must** also update its
 -- 'Structured' instance. The structure hash is used as a handshake when
@@ -739,9 +919,14 @@ includes the length. We use this newtype:
   - in the definition of 'DepsRes', for the result of dynamic dependency computations.
 -}
 
+#ifndef __MHS__
 newtype ScopedArgument (scope :: Scope) arg = ScopedArgument {getArg :: arg}
+#else
+newtype ScopedArgument scope arg = ScopedArgument {getArg :: arg}
+#endif
   deriving newtype (Eq, Ord, Show)
 
+#ifndef __MHS__
 -- | Serialise/deserialise, always including the length of the payload.
 instance Binary arg => Binary (ScopedArgument User arg) where
   put (ScopedArgument arg) = put @LBS.ByteString (Binary.encode arg)
@@ -755,10 +940,24 @@ instance Binary arg => Binary (ScopedArgument User arg) where
 instance arg ~ LBS.ByteString => Binary (ScopedArgument System arg) where
   put (ScopedArgument arg) = put arg
   get = ScopedArgument <$> get
+#else
+-- MicroHs erases the scope index (no DataKinds promotion).
+instance Binary arg => Binary (ScopedArgument scope arg) where
+  put (ScopedArgument arg) = put @LBS.ByteString (Binary.encode arg)
+  get = do
+    dat <- get @LBS.ByteString
+    case Binary.decodeOrFail dat of
+      Left (_, _, err) -> fail err
+      Right (_, _, res) -> return $ ScopedArgument res
+#endif
 
 -- | A placeholder for a command that has been omitted, e.g. when we don't
 -- care about serialising/deserialising one particular command in a datatype.
+#ifndef __MHS__
 data NoCmd (scope :: Scope) arg res = CmdOmitted
+#else
+data NoCmd scope arg res = CmdOmitted
+#endif
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (Binary)
 
@@ -768,6 +967,7 @@ newtype DynDepsCmd scope depsArg depsRes = DynDepsCmd
       :: CommandData scope depsArg (IO ([Dependency], depsRes))
   }
 
+#ifndef __MHS__
 deriving newtype instance Show (DynDepsCmd User depsArg depsRes)
 deriving newtype instance Eq (DynDepsCmd User depsArg depsRes)
 deriving newtype instance Binary (DynDepsCmd User depsArg depsRes)
@@ -777,9 +977,19 @@ deriving newtype instance
 deriving newtype instance
   (arg ~ LBS.ByteString, depsRes ~ LBS.ByteString)
   => Binary (DynDepsCmd System arg depsRes)
+#else
+-- MicroHs erases the scope index (no DataKinds promotion).
+deriving newtype instance Show (DynDepsCmd scope depsArg depsRes)
+deriving newtype instance Eq (DynDepsCmd scope depsArg depsRes)
+deriving newtype instance Binary (DynDepsCmd scope depsArg depsRes)
+#endif
 
 -- | The result of a dynamic dependency computation.
+#ifndef __MHS__
 newtype DepsRes (scope :: Scope) depsArg depsRes = DepsRes
+#else
+newtype DepsRes scope depsArg depsRes = DepsRes
+#endif
   { depsRes
       :: ScopedArgument scope depsRes -- See Note [Hooks Binary instances]
   }
@@ -799,6 +1009,7 @@ type RuleDynDepsCmd scope = RuleCommands scope DynDepsCmd NoCmd
 -- dependency computation.
 type RuleExecCmd scope = RuleCommands scope DepsRes CommandData
 
+#ifndef __MHS__
 -- | Project out the (optional) dependency computation command, so that
 -- it can be serialised without serialising anything else.
 ruleDepsCmd :: RuleCmds scope -> RuleDynDepsCmd scope
@@ -823,7 +1034,14 @@ ruleDepsCmd = \case
         , dynamicRuleCommand = CmdOmitted :: NoCmd scope args (depsRes -> IO ())
         , dynamicRuleTypeRep = tr
         }
+#else
+-- MicroHs stub for 'ruleDepsCmd': Hooks execution is unsupported in the
+-- MHS build.
+ruleDepsCmd :: RuleCmds scope -> RuleDynDepsCmd scope
+ruleDepsCmd _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
+#ifndef __MHS__
 -- | Obtain the (optional) 'IO' action that computes dynamic dependencies.
 runRuleDynDepsCmd :: RuleDynDepsCmd User -> Maybe (IO ([Dependency], LBS.ByteString))
 runRuleDynDepsCmd = \case
@@ -889,6 +1107,18 @@ runRuleExecCmd = \case
     , dynamicRuleCommand = cmd
     } ->
       runCommand cmd res
+#else
+-- MicroHs stubs: Hooks execution is unsupported in the MHS build (no
+-- DataKinds promotion: the scope index is erased).
+runRuleDynDepsCmd :: RuleDynDepsCmd scope -> Maybe (IO ([Dependency], LBS.ByteString))
+runRuleDynDepsCmd _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+ruleExecCmd :: SScope scope -> RuleCmds scope -> Maybe LBS.ByteString -> RuleExecCmd scope
+ruleExecCmd _ _ _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+runRuleExecCmd :: RuleExecCmd scope -> IO ()
+runRuleExecCmd _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
 --------------------------------------------------------------------------------
 -- Instances
@@ -897,6 +1127,7 @@ runRuleExecCmd = \case
 data Dict c where
   Dict :: c => Dict c
 
+#ifndef __MHS__
 instance Show (CommandData User arg res) where
   showsPrec prec (Command{actionPtr = cmdPtr, actionArg = arg, cmdInstances = insts})
     | Dict <- deRefStaticPtr (userStaticPtr insts) =
@@ -952,7 +1183,20 @@ instance arg ~ LBS.ByteString => Binary (CommandData System arg res) where
     instsKey <- get
     arg <- get
     return $ Command{actionPtr = cmdKey, actionArg = arg, cmdInstances = instsKey}
+#else
+-- MicroHs erases the scope index (no DataKinds promotion): a single set of
+-- instances covers both scopes. Hooks execution is unsupported in the MHS
+-- build, so these fail loudly if ever used.
+instance Show (CommandData scope arg res) where
+  showsPrec _ _ = showString "<CommandData>"
+instance Eq (CommandData scope arg res) where
+  _ == _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+instance Binary (CommandData scope arg res) where
+  put _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+  get = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
+#ifndef __MHS__
 instance
   ( forall arg res. Show (ruleCmd User arg res)
   , forall depsArg depsRes. Show depsRes => Show (deps User depsArg depsRes)
@@ -982,7 +1226,14 @@ instance
               . showString "dynamicRuleCommand = "
               . shows cmd
               . showString "}"
+#else
+-- MicroHs erases the scope index (no DataKinds promotion) and has no
+-- Type.Reflection: a single set of instances covers both scopes.
+instance Show (RuleCommands scope deps ruleCmd) where
+  showsPrec _ _ = showString "<RuleCommands>"
+#endif
 
+#ifndef __MHS__
 instance
   ( forall arg res. Eq (ruleCmd User arg res)
   , forall depsArg depsRes. Eq depsRes => Eq (deps User depsArg depsRes)
@@ -1022,7 +1273,12 @@ instance
   DynamicRuleCommands a1 b1 c1 d1 == DynamicRuleCommands a2 b2 c2 d2 =
     a1 == a2 && b1 == b2 && c1 == c2 && d1 == d2
   _ == _ = False
+#else
+instance Eq (RuleCommands scope deps ruleCmd) where
+  _ == _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
 
+#ifndef __MHS__
 instance
   ( forall arg res. Binary (ruleCmd User arg res)
   , forall depsArg depsRes. Binary depsRes => Binary (deps User depsArg depsRes)
@@ -1173,6 +1429,18 @@ instance
             , dynamicRuleInstances = instsKey
             , dynamicRuleTypeRep = sTr
             }
+#else
+-- MicroHs erases the scope index (no DataKinds promotion) and has no
+-- Type.Reflection: a single set of instances covers both scopes.
+-- Hooks execution is unsupported in the MHS build.
+instance Binary (RuleCommands scope deps ruleCmd) where
+  put _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+  get = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
+
+-- NOTE: no 'Structured' instance for 'RuleCommands': 'Structured' demands
+-- a 'Typeable' instance, which cannot be conjured for the erased scope
+-- variable, and nothing retained in the MHS build needs it.
+#endif
 
 --------------------------------------------------------------------------------
 -- Showing rules

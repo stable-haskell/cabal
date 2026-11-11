@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE MultiWayIf #-}
 
 -- |
@@ -48,7 +47,7 @@ import Language.Haskell.Extension
 
 import qualified Data.Map as Map (empty)
 import qualified Data.Text as Text
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath (pathSeparator)
 
 -- -----------------------------------------------------------------------------

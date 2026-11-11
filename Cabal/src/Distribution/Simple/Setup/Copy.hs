@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -16,6 +16,9 @@
 -- Definition of the copy command-line options.
 -- See: @Distribution.Simple.Setup@
 module Distribution.Simple.Setup.Copy
+#ifdef __MHS__
+  ( CopyFlags (..)
+#else
   ( CopyFlags
       ( CopyCommonFlags
       , copyVerbosity
@@ -25,6 +28,7 @@ module Distribution.Simple.Setup.Copy
       , copyTargets
       , ..
       )
+#endif
   , emptyCopyFlags
   , defaultCopyFlags
   , copyCommand
@@ -56,6 +60,7 @@ data CopyFlags = CopyFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically CopyFlags
 
+#ifndef __MHS__
 pattern CopyCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -79,6 +84,7 @@ pattern CopyCommonFlags
         , setupTargets = copyTargets
         }
     )
+#endif
 
 instance Binary CopyFlags
 instance Structured CopyFlags

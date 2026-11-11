@@ -50,8 +50,8 @@ import Prelude ()
 import qualified System.Win32 as Win32
 import System.Win32 (DWORD, BOOL, HANDLE, LPCTSTR)
 import Foreign.Ptr (Ptr, nullPtr)
-import System.Process (runProcess)
-import System.Directory (canonicalizePath)
+import Distribution.Compat.Process (runProcess)
+import Distribution.Compat.Directory (canonicalizePath)
 import System.FilePath (takeBaseName, replaceBaseName, equalFilePath)
 
 import Distribution.Verbosity as Verbosity (showForCabal, verbosityFlags)

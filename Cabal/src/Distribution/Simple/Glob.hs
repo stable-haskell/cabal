@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 
 -- |
@@ -60,9 +59,8 @@ import Distribution.Verbosity
   , silent
   )
 
-import Control.Monad (mapM)
 import Data.List (stripPrefix)
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath hiding ((<.>), (</>))
 
 -------------------------------------------------------------------------------

@@ -38,6 +38,7 @@ module Distribution.Solver.Types.ComponentDeps (
 
 import Prelude ()
 import Distribution.Types.UnqualComponentName
+import Data.Foldable (Foldable)
 import Distribution.Solver.Compat.Prelude hiding (empty,toList,zip)
 
 import qualified Data.Map as Map

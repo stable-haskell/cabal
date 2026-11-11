@@ -1,8 +1,8 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
 -- |
@@ -73,6 +73,7 @@ module Distribution.Client.ProjectPlanning
     -- * Utils required for building
   , pkgHasEphemeralBuildTargets
   , elabBuildTargetWholeComponents
+  , determineCoverageFor
   , configureCompiler
   , configureToolchains
   , projectPackageDbsFor
@@ -109,7 +110,9 @@ import Text.PrettyPrint
   ( colon
   , comma
   , fsep
+#ifndef __MHS__
   , hang
+#endif
   , punctuate
   , quotes
   , render
@@ -118,6 +121,7 @@ import Text.PrettyPrint
   , ($$)
   , ($+$)
   )
+import Distribution.Utils.LogProgress
 import Prelude ()
 
 import Distribution.Client.Config
@@ -174,7 +178,9 @@ import Distribution.Utils.Path hiding
   , (</>)
   )
 
+#ifndef __MHS__
 import qualified Hackage.Security.Client as Sec
+#endif
 
 import Distribution.Solver.Types.ConstraintSource
 import Distribution.Solver.Types.InstSolverPackage
@@ -238,6 +244,7 @@ import qualified Distribution.PackageDescription as PD
 import qualified Distribution.PackageDescription.Configuration as PD
 import qualified Distribution.Simple.Configure as Cabal
 import qualified Distribution.Simple.GHC as GHC
+import Distribution.Simple.InstallDirs (InstallDirs (InstallDirs, datasubdir, libexecsubdir, libsubdir))
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Simple.LocalBuildInfo as Cabal
 import qualified Distribution.Simple.Setup as Cabal
@@ -246,10 +253,9 @@ import qualified Distribution.Solver.Types.ComponentDeps as CD
 import qualified Distribution.Compat.Graph as Graph
 
 import Control.Exception (assert)
-import Control.Monad (mapM_, sequence)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State as State (State, execState, runState, state)
-import Data.Foldable (fold)
+import Data.Foldable (fold, mapM_)
 import Data.Functor ((<&>))
 import Data.List (deleteBy, groupBy)
 import qualified Data.List.NonEmpty as NE
@@ -260,7 +266,7 @@ import Data.Traversable (mapAccumM)
 import Distribution.Client.Errors
 import Distribution.Solver.Types.ProjectConfigPath
 import GHC.Stack (HasCallStack)
-import System.Directory (getCurrentDirectory)
+import Distribution.Compat.Directory (getCurrentDirectory)
 import System.FilePath
 import qualified Text.PrettyPrint as Disp
 
@@ -278,6 +284,21 @@ unhashedComponentIdOf elab =
       ++ case elabComponentName elab >>= Cabal.componentNameString of
         Nothing -> ""
         Just s -> "-" ++ prettyShow s
+#ifdef __MHS__
+import Data.Monoid (Last (..))
+
+instance Binary a => Binary (Last a) where
+  put (Last x) = put x
+  get = Last <$> get
+
+instance (Binary a1, Binary a2, Binary a3, Binary a4, Binary a5, Binary a6) => Binary (a1, a2, a3, a4, a5, a6) where
+  put (x1, x2, x3, x4, x5, x6) = put x1 >> put x2 >> put x3 >> put x4 >> put x5 >> put x6
+  get = (,,,,,) <$> get <*> get <*> get <*> get <*> get <*> get
+
+instance (Binary a1, Binary a2, Binary a3, Binary a4, Binary a5, Binary a6, Binary a7) => Binary (a1, a2, a3, a4, a5, a6, a7) where
+  put (x1, x2, x3, x4, x5, x6, x7) = put x1 >> put x2 >> put x3 >> put x4 >> put x5 >> put x6 >> put x7
+  get = (,,,,,,) <$> get <*> get <*> get <*> get <*> get <*> get <*> get
+#endif
 
 -- | Check that an 'ElaboratedConfiguredPackage' actually makes
 -- sense under some 'ElaboratedSharedConfig'.
@@ -1021,14 +1042,15 @@ rebuildInstallPlan
         -- each machine against that machine's compiler.
         liftIO $
           sequence_ $
-            mapWithMachine
-              ( \machine toolchain ->
-                  checkBadPerPackageCompilerPaths
-                    (machineProgramPaths machine)
-                    (configuredPrograms (toolchainProgramDb toolchain))
-                    (getMapMappend (projectConfigSpecificPackage projectConfig))
-              )
-              toolchains
+            toList $
+              mapWithMachine
+                ( \machine toolchain ->
+                    checkBadPerPackageCompilerPaths
+                      (machineProgramPaths machine)
+                      (configuredPrograms (toolchainProgramDb toolchain))
+                      (getMapMappend (projectConfigSpecificPackage projectConfig))
+                )
+                toolchains
 
         -- Without cross-compilation there is no build machine, so nothing
         -- uses the build-machine program settings. They do not fall back to
@@ -1556,6 +1578,13 @@ getPackageSourceHashes verbosity withRepoCtx solverPlan = do
     if null repoTarballPkgsToDownload && null repoTarballPkgsWithMetadata
       then return (Map.empty, [])
       else liftIO $ withRepoCtx $ \repoctx -> do
+#ifdef __MHS__
+        -- Secure repositories (the only ones carrying hashes as part of
+        -- their repo metadata) are not supported in this build, so there
+        -- are never any hashes available from repo metadata. (Uses of
+        -- secure repositories fail earlier, in 'verifyFetchedTarballs'.)
+        let hashesFromRepoMetadata = Map.empty
+#else
         -- For tarballs from repos that do have hashes available as part of the
         -- repo metadata we now load up the index for each repo and retrieve
         -- the hashes for the packages
@@ -1586,6 +1615,7 @@ getPackageSourceHashes verbosity withRepoCtx solverPlan = do
                         $ repoTarballPkgsWithMetadata
                   ]
             )
+#endif
 
         -- For tarballs from repos that do not have hashes available, download
         -- the ones we previously determined we need.
@@ -2295,6 +2325,7 @@ elaborateInstallPlan
                       , Just paths <- [Map.lookup (ann_id aid) exe_map1]
                       , path <- paths
                       ]
+                    elab_comp :: ElaboratedComponent
                     elab_comp = ElaboratedComponent{..}
 
                 -- 3. Construct a preliminary ElaboratedConfiguredPackage,
@@ -2533,6 +2564,7 @@ elaborateInstallPlan
             (elab0@ElaboratedConfiguredPackage{..}, elaborationWarnings) =
               elaborateSolverToCommon pkg
 
+            elab1, elab :: ElaboratedConfiguredPackage
             elab1 =
               elab0
                 { elabUnitId = newSimpleUnitId pkgInstalledId
@@ -2645,6 +2677,7 @@ elaborateInstallPlan
               ) =
           (elaboratedPackage, libraryWayWarnings toolchains perPkgOption elabMachine pkgid >> buildOptionsAdjustmentWarnings)
           where
+            elaboratedPackage :: ElaboratedConfiguredPackage
             elaboratedPackage = ElaboratedConfiguredPackage{..}
 
             -- The machine this package is elaborated for, and the toolchain that
@@ -3203,7 +3236,7 @@ needsProfilingLibShared lookupFlag compiler pkgid =
 
 -- | The 'Machine' of a solver-plan node, read from its machine-carrying
 -- 'SolverId' graph key.
-solverNodeMachine :: (Graph.IsNode a, Graph.Key a ~ SolverId) => a -> Machine
+solverNodeMachine :: Graph.IsNode SolverId a => a -> Machine
 solverNodeMachine = solverMachine . Graph.nodeKey
 
 -- | Decide, for every @(machine, package)@ in the plan, which library ways it
@@ -3215,7 +3248,7 @@ solverNodeMachine = solverMachine . Graph.nodeKey
 -- over the whole plan partitions cleanly by machine.
 elaborateLibraryWays
   :: Toolchains
-  -> Graph.Graph NonSetupLibDepSolverPlanPackage
+  -> Graph.Graph SolverId NonSetupLibDepSolverPlanPackage
   -> (Machine -> PerPkgConfigFlag)
   -- ^ the per-package option lookup for a package of a given machine
   -> LibraryWays
@@ -4033,8 +4066,7 @@ instance Package PrunedPackage where
 instance HasUnitId PrunedPackage where
   installedUnitId (PrunedPackage elab _) = installedUnitId elab
 
-instance Graph.IsNode PrunedPackage where
-  type Key PrunedPackage = WithMachine UnitId
+instance Graph.IsNode (WithMachine UnitId) PrunedPackage where
   nodeKey (PrunedPackage elab _) = Graph.nodeKey elab
   nodeNeighbors (PrunedPackage _ deps) = deps
 
@@ -4130,7 +4162,7 @@ pruneInstallPlanPass1 pkgs
     pruned_packages :: [ElaboratedPlanPackage]
     pruned_packages = maybe [] (map (mapConfiguredPackage fromPrunedPackage)) (Graph.closure graph roots)
 
-    closed_graph :: Graph.Graph ElaboratedPlanPackage
+    closed_graph :: Graph.Graph (WithMachine UnitId) ElaboratedPlanPackage
     closed_graph = Graph.fromDistinctList pruned_packages
 
     -- whether any package has repl targets enabled, and we need to use multi-repl.
@@ -4585,10 +4617,10 @@ pruneInstallPlanToDependencies pkgTargets installPlan =
     -- if the remaining graph is broken or not, ie any packages with dangling
     -- dependencies. If there are then we cannot prune the given targets.
     checkBrokenDeps
-      :: Graph.Graph ElaboratedPlanPackage
+      :: Graph.Graph (WithMachine UnitId) ElaboratedPlanPackage
       -> Either
           CannotPruneDependencies
-          (Graph.Graph ElaboratedPlanPackage)
+          (Graph.Graph (WithMachine UnitId) ElaboratedPlanPackage)
     checkBrokenDeps graph =
       case Graph.broken graph of
         [] -> Right graph
@@ -4738,9 +4770,10 @@ storePackageInstallDirs'
       -- directory, not at a directory of its own: one @lib@ holding a
       -- directory per unit, one @bin@, one package database beside them.
       -- A store laid out this way can be consumed directly by another build
-      -- system -- GHC's assembles its binary distribution by copying @lib/*@
-      -- and @package.conf.d/*@ out of it -- which per-unit roots do not
-      -- allow, as there is then no one directory holding all the libraries.
+      -- system -- GHC's assembles its binary distribution by copying the
+      -- contents of @lib@ and @package.conf.d@ out of it -- which per-unit
+      -- roots do not allow, as there is then no one directory holding all
+      -- the libraries.
       prefix = storeDirectory machine toolchain
       bindir = prefix </> "bin"
       libdir = prefix </> "lib" </> prettyShow unitid
@@ -4782,9 +4815,9 @@ computeInstallDirs storeDirLayout defaultInstallDirs elaboratedShared elab
       )
         { -- absoluteInstallDirs sets these as 'undefined' but we have
           -- to use them as "Setup.hs configure" args
-          InstallDirs.libsubdir = ""
-        , InstallDirs.libexecsubdir = ""
-        , InstallDirs.datasubdir = ""
+          libsubdir = ""
+        , libexecsubdir = ""
+        , datasubdir = ""
         }
   | otherwise =
       -- use special simplified install dirs

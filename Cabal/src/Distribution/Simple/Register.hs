@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.Register
 -- Copyright   :  Isaac Jones 2003-2004
@@ -81,7 +79,7 @@ import Distribution.System
 import Distribution.Utils.Path
 import Distribution.Verbosity as Verbosity
 import Distribution.Version
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath (isAbsolute)
 import System.IO (hPutStrLn)
 
@@ -112,8 +110,8 @@ registerWithHandles verbHandles pkg_descr lbi0 flags = do
   -- when there was no public library.  But with per-component
   -- configure, we legitimately need to install internal libraries
   -- so that we can get them.  So just unconditionally install.
-  let verbosity = mkVerbosity verbHandles (fromFlag $ registerVerbosity flags)
-  targets <- readTargetInfos verbosity pkg_descr lbi0 $ registerTargets flags
+  let verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity $ registerCommonFlags flags)
+  targets <- readTargetInfos verbosity pkg_descr lbi0 $ setupTargets $ registerCommonFlags flags
 
   -- It's important to register in build order, because ghc-pkg
   -- will complain if a dependency is not registered.
@@ -693,7 +691,7 @@ relocatableInstalledPackageInfo
   -> Library
   -> LocalBuildInfo
   -> ComponentLocalBuildInfo
-  -> SymbolicPath CWD ('Dir Pkg)
+  -> SymbolicPath CWD (Dir Pkg)
   -> InstalledPackageInfo
 relocatableInstalledPackageInfo pkg abi_hash lib lbi clbi pkgroot =
   generalInstalledPackageInfo

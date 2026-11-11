@@ -32,7 +32,9 @@ test-suite unit-tests
     Test.Laws
     UnitTests.Distribution.CabalSpecVersion
     UnitTests.Distribution.Compat.CopyFile
+    UnitTests.Distribution.Compat.Directory
     UnitTests.Distribution.Compat.Graph
+    UnitTests.Distribution.Compat.Prelude
     UnitTests.Distribution.Compat.Time
     UnitTests.Distribution.Described
     UnitTests.Distribution.PackageDescription.Check

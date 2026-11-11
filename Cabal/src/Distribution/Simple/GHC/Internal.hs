@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.GHC.Internal
 -- Copyright   :  Isaac Jones 2003-2007
@@ -86,7 +84,7 @@ import Distribution.Utils.NubList (NubListR, toNubListR)
 import Distribution.Utils.Path
 import Distribution.Verbosity
 import Language.Haskell.Extension
-import System.Directory (listDirectory)
+import Distribution.Compat.Directory (listDirectory)
 import System.Environment (getEnv)
 import System.FilePath
   ( takeDirectory
