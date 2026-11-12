@@ -70,8 +70,8 @@ import Distribution.Types.PackageId (PackageId)
 import Distribution.Types.UnitId (mkLegacyUnitId, unUnitId)
 import Distribution.Utils.Path
   ( CWD
-  , FileLike ((<.>))
   , Dir
+  , FileLike ((<.>))
   , PathLike ((</>))
   , Pkg
   , PkgDB

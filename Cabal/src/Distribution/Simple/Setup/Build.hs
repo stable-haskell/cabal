@@ -14,6 +14,7 @@
 --
 -- Definition of the build command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Build
 #ifdef __MHS__
   ( BuildFlags (..)
@@ -34,6 +35,7 @@ module Distribution.Simple.Setup.Build
   , DumpBuildInfo (..)
   , buildOptions
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

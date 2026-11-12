@@ -104,6 +104,11 @@ import qualified Data.Map as Map
 import Distribution.Client.Errors
 import qualified Distribution.Client.GZipUtils as GZipUtils
 import qualified Distribution.Compat.CharParsing as P
+import Distribution.Compat.Directory
+  ( doesDirectoryExist
+  , doesFileExist
+  )
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Solver.Types.Machine (Machine (..))
 import Distribution.Utils.Path (makeSymbolicPath)
 import Network.URI
@@ -111,11 +116,6 @@ import Network.URI
   , URIAuth (..)
   , parseAbsoluteURI
   )
-import Distribution.Compat.Directory
-  ( doesDirectoryExist
-  , doesFileExist
-  )
-import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import System.FilePath
   ( dropExtension
   , splitPath

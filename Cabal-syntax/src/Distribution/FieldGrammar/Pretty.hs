@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 module Distribution.FieldGrammar.Pretty
   ( PrettyFieldGrammar
   , prettyFieldGrammar

@@ -4,6 +4,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (NameFlavour (..), Name (..))
 
 import Data.Generics as SYB
+import Data.List (intercalate)
 
 -- | Capture the source code of declarations in the variable
 capture
@@ -15,7 +16,7 @@ capture name decls = do
 
     -- mangle all names to drop unique suffixes and module prefixes
     let decls2 = SYB.everywhere (SYB.mkT mangleName) decls1
-    let declsStr = pprint decls2
+    let declsStr = intercalate "\n" . map guardDerivingGeneric . lines $ pprint decls2
     -- liftIO (putStrLn declsStr)
 
     let nameTyDecl :: Dec
@@ -28,3 +29,7 @@ capture name decls = do
   where
     mangleName :: Name -> Name
     mangleName (Name occ _) = Name occ NameS
+
+    guardDerivingGeneric :: String -> String
+    guardDerivingGeneric "    deriving Generic" = "#ifndef __MHS__\n    deriving Generic\n#endif"
+    guardDerivingGeneric line = line

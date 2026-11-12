@@ -5,6 +5,7 @@
  - Ideally, a set of unit tests that check whether certain
  - flags trigger recompilation should be added.
  - -}
+
 -- |
 -- Module      :  Distribution.Simple.Program
 -- Copyright   :  Isaac Jones 2006, Duncan Coutts 2007-2009

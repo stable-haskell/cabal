@@ -187,6 +187,12 @@ import Distribution.Client.ReplFlags
   )
 import Distribution.Client.Toolchain (Machine (..))
 import Distribution.Compat.Binary (decode)
+import Distribution.Compat.Directory
+  ( doesFileExist
+  , getCurrentDirectory
+  , listDirectory
+  , makeAbsolute
+  )
 import qualified Distribution.Compat.Graph as Graph
 import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Simple.Flag (flagToMaybe, fromFlagOrDefault, pattern Flag)
@@ -194,12 +200,6 @@ import Distribution.Simple.Program.Builtin (ghcProgram)
 import Distribution.Simple.Program.Db (requireProgram)
 import Distribution.Simple.Program.Types
 import Distribution.Types.PackageName.Magic (fakePackageId)
-import Distribution.Compat.Directory
-  ( doesFileExist
-  , getCurrentDirectory
-  , listDirectory
-  , makeAbsolute
-  )
 import System.FilePath
   ( searchPathSeparator
   , splitSearchPath

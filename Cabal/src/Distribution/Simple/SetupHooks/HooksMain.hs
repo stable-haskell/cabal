@@ -28,14 +28,15 @@ module Distribution.Simple.SetupHooks.HooksMain
   ) where
 
 -- base
+
+import Control.Exception
+  ( Exception (..)
+  )
 import Control.Monad
   ( (>=>)
   )
 import Control.Monad.IO.Class
   ( liftIO
-  )
-import Control.Exception
-  ( Exception (..)
   )
 import System.Environment
   ( getArgs
@@ -93,7 +94,6 @@ instance Show MD5 where
 -- Cabal
 import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
 import Distribution.Compat.Prelude
-import Prelude ()
 import Distribution.Simple.SetupHooks.Internal
 import Distribution.Simple.SetupHooks.Rule
 import Distribution.Simple.Utils
@@ -118,6 +118,7 @@ import Distribution.Verbosity
 import qualified Distribution.Verbosity as Verbosity
   ( normal
   )
+import Prelude ()
 
 --------------------------------------------------------------------------------
 -- Hooks version
@@ -136,6 +137,7 @@ data HooksVersion = HooksVersion
 -- | The version of the Hooks API built into this version of the Cabal library.
 --
 -- Used for handshake before beginning inter-process communication.
+{- FOURMOLU_DISABLE -}
 hooksVersion :: HooksVersion
 hooksVersion =
   HooksVersion
@@ -147,6 +149,7 @@ hooksVersion =
     , hooksABIHash = structureHash (Proxy :: Proxy CabalABI)
 #endif
     }
+{- FOURMOLU_ENABLE -}
 
 -- | Tracks the parts of the Cabal API relevant to its binary interface.
 data CabalABI = CabalABI
@@ -307,6 +310,7 @@ hooksMain setupHooks = runHooksM $ do
   where
     allHookHandlers = [(hookName h, hookHandler h) | h <- hookHandlers]
 
+{- FOURMOLU_DISABLE -}
     -- Get the communication handles and the name of the hook to run
     getHooksMainArgs :: HooksM ((Handle, Handle), String)
 #ifdef __MHS__
@@ -327,6 +331,7 @@ hooksMain setupHooks = runHooksM $ do
               throwE $ NoHandle (Just $ "hook output communication handle '" ++ outputFdRef ++ "'")
         _ -> throwE $ NoHandle Nothing
 #endif
+{- FOURMOLU_ENABLE -}
 
 type HooksM = ExceptT SetupHooksExeException IO
 

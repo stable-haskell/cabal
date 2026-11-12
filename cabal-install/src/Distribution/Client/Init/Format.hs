@@ -41,9 +41,9 @@ import Distribution.Pretty
 import qualified Distribution.SPDX.License as SPDX
 import Distribution.Simple.Utils hiding (cabalVersion)
 import Distribution.Solver.Compat.Prelude hiding (empty)
-import Prelude ()
 import Distribution.Utils.Path
 import Text.PrettyPrint
+import Prelude ()
 
 -- | Construct a 'PrettyField' from a field that can be automatically
 --   converted to a 'Doc' via 'display'.

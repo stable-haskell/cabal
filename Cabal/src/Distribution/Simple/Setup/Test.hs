@@ -14,6 +14,7 @@
 --
 -- Definition of the testing command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Test
 #ifdef __MHS__
   ( TestFlags (..)
@@ -34,6 +35,7 @@ module Distribution.Simple.Setup.Test
   , TestShowDetails (..)
   , testOptions'
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

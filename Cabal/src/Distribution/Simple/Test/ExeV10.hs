@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 module Distribution.Simple.Test.ExeV10
   ( runTest
   ) where
@@ -39,12 +40,12 @@ import Distribution.Verbosity
 import Distribution.Utils.Path
 
 import qualified Data.ByteString.Lazy as LBS
-import Distribution.Simple.LocalBuildInfo (interpretSymbolicPathLBI, packageRoot)
 import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , doesFileExist
   , removePathForcibly
   )
+import Distribution.Simple.LocalBuildInfo (interpretSymbolicPathLBI, packageRoot)
 #ifdef __MHS__
 import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 #endif
@@ -54,6 +55,7 @@ import Distribution.Compat.Process (createPipe)
 import qualified Distribution.Compat.Process as Process
 #endif
 
+{- FOURMOLU_DISABLE -}
 runTest
   :: VerbosityHandles
   -> PD.PackageDescription
@@ -263,6 +265,7 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
                     testName'
                     l
             }
+{- FOURMOLU_ENABLE -}
 
 -- TODO: This is abusing the notion of a 'PathTemplate'.  The result isn't
 -- necessarily a path.

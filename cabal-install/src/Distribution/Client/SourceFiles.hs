@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | Contains an @sdist@ like function which computes the source files
 -- that we should track to determine if a rebuild is necessary.
 -- Unlike @sdist@, we can operate directly on the true
@@ -10,7 +12,6 @@
 -- We can only use this code for non-Custom scripts; Custom scripts
 -- may have arbitrary extra dependencies (esp. new preprocessors) which
 -- we cannot "see" easily.
-{-# LANGUAGE CPP #-}
 module Distribution.Client.SourceFiles (needElaboratedConfiguredPackage) where
 
 import Control.Monad ((>=>))

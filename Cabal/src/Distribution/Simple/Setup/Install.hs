@@ -15,6 +15,7 @@
 --
 -- Definition of the install command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Install
 #ifdef __MHS__
   ( InstallFlags (..)
@@ -33,6 +34,7 @@ module Distribution.Simple.Setup.Install
   , defaultInstallFlags
   , installCommand
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

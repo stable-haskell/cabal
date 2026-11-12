@@ -61,9 +61,9 @@ module Distribution.Deprecated.ReadP
 where
 
 import Distribution.Client.Compat.Prelude
-import Prelude ()
 import Distribution.ReadE (ReadE (..))
 import qualified Text.ParserCombinators.ReadP as T
+import Prelude ()
 
 type Parser = T.ReadP
 

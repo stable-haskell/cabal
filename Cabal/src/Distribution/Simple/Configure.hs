@@ -148,6 +148,13 @@ import Data.List
 import qualified Data.List.NonEmpty as NEL
 import qualified Data.Map as Map
 import qualified Data.Text as Text
+import Distribution.Compat.Directory
+  ( canonicalizePath
+  , createDirectoryIfMissing
+  , doesFileExist
+  , doesPathExist
+  , listDirectory
+  )
 import Distribution.Compat.Environment (lookupEnv)
 import Distribution.Parsec
   ( simpleParsec
@@ -161,13 +168,6 @@ import Distribution.Simple.Errors
 import Distribution.Types.AnnotatedId
 import Distribution.Utils.Path
 import Distribution.Utils.Structured (structuredDecodeOrFailIO, structuredEncode)
-import Distribution.Compat.Directory
-  ( canonicalizePath
-  , createDirectoryIfMissing
-  , doesFileExist
-  , doesPathExist
-  , listDirectory
-  )
 import System.FilePath
   ( isAbsolute
   )
@@ -1434,6 +1434,7 @@ finalCheckPackage
         dieWithException verbosity $
           CantFindForeignLibraries unsupportedFLibs
 
+{- FOURMOLU_DISABLE -}
 configureComponents
   :: VerbosityHandles
   -> LBC.LocalBuildConfig
@@ -1611,6 +1612,7 @@ configureComponents
         ]
 
       return lbi
+{- FOURMOLU_ENABLE -}
 
 mkPromisedDepsSet :: [PromisedComponent] -> Map (PackageName, ComponentName) PromisedComponent
 mkPromisedDepsSet comps = Map.fromList [((packageName pn, CLibName ln), p) | p@(PromisedComponent pn ln _) <- comps]

@@ -865,6 +865,7 @@ executeRules =
 
 -- | Like 'executeRules', except it can be used when communicating with
 -- an external hooks executable.
+{- FOURMOLU_DISABLE -}
 executeRulesUserOrSystem
   :: forall userOrSystem
    . ( Binary (RuleData userOrSystem)
@@ -881,6 +882,8 @@ executeRulesUserOrSystem
   -> TargetInfo
   -> Map RuleId (RuleData userOrSystem)
   -> IO ()
+{- FOURMOLU_ENABLE -}
+{- FOURMOLU_DISABLE -}
 #ifndef __MHS__
 executeRulesUserOrSystem scope runDepsCmdData runCmdData verbosity lbi tgtInfo allRules = do
   -- Load the rule cache from the previous build.
@@ -1143,6 +1146,7 @@ pprNotDemandedRuleReasons
 -- DataKinds promotion: the scope index is erased).
 executeRulesUserOrSystem _ _ _ _ _ _ _ = error "Distribution.Simple.SetupHooks.Internal: build-type 'Hooks' is not supported in this MHS build of Cabal."
 #endif
+{- FOURMOLU_ENABLE -}
 
 directRuleDependencyMaybe :: Rule.Dependency -> Maybe RuleId
 directRuleDependencyMaybe (RuleDependency dep) = Just $ outputOfRule dep

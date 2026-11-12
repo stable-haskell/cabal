@@ -260,6 +260,7 @@ type RuleBinary = RuleData ()
 --
 -- Use 'staticRule' or 'dynamicRule' to construct a rule, overriding specific
 -- fields, rather than directly using the 'Rule' constructor.
+{- FOURMOLU_DISABLE -}
 #ifndef __MHS__
 data RuleData (scope :: Scope)
 #else
@@ -302,6 +303,7 @@ instance Binary (RuleData scope) where
   put _ = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
   get = error "Distribution.Simple.SetupHooks.Rule: build-type 'Hooks' is not supported in this MHS build of Cabal."
 #endif
+{- FOURMOLU_ENABLE -}
 
 -- | Trimmed down 'Show' instance, mostly for error messages.
 instance Show RuleBinary where
@@ -742,6 +744,7 @@ type Command arg res = CommandData () arg res
 
 -- | Internal datatype used for commands, both for the Hooks API ('Command')
 -- and for the build system.
+{- FOURMOLU_DISABLE -}
 #ifndef __MHS__
 data CommandData (scope :: Scope) (arg :: Hs.Type) (res :: Hs.Type) = Command
 #else
@@ -754,6 +757,7 @@ data CommandData scope arg res = Command
   , cmdInstances :: !(Static scope (Dict (Binary arg, Show arg)))
   -- ^ Static evidence that the argument can be serialised and deserialised.
   }
+{- FOURMOLU_ENABLE -}
 
 -- | Construct a command.
 --
@@ -919,12 +923,14 @@ includes the length. We use this newtype:
   - in the definition of 'DepsRes', for the result of dynamic dependency computations.
 -}
 
+{- FOURMOLU_DISABLE -}
 #ifndef __MHS__
 newtype ScopedArgument (scope :: Scope) arg = ScopedArgument {getArg :: arg}
 #else
 newtype ScopedArgument scope arg = ScopedArgument {getArg :: arg}
 #endif
   deriving newtype (Eq, Ord, Show)
+{- FOURMOLU_ENABLE -}
 
 #ifndef __MHS__
 -- | Serialise/deserialise, always including the length of the payload.
@@ -953,6 +959,7 @@ instance Binary arg => Binary (ScopedArgument scope arg) where
 
 -- | A placeholder for a command that has been omitted, e.g. when we don't
 -- care about serialising/deserialising one particular command in a datatype.
+{- FOURMOLU_DISABLE -}
 #ifndef __MHS__
 data NoCmd (scope :: Scope) arg res = CmdOmitted
 #else
@@ -960,6 +967,7 @@ data NoCmd scope arg res = CmdOmitted
 #endif
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (Binary)
+{- FOURMOLU_ENABLE -}
 
 -- | A dynamic dependency command.
 newtype DynDepsCmd scope depsArg depsRes = DynDepsCmd
@@ -984,6 +992,7 @@ deriving newtype instance Eq (DynDepsCmd scope depsArg depsRes)
 deriving newtype instance Binary (DynDepsCmd scope depsArg depsRes)
 #endif
 
+{- FOURMOLU_DISABLE -}
 -- | The result of a dynamic dependency computation.
 #ifndef __MHS__
 newtype DepsRes (scope :: Scope) depsArg depsRes = DepsRes
@@ -994,6 +1003,7 @@ newtype DepsRes scope depsArg depsRes = DepsRes
       :: ScopedArgument scope depsRes -- See Note [Hooks Binary instances]
   }
   deriving newtype (Show, Eq, Ord)
+{- FOURMOLU_ENABLE -}
 
 deriving newtype instance
   Binary (ScopedArgument scope depsRes)

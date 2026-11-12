@@ -38,6 +38,10 @@ import Distribution.Types.UnqualComponentName
 import Distribution.Utils.Path
 import Distribution.Verbosity
 
+import Distribution.Compat.Directory
+  ( createDirectoryIfMissing
+  , listDirectory
+  )
 import Distribution.Simple.Configure (getInstalledPackagesById)
 import Distribution.Simple.Errors
 import Distribution.Simple.Register (internalPackageDBPath)
@@ -46,10 +50,6 @@ import Distribution.Simple.Setup.Config
 import Distribution.Types.ExposedModule
 import Distribution.Types.InstalledPackageInfo (InstalledPackageInfo (libraryDirs), exposedModules)
 import Distribution.Types.LocalBuildInfo (LocalBuildInfo (..))
-import Distribution.Compat.Directory
-  ( createDirectoryIfMissing
-  , listDirectory
-  )
 
 -- | Perform the \"@.\/setup test@\" action.
 test

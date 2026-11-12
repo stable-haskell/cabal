@@ -1,6 +1,6 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Distribution.Client.CmdClean (cleanCommand, cleanAction) where
@@ -78,8 +78,8 @@ import Control.Exception
   ( throw
   )
 import Data.Foldable (forM_)
-import Data.Traversable (forM)
 import qualified Data.Set as Set
+import Data.Traversable (forM)
 #ifndef __MHS__
 import qualified GHC.IO.Exception as GHC
 #endif
@@ -93,6 +93,7 @@ import Distribution.Compat.Directory
 import System.FilePath
   ( (</>)
   )
+{- FOURMOLU_DISABLE -}
 import System.IO.Error
   (
 #ifndef __MHS__
@@ -100,6 +101,7 @@ import System.IO.Error
 #endif
     isPermissionError
   )
+{- FOURMOLU_ENABLE -}
 import qualified Distribution.Compat.Process as Process
 
 data CleanFlags = CleanFlags
@@ -155,6 +157,7 @@ cleanOptions showOrParseArgs =
       falseArg
   ]
 
+{- FOURMOLU_DISABLE -}
 cleanAction :: (ProjectFlags, CleanFlags) -> [String] -> GlobalFlags -> IO ()
 cleanAction (ProjectFlags{..}, CleanFlags{..}) extraArgs _ = do
   let verbosity = mkVerbosity defaultVerbosityHandles $ fromFlagOrDefault normal cleanVerbosity
@@ -229,6 +232,7 @@ cleanAction (ProjectFlags{..}, CleanFlags{..}) extraArgs _ = do
     when (not exists || script `Set.member` toClean) $ do
       info verbosity ("Deleting cache (" ++ cache ++ ") for script (" ++ script ++ ")")
       removePathForcibly cache
+{- FOURMOLU_ENABLE -}
 
 removeEnvFiles :: FilePath -> IO ()
 removeEnvFiles dir =

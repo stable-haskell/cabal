@@ -1,6 +1,6 @@
 -----------------------------------------------------------------------------
-
 {-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Client.Dependency
 -- Copyright   :  (c) David Himmelstrup 2005,

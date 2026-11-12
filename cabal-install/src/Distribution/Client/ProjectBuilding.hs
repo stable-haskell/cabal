@@ -93,8 +93,8 @@ import Control.Concurrent.STM (TVar, newTVarIO)
 import Control.Exception (handle, try)
 import Data.Either (isLeft)
 import qualified Distribution.Client.IndexUtils as IndexUtils
-import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist, renameDirectory)
+import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import System.FilePath (makeRelative, normalise, takeDirectory, takeFileName, (<.>), (</>))
 #ifdef __MHS__
 type SemaphoreIdentifier = String

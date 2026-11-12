@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 -- | Implementation of base-62 encoding, which we use when computing hashes
 -- for fully instantiated unit ids.
 module Distribution.Utils.Base62 (hashToBase62) where

@@ -18,9 +18,6 @@ build-type:     Simple
 extra-doc-files:
   README.md ChangeLog.md
 
-extra-source-files:
-  cbits/mhs_posix.h
-
 source-repository head
   type:     git
   location: https://github.com/haskell/cabal/
@@ -54,9 +51,8 @@ library
 
   if flag(mhs)
     build-depends:
-      array-mhs  >= 0.5.8   && < 0.6,
-      binary-mhs >= 0.8.1   && < 0.9,
-      pretty-mhs >= 1.1.3.6 && < 1.2
+      array-mhs        >= 0.5.8 && < 0.6,
+      mhs-compat-shims ^>= 0.1
   else
     build-depends:
       array      >= 0.4.0.1 && < 0.6,
@@ -91,7 +87,6 @@ library
     Distribution.Compat.Graph
     Distribution.Compat.Internal.LazyByteString
     Distribution.Compat.Lens
-    Distribution.Compat.MhsInstances
     Distribution.Compat.NonEmptySet
     Distribution.Compat.Parsing
     Distribution.Compat.Prelude
@@ -221,17 +216,6 @@ library
     Distribution.Utils.Structured
     Distribution.Version
     Language.Haskell.Extension
-
-  other-modules:
-    Distribution.Compat.Internal.MhsPosix
-
-  -- C helpers for the MHS (MicroHs) build of Distribution.Compat.Directory.
-  -- The POSIX bodies are used there; other platforms compile the stubs.
-  -- The matching header (cbits/mhs_posix.h, shipped in
-  -- extra-source-files) carries the prototypes (with platform types
-  -- from the standard headers) for MicroHs-generated FFI call sites.
-  c-sources: cbits/mhs_posix.c
-  include-dirs: cbits
 
   other-extensions:
     BangPatterns

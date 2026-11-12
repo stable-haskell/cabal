@@ -18,8 +18,6 @@ Category:           Distribution
 Build-type:         Simple
 Extra-Source-Files:
   bash-completion/cabal
-  cbits/mhs_sha256.c
-  cbits/mhs_sha256.h
 extra-doc-files:
   README.md
   ChangeLog.md
@@ -130,7 +128,6 @@ library
         Distribution.Client.CmdTarget
         Distribution.Client.CmdTest
         Distribution.Client.CmdUpdate
-        Distribution.Client.Compat.Base16
         Distribution.Client.CmdGenBounds
         Distribution.Client.Compat.Orphans
         Distribution.Client.Compat.Prelude
@@ -265,18 +262,10 @@ library
       , parsec     >= 3.1.13.0 && < 3.2
 
     if flag(mhs)
-      -- MicroHs build: -mhs package variants (same APIs, ported to mhs).
       build-depends:
-        , array-mhs  >= 0.5.8   && < 0.6
-        , binary-mhs >= 0.8.1   && < 0.9
-        , pretty-mhs >= 1.1.3.6 && < 1.2
-        , random-mhs >= 1.2     && < 1.4
-        , uri-mhs    >= 0.1     && < 0.2
-      -- SHA256 helper (CommonCrypto on Apple, OpenSSL elsewhere).
-      c-sources: cbits/mhs_sha256.c
-      include-dirs: cbits
-      if !os(darwin)
-        extra-libraries: crypto
+        , array-mhs        >= 0.5.8 && < 0.6
+        , mhs-compat-shims ^>= 0.1
+        , random-mhs       >= 1.2   && < 1.4
     else
       build-depends:
         , array      >= 0.4      && < 0.6

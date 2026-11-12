@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Client.JobControl
 -- Copyright   :  (c) Duncan Coutts 2012
@@ -302,6 +303,7 @@ newJobControlFromParStrat
   -> Maybe Int
   -- ^ A cap on the number of jobs (e.g. to force a maximum of 2 concurrent downloads despite a -j8 parallel strategy)
   -> IO (JobControl IO a)
+{- FOURMOLU_DISABLE -}
 newJobControlFromParStrat verbosity mcompiler parStrat numJobsCap = case parStrat of
   Serial -> newSerialJobControl
   NumJobs n -> newParallelJobControl (capJobs (fromMaybe numberOfProcessors n))
@@ -337,6 +339,7 @@ newJobControlFromParStrat verbosity mcompiler parStrat numJobsCap = case parStra
 #endif
   where
     capJobs n = min (fromMaybe maxBound numJobsCap) n
+{- FOURMOLU_ENABLE -}
 
 -- | Check if the compiler's semaphore version is compatible with ours,
 -- per 'versionsAreCompatible'. A compiler that doesn't report a

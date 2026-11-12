@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Utils.Generic
 -- Copyright   :  Isaac Jones, Simon Marlow 2003-2004
@@ -97,7 +98,6 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.Encoding.Error as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL
-import GHC.IO.Exception (IOErrorType (UnsupportedOperation))
 import Distribution.Compat.Directory
   ( copyFile
   , getTemporaryDirectory
@@ -108,10 +108,12 @@ import Distribution.Compat.Internal.LazyByteString
   ( hGetContentsLBS
   , readFileLBS
   )
+import GHC.IO.Exception (IOErrorType (UnsupportedOperation))
 import System.FilePath
   ( takeFileName
   , (<.>)
   )
+{- FOURMOLU_DISABLE -}
 import System.IO
   ( IOMode (ReadMode)
   , hClose
@@ -126,6 +128,7 @@ import System.IO
   , withBinaryFile
   , withFile
   )
+{- FOURMOLU_ENABLE -}
 import System.IO.Error (ioeGetErrorType)
 
 -- -----------------------------------------------------------------------------

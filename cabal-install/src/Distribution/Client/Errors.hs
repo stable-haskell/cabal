@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 -- Module      :  Distribution.Client.Errors
 -- Copyright   :  Suganya Arun
 -- License     :  BSD3
@@ -25,7 +26,6 @@ import Distribution.Client.IndexUtils.Timestamp
 import qualified Distribution.Client.Types.Repo as Repo
 import qualified Distribution.Client.Types.RepoName as RepoName
 import Distribution.Compat.Prelude
-import Prelude ()
 import Distribution.Deprecated.ParseUtils (PWarning, showPWarning)
 import Distribution.Package
 import Distribution.Pretty
@@ -34,6 +34,7 @@ import Distribution.Simple.Utils
 import Network.URI
 import Text.PrettyPrint hiding (render, (<>))
 import qualified Text.PrettyPrint as PP
+import Prelude ()
 
 import Distribution.Client.Errors.Parser
 

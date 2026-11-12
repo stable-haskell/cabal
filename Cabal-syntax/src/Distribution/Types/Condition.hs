@@ -14,6 +14,7 @@ import Distribution.Compat.Prelude
 import Prelude ()
 
 -- | A boolean expression parameterized over the variable type used.
+{- FOURMOLU_DISABLE -}
 data Condition c
   = Var c
   | Lit Bool
@@ -25,6 +26,7 @@ data Condition c
     , Data
 #endif
     )
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 -- MicroHs cannot derive 'Data' for parameterised types (it drops the

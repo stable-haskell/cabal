@@ -15,6 +15,7 @@
 --
 -- Definition of the configure command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Config
 #ifdef __MHS__
   ( ConfigFlags (..)
@@ -41,6 +42,7 @@ module Distribution.Simple.Setup.Config
   , configureOptions
   , installDirsOptions
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

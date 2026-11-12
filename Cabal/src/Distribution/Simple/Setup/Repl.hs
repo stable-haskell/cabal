@@ -14,6 +14,7 @@
 --
 -- Definition of the repl command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Repl
 #ifdef __MHS__
   ( ReplFlags (..)
@@ -33,6 +34,7 @@ module Distribution.Simple.Setup.Repl
   , ReplOptions (..)
   , replOptions
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

@@ -16,7 +16,6 @@ import qualified Distribution.Client.ProjectConfig.Lens as L
 import Distribution.Client.ProjectConfig.Types (PackageConfig (..), ProjectConfig (..), ProjectConfigBuildOnly (..), ProjectConfigProvenance (..), ProjectConfigShared (..))
 import Distribution.Client.Utils.Parsec
 import Distribution.Compat.Prelude
-import Prelude ()
 import Distribution.FieldGrammar
 import Distribution.Simple.Flag
 import Distribution.Simple.InstallDirs
@@ -24,6 +23,7 @@ import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
 import Distribution.Solver.Types.ProjectConfigPath
 import Distribution.Solver.Types.Settings (PreferVersion (..))
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
+import Prelude ()
 
 projectConfigFieldGrammar :: ProjectConfigPath -> [String] -> ParsecFieldGrammar' ProjectConfig
 projectConfigFieldGrammar source knownPrograms = do

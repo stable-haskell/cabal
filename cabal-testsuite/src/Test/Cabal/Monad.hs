@@ -115,18 +115,18 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 import Data.ByteString.Char8 qualified as C
 import Data.List
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Maybe
 import Data.Monoid (mempty)
+import Distribution.Compat.Directory
+import Distribution.Compat.Process hiding (env)
 import Distribution.Simple.Utils hiding (info)
 import GHC.Stack
 import Options.Applicative
-import Distribution.Compat.Directory
 import System.Exit
 import System.FilePath
 import System.IO
 import System.IO.Error (isDoesNotExistError)
-import Distribution.Compat.Process hiding (env)
 import Test.Cabal.Run
 
 data CommonArgs = CommonArgs

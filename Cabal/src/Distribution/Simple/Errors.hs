@@ -313,6 +313,7 @@ versionRequirement range
   | isAnyVersion range = ""
   | otherwise = " version " ++ prettyShow range
 
+{- FOURMOLU_DISABLE -}
 exceptionMessage :: CabalException -> String
 exceptionMessage e = case e of
   NoBenchMarkProgram cmd -> "Could not find benchmark program \"" ++ cmd ++ "\". Did you build the package first?"
@@ -803,3 +804,4 @@ exceptionMessage e = case e of
       [ "The ecosystem doesn't support building packages with just bytecode libraries yet."
       , "If you have run into this error, please comment on issue #<TODO>"
       ]
+{- FOURMOLU_ENABLE -}

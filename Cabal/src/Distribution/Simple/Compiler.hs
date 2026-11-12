@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Simple.Compiler
 -- Copyright   :  Isaac Jones 2003-2004
@@ -91,8 +92,8 @@ module Distribution.Simple.Compiler
   , showProfDetailLevel
   ) where
 
-import Distribution.Compat.CharParsing
 import Data.Foldable (Foldable)
+import Distribution.Compat.CharParsing
 import Distribution.Compat.Prelude
 import Distribution.Parsec
 import Distribution.Pretty
@@ -263,6 +264,7 @@ newtype TargetName = TargetName String
 renderTargetName :: TargetName -> String
 renderTargetName (TargetName name) = name
 
+{- FOURMOLU_DISABLE -}
 parseTargetName :: String -> Either String TargetName
 parseTargetName name
   | null name = Left "target name is empty"
@@ -292,6 +294,7 @@ parseTargetName name
         step c (x:xs) | [c] == sep = "" : x : xs
         step c (x:xs) = (c:x) : xs
         step _ [] = []
+{- FOURMOLU_ENABLE -}
 
 -- | Return the canonical target identity, validating new-protocol metadata.
 -- Older compilers retain their full Target platform string where available,
@@ -305,11 +308,13 @@ compilerTargetName platform comp =
       let expected = machine ++ if abi == "profiling" then "-prof" else ""
       if abi `notElem` ["", "profiling"]
         then Left ("unsupported Target ABI: " ++ abi)
-        else if name /= expected
-          then Left "Target name contradicts Target platform and Target ABI"
-          else if length name + 1 + length (prettyShow (compilerVersion comp)) > 255
-            then Left "target name plus compiler version exceeds the 255-character filesystem component limit"
-          else Right target
+        else
+          if name /= expected
+            then Left "Target name contradicts Target platform and Target ABI"
+            else
+              if length name + 1 + length (prettyShow (compilerVersion comp)) > 255
+                then Left "target name plus compiler version exceeds the 255-character filesystem component limit"
+                else Right target
     (Just _, Nothing, _) -> Left "Target name requires Target platform"
     (Nothing, Just machine, abi) -> do
       _ <- parseTargetName machine
@@ -723,6 +728,7 @@ profilingDynamicSupportedOrUnknown comp =
   profilingDynamicSupported comp `elem` [Just True, Nothing]
 
 -- | Whether the selected profiling target includes a debug RTS variant.
+{- FOURMOLU_DISABLE -}
 profilingDebugSupported :: Compiler -> Maybe Bool
 profilingDebugSupported comp
   | compilerTargetsProfiling comp
@@ -737,6 +743,7 @@ profilingDebugSupported comp
         Nothing -> Just False
   | compilerTargetsProfiling comp = Nothing
   | otherwise = Just False
+{- FOURMOLU_ENABLE -}
 
 -- | Is the compiler distributed with dynamic libraries
 dynamicSupported :: Compiler -> Maybe Bool

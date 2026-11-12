@@ -75,14 +75,14 @@ import Data.Foldable (mapM_)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import Distribution.Client.Errors
-import Distribution.Utils.NubList
-  ( fromNubList
-  )
 import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , doesDirectoryExist
   , doesFileExist
   , listDirectory
+  )
+import Distribution.Utils.NubList
+  ( fromNubList
   )
 import System.FilePath
   ( addTrailingPathSeparator

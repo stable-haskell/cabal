@@ -6,8 +6,8 @@ module Test.Cabal.Workdir where
 import Distribution.Simple.Configure
 import Distribution.Simple.Setup
 import Distribution.Utils.Path
-  ( Dist
-  , Dir
+  ( Dir
+  , Dist
   , FileOrDir (..)
   , Pkg
   , SymbolicPath

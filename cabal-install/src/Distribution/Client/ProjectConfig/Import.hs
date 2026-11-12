@@ -29,9 +29,9 @@ import Data.List ((\\))
 import qualified Data.Map as Map
 import Distribution.Client.Compat.Prelude hiding (empty, (<>))
 import qualified Distribution.Client.Compat.Prelude as Prelude ((<>))
-import Prelude ()
 import Distribution.Client.HttpUtils
 import Distribution.Client.ProjectConfig.Types
+import Distribution.Compat.Directory (createDirectoryIfMissing)
 import Distribution.Compat.Lens (view)
 import Distribution.PackageDescription (ConfVar (..))
 import Distribution.Simple.Utils (debug, noticeDoc, ordNub)
@@ -39,9 +39,9 @@ import Distribution.Solver.Types.ProjectConfigPath
 import Distribution.Types.CondTree (CondTree (..), traverseCondTreeA)
 import Distribution.Utils.String (trim)
 import Network.URI (URI (..), parseURI)
-import Distribution.Compat.Directory (createDirectoryIfMissing)
 import System.FilePath (isAbsolute, isPathSeparator, makeValid, (</>))
 import Text.PrettyPrint (Doc, empty, int, nest, semi, text, vcat, (<>))
+import Prelude ()
 
 -- | ProjectConfigSkeleton is a tree of conditional blocks and imports wrapping
 -- a config. It can be finalized by providing the conditional resolution info

@@ -15,6 +15,7 @@
 --
 -- Definition of the copy command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Copy
 #ifdef __MHS__
   ( CopyFlags (..)
@@ -33,6 +34,7 @@ module Distribution.Simple.Setup.Copy
   , defaultCopyFlags
   , copyCommand
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

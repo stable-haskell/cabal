@@ -34,6 +34,7 @@ import Distribution.Client.Setup
   ( ConfigExFlags (..)
   )
 import Distribution.Client.Targets (userConstraintPackageName)
+import Distribution.Compat.Directory (doesFileExist)
 import Distribution.Deprecated.ParseUtils
   ( FieldDescr (..)
   , ParseResult (..)
@@ -55,7 +56,6 @@ import Distribution.Simple.Setup
   )
 import Distribution.Simple.Utils (debug, warn)
 import Distribution.Solver.Types.ConstraintSource
-import Distribution.Compat.Directory (doesFileExist)
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError)
 import Text.PrettyPrint (($+$))

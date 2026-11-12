@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PatternSynonyms #-}
 
+{- FOURMOLU_DISABLE -}
 module Distribution.Client.Utils
   ( MergeResult (..)
   , mergeBy
@@ -46,6 +47,7 @@ module Distribution.Client.Utils
   , getArgsWithResponseFiles
 #endif
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Client.Compat.Prelude
 import Prelude ()

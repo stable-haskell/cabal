@@ -14,6 +14,7 @@
 --
 -- Definition of the sdist command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.SDist
 #ifdef __MHS__
   ( SDistFlags (..)
@@ -32,6 +33,7 @@ module Distribution.Simple.Setup.SDist
   , defaultSDistFlags
   , sdistCommand
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

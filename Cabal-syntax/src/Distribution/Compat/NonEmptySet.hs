@@ -46,12 +46,14 @@ import Distribution.Compat.Binary (Binary (..))
 import Distribution.Utils.Structured
 
 -- | @since 3.4.0.0
+{- FOURMOLU_DISABLE -}
 newtype NonEmptySet a = NES (Set.Set a)
   deriving (Eq, Ord, Read
 #ifndef __MHS__
     , Data
 #endif
     )
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 -- MicroHs cannot derive 'Data' for parameterised types (it drops the

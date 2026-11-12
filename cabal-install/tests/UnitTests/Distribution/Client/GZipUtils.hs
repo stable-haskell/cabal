@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 module UnitTests.Distribution.Client.GZipUtils
   ( tests
   ) where

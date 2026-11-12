@@ -129,6 +129,16 @@ import Distribution.Client.Version
   ( cabalInstallVersion
   )
 import qualified Distribution.Compat.CharParsing as P
+import Distribution.Compat.Directory
+  ( XdgDirectory (XdgCache, XdgConfig, XdgState)
+  , createDirectoryIfMissing
+  , doesDirectoryExist
+  , doesFileExist
+  , getAppUserDataDirectory
+  , getHomeDirectory
+  , getXdgDirectory
+  , renameFile
+  )
 import Distribution.Compiler
   ( CompilerFlavor (..)
   , defaultCompilerFlavor
@@ -218,16 +228,6 @@ import Network.URI
   ( URI (..)
   , URIAuth (..)
   , parseURI
-  )
-import Distribution.Compat.Directory
-  ( XdgDirectory (XdgCache, XdgConfig, XdgState)
-  , createDirectoryIfMissing
-  , doesDirectoryExist
-  , doesFileExist
-  , getAppUserDataDirectory
-  , getHomeDirectory
-  , getXdgDirectory
-  , renameFile
   )
 import System.FilePath
   ( normalise

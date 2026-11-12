@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 module Distribution.Simple.Test.LibV09
   ( runTest
   -- Test stub
@@ -51,9 +52,10 @@ import Distribution.Compat.Directory
 #ifdef __MHS__
 import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 #endif
-import System.IO (hClose, hPutStr)
 import qualified Distribution.Compat.Process as Process
+import System.IO (hClose, hPutStr)
 
+{- FOURMOLU_DISABLE -}
 runTest
   :: VerbosityHandles
   -> PD.PackageDescription
@@ -230,6 +232,7 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
 
     distPref = fromFlag $ setupDistPref common
     verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity common)
+{- FOURMOLU_ENABLE -}
 
 -- TODO: This is abusing the notion of a 'PathTemplate'.  The result isn't
 -- necessarily a path.

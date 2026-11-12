@@ -14,6 +14,7 @@
 --
 -- Definition of the benchmarking command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Benchmark
 #ifdef __MHS__
   ( BenchmarkFlags (..)
@@ -33,6 +34,7 @@ module Distribution.Simple.Setup.Benchmark
   , benchmarkCommand
   , benchmarkOptions'
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

@@ -240,12 +240,6 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 
-import Network.URI
-  ( URI (..)
-  , URIAuth (..)
-  , parseAbsoluteURI
-  , uriToString
-  )
 import Distribution.Compat.Directory
   ( canonicalizePath
   , doesDirectoryExist
@@ -257,6 +251,12 @@ import Distribution.Compat.Directory
   , pathIsSymbolicLink
   )
 import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
+import Network.URI
+  ( URI (..)
+  , URIAuth (..)
+  , parseAbsoluteURI
+  , uriToString
+  )
 import System.FilePath hiding (combine)
 import System.IO
   ( IOMode (ReadMode)

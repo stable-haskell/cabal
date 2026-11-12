@@ -110,6 +110,12 @@ import Distribution.Client.Errors
 import Distribution.Client.Utils
   ( makeRelativeCanonical
   )
+import qualified Distribution.Compat.Directory as IO
+  ( canonicalizePath
+  , doesDirectoryExist
+  , doesFileExist
+  , getCurrentDirectory
+  )
 import Distribution.Deprecated.ParseUtils
   ( readPToMaybe
   )
@@ -125,12 +131,6 @@ import Distribution.Simple.Utils
   )
 import Distribution.Utils.Path
   ( getSymbolicPath
-  )
-import qualified Distribution.Compat.Directory as IO
-  ( canonicalizePath
-  , doesDirectoryExist
-  , doesFileExist
-  , getCurrentDirectory
   )
 import System.FilePath
   ( dropExtension

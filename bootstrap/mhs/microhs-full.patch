@@ -1,0 +1,286 @@
+diff --git a/lib/System/IO/Serialize.hs b/lib/System/IO/Serialize.hs
+index 75683cf..d0bb25d 100644
+--- a/lib/System/IO/Serialize.hs
++++ b/lib/System/IO/Serialize.hs
+@@ -39,12 +39,7 @@ foreign import ccall "add_lzma_compressor"   c_add_lzma_compressor   :: Ptr BFIL
+ foreign import ccall "add_lzma_decompressor" c_add_lzma_decompressor :: Ptr BFILE -> IO (Ptr BFILE)
+ 
+ writeSerializedCompressed :: forall a . FilePath -> a -> IO ()
+-writeSerializedCompressed p s = do
+-  h <- openBinaryFile p WriteMode
+-  hPutChar h 'q'                               -- indicate compressed
+-  h' <- addTransducer c_add_lzma_compressor h
+-  hSerialize h' s
+-  hFlush h'
++writeSerializedCompressed p s = writeSerialized p s
+ 
+ -- Read compressed or uncompressed
+ readSerialized :: FilePath -> IO a
+diff --git a/src/MicroHs/CompileCache.hs b/src/MicroHs/CompileCache.hs
+index ed6ad28..6535070 100644
+--- a/src/MicroHs/CompileCache.hs
++++ b/src/MicroHs/CompileCache.hs
+@@ -134,7 +134,7 @@ addPackage mf p c = c{
+   where ins t = M.insert (tModuleName t) (PkgMdl t)
+ 
+ saveCache :: FilePath -> Cache -> IO ()
+-saveCache fn cash = writeSerializedCompressed fn (forceCache cash)
++saveCache fn cash = writeSerialized fn (forceCache cash)
+ 
+ loadCached :: FilePath -> IO (Maybe Cache)
+ loadCached fn = do
+diff --git a/src/MicroHs/Deriving.hs b/src/MicroHs/Deriving.hs
+index 92b8210..6c3dca6 100644
+--- a/src/MicroHs/Deriving.hs
++++ b/src/MicroHs/Deriving.hs
+@@ -38,6 +38,7 @@ deriveStrat mctx newt lhs cs strat (narg, acls) =  -- narg is the number of argu
+     DerNewtype | newt             -> newtypeDer  mctx narg lhs  c acls =<< getVia narg lhs c
+     DerAnyClass                   -> anyclassDer mctx narg lhs     cls
+     DerVia via | newt             -> newtypeDer  mctx narg lhs  c acls via
++               | otherwise        -> deriveNoHdr mctx narg lhs cs  cls
+     _                             -> cannotDerive lhs cls
+   where useNewt d = unIdent (getAppCon d) `notElem`
+           ["Data.Data_Class.Data", "Data.Typeable.Typeable", "GHC.Generics.Generic", "GHC.Generics.Generic1",
+@@ -59,6 +60,8 @@ derivers =
+   ,("Data.Foldable.Foldable",          derFoldable)
+   ,("Data.Functor.Functor",            derFunctor)
+   ,("Data.Ix.Ix",                      derIx)
++  ,("Data.Monoid.Internal.Monoid",     derMonoid)
++  ,("Data.Monoid.Internal.Semigroup",  derSemigroup)
+   ,("Data.Ord.Ord",                    derOrd)
+   ,("Data.Traversable.Traversable",    derTraversable)
+   ,("Data.Typeable.Typeable",          derTypeable)
+@@ -309,6 +312,33 @@ derEq _ _ lhs _ e = cannotDerive lhs e
+ 
+ --------------------------------------------
+ 
++derSemigroup :: Deriver
++derSemigroup mctx 0 lhs cs@[c@(Constr _ _ con _ _)] esem = do
++  hdr <- mkHdr mctx lhs cs esem
++  let loc = getSLoc esem
++      (xp, xs) = mkPat c "x$"
++      (yp, ys) = mkPat c "y$"
++      eAppend = eAppI2 (mkBuiltin loc "<>")
++      rhs = tApps con (zipWith eAppend xs ys)
++      iAppend = mkIdentSLoc loc "<>"
++      inst = Instance hdr [Fcn iAppend [eEqn [xp, yp] rhs]] []
++  return [inst]
++derSemigroup _ _ lhs _ e = cannotDerive lhs e
++
++derMonoid :: Deriver
++derMonoid mctx 0 lhs cs@[c@(Constr _ _ con _ _)] emon = do
++  hdr <- mkHdr mctx lhs cs emon
++  let loc = getSLoc emon
++      (_, xs) = mkPat c "x$"
++      eMempty = EVar (mkIdentSLoc loc "mempty")
++      rhs = tApps con (map (const eMempty) xs)
++      iMempty = mkIdentSLoc loc "mempty"
++      inst = Instance hdr [Fcn iMempty [eEqn [] rhs]] []
++  return [inst]
++derMonoid _ _ lhs _ e = cannotDerive lhs e
++
++--------------------------------------------
++
+ derOrd :: Deriver
+ derOrd mctx 0 lhs cs eord = do
+   hdr <- mkHdr mctx lhs cs eord
+diff --git a/src/MicroHs/Main.hs b/src/MicroHs/Main.hs
+index 8b1f581..07be22a 100644
+--- a/src/MicroHs/Main.hs
++++ b/src/MicroHs/Main.hs
+@@ -264,7 +264,7 @@ mainBuildPkg flags namever amns = do
+   t1 <- getTimeMilli
+   when (verbose flags > 0) $
+     putStrLn $ "Writing package " ++ namever ++ " to " ++ output flags
+-  writeSerializedCompressed (output flags) (forcePackage pkg)
++  writeSerialized (output flags) (forcePackage pkg)
+   t2 <- getTimeMilli
+   when (verbose flags > 0) $
+     putStrLn $ "Compression time " ++ show (t2 - t1) ++ " ms"
+diff --git a/src/MicroHs/Parse.hs b/src/MicroHs/Parse.hs
+index 8163077..096bd9d 100644
+--- a/src/MicroHs/Parse.hs
++++ b/src/MicroHs/Parse.hs
+@@ -682,7 +682,7 @@ pAPat =
+          i <- pLIdentSym
+          (pSpec '@' *> (EAt i <$> pAPat)) <|> pure (EVar i)
+       )
+-  <|> (evar <$> pUQIdentSym <*> optional pUpdate)
++  <|> (evar <$> pUQIdentSym <*> optional pPatUpdate)
+   <|> pLit
+   <|> (lpar *> (eTuple <$> sepBy pPatV comma <* rpar))
+   <|> (lbra *> (EListish . LList <$> sepBy1 pPat comma <* rbra))
+@@ -888,11 +888,17 @@ pAExpr = do
+   pure $ post ee ps
+ 
+ pUpdate :: P [EField]
+-pUpdate = pSpec '{' *> sepSEBy pEField comma <* pSpec '}'
++pUpdate = pUpdateWith pExpr
++
++pPatUpdate :: P [EField]
++pPatUpdate = pUpdateWith pPat
++
++pUpdateWith :: P Expr -> P [EField]
++pUpdateWith pe = pSpec '{' *> sepSEBy pEField comma <* pSpec '}'
+   where
+     pEField = do
+       fs <- (:) . unQualIdent <$> pLQIdentSym <*> many pSelect
+-      EField fs <$> (equal *> pExpr) <|> pure (EFieldPun fs)
++      EField fs <$> (equal *> pe) <|> pure (EFieldPun fs)
+      <|>
+       (EFieldWild <$ pSymbol "..")
+ 
+diff --git a/src/MicroHs/TypeCheck.hs b/src/MicroHs/TypeCheck.hs
+index 8ce89f1..a80424e 100644
+--- a/src/MicroHs/TypeCheck.hs
++++ b/src/MicroHs/TypeCheck.hs
+@@ -2067,6 +2067,7 @@ tcExprR mt ae =
+           munify loc mt ttup
+           return (ETuple ees)
+     EParen e -> tcExpr mt e
++    EDo Nothing ass | Just appDo <- dsApplicativeDo loc ass -> tcExpr mt appDo
+     EDo mmn ass -> do
+       case ass of
+         [] -> impossible
+@@ -2279,6 +2280,35 @@ dsSRec mmn imfix iret ss =
+   let vs = eTuple $ map EVar $ concatMap getStmtBound ss
+   in  SBind vs $ eAppI imfix $ eLam [ELazy True vs] $ EDo mmn (ss ++ [SThen $ eAppI iret vs])
+ 
++-- Desugar an ApplicativeDo-compatible 'do' block (ending in @pure body@ where
++-- none of the '<-'-bound variables appear in the statement actions or let-bindings)
++-- into @let ... in fmap (\x1 ... xn -> body) e1 <*> ... <*> en@.
++dsApplicativeDo :: SLoc -> [EStmt] -> Maybe Expr
++dsApplicativeDo loc ass
++  | length ass >= 2
++  , SThen lastExpr <- last ass
++  , Just body <- unPure lastExpr
++  , Just steps <- mapM toStep (init ass)
++  , let lets = [ bs | Left bs <- steps ]
++        binds = [ xe | Right xe <- steps ]
++        boundVars = [ x | (x, _) <- binds, not (isDummyIdent x) ]
++        rhsVars = concatMap (allVarsExpr . snd) binds ++ concatMap (concatMap allVarsBind) lets
++  , ((_, e1) : rest) <- binds
++  , all (`notElem` rhsVars) boundVars =
++      let lam = eLam [ EVar x | (x, _) <- binds ] body
++          app0 = EApp (EApp (EVar (mkBuiltin loc "fmap")) lam) e1
++          appAll = foldl (\acc (_, ei) -> EApp (EApp (EVar (mkBuiltin loc "<*>")) acc) ei) app0 rest
++      in Just (foldr ELet appAll lets)
++  | otherwise = Nothing
++  where
++    unPure (EApp (EVar p) b) | unIdent (unQualIdent p) == "pure" = Just b
++    unPure (EOper (EVar p) [(op, b)]) | unIdent (unQualIdent p) == "pure", unIdent (unQualIdent op) == "$" = Just b
++    unPure _ = Nothing
++    toStep (SBind (EVar x) e) | not (isConIdent x) = Just (Right (x, e))
++    toStep (SThen e) = Just (Right (dummyIdent, e))
++    toStep (SLet bs) = Just (Left bs)
++    toStep _ = Nothing
++
+ -- XXX Maybe allow singleton tuples
+ eTuple :: [Expr] -> Expr
+ eTuple [e] = e
+@@ -2556,7 +2586,9 @@ dsEFields apat =
+     EViewPat e p -> EViewPat e <$> dsEFields p
+     ELazy z p -> ELazy z <$> dsEFields p
+     ECon _ -> return apat
+-    EUpdate c fs -> EUpdate c . concat <$> mapM (dsEField fs c) fs
++    EUpdate c fs -> do
++      fs' <- concat <$> mapM (dsEField fs c) fs
++      EUpdate c <$> mapM (\ f -> case f of EField is p -> EField is <$> dsEFields p; _ -> impossible) fs'
+     EParen p -> dsEFields p
+     ENegApp _ -> return apat
+     EOr ps -> EOr <$> mapM dsEFields ps
+@@ -3136,7 +3168,12 @@ tcBindGrp' bs = do
+        -- find constraints involving the local tyvars
+        let ctx = nubBy eqEType $
+                  filter (\ c -> not $ null $ intersect qvs' (metaTvs [c])) cs
+-       let multiParam ct = length (snd (getApp ct)) /= 1
++       let multiParam ct =
++             case getAppM ct of
++               Just (_, as) -> length as /= 1
++               -- Unknown head (e.g. flexible class variable):
++               -- stay monomorphic rather than fail.
++               Nothing -> True
+        if any multiParam ctx ||       -- temporary workaround for
+           -- Overloaded bind: fallback to monomorphic behavior
+           not (null ctx) && not (all isSynFcn bs') then
+@@ -3680,7 +3717,10 @@ getSuperClasses ais = do
+       loop done (i:is) | i `elem` done = loop done is
+                        | otherwise = i :
+         case M.lookup i ct of
+-          Nothing -> error $ "getSuperClasses: " ++ show i
++          -- Unknown class (e.g. a class variable from a
++          -- variable-headed constraint): it has no known
++          -- superclasses, but keep it in the result.
++          Nothing -> loop (i:done) is
+           Just (ClassInfo _ supers _ _ _) ->
+             loop (i:done) (concatMap flatten supers ++ is)
+       flatten a =
+@@ -3766,8 +3806,6 @@ solveMany ((di, ct) : cnss) uns sol imp | Just (_, (dd, _)) <- find (eqEType ct
+ solveMany (cns@(di, ct) : cnss) uns sol imp = do
+ --  tcTrace ("solveMany: trying " ++ showEType ct)
+   let loc = getSLoc di
+-      (iCls, cts) = getApp ct
+-      solver = head [ s | (p, s) <- solvers, p iCls ]
+   ads <- gets argDicts
+   -- Check if we have an exact match among the arguments dictionaries.
+   -- This is important to find tupled dictionaries in recursive calls.
+@@ -3776,11 +3814,54 @@ solveMany (cns@(di, ct) : cnss) uns sol imp = do
+ --      tcTrace $ "solve with arg " ++ show ct
+       solveMany cnss uns ((ct, (di, EVar ai)) : sol) imp
+     [] -> do
+-      msol <- solver loc iCls cts
+---      tcTrace ("solveMany msol=" ++ show msol)
+-      case msol of
+-        Nothing           -> solveMany        cnss  (cns : uns)                  sol         imp
+-        Just (de, gs, is) -> solveMany (gs ++ cnss)        uns ((ct, (di, de)) : sol) (is ++ imp)
++      case getAppM ct of
++        -- The head of the goal is not (yet) known.  This happens with
++        -- variable-headed constraints, e.g. goal (_c (Maybe _a)) from
++        -- instantiating (c (Maybe a)).  Try to match a local given up
++        -- to substitution; if none matches, leave the goal unsolved in
++        -- hope that the head gets resolved later.  Either way, do not fail here.
++        Nothing ->
++          case matchFlexGoal loc ct ads of
++            Just (ai, is) -> solveMany cnss uns ((ct, (di, EVar ai)) : sol) (is ++ imp)
++            Nothing       -> solveMany cnss (cns : uns) sol imp
++        Just (iCls, cts) -> do
++          let solver = head [ s | (p, s) <- solvers, p iCls ]
++          msol <- solver loc iCls cts
++--          tcTrace ("solveMany msol=" ++ show msol)
++          case msol of
++            Nothing            -> solveMany        cnss  (cns : uns)                  sol         imp
++            Just (de, gs, is) -> solveMany (gs ++ cnss)        uns ((ct, (di, de)) : sol) (is ++ imp)
++
++-- Match a goal whose head is a unification variable (from a
++-- variable-headed constraint like (c t)) against the local givens.
++-- Succeeds when some given matches the goal up to substitution of the
++-- goal's unification variables, e.g. goal (_c (Maybe _a)) against
++-- given (C (Maybe b)) with [_c := C, _a := b].
++-- Returns the given dictionary and the improving substitution.
++-- If several givens match, the first one wins (same policy as the
++-- exact match in solveMany; duplicates typically come from
++-- superclass diamonds).
++matchFlexGoal :: SLoc -> EConstraint -> [(Ident, EConstraint)] -> Maybe (Ident, [Improve])
++matchFlexGoal loc ct ads =
++  case [ (ai, mkImp s)
++       | (ai, act) <- ads
++       , let (wh, was) = splitApp ct
++             (gh, gas) = splitApp act
++       , length was == length gas
++       , Just (s, _) <- [matchTypes loc (wh : was) (gh : gas) []]
++       ] of
++    (ai, is) : _ -> Just (ai, is)
++    _            -> Nothing
++  where mkImp s = [ (loc, EUVar i, t) | (i, t) <- s ]
++
++-- Split a type application into head and arguments, mirroring getAppM
++-- but keeping a flexible head instead of failing on it.
++splitApp :: EType -> (EType, [EType])
++splitApp = loop []
++  where loop as (EApp f a) = loop (a : as) f
++        loop as (EParen e) = loop as e
++        loop as (EOper e1 [(op, e2)]) = loop as $ EApp (EApp (EVar op) e1) e2
++        loop as t = (t, as)
+ 
+ solveInst :: SolveOne
+ solveInst loc iCls cts = do

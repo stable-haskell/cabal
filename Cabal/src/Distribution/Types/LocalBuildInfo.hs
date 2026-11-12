@@ -2,6 +2,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE PatternSynonyms #-}
 
+{- FOURMOLU_DISABLE -}
 module Distribution.Types.LocalBuildInfo
   ( -- * The types
     LocalBuildInfo
@@ -99,6 +100,7 @@ module Distribution.Types.LocalBuildInfo
   , neededTargetsInBuildOrder
   , withNeededTargetsInBuildOrder
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude
 import Prelude ()

@@ -208,7 +208,6 @@ mhsSetModTime fp sec nsec =
 -- module rather than behaviour-critical code.
 import Data.Bits ((.&.), (.|.))
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
-import System.IO (writeFile)
 import System.IO.Error (catchIOError, isAlreadyExistsError)
 import System.Directory
   ( Permissions (..)

@@ -14,6 +14,7 @@
 --
 -- Definition of the haddock command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Haddock
   ( HaddockTarget (..)
 #ifdef __MHS__
@@ -40,6 +41,7 @@ module Distribution.Simple.Setup.Haddock
   , haddockOptions
   , haddockProjectOptions
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

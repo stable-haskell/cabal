@@ -325,6 +325,7 @@ fetchRepoTarball verbosity' repoCtxt repo pkgid = do
         createDirectoryIfMissing True dir
         _ <- downloadURI transport verbosity uri path
         return path
+{- FOURMOLU_DISABLE -}
       RepoSecure{} ->
 #ifdef __MHS__
         -- Secure repositories are not supported in this build.
@@ -340,6 +341,7 @@ fetchRepoTarball verbosity' repoCtxt repo pkgid = do
             Sec.downloadPackage' rep pkgid path
           return path
 #endif
+{- FOURMOLU_ENABLE -}
 
 -- | Downloads an index file to [config-dir/packages/serv-id] without
 -- hackage-security. You probably don't want to call this directly;

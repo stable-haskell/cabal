@@ -275,6 +275,7 @@ import Distribution.Compat.Directory
   ( doesFileExist
   , withCurrentDirectory
   )
+import Distribution.Compat.Process (createProcess, env, proc, waitForProcess)
 import System.Environment (getEnvironment, getExecutablePath, getProgName)
 import System.FilePath
   ( dropExtension
@@ -290,7 +291,6 @@ import System.IO
   , stderr
   , stdout
   )
-import Distribution.Compat.Process (createProcess, env, proc, waitForProcess)
 
 -- | Entry point
 --

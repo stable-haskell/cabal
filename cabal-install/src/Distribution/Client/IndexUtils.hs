@@ -876,6 +876,7 @@ withIndexEntries
   -> ([IndexCacheEntry] -> IO a)
   -> ([NoIndexCacheEntry] -> IO a)
   -> IO a
+{- FOURMOLU_DISABLE -}
 withIndexEntries _ (RepoIndex repoCtxt repo@RepoSecure{}) callback _ =
 #ifdef __MHS__
   -- Secure repositories are not supported in this build.
@@ -1045,6 +1046,7 @@ withIndexEntries verbosity (RepoIndex _repoCtxt (RepoLocalNoIndex (LocalRepo nam
                   Right genericPackageDescription ->
                     pure $ Just $ CacheGPD genericPackageDescription bytes
               _ -> pure Nothing
+{- FOURMOLU_ENABLE -}
 withIndexEntries verbosity index callback _ = do
   -- non-secure repositories
   withBinaryFile (indexFile index) ReadMode $ \h -> do
@@ -1507,30 +1509,30 @@ read00IndexCacheEntry = \line ->
           | BSS.null remainder -> Just (fromIntegral blockno)
         _ -> Nothing
 
-#ifdef __MHS__
-    bssReadInt :: BSS.ByteString -> Maybe (Int, BSS.ByteString)
-    bssReadInt bs =
-      case BSS.uncons bs of
-        Just ('-', bs') -> first negate <$> readUint bs'
-        Just ('+', bs') -> readUint bs'
-        _ -> readUint bs
-      where
-        readUint s =
-          let (digits, rest) = BSS.span isDigit s
-           in if BSS.null digits
-                then Nothing
-                else Just (foldl' (\acc c -> acc * 10 + (ord c - ord '0')) 0 (BSS.unpack digits), rest)
-#else
-    bssReadInt :: BSS.ByteString -> Maybe (Int, BSS.ByteString)
-    bssReadInt = BSS.readInt
-#endif
-
     parseRefType str =
       case BSS.uncons str of
         Just (typeCode, remainder)
           | BSS.null remainder && Tar.isBuildTreeRefTypeCode typeCode ->
               Just (refTypeFromTypeCode typeCode)
         _ -> Nothing
+
+#ifdef __MHS__
+bssReadInt :: BSS.ByteString -> Maybe (Int, BSS.ByteString)
+bssReadInt bs =
+  case BSS.uncons bs of
+    Just ('-', bs') -> first negate <$> readUint bs'
+    Just ('+', bs') -> readUint bs'
+    _ -> readUint bs
+  where
+    readUint s =
+      let (digits, rest) = BSS.span isDigit s
+       in if BSS.null digits
+            then Nothing
+            else Just (foldl' (\acc c -> acc * 10 + (ord c - ord '0')) 0 (BSS.unpack digits), rest)
+#else
+bssReadInt :: BSS.ByteString -> Maybe (Int, BSS.ByteString)
+bssReadInt = BSS.readInt
+#endif
 
 -- legacy 00-index.cache format
 show00IndexCache :: Cache -> String

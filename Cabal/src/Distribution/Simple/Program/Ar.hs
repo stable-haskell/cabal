@@ -61,6 +61,7 @@ import Distribution.Verbosity
 
 import Distribution.Compat.Directory (doesFileExist, renameFile)
 import System.FilePath (splitFileName)
+{- FOURMOLU_DISABLE -}
 import System.IO
   ( Handle
   , IOMode (ReadWriteMode)
@@ -71,6 +72,7 @@ import System.IO
 #endif
   , withBinaryFile
   )
+{- FOURMOLU_ENABLE -}
 #ifdef __MHS__
 import Data.Int (Int64)
 import Foreign.C.Error (throwErrnoIfMinus1_)

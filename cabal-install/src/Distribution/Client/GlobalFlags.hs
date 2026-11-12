@@ -130,6 +130,7 @@ defaultGlobalFlags =
 -- ------------------------------------------------------------
 
 -- | Access to repositories
+{- FOURMOLU_DISABLE -}
 data RepoContext = RepoContext
   { repoContextRepos :: [Repo]
   -- ^ All user-specified repositories
@@ -164,6 +165,7 @@ data RepoContext = RepoContext
   , repoContextIgnoreExpiry :: Bool
   -- ^ Should we ignore expiry times (when checking security)?
   }
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 -- | A secure repository handle.
@@ -192,6 +194,7 @@ withRepoContext verbosity globalFlags =
     (flagToMaybe (globalIgnoreExpiry globalFlags))
     (fromNubList (globalProgPathExtra globalFlags))
 
+{- FOURMOLU_DISABLE -}
 withRepoContext'
   :: Verbosity
   -> [RemoteRepo]
@@ -287,6 +290,7 @@ withRepoContext'
           Just (SecureRepo secureRepo) -> callback secureRepo
           Nothing -> throwIO $ userError "repoContextWithSecureRepo: unknown repo"
 #endif
+{- FOURMOLU_ENABLE -}
 
 #ifndef __MHS__
 -- | Initialize the provided secure repositories

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Client.List
 -- Copyright   :  (c) David Himmelstrup 2005
@@ -39,6 +40,7 @@ import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import qualified Distribution.Simple.PackageIndex as InstalledPackageIndex
 import Distribution.Simple.Program (ProgramDb)
 import Distribution.Simple.Setup (fromFlag, fromFlagOrDefault)
+{- FOURMOLU_DISABLE -}
 import Distribution.Simple.Utils
   ( dieWithException
   , equating
@@ -47,6 +49,7 @@ import Distribution.Simple.Utils
 #endif
   , notice
   )
+{- FOURMOLU_ENABLE -}
 import Distribution.Version
   ( Version
   , VersionRange
@@ -97,12 +100,14 @@ import Control.Exception
 #ifndef __MHS__
 import Data.Bits ((.|.))
 #endif
+{- FOURMOLU_DISABLE -}
 import Data.List
   ( maximumBy
 #ifdef __MHS__
   , isInfixOf
 #endif
   )
+{- FOURMOLU_ENABLE -}
 import qualified Data.List as L
 import Data.List.NonEmpty (groupBy)
 import qualified Data.Map as Map
@@ -153,6 +158,7 @@ getPkgList
   -> ListFlags
   -> [String]
   -> IO [PackageDisplayInfo]
+{- FOURMOLU_DISABLE -}
 getPkgList verbosity packageDBs repoCtxt mcompprogdb listFlags pats = do
   installedPkgIndex <- for mcompprogdb $ \(comp, progdb) ->
     getInstalledPackages verbosity comp packageDBs progdb
@@ -238,6 +244,7 @@ getPkgList verbosity packageDBs repoCtxt mcompprogdb listFlags pats = do
       , pkg <- search index (Regex.matchTest re)
       ]
 #endif
+{- FOURMOLU_ENABLE -}
 
 -- | Show information about packages.
 list

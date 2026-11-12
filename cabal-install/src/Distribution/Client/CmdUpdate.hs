@@ -87,8 +87,8 @@ import qualified Distribution.Compat.CharParsing as P
 import qualified Text.PrettyPrint as Disp
 
 import Data.Time (getCurrentTime)
-import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Client.GZipUtils (maybeDecompress)
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Simple.Command
   ( CommandUI (..)
   , usageAlternatives
@@ -247,6 +247,7 @@ updateRepo verbosity repoCtxt (repo, indexState) = do
           writeFileAtomic (dropExtension indexPath) . maybeDecompress
             =<< readFileLBS indexPath
           updateRepoIndexCache verbosity (RepoIndex repoCtxt repo)
+{- FOURMOLU_DISABLE -}
     RepoSecure{} ->
 #ifdef __MHS__
       -- Secure repositories are not supported in this build.
@@ -306,3 +307,4 @@ updateRepo verbosity repoCtxt (repo, indexState) = do
             ++ prettyShow (UpdateRequest rname (IndexStateTime current_ts))
             ++ "'\n"
 #endif
+{- FOURMOLU_ENABLE -}

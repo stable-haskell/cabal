@@ -26,8 +26,8 @@ import Distribution.Parsec
 import Distribution.Simple.Utils (defaultPackageDescCwd, dieWithException, notice, warn, warnError)
 import Distribution.Utils.Path (getSymbolicPath)
 
-import qualified Data.Foldable as CM
 import qualified Data.ByteString as BS
+import qualified Data.Foldable as CM
 import qualified Data.Function as F
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE

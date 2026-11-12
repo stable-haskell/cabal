@@ -95,6 +95,7 @@ import Distribution.Compat.Directory
   , doesFileExist
   , removePathForcibly
   )
+import qualified Distribution.Compat.Process as Process
 import System.FilePath
   ( takeDirectory
   , (</>)
@@ -103,7 +104,6 @@ import System.IO.Error
   ( isDoesNotExistError
   , isPermissionError
   )
-import qualified Distribution.Compat.Process as Process
 
 -- | A driver for a version control system, e.g. git, darcs etc.
 data VCS program = VCS

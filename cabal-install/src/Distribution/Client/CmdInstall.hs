@@ -227,10 +227,6 @@ import Data.Ord
   )
 import qualified Data.Set as S
 import Distribution.Client.Errors
-import Distribution.Utils.NubList
-  ( fromNubList
-  )
-import Network.URI (URI)
 import Distribution.Compat.Directory
   ( copyFile
   , createDirectoryIfMissing
@@ -241,6 +237,10 @@ import Distribution.Compat.Directory
   , makeAbsolute
   , removePathForcibly
   )
+import Distribution.Utils.NubList
+  ( fromNubList
+  )
+import Network.URI (URI)
 import System.FilePath
   ( takeBaseName
   , takeDirectory

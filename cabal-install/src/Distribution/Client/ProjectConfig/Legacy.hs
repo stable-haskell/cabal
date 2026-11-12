@@ -203,8 +203,8 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Network.URI (URI (..), nullURIAuth)
 import Distribution.Compat.Directory (makeAbsolute)
+import Network.URI (URI (..), nullURIAuth)
 import System.FilePath (splitFileName)
 import Text.PrettyPrint
   ( Doc

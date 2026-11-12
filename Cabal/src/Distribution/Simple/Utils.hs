@@ -267,7 +267,6 @@ hTryLock _ _ = pure True
 hUnlock :: Handle -> IO ()
 hUnlock _ = pure ()
 #endif
-import Numeric (showFFloat)
 import Distribution.Compat.Directory
   ( Permissions (executable)
   , createDirectory
@@ -280,6 +279,7 @@ import Distribution.Compat.Directory
   , removeFile
   , removePathForcibly
   )
+import Numeric (showFFloat)
 import System.Environment
   ( getProgName
   )
@@ -295,6 +295,7 @@ import System.FilePath as FilePath
   , stripExtension
   , takeDirectory
   )
+{- FOURMOLU_DISABLE -}
 import System.IO
   ( BufferMode (..)
   , Handle
@@ -313,17 +314,18 @@ import System.IO
   , stdin
   , stdout
   )
+{- FOURMOLU_ENABLE -}
 #ifdef __MHS__
 -- MicroHs System.IO has no binary/text mode distinction.
 hSetBinaryMode :: Handle -> Bool -> IO ()
 hSetBinaryMode _ _ = pure ()
 #endif
+import qualified Distribution.Compat.Process as Process
 import System.IO.Error
 import System.IO.Unsafe
   ( unsafeInterleaveIO
   )
 import qualified System.Info as SI
-import qualified Distribution.Compat.Process as Process
 import qualified Text.PrettyPrint as Disp
 
 #ifdef GIT_REV
@@ -1229,6 +1231,7 @@ rawSystemStdInOut
   -- ^ iodata mode, acts as proxy
   -> IO (mode, String, ExitCode)
   -- ^ output, errors, exit
+{- FOURMOLU_DISABLE -}
 #ifdef __MHS__
 rawSystemStdInOut verbosity path args mcwd menv input iomode = withFrozenCallStack $ do
   -- MHS: temporary files cannot emulate blocking pipes, so capture
@@ -1341,6 +1344,7 @@ rawSystemStdInOut verbosity path args mcwd menv input _ = withFrozenCallStack $ 
       Just ioe -> throwIO (ioeSetFileName ioe ("output of " ++ path))
       Nothing -> throwIO exc
 #endif
+{- FOURMOLU_ENABLE -}
 
 -- | Ignore SIGPIPE in a subcomputation.
 ignoreSigPipe :: IO () -> IO ()

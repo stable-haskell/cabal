@@ -15,7 +15,7 @@ import Distribution.Compat.Lens (set)
 import Distribution.Pretty
 import Distribution.Parsec
 import Distribution.Utils.Generic (isAsciiAlphaNum)
-import Distribution.Utils.Structured (Structured (..), nominalStructure, typeVersion)
+import Distribution.Utils.Structured (nominalStructure, typeVersion)
 import Distribution.SPDX.LicenseListVersion
 
 import qualified Data.Binary.Get as Binary

@@ -9,11 +9,11 @@ import Distribution.Client.NixStyleOptions
 import Distribution.Client.ProjectConfig.Types
 import Distribution.Client.ProjectFlags
 import Distribution.Client.Setup
+import Distribution.Compat.Directory
 import Distribution.Simple
 import Distribution.Simple.Flag
 import Distribution.Simple.Utils (removeFileForcibly)
 import Distribution.Verbosity
-import Distribution.Compat.Directory
 import System.FilePath
 import Test.Tasty
 import Test.Tasty.HUnit

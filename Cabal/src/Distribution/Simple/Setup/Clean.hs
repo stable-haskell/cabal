@@ -14,6 +14,7 @@
 --
 -- Definition of the clean command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Clean
 #ifdef __MHS__
   ( CleanFlags (..)

@@ -19,7 +19,6 @@ import Distribution.Client.Types.SourceRepo (SourceRepoList)
 import Distribution.Client.Types.WriteGhcEnvironmentFilesPolicy (WriteGhcEnvironmentFilesPolicy)
 import Distribution.Compat.Lens
 import Distribution.Compat.Prelude
-import Prelude ()
 import Distribution.Compiler (CompilerFlavor (..))
 import Distribution.Package
   ( PackageName
@@ -67,6 +66,7 @@ import Distribution.Utils.NubList
   ( NubList
   )
 import Distribution.Verbosity
+import Prelude ()
 
 projectPackages :: Lens' ProjectConfig [Text]
 projectPackages f s = fmap (\x -> s{T.projectPackages = x}) (f (T.projectPackages s))

@@ -20,6 +20,7 @@ import Distribution.Client.Compat.Prelude
 import Prelude ()
 
 import Data.List (maximumBy)
+import Distribution.Compat.Directory (createDirectoryIfMissing, renameFile)
 import Distribution.InstalledPackageInfo as InstalledPackageInfo
   ( InstalledPackageInfo (exposed)
   )
@@ -43,7 +44,6 @@ import Distribution.Simple.Utils
   , withTempDirectory
   )
 import Distribution.Version (mkVersion, orLaterVersion)
-import Distribution.Compat.Directory (createDirectoryIfMissing, renameFile)
 import System.FilePath (splitFileName, (</>))
 
 regenerateHaddockIndex

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Client.GZipUtils
 -- Copyright   :  (c) Dmitry Astapov 2010
@@ -10,12 +11,14 @@
 --
 -- Provides a convenience functions for working with files that may or may not
 -- be zipped.
+{- FOURMOLU_DISABLE -}
 module Distribution.Client.GZipUtils
   ( maybeDecompress
 #ifdef __MHS__
   , gzipCompress
 #endif
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Client.Compat.Prelude
 import Prelude ()

@@ -47,9 +47,9 @@ import Data.List (group)
 import qualified Data.List as L
 import Data.Text (Text)
 import Distribution.CabalSpecVersion
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Compat.Lens
 import Distribution.Compiler
-import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.FieldGrammar.Parsec (freeTextIgnoreDotlineVers)
 import Distribution.License
 import Distribution.ModuleName (toFilePath)
@@ -78,8 +78,8 @@ import Distribution.Version
 import System.FilePath (splitExtension, takeFileName)
 
 import qualified Data.ByteString.Lazy as BS
-import qualified Distribution.SPDX as SPDX
 import qualified Distribution.Compat.Directory as System
+import qualified Distribution.SPDX as SPDX
 
 import qualified Distribution.Compat.Directory (listDirectory)
 import qualified System.FilePath.Windows as FilePath.Windows (isValid)

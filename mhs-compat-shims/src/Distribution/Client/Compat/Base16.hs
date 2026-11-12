@@ -26,6 +26,7 @@ encode = BS.pack . concatMap byteHex . BS.unpack
     hexDigit n = fromIntegral (fromEnum c)
       where
         c = "0123456789abcdef" !! fromIntegral n
+
 -- | Decode hex (upper- or lower-case) to bytes.
 decode :: BS.ByteString -> Either String BS.ByteString
 decode bs

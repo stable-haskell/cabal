@@ -76,11 +76,11 @@ import Control.Concurrent (threadDelay)
 import Control.Exception hiding (assert)
 import Control.Monad
 import Distribution.Compat.Directory
+import Distribution.Compat.Process (callProcess)
 import System.Environment (setEnv)
 import System.FilePath
 import System.IO (hPutStrLn, stderr)
 import qualified System.Info
-import Distribution.Compat.Process (callProcess)
 
 import Data.Tagged (Tagged (..))
 import Test.Tasty

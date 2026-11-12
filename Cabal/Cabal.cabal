@@ -24,10 +24,6 @@ build-type:     Simple
 extra-doc-files:
   README.md ChangeLog.md
 
-extra-source-files:
-  cbits/mhs_spawn.h
-  cbits/mhs_handle.h
-
 source-repository head
   type:     git
   location: https://github.com/haskell/cabal/
@@ -49,17 +45,6 @@ library
   default-extensions: NoImportQualifiedPost
   hs-source-dirs: src
 
-  -- C helpers for the MHS (MicroHs) build, which cannot use the
-  -- @process@ package.  The POSIX bodies are used there; other
-  -- platforms compile the stubs.  The matching headers
-  -- (cbits/mhs_spawn.h and cbits/mhs_handle.h, shipped in
-  -- extra-source-files) carry the prototypes for MicroHs-generated
-  -- FFI call sites.
-  c-sources:
-    cbits/mhs_spawn.c
-    cbits/mhs_handle.c
-  include-dirs: cbits
-
   -- Common deps available as separate MHS packages with the same
   -- bounds on both backends (transformers/mtl/parsec stay in the
   -- unconditional block below; they exist as mtl-2.3.2,
@@ -76,13 +61,11 @@ library
   -- those (plus unix, which has no MHS package) are GHC-only.
   if flag(mhs)
     build-depends:
-      array-mhs  >= 0.5.8   && < 0.6,
-      binary-mhs >= 0.8.1   && < 0.9,
-      pretty-mhs >= 1.1.3.6 && < 1.2
+      array-mhs        >= 0.5.8 && < 0.6,
+      mhs-compat-shims ^>= 0.1
   else
     build-depends:
       , array      >= 0.4.0.1  && < 0.6
-      , binary     >= 0.8.1    && < 0.9
       , bytestring >= 0.10.8   && < 0.13
       , deepseq    >= 1.4      && < 1.7
       , directory  >= 1.2.7    && < 1.4
@@ -385,7 +368,6 @@ library
     Distribution.Compat.Async
     Distribution.Compat.CopyFile
     Distribution.Compat.GetShortPathName
-    Distribution.Compat.Internal.MhsProcess
     Distribution.GetOpt
     Distribution.Lex
     Distribution.PackageDescription.Check.Common

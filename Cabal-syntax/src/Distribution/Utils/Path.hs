@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Distribution.Utils.Path
@@ -189,15 +189,17 @@ relative.
 -}
 
 -- | Phantom marker for 'SymbolicPathX': the path refers to a file.
-data File deriving Data
+data File deriving (Data)
 
 -- | Phantom marker for 'SymbolicPathX': the path refers to a
 -- directory or category of directories, e.g. the package directory
 -- or a source directory. The parameter names which directory.
+{- FOURMOLU_DISABLE -}
 data Dir (dir :: Type)
 #ifndef __MHS__
   deriving Data
 #endif
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 -- MicroHs cannot derive 'Data' for parameterised types (it drops the
@@ -207,22 +209,23 @@ deriving instance Data dir => Data (Dir dir)
 
 -- | Phantom marker for 'SymbolicPathX': the path may be absolute,
 -- or it may be relative.
-data AllowAbsolute deriving Data
+data AllowAbsolute deriving (Data)
 
 -- | Phantom marker for 'SymbolicPathX': the path must be relative.
-data OnlyRelative deriving Data
+data OnlyRelative deriving (Data)
 
 -- | Compatibility shim: 'FileOrDir' used to be a datatype whose
 -- constructors were promoted to the type level with @DataKinds@.
 -- The markers are now the plain types above; this empty datatype is
 -- kept so that existing @FileOrDir (..)@ imports keep working.
-data FileOrDir deriving Data
+data FileOrDir deriving (Data)
 
 -- | A symbolic path, possibly relative to an abstract location specified
 -- by the @from@ type parameter.
 --
 -- They are *symbolic*, which means we cannot perform any 'IO'
 -- until we interpret them (using e.g. 'interpretSymbolicPath').
+{- FOURMOLU_DISABLE -}
 newtype SymbolicPathX (allowAbsolute :: Type) (from :: Type) (to :: Type)
   = SymbolicPath FilePath
   deriving (Generic, Show, Read, Eq, Ord
@@ -230,6 +233,7 @@ newtype SymbolicPathX (allowAbsolute :: Type) (from :: Type) (to :: Type)
     , Data
 #endif
     )
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 -- MicroHs cannot derive 'Data' for parameterised types (it drops the
@@ -507,79 +511,79 @@ instance
 -- | Abstract directory: current working directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data CWD deriving Data
+data CWD deriving (Data)
 
 -- | Abstract directory: package directory (e.g. a directory containing the @.cabal@ file).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Pkg deriving Data
+data Pkg deriving (Data)
 
 -- | Abstract directory: dist directory (e.g. @dist-newstyle@).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Dist deriving Data
+data Dist deriving (Data)
 
 -- | Abstract directory: source directory (a search directory for source files).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Source deriving Data
+data Source deriving (Data)
 
 -- | Abstract directory: include directory (a search directory for CPP includes like header files, e.g. with @ghc -I@).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Include deriving Data
+data Include deriving (Data)
 
 -- | Abstract directory: search directory for extra libraries.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Lib deriving Data
+data Lib deriving (Data)
 
 -- | Abstract directory: MacOS framework directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Framework deriving Data
+data Framework deriving (Data)
 
 -- | Abstract directory: build directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Build deriving Data
+data Build deriving (Data)
 
 -- | Abstract directory: directory for build artifacts, such as documentation or @.hie@ files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Artifacts deriving Data
+data Artifacts deriving (Data)
 
 -- | Abstract directory: package database directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data PkgDB deriving Data
+data PkgDB deriving (Data)
 
 -- | Abstract directory: data files directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data DataDir deriving Data
+data DataDir deriving (Data)
 
 -- | Abstract directory: directory for HPC @.mix@ files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Mix deriving Data
+data Mix deriving (Data)
 
 -- | Abstract directory: directory for HPC @.tix@ files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Tix deriving Data
+data Tix deriving (Data)
 
 -- | Abstract directory: a temporary directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Tmp deriving Data
+data Tmp deriving (Data)
 
 -- | Abstract directory: directory for response files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Response deriving Data
+data Response deriving (Data)
 
 -- | Abstract directory: directory for pkg-config files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data PkgConf deriving Data
+data PkgConf deriving (Data)

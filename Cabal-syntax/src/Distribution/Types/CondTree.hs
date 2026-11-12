@@ -52,6 +52,7 @@ import qualified Distribution.Compat.Lens as L
 -- derived off of 'targetBuildInfo' (perhaps a good refactoring
 -- would be to convert this into an opaque type, with a smart
 -- constructor that pre-computes the dependencies.)
+{- FOURMOLU_DISABLE -}
 data CondTree v a = CondNode
   { condTreeData :: a
   , condTreeComponents :: [CondBranch v a]
@@ -61,6 +62,7 @@ data CondTree v a = CondNode
     , Data
 #endif
     )
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 -- MicroHs cannot derive 'Data' for parameterised types (it drops the
@@ -81,6 +83,7 @@ instance Monoid a => Monoid (CondTree v a) where
 -- | A 'CondBranch' represents a conditional branch, e.g., @if
 -- flag(foo)@ on some syntax @a@.  It also has an optional false
 -- branch.
+{- FOURMOLU_DISABLE -}
 data CondBranch v a = CondBranch
   { condBranchCondition :: Condition v
   , condBranchIfTrue :: CondTree v a
@@ -91,6 +94,7 @@ data CondBranch v a = CondBranch
     , Data
 #endif
     )
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 deriving instance (Data v, Data a) => Data (CondBranch v a)

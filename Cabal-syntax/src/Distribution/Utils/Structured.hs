@@ -32,6 +32,7 @@
 --
 -- Technically, 'Structured' is not related to 'Binary', and may
 -- be useful in other uses.
+{- FOURMOLU_DISABLE -}
 module Distribution.Utils.Structured
   ( -- * Encoding and decoding
 
@@ -66,6 +67,7 @@ module Distribution.Utils.Structured
   , typeVersion
   , typeName
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Data.Functor ((<&>))
 import Data.Int (Int16, Int32, Int64, Int8)
@@ -225,6 +227,7 @@ structureBuilder s0 = State.evalState (go s0) Map.empty
 -- @
 --
 -- @since 3.2.0.0
+{- FOURMOLU_DISABLE -}
 class Typeable a => Structured a where
   structure :: Proxy a -> Structure
 #ifdef __MHS__
@@ -242,11 +245,13 @@ class Typeable a => Structured a where
   structureHash' :: Tagged a MD5
   structureHash' = Tagged (hashStructure (structure (Proxy :: Proxy a)))
 #endif
+{- FOURMOLU_ENABLE -}
 
 -- private Tagged
 newtype Tagged a b = Tagged {untag :: b}
 
 -- | Semantically @'hashStructure' . 'structure'@.
+{- FOURMOLU_DISABLE -}
 structureHash :: forall a. Structured a => Proxy a -> MD5
 #ifdef __MHS__
 -- MicroHs does not provide the class constraint to default method
@@ -256,6 +261,7 @@ structureHash p = hashStructure (structure p)
 #else
 structureHash _ = untag (structureHash' :: Tagged a MD5)
 #endif
+{- FOURMOLU_ENABLE -}
 
 -------------------------------------------------------------------------------
 -- Functions
@@ -301,6 +307,7 @@ structuredDecodeFileOrFail f = structuredDecodeOrFailIO =<< readFileLBS f
 
 data Tag a = Tag
 
+{- FOURMOLU_DISABLE -}
 instance Structured a => Binary.Binary (Tag a) where
   get = do
     actual <- binaryGetMD5
@@ -328,6 +335,7 @@ instance Structured a => Binary.Binary (Tag a) where
 #else
       expected = untag (structureHash' :: Tagged a MD5)
 #endif
+{- FOURMOLU_ENABLE -}
 
 -------------------------------------------------------------------------------
 -- Smart constructors

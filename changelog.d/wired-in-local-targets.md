@@ -1,6 +1,7 @@
 ---
 synopsis: Let `--allow-boot-library-installs` rebuild a wired-in package the project provides
 packages: [cabal-install]
+prs: 0
 ---
 
 With a compiler that reports wired-in unit ids (GHC 9.14 and later), `ghc` and

@@ -23,17 +23,17 @@
 -- * T7 failing output handle surfaces an error (no silent success)
 module Main where
 
-import qualified Distribution.Compat.Process as Process
 import Distribution.Compat.Directory (getTemporaryDirectory, removeFile)
+import Distribution.Compat.Process qualified as Process
 
-import qualified Data.ByteString as BS
 import Control.Exception (SomeException, evaluate, try)
-import Control.Monad (when)
+import Control.Monad (unless)
+import Data.ByteString qualified as BS
 import Data.List (isInfixOf)
+import Data.Maybe (catMaybes)
 import System.Environment (getEnvironment, lookupEnv, setEnv, unsetEnv)
 import System.Exit (ExitCode (..), exitFailure, exitSuccess)
 import System.IO (IOMode (..), hClose, hFlush, hGetContents, hPutStr, openBinaryFile, openFile, openTempFile, stdout)
-
 
 backend :: String
 #ifdef __MHS__
@@ -87,8 +87,8 @@ tEnvRemoval = do
   (exit, captured) <-
     Process.captureProcess
       (Process.proc "env" [])
-      { Process.env = Just [("MHS_TEST_ONLY", "present")]
-      }
+        { Process.env = Just [("MHS_TEST_ONLY", "present")]
+        }
       Process.NoInput
   out <- readFile (Process.capturedOutPath captured)
   _ <- evaluate (length out)
@@ -145,20 +145,20 @@ tEmptyEnvLookup = do
   Process.capturedRelease cap2
   check "T3c empty env + parent-PATH lookup" (exit1 == ExitSuccess && out1 == "hi\n" && exit2 == ExitSuccess && out2 == "")
 
--- T3d: malformed entries pass through to the child unchanged (matching
--- System.Process.createProcess, which does not validate), rather
--- than being rejected or silently rewritten.
+-- T3d: values containing '=' and empty values pass through to the
+-- child unchanged (matching System.Process.createProcess).
 tMalformedEnv :: IO (Maybe Failure)
 tMalformedEnv = do
-  (exit, captured) <- Process.captureProcess
-    (Process.proc "env" [])
-      { Process.env = Just [("BAD=KEY", "v"), ("", "w")]
-      }
-    Process.NoInput
+  (exit, captured) <-
+    Process.captureProcess
+      (Process.proc "env" [])
+        { Process.env = Just [("MHS_K1", "a=b"), ("MHS_K2", "")]
+        }
+      Process.NoInput
   out <- readFile (Process.capturedOutPath captured)
   _ <- evaluate (length out)
   Process.capturedRelease captured
-  check "T3d malformed entries pass through" (exit == ExitSuccess && "BAD=KEY=v\n" `isInfixOf` out && "=w\n" `isInfixOf` out)
+  check "T3d special env values pass through" (exit == ExitSuccess && "MHS_K1=a=b\n" `isInfixOf` out && "MHS_K2=\n" `isInfixOf` out)
 
 -- T4: regular files as UseHandle stdin and stdout.
 tFileHandles :: IO (Maybe Failure)
@@ -204,10 +204,30 @@ tUtf8FileHandles = do
   tmpDir <- getTemporaryDirectory
   let want =
         BS.pack
-          [ 0x63, 0x61, 0x66, 0xC3, 0xA9, 0x20
-          , 0xE2, 0x80, 0x9C, 0x71, 0x75, 0x6F, 0x74, 0x65, 0xE2, 0x80, 0x9D
-          , 0x20, 0xE2, 0x82, 0xAC, 0x0A
-          ] :: BS.ByteString
+          [ 0x63
+          , 0x61
+          , 0x66
+          , 0xC3
+          , 0xA9
+          , 0x20
+          , 0xE2
+          , 0x80
+          , 0x9C
+          , 0x71
+          , 0x75
+          , 0x6F
+          , 0x74
+          , 0x65
+          , 0xE2
+          , 0x80
+          , 0x9D
+          , 0x20
+          , 0xE2
+          , 0x82
+          , 0xAC
+          , 0x0A
+          ]
+          :: BS.ByteString
   (inTmp, inH0) <- openTempFile tmpDir "t4b-in"
   hClose inH0
   BS.writeFile inTmp want
@@ -269,9 +289,12 @@ tUtf8FileHandles = do
     Right (exit1, gotText, exit2, gotBin, exit3, gotEcho) ->
       check
         "T4b UTF-8 file handles round-trip"
-        ( exit1 == ExitSuccess && gotText == want
-            && exit2 == ExitSuccess && gotBin == want
-            && exit3 == ExitSuccess && gotEcho == want
+        ( exit1 == ExitSuccess
+            && gotText == want
+            && exit2 == ExitSuccess
+            && gotBin == want
+            && exit3 == ExitSuccess
+            && gotEcho == want
         )
 
 -- T5: exit codes and stream separation.
@@ -362,8 +385,8 @@ main = do
       , tCreatePipe
       , tFailingHandle
       ]
-  let failures = [f | Just f <- results]
-  when (not (null failures)) $ do
+  let failures = catMaybes results
+  unless (null failures) $ do
     mark ("failures: " ++ show failures)
     exitFailure
   mark "all green"

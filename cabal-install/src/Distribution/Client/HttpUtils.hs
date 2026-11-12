@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
+
 -- | Separate module for HTTP actions, using a proxy server if one exists.
+{- FOURMOLU_DISABLE -}
 module Distribution.Client.HttpUtils
   ( DownloadResult (..)
   , configureTransport
@@ -16,6 +18,7 @@ module Distribution.Client.HttpUtils
   , remoteRepoTryUpgradeToHttps
   , isOldHackageURI
   ) where
+{- FOURMOLU_ENABLE -}
 
 #ifdef __MHS__
 import Distribution.Client.Compat.Prelude
@@ -253,9 +256,11 @@ downloadURI
 downloadURI _transport verbosity uri path | uriScheme uri == "file:" = do
   copyFileVerbose verbosity (uriPath uri) path
   return (FileDownloaded path)
+
 -- Can we store the hash of the file so we can safely return path when the
 -- hash matches to avoid unnecessary computation?
 
+{- FOURMOLU_DISABLE -}
 downloadURI transport verbosity uri path = do
   targetExists <- doesFileExist path
 
@@ -352,6 +357,7 @@ downloadURI transport verbosity uri path = do
       str <- some P.hexDigit
       let bs = Base16.decode (BS8.pack str)
       either fail return bs
+{- FOURMOLU_ENABLE -}
 
 ------------------------------------------------------------------------------
 -- Utilities for repo url management
@@ -488,6 +494,7 @@ noPostYet
   -> IO (Int, String)
 noPostYet verbosity _ _ _ = dieWithException verbosity NoPostYet
 
+{- FOURMOLU_DISABLE -}
 supportedTransports
   :: [ ( String
        , Maybe Program
@@ -523,7 +530,9 @@ supportedTransports =
     )
 #endif
   ]
+{- FOURMOLU_ENABLE -}
 
+{- FOURMOLU_DISABLE -}
 configureTransport :: Verbosity -> [FilePath] -> Maybe String -> IO HttpTransport
 configureTransport verbosity extraPath (Just name) =
   -- the user specifically selected a transport by name so we'll try and
@@ -574,6 +583,7 @@ configureTransport verbosity extraPath Nothing = do
   debug verbosity $ "Selected http transport implementation: " ++ name
 
   return transport{transportManuallySelected = False}
+{- FOURMOLU_ENABLE -}
 
 ------------------------------------------------------------------------------
 -- The HttpTransports based on external programs

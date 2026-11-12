@@ -14,6 +14,7 @@
 --
 -- Definition of the register command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Register
 #ifdef __MHS__
   ( RegisterFlags (..)
@@ -33,6 +34,7 @@ module Distribution.Simple.Setup.Register
   , registerCommand
   , unregisterCommand
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

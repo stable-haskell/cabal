@@ -335,12 +335,14 @@ showPlanGraph graph =
   renderStyle defaultStyle $
     vcat (map dispPlanPackage graph)
   where
+{- FOURMOLU_DISABLE -}
     dispPlanPackage (ShowPlanNode herald neighbours) =
 #ifdef __MHS__
       sep [herald, nest 2 (vcat neighbours)]
 #else
       hang herald 2 (vcat neighbours)
 #endif
+{- FOURMOLU_ENABLE -}
 
 -- | Generic way to show a 'GenericInstallPlan' which elicits quite a lot of information
 showInstallPlan_gen

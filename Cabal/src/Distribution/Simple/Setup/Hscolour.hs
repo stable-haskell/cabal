@@ -14,6 +14,7 @@
 --
 -- Definition of the hscolour command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Hscolour
 #ifdef __MHS__
   ( HscolourFlags (..)
@@ -32,6 +33,7 @@ module Distribution.Simple.Setup.Hscolour
   , defaultHscolourFlags
   , hscolourCommand
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()

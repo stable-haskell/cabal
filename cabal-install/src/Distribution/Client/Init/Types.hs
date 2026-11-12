@@ -83,11 +83,11 @@ import Distribution.Version
 import Language.Haskell.Extension (Extension, Language (..))
 import qualified System.IO
 
-import qualified Distribution.Compat.Environment as P
-import Distribution.FieldGrammar.Newtypes (SpecLicense)
 import qualified Distribution.Compat.Directory as P
-import System.FilePath
+import qualified Distribution.Compat.Environment as P
 import qualified Distribution.Compat.Process as Process
+import Distribution.FieldGrammar.Newtypes (SpecLicense)
+import System.FilePath
 
 -- -------------------------------------------------------------------- --
 -- Flags

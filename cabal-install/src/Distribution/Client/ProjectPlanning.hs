@@ -106,6 +106,7 @@ module Distribution.Client.ProjectPlanning
   ) where
 
 import Distribution.Client.Compat.Prelude
+{- FOURMOLU_DISABLE -}
 import Text.PrettyPrint
   ( colon
   , comma
@@ -121,6 +122,7 @@ import Text.PrettyPrint
   , ($$)
   , ($+$)
   )
+{- FOURMOLU_ENABLE -}
 import Distribution.Utils.LogProgress
 import Prelude ()
 
@@ -183,10 +185,10 @@ import qualified Hackage.Security.Client as Sec
 #endif
 
 import Distribution.Solver.Types.ConstraintSource
+import Distribution.Solver.Types.GoalScope (Qualified (..), dispQPN)
 import Distribution.Solver.Types.InstSolverPackage
 import Distribution.Solver.Types.LabeledPackageConstraint
 import Distribution.Solver.Types.OptionalStanza
-import Distribution.Solver.Types.GoalScope (Qualified (..), dispQPN)
 import Distribution.Solver.Types.PkgConfigDb
 import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
@@ -264,9 +266,9 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Data.Traversable (mapAccumM)
 import Distribution.Client.Errors
+import Distribution.Compat.Directory (getCurrentDirectory)
 import Distribution.Solver.Types.ProjectConfigPath
 import GHC.Stack (HasCallStack)
-import Distribution.Compat.Directory (getCurrentDirectory)
 import System.FilePath
 import qualified Text.PrettyPrint as Disp
 
@@ -1494,6 +1496,7 @@ getPackageSourceHashes
   -> (forall a. (RepoContext -> IO a) -> IO a)
   -> SolverInstallPlan
   -> Rebuild (Map PackageId PackageSourceHash)
+{- FOURMOLU_DISABLE -}
 getPackageSourceHashes verbosity withRepoCtx solverPlan = do
   -- Determine if and where to get the package's source hash from.
   --
@@ -1663,6 +1666,7 @@ getPackageSourceHashes verbosity withRepoCtx solverPlan = do
   return $!
     hashesFromRepoMetadata
       <> hashesFromTarballFiles
+{- FOURMOLU_ENABLE -}
 
 -- ------------------------------------------------------------
 

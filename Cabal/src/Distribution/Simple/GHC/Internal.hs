@@ -53,6 +53,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Distribution.Backpack
+import Distribution.Compat.Directory (listDirectory)
 import Distribution.Compat.Stack
 import Distribution.Lex
 import qualified Distribution.ModuleName as ModuleName
@@ -84,7 +85,6 @@ import Distribution.Utils.NubList (NubListR, toNubListR)
 import Distribution.Utils.Path
 import Distribution.Verbosity
 import Language.Haskell.Extension
-import Distribution.Compat.Directory (listDirectory)
 import System.Environment (getEnv)
 import System.FilePath
   ( takeDirectory

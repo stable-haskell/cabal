@@ -59,8 +59,8 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Distribution.Client.Errors.Parser (ProjectFileSource (..))
 import qualified Distribution.Compat.CharParsing as P
-import Network.URI (URI, uriFragment, uriPath, uriScheme)
 import Distribution.Compat.Directory (makeAbsolute)
+import Network.URI (URI, uriFragment, uriPath, uriScheme)
 import System.FilePath (splitFileName)
 import qualified Text.Parsec
 import Text.PrettyPrint (render)

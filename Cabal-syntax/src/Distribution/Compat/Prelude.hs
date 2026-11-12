@@ -6,6 +6,7 @@
 -- * Acts as a compatibility layer, like @base-compat@.
 --
 -- * Provides commonly used imports.
+{- FOURMOLU_DISABLE -}
 module Distribution.Compat.Prelude
   ( -- * Prelude
 
@@ -195,6 +196,7 @@ module Distribution.Compat.Prelude
   , traceM
   , traceShowM
   ) where
+{- FOURMOLU_ENABLE -}
 
 -- We also could hide few partial function
 {- FOURMOLU_DISABLE -}
@@ -226,33 +228,33 @@ import Prelude                       as BasePrelude hiding
 {- FOURMOLU_ENABLE -}
 -- AMP
 import Data.Foldable
-  -- NOTE: only the class methods are re-exported here (as plain
-  -- functions), never the class itself. MicroHs merges a re-exported
-  -- class method with a same-named local definition ('foldr1'
-  -- and 'foldl1' below) into an ambiguous export. Modules needing
-  -- the class (instances, deriving) import it directly.
-  ( foldMap
+  ( -- NOTE: only the class methods are re-exported here (as plain
+    -- functions), never the class itself. MicroHs merges a re-exported
+    -- class method with a same-named local definition ('foldr1'
+    -- and 'foldl1' below) into an ambiguous export. Modules needing
+    -- the class (instances, deriving) import it directly.
+
+    all
+  , any
+  , elem
+  , find
+  , foldMap
   , foldMap'
-  , foldr
-  , foldr'
   , foldl
   , foldl'
-  , toList
-  , null
+  , foldr
+  , foldr'
+  , for_
   , length
-  , elem
   , maximum
   , minimum
-  , sum
+  , null
   , product
-  , all
-  , any
-  , find
-  , for_
+  , sum
+  , toList
   , traverse_
   )
 import Data.Traversable (Traversable (..), for)
-
 
 -- Extra exports
 import Control.Applicative (Alternative (..), Const (..))
@@ -330,6 +332,7 @@ trace :: String -> a -> a
 trace = Debug.Trace.trace
 {-# DEPRECATED trace "Don't leave me in the code" #-}
 
+{- FOURMOLU_DISABLE -}
 traceShowId :: Show a => a -> a
 #ifdef __MHS__
 -- MicroHs's 'Debug.Trace' has no 'traceShow'.
@@ -337,16 +340,20 @@ traceShowId x = Debug.Trace.trace (show x) x
 #else
 traceShowId x = Debug.Trace.traceShow x x
 #endif
+{- FOURMOLU_ENABLE -}
 {-# DEPRECATED traceShowId "Don't leave me in the code" #-}
 
+{- FOURMOLU_DISABLE -}
 traceShow :: Show a => a -> b -> b
 #ifdef __MHS__
 traceShow x y = Debug.Trace.trace (show x) y
 #else
 traceShow = Debug.Trace.traceShow
 #endif
+{- FOURMOLU_ENABLE -}
 {-# DEPRECATED traceShow "Don't leave me in the code" #-}
 
+{- FOURMOLU_DISABLE -}
 traceM :: Applicative f => String -> f ()
 #ifdef __MHS__
 -- MicroHs's 'Debug.Trace.traceM' needs 'Monad', so define the more
@@ -355,8 +362,10 @@ traceM s = trace s (pure ())
 #else
 traceM = Debug.Trace.traceM
 #endif
+{- FOURMOLU_ENABLE -}
 {-# DEPRECATED traceM "Don't leave me in the code" #-}
 
+{- FOURMOLU_DISABLE -}
 traceShowM :: (Show a, Applicative f) => a -> f ()
 #ifdef __MHS__
 -- MicroHs's 'Debug.Trace' has no 'traceShowM', and its 'traceM'
@@ -365,4 +374,5 @@ traceShowM x = Debug.Trace.trace (show x) (pure ())
 #else
 traceShowM = Debug.Trace.traceShowM
 #endif
+{- FOURMOLU_ENABLE -}
 {-# DEPRECATED traceShowM "Don't leave me in the code" #-}

@@ -63,6 +63,7 @@ check:
 	@cd Cabal-hooks && cabal check | grep -q "No errors or warnings could be found in the package."
 	@cd hooks-exe && cabal check | grep -q "No errors or warnings could be found in the package."
 	@cd cabal-install-solver && cabal check | grep -q "No errors or warnings could be found in the package."
+	@cd mhs-compat-shims && cabal check | grep -q "No errors or warnings could be found in the package."
 
 .PHONY: style-todo
 style-todo: ## Configured for fourmolu, avoiding GHC parser failures.

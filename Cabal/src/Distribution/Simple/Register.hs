@@ -58,6 +58,7 @@ import qualified Distribution.Simple.PackageIndex as Index
 import qualified Distribution.Simple.UHC as UHC
 
 import Distribution.Backpack.DescribeUnitId
+import Distribution.Compat.Directory
 import Distribution.Compat.Graph (IsNode (nodeKey))
 import Distribution.InstalledPackageInfo (InstalledPackageInfo)
 import qualified Distribution.InstalledPackageInfo as IPI
@@ -79,7 +80,6 @@ import Distribution.System
 import Distribution.Utils.Path
 import Distribution.Verbosity as Verbosity
 import Distribution.Version
-import Distribution.Compat.Directory
 import System.FilePath (isAbsolute)
 import System.IO (hPutStrLn)
 

@@ -62,6 +62,7 @@ data IODataMode mode where
   IODataModeText :: IODataMode String
   IODataModeBinary :: IODataMode LBS.ByteString
 
+{- FOURMOLU_DISABLE -}
 instance a ~ Char => KnownIODataMode [a] where
   hGetIODataContents h = do
 #ifdef __MHS__
@@ -74,7 +75,9 @@ instance a ~ Char => KnownIODataMode [a] where
 
   toIOData = IODataText
   iodataMode = IODataModeText
+{- FOURMOLU_ENABLE -}
 
+{- FOURMOLU_DISABLE -}
 instance KnownIODataMode LBS.ByteString where
   hGetIODataContents h = do
 #ifndef __MHS__
@@ -87,6 +90,7 @@ instance KnownIODataMode LBS.ByteString where
 
   toIOData = IODataBinary
   iodataMode = IODataModeBinary
+{- FOURMOLU_ENABLE -}
 
 -- | 'IOData' Wrapper for 'System.IO.hPutStr' and 'System.IO.hClose'
 --
@@ -96,6 +100,7 @@ instance KnownIODataMode LBS.ByteString where
 -- /Note:/ this performs lazy-IO.
 --
 -- @since 2.2
+{- FOURMOLU_DISABLE -}
 hPutContents :: System.IO.Handle -> IOData -> Prelude.IO ()
 hPutContents h (IODataText c) = do
 #ifdef __MHS__
@@ -115,3 +120,4 @@ hPutContents h (IODataBinary c) = do
   LBS.hPutStr h c
 #endif
   System.IO.hClose h
+{- FOURMOLU_ENABLE -}

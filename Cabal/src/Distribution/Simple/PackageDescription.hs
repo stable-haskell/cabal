@@ -25,6 +25,7 @@ import Prelude ()
 
 import qualified Data.ByteString as BS
 import Data.List (groupBy)
+import Distribution.Compat.Directory (doesFileExist)
 import Distribution.Fields.ParseResult
 import Distribution.PackageDescription
 import Distribution.PackageDescription.Parsec
@@ -43,7 +44,6 @@ import Distribution.Simple.Errors
 import Distribution.Simple.Utils (dieWithException, equating, warn)
 import Distribution.Utils.Path
 import Distribution.Verbosity (Verbosity, VerbosityLevel (..), verbosityLevel)
-import Distribution.Compat.Directory (doesFileExist)
 import Text.Printf (printf)
 
 readGenericPackageDescription

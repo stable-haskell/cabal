@@ -53,8 +53,8 @@ import Distribution.Verbosity
   , mkVerbosity
   )
 
-import Distribution.Types.HookedBuildInfo (emptyHookedBuildInfo)
 import Distribution.Compat.Directory (canonicalizePath)
+import Distribution.Types.HookedBuildInfo (emptyHookedBuildInfo)
 
 -- Note [MHS support]
 -- ~~~~~~~~~~~~~~~~~~
@@ -372,6 +372,7 @@ bench
   -> LocalBuildInfo
   -> [String]
   -> IO ()
+{- FOURMOLU_DISABLE -}
 bench verb flags lbi args =
 #ifdef __MHS__
   error "Distribution.Client.InLibrary.bench: in-library setup is not supported under MHS"
@@ -394,3 +395,4 @@ register flags lbi _args = Cabal.register pkgDescr lbi flags
   where
     pkgDescr = localPkgDescr lbi
 #endif
+{- FOURMOLU_ENABLE -}

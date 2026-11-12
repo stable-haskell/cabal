@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 
+{- FOURMOLU_DISABLE -}
 module Distribution.Utils.LogProgress
   ( LogProgress
   , runLogProgress
@@ -11,14 +12,15 @@ module Distribution.Utils.LogProgress
   , hang
 #endif
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude
 import Prelude ()
 
+import Distribution.Compat.Stack (HasCallStack, callStack, prettyCallStack)
 import Distribution.Simple.Utils
 import Distribution.Utils.Progress
 import Distribution.Verbosity
-import Distribution.Compat.Stack (HasCallStack, callStack, prettyCallStack)
 import System.IO (hFlush, hPutStr, hPutStrLn)
 import Text.PrettyPrint
 

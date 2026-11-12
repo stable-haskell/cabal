@@ -38,6 +38,7 @@ packages:
   , cabal-install
   , cabal-install-solver
   , hooks-exe
+  , mhs-compat-shims
 
 -- Don't include tests or benchmarks for the minimal-toolchain build
 tests: False

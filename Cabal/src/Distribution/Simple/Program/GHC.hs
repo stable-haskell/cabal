@@ -47,8 +47,8 @@ import Distribution.Utils.Path
 import Distribution.Verbosity
 import Distribution.Version
 
-import System.IO (TextEncoding)
 import Language.Haskell.Extension
+import System.IO (TextEncoding)
 
 import Data.List (stripPrefix)
 import qualified Data.Map as Map

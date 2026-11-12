@@ -33,7 +33,6 @@ import qualified Data.Map.Strict as Map
 
 import Control.Exception
 import Control.Monad hiding (forM_, mapM, mapM_, sequence, sequence_)
-import Data.Foldable (forM_, mapM_)
 import Control.Monad.Except
   ( ExceptT
   , runExceptT
@@ -43,6 +42,7 @@ import Control.Monad.Except
 import Control.Monad.State (StateT, mapStateT)
 import qualified Control.Monad.State as State
 import Control.Monad.Trans (MonadIO, liftIO)
+import Data.Foldable (forM_, mapM_)
 
 import Distribution.Client.Glob
 import Distribution.Client.HashValue

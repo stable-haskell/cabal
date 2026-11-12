@@ -48,10 +48,8 @@ import qualified Data.ByteString as BS
 import Data.Char (chr, ord)
 import System.IO.Internal (BFILE, withHandleAny)
 #endif
-import qualified Data.ByteString.Lazy as LBS
-import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
-import Distribution.Compat.Directory (doesFileExist, getCurrentDirectory, getTemporaryDirectory, removeFile, setCurrentDirectory)
-import Distribution.Compat.Internal.TempFile (openBinaryTempFile)
+import Data.IORef (IORef, atomicModifyIORef', modifyIORef, newIORef, readIORef, writeIORef)
+import qualified Distribution.Compat.Internal.MhsPosix as MhsPosix
 import Foreign.C.Error (throwErrnoIfMinus1, throwErrnoIfMinus1_)
 import Foreign.C.String (CString, newCAString, withCAString)
 import Foreign.C.Types (CInt (..))
@@ -59,9 +57,9 @@ import Foreign.Marshal.Alloc (alloca, allocaBytes, free)
 import Foreign.Marshal.Array (withArray0)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, pokeElemOff, sizeOf)
-import System.Environment (getEnvironment, setEnv, unsetEnv)
+import System.Directory (getCurrentDirectory, getTemporaryDirectory, removeFile, setCurrentDirectory)
 import System.Exit (ExitCode (..))
-import System.IO (BufferMode (..), Handle, IOMode (..), hClose, hSetBuffering, openFile
+import System.IO (BufferMode (..), Handle, IOMode (..), hSetBuffering, openFile
 #ifdef __MHS__
   , hGetContents, hPutStr
 #endif
@@ -446,19 +444,22 @@ mhsTerminate :: MhsChild -> IO ()
 mhsTerminate (MhsChild pid _ _ _) =
   throwErrnoIfMinus1_ "mhsTerminate" (c_mhs_terminate (fromIntegral pid))
 
--- | Create a fresh empty temporary file, returning its path.  The
--- file exists (so the child can open it without @O_CREAT@ races) and
--- is removed by 'mhsWait' once the owning child is reaped.  It goes
--- through "Distribution.Compat.Internal.TempFile" (atomic
--- @O_CREAT@|@O_EXCL@ creation instead of MicroHs' unhardened
--- check-then-open 'System.IO.openTempFile'), and is binary so piped
--- child output round-trips byte-for-byte.
+doesFileExist :: FilePath -> IO Bool
+doesFileExist fp = (== MhsPosix.MhsFile) <$> MhsPosix.mhsPathKind fp True
+
+{-# NOINLINE tempPipeCounter #-}
+tempPipeCounter :: IORef Int
+tempPipeCounter = unsafePerformIO (newIORef 0)
+
 mhsTempFile :: IO FilePath
 mhsTempFile = do
   tmp <- getTemporaryDirectory
-  (path, h) <- openBinaryTempFile tmp "cabal-mhs-pipe"
-  hClose h
-  pure path
+  let findTemp = do
+        n <- atomicModifyIORef' tempPipeCounter (\c -> let c' = c + 1 in (c', c'))
+        let path = tmp ++ "/cabal-mhs-pipe-" ++ show n
+        created <- MhsPosix.mhsCreateExclusive path 0o600
+        if created then pure path else findTemp
+  findTemp
 
 -- | Registry remembering which temporary file backs each pipe
 -- 'Handle' handed out by 'mhsCreatePipe' or stream setup, so a later

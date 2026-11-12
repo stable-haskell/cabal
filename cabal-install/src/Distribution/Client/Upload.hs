@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 module Distribution.Client.Upload (upload, uploadDoc, report) where
 
 import Distribution.Client.Compat.Prelude
