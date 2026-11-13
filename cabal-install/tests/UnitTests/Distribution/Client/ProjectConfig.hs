@@ -12,6 +12,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+import qualified Data.Text as Text
 import Network.URI (URI)
 import System.Directory (canonicalizePath, withCurrentDirectory)
 import System.FilePath
@@ -287,8 +288,8 @@ prop_roundtrip_printparse_packages
 prop_roundtrip_printparse_packages pkglocstrs1 pkglocstrs2 repos named =
   roundtrip_printparse
     mempty
-      { projectPackages = map getPackageLocationString pkglocstrs1
-      , projectPackagesOptional = map getPackageLocationString pkglocstrs2
+      { projectPackages = map (Text.pack . getPackageLocationString) pkglocstrs1
+      , projectPackagesOptional = map (Text.pack . getPackageLocationString) pkglocstrs2
       , projectPackagesRepo = repos
       , projectPackagesNamed = named
       }
@@ -399,8 +400,8 @@ prop_roundtrip_printparse_RelaxDeps' rdep =
 
 instance Arbitrary ProjectConfig where
   arbitrary =
-    (ProjectConfig . map getPackageLocationString <$> arbitrary)
-      <*> (map getPackageLocationString <$> arbitrary)
+    (ProjectConfig . map (Text.pack . getPackageLocationString) <$> arbitrary)
+      <*> (map (Text.pack . getPackageLocationString) <$> arbitrary)
       <*> shortListOf 3 arbitrary
       <*> arbitrary
       <*> arbitrary
@@ -411,6 +412,7 @@ instance Arbitrary ProjectConfig where
       <*> ( MapMappend . fmap getNonMEmpty . Map.fromList
               <$> shortListOf 3 arbitrary
           )
+      <*> pure mempty -- projectConfigMachinePackages: neither legacy nor printer support
 
   -- package entries with no content are equivalent to
   -- the entry not existing at all, so exclude empty
@@ -427,10 +429,11 @@ instance Arbitrary ProjectConfig where
       , projectConfigLocalPackages = x7
       , projectConfigSpecificPackage = x8
       , projectConfigAllPackages = x9
+      , projectConfigMachinePackages = _x10
       } =
       [ ProjectConfig
-        { projectPackages = x0'
-        , projectPackagesOptional = x1'
+        { projectPackages = map Text.pack x0'
+        , projectPackagesOptional = map Text.pack x1'
         , projectPackagesRepo = x2'
         , projectPackagesNamed = x3'
         , projectConfigBuildOnly = x4'
@@ -441,10 +444,11 @@ instance Arbitrary ProjectConfig where
             MapMappend
               (fmap getNonMEmpty x8')
         , projectConfigAllPackages = x9'
+        , projectConfigMachinePackages = mempty
         }
       | ((x0', x1', x2', x3'), (x4', x5', x6', x7', x8', x9')) <-
           shrink
-            ( (x0, x1, x2, x3)
+            ( (map Text.unpack x0, map Text.unpack x1, x2, x3)
             , (x4, x5, x6, x7, fmap NonMEmpty (getMapMappend x8), x9)
             )
       ]
@@ -512,7 +516,7 @@ instance Arbitrary ProjectConfigBuildOnly where
       <*> arbitrary
       <*> arbitrary
       <*> arbitrary
-      <*> (fmap getShortToken <$> arbitrary)
+      <*> (fmap (Text.pack . getShortToken) <$> arbitrary)
       <*> arbitrary
       <*> (fmap getShortToken <$> arbitrary)
       <*> (fmap getShortToken <$> arbitrary)
@@ -593,6 +597,9 @@ instance Arbitrary ProjectConfigShared where
     projectConfigHcFlavor <- arbitrary
     projectConfigHcPath <- arbitraryFlag arbitraryShortToken
     projectConfigHcPkg <- arbitraryFlag arbitraryShortToken
+    projectConfigBuildHcFlavor <- arbitrary
+    projectConfigBuildHcPath <- arbitraryFlag arbitraryShortToken
+    projectConfigBuildHcPkg <- arbitraryFlag arbitraryShortToken
     projectConfigHaddockIndex <- arbitrary
     projectConfigInstallDirs <- fixInstallDirs <$> arbitrary
     projectConfigPackageDBs <- shortListOf 2 arbitrary
@@ -621,6 +628,7 @@ instance Arbitrary ProjectConfigShared where
     projectConfigPreferVersion <- arbitrary
     projectConfigProgPathExtra <- toNubList <$> listOf arbitraryShortToken
     projectConfigMultiRepl <- arbitrary
+    projectConfigInplaceBuilds <- arbitrary
     return ProjectConfigShared{..}
     where
       arbitraryConstraints :: Gen [(UserConstraint, ConstraintSource)]
@@ -640,6 +648,9 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigHcFlavor
         <*> shrinkerAla (fmap NonEmpty) projectConfigHcPath
         <*> shrinkerAla (fmap NonEmpty) projectConfigHcPkg
+        <*> shrinker projectConfigBuildHcFlavor
+        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPath
+        <*> shrinkerAla (fmap NonEmpty) projectConfigBuildHcPkg
         <*> shrinker projectConfigHaddockIndex
         <*> shrinker projectConfigInstallDirs
         <*> shrinker projectConfigPackageDBs
@@ -668,6 +679,7 @@ instance Arbitrary ProjectConfigShared where
         <*> shrinker projectConfigPreferVersion
         <*> shrinker projectConfigProgPathExtra
         <*> shrinker projectConfigMultiRepl
+        <*> shrinker projectConfigInplaceBuilds
     where
       preShrink_Constraints = map fst
       postShrink_Constraints = map (,projectConfigConstraintSource)
@@ -699,6 +711,22 @@ instance Arbitrary PackageConfig where
                     <*> listOf arbitraryShortToken
                 )
           )
+      <*> ( MapLast . Map.fromList
+              <$> shortListOf
+                10
+                ( (,)
+                    <$> arbitraryProgramName
+                    <*> arbitraryShortToken
+                )
+          )
+      <*> ( MapMappend . Map.fromList
+              <$> shortListOf
+                10
+                ( (,)
+                    <$> arbitraryProgramName
+                    <*> listOf arbitraryShortToken
+                )
+          )
       <*> (toNubList <$> listOf arbitraryShortToken)
       <*> arbitrary
       <*> arbitrary
@@ -713,7 +741,7 @@ instance Arbitrary PackageConfig where
       <*> arbitrary
       <*> arbitrary
       <*> arbitrary
-      <*> shortListOf 5 arbitraryShortToken
+      <*> (fmap Text.pack <$> shortListOf 5 arbitraryShortToken)
       <*> arbitrary
       <*> arbitrary
       <*> arbitrary
@@ -736,7 +764,7 @@ instance Arbitrary PackageConfig where
       <*> arbitrary
       <*> arbitrary
       <*> arbitrary
-      <*> arbitraryFlag arbitraryShortToken
+      <*> (fmap Text.pack <$> arbitraryFlag arbitraryShortToken)
       <*> arbitrary
       <*> arbitrary
       <*> arbitrary
@@ -748,8 +776,8 @@ instance Arbitrary PackageConfig where
       <*> arbitraryFlag arbitraryShortToken
       <*> arbitrary
       <*> arbitrary
-      <*> arbitraryFlag arbitraryShortToken
-      <*> arbitraryFlag arbitraryShortToken
+      <*> (fmap Text.pack <$> arbitraryFlag arbitraryShortToken)
+      <*> (fmap Text.pack <$> arbitraryFlag arbitraryShortToken)
       <*> arbitraryFlag arbitraryShortToken
       <*> arbitrary
       <*> arbitrary
@@ -773,6 +801,8 @@ instance Arbitrary PackageConfig where
     PackageConfig
       { packageConfigProgramPaths = x00
       , packageConfigProgramArgs = x01
+      , packageConfigBuildProgramPaths = x60
+      , packageConfigBuildProgramArgs = x61
       , packageConfigProgramPathExtra = x02
       , packageConfigFlagAssignment = x03
       , packageConfigVanillaLib = x04
@@ -839,6 +869,8 @@ instance Arbitrary PackageConfig where
       [ PackageConfig
         { packageConfigProgramPaths = postShrink_Paths x00'
         , packageConfigProgramArgs = postShrink_Args x01'
+        , packageConfigBuildProgramPaths = postShrink_Paths x60'
+        , packageConfigBuildProgramArgs = postShrink_Args x61'
         , packageConfigProgramPathExtra = x02'
         , packageConfigFlagAssignment = x03'
         , packageConfigVanillaLib = x04'
@@ -853,7 +885,7 @@ instance Arbitrary PackageConfig where
         , packageConfigProfExe = x09'
         , packageConfigProfDetail = x10'
         , packageConfigProfLibDetail = x11'
-        , packageConfigConfigureArgs = map getNonEmpty x12'
+        , packageConfigConfigureArgs = map (Text.pack . getNonEmpty) x12'
         , packageConfigOptimization = x13'
         , packageConfigProgPrefix = x14'
         , packageConfigProgSuffix = x15'
@@ -876,7 +908,7 @@ instance Arbitrary PackageConfig where
         , packageConfigDocumentation = x29'
         , packageConfigHaddockHoogle = x30'
         , packageConfigHaddockHtml = x31'
-        , packageConfigHaddockHtmlLocation = x32'
+        , packageConfigHaddockHtmlLocation = fmap Text.pack x32'
         , packageConfigHaddockForeignLibs = x33'
         , packageConfigHaddockExecutables = x33_1'
         , packageConfigHaddockTestSuites = x34'
@@ -889,8 +921,8 @@ instance Arbitrary PackageConfig where
         , packageConfigHaddockContents = x40'
         , packageConfigHaddockForHackage = x41'
         , packageConfigHaddockIndex = x54'
-        , packageConfigHaddockBaseUrl = x55'
-        , packageConfigHaddockResourcesDir = x56'
+        , packageConfigHaddockBaseUrl = fmap Text.pack x55'
+        , packageConfigHaddockResourcesDir = fmap Text.pack x56'
         , packageConfigHaddockOutputDir = x57'
         , packageConfigHaddockUseUnicode = x58'
         , packageConfigTestHumanLog = x44'
@@ -902,7 +934,7 @@ instance Arbitrary PackageConfig where
         , packageConfigTestTestOptions = x51'
         , packageConfigBenchmarkOptions = x52'
         }
-      | ( ( (x00', x01', x02', x03', x04')
+      | ( ( (x00', x01', x60', x61', x02', x03', x04')
             , (x05', x42', x43', x06', x50', x07', x08', x08_1', x09')
             , (x10', x11', x12', x13', x14')
             , (x15', x16', x53', x17', x18', x19')
@@ -920,9 +952,9 @@ instance Arbitrary PackageConfig where
           ) <-
           shrink
             (
-              ( (preShrink_Paths x00, preShrink_Args x01, x02, x03, x04)
+              ( (preShrink_Paths x00, preShrink_Args x01, preShrink_Paths x60, preShrink_Args x61, x02, x03, x04)
               , (x05, x42, x43, x06, x50, x07, x08, x08_1, x09)
-              , (x10, x11, map NonEmpty x12, x13, x14)
+              , (x10, x11, map (NonEmpty . Text.unpack) x12, x13, x14)
               ,
                 ( x15
                 , map NonEmpty x16
@@ -935,11 +967,11 @@ instance Arbitrary PackageConfig where
             ,
               ( (x20, x20_1, x21, x22, x23, x24)
               , (x25, x26, x27, x27_1, x28, x29)
-              , (x30, x31, x32, (x33, x33_1), x34)
+              , (x30, x31, fmap Text.unpack x32, (x33, x33_1), x34)
               , (x35, x36, fmap NonEmpty x37, x38, x59, fmap NonEmpty x39)
               , (x40, x41)
-              , (x44, x45, x46, x47, x48, x49, x51, x52, x54, x55)
-              , x56
+              , (x44, x45, x46, x47, x48, x49, x51, x52, x54, fmap Text.unpack x55)
+              , fmap Text.unpack x56
               , x57
               , x58
               )
@@ -967,21 +999,21 @@ instance f ~ [] => Arbitrary (SourceRepositoryPackage f) where
   arbitrary =
     SourceRepositoryPackage
       <$> arbitrary
-      <*> (getShortToken <$> arbitrary)
-      <*> (fmap getShortToken <$> arbitrary)
-      <*> (fmap getShortToken <$> arbitrary)
+      <*> (Text.pack . getShortToken <$> arbitrary)
+      <*> (fmap (Text.pack . getShortToken) <$> arbitrary)
+      <*> (fmap (Text.pack . getShortToken) <$> arbitrary)
       <*> (fmap getShortToken <$> shortListOf 3 arbitrary)
-      <*> (fmap getShortToken <$> shortListOf 3 arbitrary)
+      <*> (fmap (Text.pack . getShortToken) <$> shortListOf 3 arbitrary)
 
   shrink SourceRepositoryPackage{..} =
     runShrinker $
       SourceRepositoryPackage
         <$> shrinker srpType
-        <*> shrinkerAla ShortToken srpLocation
-        <*> shrinkerAla (fmap ShortToken) srpTag
-        <*> shrinkerAla (fmap ShortToken) srpBranch
+        <*> (Text.pack <$> shrinkerAla ShortToken (Text.unpack srpLocation))
+        <*> (fmap Text.pack <$> shrinkerAla (fmap ShortToken) (fmap Text.unpack srpTag))
+        <*> (fmap Text.pack <$> shrinkerAla (fmap ShortToken) (fmap Text.unpack srpBranch))
         <*> shrinkerAla (fmap ShortToken) srpSubdir
-        <*> shrinkerAla (fmap ShortToken) srpCommand
+        <*> (map Text.pack <$> shrinkerAla (fmap ShortToken) (fmap Text.unpack srpCommand))
 
 instance Arbitrary RemoteRepo where
   arbitrary =
@@ -994,13 +1026,14 @@ instance Arbitrary RemoteRepo where
       <*> pure False
     where
       arbitraryRootKey =
-        shortListOf1
-          5
-          ( oneof
-              [ choose ('0', '9')
-              , choose ('a', 'f')
-              ]
-          )
+        Text.pack
+          <$> shortListOf1
+            5
+            ( oneof
+                [ choose ('0', '9')
+                , choose ('a', 'f')
+                ]
+            )
 
 instance Arbitrary LocalRepo where
   arbitrary =

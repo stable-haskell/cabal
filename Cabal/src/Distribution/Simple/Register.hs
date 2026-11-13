@@ -56,7 +56,6 @@ import Distribution.Simple.BuildTarget
 import Distribution.Simple.LocalBuildInfo
 
 import qualified Distribution.Simple.GHC as GHC
-import qualified Distribution.Simple.GHCJS as GHCJS
 import qualified Distribution.Simple.PackageIndex as Index
 import qualified Distribution.Simple.UHC as UHC
 
@@ -79,14 +78,16 @@ import Distribution.Simple.Setup.Haddock (HaddockTarget (ForDevelopment))
 import Distribution.Simple.Setup.Register
 import Distribution.Simple.Utils
 import Distribution.System
-import Distribution.Utils.MapAccum
 import Distribution.Utils.Path
 import Distribution.Verbosity as Verbosity
 import Distribution.Version
 import System.Directory
 import System.FilePath (isAbsolute)
+import System.IO (hPutStrLn)
 
 import qualified Data.ByteString.Lazy.Char8 as BS.Char8
+import qualified Data.Text as T
+import Data.Traversable (mapAccumM)
 
 -- -----------------------------------------------------------------------------
 -- Registration
@@ -186,7 +187,10 @@ registerAll verbHandles pkg lbi regFlags ipis =
           ( packageId installedPkgInfo == packageId pkg
               && IPI.sourceLibName installedPkgInfo == LMainLibName
           )
-          $ notice verbosity
+          -- Print the IPID unconditionally: this is explicitly-requested
+          -- machine-readable output (via --print-ipid), not a status
+          -- message, so it must not be silenced at low verbosity (e.g. -v0).
+          $ hPutStrLn (verbosityChosenOutputHandle verbosity)
           $ prettyShow (IPI.installedUnitId installedPkgInfo)
 
     -- Three different modes:
@@ -327,10 +331,7 @@ abiHash
   -> IO AbiHash
 abiHash verbosity pkg distPref lbi lib clbi =
   case compilerFlavor comp of
-    GHC -> do
-      mkAbiHash <$> GHC.libAbiHash verbosity pkg lbi' lib clbi
-    GHCJS -> do
-      mkAbiHash <$> GHCJS.libAbiHash verbosity pkg lbi' lib clbi
+    GHC -> mkAbiHash <$> GHC.libAbiHash verbosity pkg lbi' lib clbi
     _ -> return (mkAbiHash "")
   where
     comp = compiler lbi
@@ -379,7 +380,6 @@ createPackageDB
 createPackageDB verbosity comp progdb dbPath =
   case compilerFlavor comp of
     GHC -> HcPkg.init (GHC.hcPkgInfo progdb) verbosity dbPath
-    GHCJS -> HcPkg.init (GHCJS.hcPkgInfo progdb) verbosity dbPath
     UHC -> return ()
     _ -> dieWithException verbosity CreatePackageDB
 
@@ -424,7 +424,6 @@ withHcPkg
 withHcPkg verbosity name comp progdb f =
   case compilerFlavor comp of
     GHC -> f (GHC.hcPkgInfo progdb)
-    GHCJS -> f (GHCJS.hcPkgInfo progdb)
     _ -> dieWithException verbosity $ WithHcPkg name
 
 registerPackage
@@ -439,7 +438,6 @@ registerPackage
 registerPackage verbosity comp progdb mbWorkDir packageDbs installedPkgInfo registerOptions =
   case compilerFlavor comp of
     GHC -> GHC.registerPackage verbosity progdb mbWorkDir packageDbs installedPkgInfo registerOptions
-    GHCJS -> GHCJS.registerPackage verbosity progdb mbWorkDir packageDbs installedPkgInfo registerOptions
     _
       | HcPkg.registerMultiInstance registerOptions ->
           dieWithException verbosity RegisMultiplePkgNotSupported
@@ -501,7 +499,7 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
     , IPI.installedComponentId_ = componentComponentId clbi
     , IPI.instantiatedWith = expectLibraryComponent (maybeComponentInstantiatedWith clbi)
     , IPI.sourceLibName = libName lib
-    , IPI.compatPackageKey = expectLibraryComponent (maybeComponentCompatPackageKey clbi)
+    , IPI.compatPackageKey = expectLibraryComponent (fmap T.pack (maybeComponentCompatPackageKey clbi))
     , -- If GHC >= 8.4 we register with SDPX, otherwise with legacy license
       IPI.license =
         if ghc84
@@ -534,13 +532,13 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
         [bytecodelibdir installDirs | hasLibrary && withBytecodeLib lbi]
     , IPI.dataDir = datadir installDirs
     , IPI.hsLibraries =
-        [getHSLibraryName (componentUnitId clbi) | hasLibrary]
+        [T.pack (getHSLibraryName (componentUnitId clbi)) | hasLibrary]
           ++ extraBundledLibs bi
     , IPI.extraLibraries = extraLibs bi
     , IPI.extraLibrariesStatic = extraLibsStatic bi
     , IPI.extraGHCiLibraries = extraGHCiLibs bi
     , IPI.includeDirs = absinc ++ adjustRelIncDirs relinc
-    , IPI.includes = map getSymbolicPath $ includes bi
+    , IPI.includes = map (T.pack . getSymbolicPath) $ includes bi
     , IPI.depends = depends
     , IPI.abiDepends = [] -- due to #5465
     , IPI.ccOptions = [] -- Note. NOT ccOptions bi!
@@ -548,7 +546,7 @@ generalInstalledPackageInfo adjustRelIncDirs pkg abi_hash lib lbi clbi installDi
     -- to C compilations in other packages.
     , IPI.cxxOptions = [] -- Also. NOT cxxOptions bi!
     , IPI.ldOptions = ldOptions bi
-    , IPI.frameworks = map getSymbolicPath $ frameworks bi
+    , IPI.frameworks = map (T.pack . getSymbolicPath) $ frameworks bi
     , IPI.frameworkDirs = map getSymbolicPath $ extraFrameworkDirs bi
     , IPI.haddockInterfaces =
         [haddockdir installDirs </> haddockLibraryPath pkg lib | hasModules]
@@ -751,7 +749,7 @@ unregisterWithHandles verbHandles pkg lbi regFlags = do
   setupMessage verbosity "Unregistering" pkgid
   withHcPkg
     verbosity
-    "unregistering is only implemented for GHC and GHCJS"
+    "unregistering is only implemented for GHC"
     (compiler lbi)
     (withPrograms lbi)
     unreg

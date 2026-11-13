@@ -18,8 +18,6 @@ module Distribution.Simple.Program.Builtin
   , ghcProgram
   , ghcPkgProgram
   , runghcProgram
-  , ghcjsProgram
-  , ghcjsPkgProgram
   , jhcProgram
   , uhcProgram
   , gccProgram
@@ -53,6 +51,7 @@ import Distribution.Simple.Utils
 import Distribution.Verbosity
 import Distribution.Version
 
+import Data.Function (applyWhen)
 import qualified Data.Map as Map
 
 -- ------------------------------------------------------------
@@ -72,8 +71,6 @@ builtinPrograms =
     ghcProgram
   , runghcProgram
   , ghcPkgProgram
-  , ghcjsProgram
-  , ghcjsPkgProgram
   , jhcProgram
   , uhcProgram
   , hpcProgram
@@ -104,12 +101,13 @@ ghcProgram =
     , programNormaliseArgs = normaliseGhcArgs
     }
   where
-    ghcPostConf _verbosity ghcProg = do
+    ghcPostConf verbosity ghcProg0 = do
+      -- Record which features this GHC supports; see 'GhcFeature'.
+      ghcProg <- detectGhcFeatures verbosity ghcProg0
+
       let ignorePackageEnv prog = prog{programDefaultArgs = "-package-env=-" : programDefaultArgs prog}
 
           canIgnorePackageEnv = orLaterVersion $ mkVersion [8, 4, 4]
-
-          applyWhen cond f prog = if cond then f prog else prog
 
       return $
         maybe
@@ -137,24 +135,6 @@ ghcPkgProgram =
     { programFindVersion = findProgramVersion "--version" $ \str ->
         -- Invoking "ghc-pkg --version" gives a string like
         -- "GHC package manager version 6.4.1"
-        case words str of
-          (_ : _ : _ : _ : ver : _) -> ver
-          _ -> ""
-    }
-
-ghcjsProgram :: Program
-ghcjsProgram =
-  (simpleProgram "ghcjs")
-    { programFindVersion = findProgramVersion "--numeric-ghcjs-version" id
-    }
-
--- note: version is the version number of the GHC version that ghcjs-pkg was built with
-ghcjsPkgProgram :: Program
-ghcjsPkgProgram =
-  (simpleProgram "ghcjs-pkg")
-    { programFindVersion = findProgramVersion "--version" $ \str ->
-        -- Invoking "ghcjs-pkg --version" gives a string like
-        -- "GHCJS package manager version 6.4.1"
         case words str of
           (_ : _ : _ : _ : ver : _) -> ver
           _ -> ""

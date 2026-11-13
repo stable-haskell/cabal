@@ -53,6 +53,9 @@ import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
   ( ElaboratedInstallPlan
   , ElaboratedSharedConfig (..)
+  , pkgConfigCompiler
+  , pkgConfigCompilerProgs
+  , pkgConfigPlatform
   )
 import Distribution.Client.ProjectPlanning.Types
   ( elabOrderExeDependencies
@@ -78,7 +81,7 @@ import Distribution.Client.TargetProblem
   )
 import Distribution.Client.Targets
   ( UserConstraint (..)
-  , UserConstraintScope (..)
+  , UserConstraintQualifier (..)
   )
 import Distribution.Client.Types
   ( PackageSpecifier (..)
@@ -92,6 +95,7 @@ import Distribution.Package
   , UnitId
   , installedUnitId
   , mkPackageName
+  , mkPackageNameST
   , packageName
   )
 import Distribution.Simple.Command
@@ -171,17 +175,21 @@ import Data.List
   )
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import Distribution.Client.ProjectConfig
   ( ProjectConfig (..)
   , ProjectConfigShared (..)
   )
+import Distribution.Client.ProjectPlanning.Machine (WithMachine (..), withoutMachine)
 import Distribution.Client.ReplFlags
   ( EnvFlags (envIncludeTransitive, envPackages)
   , ReplFlags (..)
   , defaultReplFlags
   , topReplOptions
   )
+import Distribution.Client.Toolchain (Machine (..))
 import Distribution.Compat.Binary (decode)
+import qualified Distribution.Compat.Graph as Graph
 import Distribution.Simple.Flag (flagToMaybe, fromFlagOrDefault, pattern Flag)
 import Distribution.Simple.Program.Builtin (ghcProgram)
 import Distribution.Simple.Program.Db (requireProgram)
@@ -324,9 +332,9 @@ resolveProjectTarget flags@NixStyleFlags{extraFlags = ReplFlags{..}} targetStrin
       let projectFile = projectConfigProjectFile . projectConfigShared $ projectConfig ctx
       let pkgs = projectPackages $ projectConfig ctx
       case pkgs of
-        [pkg] | pkg `notElem` targetStrings -> do
-          retargetNotice ("package '" ++ pkg ++ "'")
-          return (ctxMulti, [TargetPackageNamed (mkPackageName pkg) Nothing])
+        [pkg] | Text.unpack pkg `notElem` targetStrings -> do
+          retargetNotice ("package '" ++ Text.unpack pkg ++ "'")
+          return (ctxMulti, [TargetPackageNamed (mkPackageNameST pkg) Nothing])
         _ ->
           if isMulti && not (null pkgs)
             then do
@@ -334,7 +342,7 @@ resolveProjectTarget flags@NixStyleFlags{extraFlags = ReplFlags{..}} targetStrin
               return (ctxMulti, [TargetAllPackages Nothing])
             else
               dieWithException verbosity $
-                RenderReplTargetProblem [render (reportProjectNoTarget projectFile pkgs)]
+                RenderReplTargetProblem [render (reportProjectNoTarget projectFile (map Text.unpack pkgs))]
     _ -> return (ctxMulti, userTargetSelectors)
   where
     verbosity = cfgVerbosity normal flags
@@ -444,9 +452,13 @@ targetedRepl
 
           let
             (unitId, _) = fromMaybe (error "panic: targets should be non-empty") $ safeHead $ Map.toList targets
-            originalDeps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan unitId
+            -- The plan is keyed by 'WithMachine UnitId'; a repl target is a
+            -- host-machine unit, so look its node up on the host machine (under
+            -- cross-compilation a build-machine copy may share the UnitId).
+            targetPkg = fromMaybe (error $ "cannot find " ++ prettyShow unitId) $ InstallPlan.lookup elaboratedPlan (WithMachine Host unitId)
+            originalDeps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan (Graph.nodeKey targetPkg)
             oci = OriginalComponentInfo unitId originalDeps
-            pkgId = maybe (error $ "cannot find " ++ prettyShow unitId) packageId (InstallPlan.lookup elaboratedPlan unitId)
+            pkgId = packageId targetPkg
             baseCtx'' = addDepsToProjectTarget (envPackages replEnvFlags) pkgId baseCtx'
 
           return (Just oci, baseCtx'')
@@ -501,7 +513,8 @@ targetedRepl
               , targetsMap = targets
               }
 
-          ElaboratedSharedConfig{pkgConfigCompiler = compiler, pkgConfigPlatform = platform} = elaboratedShared'
+          compiler = pkgConfigCompiler elaboratedShared'
+          platform = pkgConfigPlatform elaboratedShared'
 
           repl_flags = case originalComponent of
             Just oci -> generateReplFlags includeTransitive elaboratedPlan' oci
@@ -735,17 +748,27 @@ addDepsToProjectTarget deps pkgId ctx =
 generateReplFlags :: Bool -> ElaboratedInstallPlan -> OriginalComponentInfo -> [String]
 generateReplFlags includeTransitive elaboratedPlan OriginalComponentInfo{..} = flags
   where
+    -- The plan is keyed by 'WithMachine UnitId'. The repl's own component and
+    -- everything it links against are host-machine units, so a bare unit id
+    -- means the host-machine node (under cross-compilation a build-machine copy
+    -- may share the UnitId).
+    planKey :: UnitId -> WithMachine UnitId
+    planKey uid =
+      case InstallPlan.lookup elaboratedPlan (WithMachine Host uid) of
+        Just pkg -> Graph.nodeKey pkg
+        Nothing -> error $ "generateReplFlags: cannot find " ++ prettyShow uid
+
     exeDeps :: [UnitId]
     exeDeps =
       foldMap
-        (InstallPlan.foldPlanPackage (const []) elabOrderExeDependencies)
-        (InstallPlan.dependencyClosure elaboratedPlan [ociUnitId])
+        (InstallPlan.foldPlanPackage (const []) (map withoutMachine . elabOrderExeDependencies))
+        (InstallPlan.dependencyClosure elaboratedPlan [planKey ociUnitId])
 
     deps, deps', trans, trans' :: [UnitId]
     flags :: [String]
-    deps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan ociUnitId
+    deps = installedUnitId <$> InstallPlan.directDeps elaboratedPlan (planKey ociUnitId)
     deps' = deps \\ ociOriginalDeps
-    trans = installedUnitId <$> InstallPlan.dependencyClosure elaboratedPlan deps'
+    trans = installedUnitId <$> InstallPlan.dependencyClosure elaboratedPlan (map planKey deps')
     trans' = trans \\ ociOriginalDeps
     flags =
       fmap (("-package-id " ++) . prettyShow) . (\\ exeDeps) $

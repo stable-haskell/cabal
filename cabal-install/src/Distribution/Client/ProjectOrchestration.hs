@@ -117,6 +117,7 @@ import Distribution.Client.ProjectPlanning hiding
 import qualified Distribution.Client.ProjectPlanning as ProjectPlanning
   ( pruneInstallPlanToTargets
   )
+import Distribution.Client.ProjectPlanning.Machine (WithMachine (..))
 import Distribution.Client.ProjectPlanning.Types
 
 import Distribution.Client.DistDirLayout
@@ -161,9 +162,6 @@ import Distribution.Compiler
 import Distribution.Types.ComponentName
   ( componentNameString
   )
-import Distribution.Types.InstalledPackageInfo
-  ( InstalledPackageInfo
-  )
 import Distribution.Types.UnqualComponentName
   ( UnqualComponentName
   , packageNameToUnqualComponentName
@@ -177,7 +175,9 @@ import Control.Exception (assert)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import Distribution.Client.Errors
+import qualified Distribution.Compat.Graph as Graph
 import Distribution.Package
 import Distribution.Simple.Command (commandShowOptions)
 import Distribution.Simple.Compiler
@@ -276,7 +276,7 @@ establishProjectBaseContextWithRoot verbosity cliConfig projectRoot currentComma
     configureTransport
       verbosity
       (fromNubList . projectConfigProgPathExtra $ projectConfigShared cliConfig)
-      (flagToMaybe . projectConfigHttpTransport $ projectConfigBuildOnly cliConfig)
+      (fmap Text.unpack . flagToMaybe . projectConfigHttpTransport $ projectConfigBuildOnly cliConfig)
 
   (projectConfig, localPackages) <-
     rebuildProjectConfig
@@ -967,7 +967,7 @@ availableTargetIndexesFromSourcePackages pkgSpecifiers = AvailableTargetIndexes{
 -- TODO: [research required] what if the solution has multiple
 --      versions of this package?
 --      e.g. due to setup deps or due to multiple independent sets
---      of packages being built (e.g. ghc + ghcjs in a project)
+--      of packages being built (e.g. native ghc + the ghc javascript backend in a project)
 
 filterTargetsKind :: ComponentKind -> [AvailableTarget k] -> [AvailableTarget k]
 filterTargetsKind ckind = filterTargetsKindWith (== ckind)
@@ -1138,7 +1138,7 @@ printPlan
                   "(" ++ showComp elab comp ++ ")"
             , showFlagAssignment (nonDefaultFlags elab)
             , showConfigureFlags elab
-            , let buildStatus = pkgsBuildStatus Map.! installedUnitId elab
+            , let buildStatus = pkgsBuildStatus Map.! Graph.nodeKey elab
                in "(" ++ showBuildStatus buildStatus ++ ")"
             ]
 
@@ -1297,7 +1297,7 @@ writeBuildReports settings buildContext plan buildOutcomes = do
                 TestsOk -> BuildReports.Ok
          in Just (BuildReports.BuildReport (packageId pkg) os arch (compilerId comp) cabalInstallID (elabFlagAssignment pkg) (map (packageId . fst) $ elabLibDependencies pkg) installOutcome docsOutcome testsOutcome, getRepo . elabPkgSourceLocation $ pkg) -- TODO handle failure log files?
       fromPlanPackage _ _ = Nothing
-      buildReports = mapMaybe (\x -> fromPlanPackage x (InstallPlan.lookupBuildOutcome x buildOutcomes)) $ InstallPlan.toList plan
+      buildReports = mapMaybe (\x -> fromPlanPackage x (Map.lookup (Graph.nodeKey x) buildOutcomes)) $ InstallPlan.toList plan
 
   BuildReports.storeLocal
     (compilerInfo comp)
@@ -1350,7 +1350,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
           , (pkg, failureClassification) <- failuresClassification
           ]
   where
-    failures :: [(UnitId, BuildFailure)]
+    failures :: [(WithMachine UnitId, BuildFailure)]
     failures =
       [ (pkgid, failure)
       | (pkgid, Left failure) <- Map.toList buildOutcomes
@@ -1363,8 +1363,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
       , case buildFailureReason failure of
           DependentFailed{} -> verbosityLevel verbosity > Normal
           _ -> True
-      , InstallPlan.Configured pkg <-
-          maybeToList (InstallPlan.lookup plan pkgid)
+      , Just (InstallPlan.Configured pkg) <- [InstallPlan.lookup plan pkgid]
       ]
 
     dieIfNotHaddockFailure :: Verbosity -> String -> IO ()
@@ -1410,7 +1409,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
     isSimpleCase
       | [(pkgid, failure)] <- failures
       , [pkg] <- rootpkgs
-      , installedUnitId pkg == pkgid
+      , Graph.nodeKey pkg == pkgid
       , isFailureSelfExplanatory (buildFailureReason failure)
       , currentCommand `notElem` [InstallCommand, BuildCommand, ReplCommand] =
           True
@@ -1431,19 +1430,19 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
     rootpkgs =
       [ pkg
       | InstallPlan.Configured pkg <- InstallPlan.toList plan
-      , hasNoDependents pkg
+      , hasNoDependents (Graph.nodeKey pkg)
       ]
 
     ultimateDeps
-      :: UnitId
-      -> [InstallPlan.GenericPlanPackage InstalledPackageInfo ElaboratedConfiguredPackage]
+      :: WithMachine UnitId
+      -> [ElaboratedPlanPackage]
     ultimateDeps pkgid =
       filter
-        (\pkg -> hasNoDependents pkg && installedUnitId pkg /= pkgid)
+        (\pkg -> hasNoDependents (Graph.nodeKey pkg) && Graph.nodeKey pkg /= pkgid)
         (InstallPlan.reverseDependencyClosure plan [pkgid])
 
-    hasNoDependents :: HasUnitId pkg => pkg -> Bool
-    hasNoDependents = null . InstallPlan.revDirectDeps plan . installedUnitId
+    hasNoDependents :: WithMachine UnitId -> Bool
+    hasNoDependents = null . InstallPlan.revDirectDeps plan
 
     renderFailureDetail :: Bool -> ElaboratedConfiguredPackage -> BuildFailureReason -> String
     renderFailureDetail mentionDepOf pkg reason =
@@ -1475,7 +1474,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
         pkgstr =
           elabConfiguredName verbosity pkg
             ++ if mentionDepOf
-              then renderDependencyOf (installedUnitId pkg)
+              then renderDependencyOf (Graph.nodeKey pkg)
               else ""
 
     renderFailureExtraDetail :: BuildFailureReason -> String
@@ -1486,7 +1485,7 @@ dieOnBuildFailures verbosity currentCommand plan buildOutcomes
     renderFailureExtraDetail _ =
       ""
 
-    renderDependencyOf :: UnitId -> String
+    renderDependencyOf :: WithMachine UnitId -> String
     renderDependencyOf pkgid =
       case ultimateDeps pkgid of
         [] -> ""

@@ -86,17 +86,17 @@ import Text.Regex.TDFA ((=~))
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (withAsync)
-import Control.Monad (foldM, forM_, liftM2, liftM4, unless, void, when)
+import Control.Monad (filterM, foldM, forM_, liftM2, liftM4, unless, void, when)
 import Control.Monad.Catch (bracket_)
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Reader (asks, runReaderT, withReaderT)
 import Control.Retry (exponentialBackoff, limitRetriesByCumulativeDelay)
-import qualified Crypto.Hash.SHA256 as SHA256
-import qualified Data.Aeson as JSON
-import qualified Data.ByteString.Base16 as Base16
-import qualified Data.ByteString.Char8 as C
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.Char as Char
+import Crypto.Hash.SHA256 qualified as SHA256
+import Data.Aeson qualified as JSON
+import Data.ByteString.Base16 qualified as Base16
+import Data.ByteString.Char8 qualified as C
+import Data.ByteString.Lazy qualified as BSL
+import Data.Char qualified as Char
 import Data.List (isPrefixOf, stripPrefix)
 import Data.Maybe (fromMaybe, isJust, mapMaybe)
 import Network.Wait (waitTcpVerbose)
@@ -104,11 +104,11 @@ import System.Directory
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.FilePath
-import qualified System.FilePath.Glob as Glob (compile, globDir1)
-import qualified System.FilePath.Posix as Posix
-import qualified System.FilePath.Windows as Windows
+import System.FilePath.Glob qualified as Glob (compile, globDir1)
+import System.FilePath.Posix qualified as Posix
+import System.FilePath.Windows qualified as Windows
 import System.IO
-import qualified System.OsRelease as OSR
+import System.OsRelease qualified as OSR
 import System.Process
 
 #ifndef mingw32_HOST_OS
@@ -1435,8 +1435,11 @@ withShorterPathForNewBuildStore test =
     "cabal-test-store"
     (`withStoreDir` test)
 
--- | Find where a package locates in the store dir. This works only if there is exactly one 1 ghc version
--- and exactly 1 directory for the given package in the store dir.
+-- | Find where a package locates in the store dir. The store is laid out as
+-- @\<root\>\/\<machine\>\/\<platform\>\/lib\/\<unit-id\>@ and a package a test
+-- depends on is a host-machine artifact, so this works only if there is exactly 1
+-- platform directory under the host machine and exactly 1 directory for the given
+-- package under its @lib@.
 findDependencyInStore
   :: String
   -- ^ package name prefix
@@ -1445,8 +1448,16 @@ findDependencyInStore
 findDependencyInStore pkgName = do
   storeDir <- testStoreDir <$> getTestEnv
   liftIO $ do
-    storeDirForGhcVersion : _ <- listDirectory storeDir
-    packageDirs <- listDirectory (storeDir </> storeDirForGhcVersion)
+    -- The store is laid out store/<machine>/<platform>/lib/<unit>, with one
+    -- lib/ holding a directory per unit. These libs are host-machine artifacts.
+    let hostStoreDir = storeDir </> "host"
+    platformDir : _ <- listDirectory hostStoreDir
+    let storeLibDir = hostStoreDir </> platformDir </> "lib"
+    -- Shared objects live in this directory too, beside the per-unit
+    -- directories, and a package name is a prefix of its own library's file
+    -- name ("lib" matches "libHSlib-...so"), so only directories can match.
+    packageDirs <-
+      filterM (doesDirectoryExist . (storeLibDir </>)) =<< listDirectory storeLibDir
     -- Ideally, we should call 'hashedInstalledPackageId' from 'Distribution.Client.PackageHash'.
     -- But 'PackageHashInputs', especially 'PackageHashConfigInputs', is too hard to construct.
     let pkgName' =
@@ -1457,7 +1468,7 @@ findDependencyInStore pkgName = do
     let libDir = case filter (pkgName' `isPrefixOf`) packageDirs of
           [] -> error $ "Could not find " <> pkgName' <> " when searching for " <> pkgName' <> " in\n" <> show packageDirs
           (dir : _) -> dir
-    pure (storeDir </> storeDirForGhcVersion </> libDir)
+    pure (storeLibDir </> libDir)
 
 -- | It can be easier to paste expected output verbatim into a text file,
 -- especially if it is a multiline string, rather than encoding it as a multiline

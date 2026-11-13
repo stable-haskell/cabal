@@ -25,14 +25,14 @@ init: ## Set up git hooks and ignored revisions.
 	@git config core.hooksPath .githooks
 	## TODO
 
-# NOTE: Keep this in sync with `.github/workflows/format.yml`.
+# NOTE: Keep this in sync with `.github/workflows/format.yml`, and sorted alphabetically.
 FORMAT_DIRS := \
 	Cabal \
 	Cabal-syntax \
+	Cabal-tests/exes \
 	cabal-install \
 	cabal-testsuite/src \
-	cabal-validate \
-	Cabal-tests/exes
+	cabal-validate
 
 FORMAT_DIRS_TODO := \
 	Cabal-QuickCheck \
@@ -184,11 +184,12 @@ check-tests :
 
 .PHONY: parser-tests
 parser-tests :
-	$(CABALRUN) parser-tests -- --cwd Cabal-tests ${TEST}
+	$(CABALRUN) Cabal-tests:parser-tests -- --cwd Cabal-tests ${TEST}
+	cd cabal-install && $(CABALRUN) cabal-install:parser-tests -- ${TEST}
 
 .PHONY: parser-tests-accept
 parser-tests-accept :
-	$(CABALRUN) parser-tests -- --cwd Cabal-tests --accept ${TEST}
+	$(CABALRUN) Cabal-tests:parser-tests -- --cwd Cabal-tests --accept ${TEST}
 
 .PHONY: custom-setup-tests
 custom-setup-tests :
@@ -294,7 +295,7 @@ bootstrap-subr-%: phony
 	cd bootstrap && $(CABALCONF) $(CABALRUN) -v0 cabal-bootstrap-gen -- linux-$*.plan.json \
 		| python3 -m json.tool > linux-$*.json
 
-BOOTSTRAP_GHC_VERSIONS := 9.6.7 9.8.4 9.10.3 9.12.4
+BOOTSTRAP_GHC_VERSIONS := 9.6.7 9.8.4 9.10.3 9.12.4 9.14.1
 
 .PHONY: bootstrap-jsons
 bootstrap-jsons: ## Generate bootstrap JSONs for Linux (autodetects method).

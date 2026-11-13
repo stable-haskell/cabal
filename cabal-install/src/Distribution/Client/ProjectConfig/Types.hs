@@ -55,6 +55,7 @@ import Distribution.Client.CmdInstall.ClientInstallFlags
   )
 
 import Distribution.Solver.Types.ConstraintSource
+import Distribution.Solver.Types.Machine (Machine)
 import Distribution.Solver.Types.Settings
 
 import Distribution.Package
@@ -97,6 +98,7 @@ import Distribution.Version
   )
 
 import qualified Data.Map as Map
+import Data.Text (Text)
 import Distribution.Solver.Types.ProjectConfigPath (ProjectConfigPath)
 import Distribution.Types.ParStrat
 import Distribution.Verbosity (VerbosityFlags)
@@ -127,11 +129,11 @@ newtype ProjectConfigToParse = ProjectConfigToParse BS.ByteString
 -- features then the gap between configuration as written in the config file
 -- and resolved settings we actually use will become even bigger.
 data ProjectConfig = ProjectConfig
-  { projectPackages :: [String]
+  { projectPackages :: [Text]
   -- ^ Packages in this project, including local dirs, local .cabal files
   -- local and remote tarballs. When these are file globs, they must
   -- match at least one package.
-  , projectPackagesOptional :: [String]
+  , projectPackagesOptional :: [Text]
   -- ^ Like 'projectConfigPackageGlobs' but /optional/ in the sense that
   -- file globs are allowed to match nothing. The primary use case for
   -- this is to be able to say @optional-packages: */@ to automagically
@@ -153,6 +155,12 @@ data ProjectConfig = ProjectConfig
   -- ^ Configuration to be applied to *local* packages; i.e.,
   -- any packages which are explicitly named in `cabal.project`.
   , projectConfigSpecificPackage :: MapMappend PackageName PackageConfig
+  , projectConfigMachinePackages :: MapMappend Machine PackageConfig
+  -- ^ Configuration to be applied to every package built for a given
+  -- machine: @package build:*@ or @package host:*@. Under cross-compilation
+  -- the same package can be built for both machines, which plain @package *@
+  -- cannot tell apart. It sits between the local-package and the named
+  -- layer: @package *@ < local packages < @package <machine>:*@ < @package name@.
   }
   deriving (Eq, Show, Generic)
   deriving (Semigroup, Monoid) via Generically ProjectConfig
@@ -177,7 +185,7 @@ data ProjectConfigBuildOnly = ProjectConfigBuildOnly
   , projectConfigKeepGoing :: Flag Bool
   , projectConfigOfflineMode :: Flag Bool
   , projectConfigKeepTempFiles :: Flag Bool
-  , projectConfigHttpTransport :: Flag String
+  , projectConfigHttpTransport :: Flag Text
   , projectConfigIgnoreExpiry :: Flag Bool
   , projectConfigCacheDir :: Flag FilePath
   , projectConfigLogsDir :: Flag FilePath
@@ -199,6 +207,12 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigHcFlavor :: Flag CompilerFlavor
   , projectConfigHcPath :: Flag FilePath
   , projectConfigHcPkg :: Flag FilePath
+  , projectConfigBuildHcFlavor :: Flag CompilerFlavor
+  -- ^ Compiler flavour for the build machine (cross-compilation).
+  , projectConfigBuildHcPath :: Flag FilePath
+  -- ^ Path to the compiler for the build machine (cross-compilation).
+  , projectConfigBuildHcPkg :: Flag FilePath
+  -- ^ Path to the package tool for the build machine (cross-compilation).
   , projectConfigHaddockIndex :: Flag PathTemplate
   , -- Only makes sense for manual mode, not --local mode
     -- too much control!
@@ -235,6 +249,18 @@ data ProjectConfigShared = ProjectConfigShared
   , projectConfigPreferVersion :: Flag PreferVersion
   , projectConfigProgPathExtra :: NubList FilePath
   , projectConfigMultiRepl :: Flag Bool
+  , projectConfigInplaceBuilds :: Flag Bool
+  -- ^ Build the project's own packages in place (the default), or install
+  -- every one of them into the store like any other dependency.
+  --
+  -- A build system driving @cabal@ over a source tree may need the whole
+  -- result in a single relocatable store directory -- one library directory
+  -- and one package database it can copy wholesale -- rather than split
+  -- between the store and each package's in-place build directory. GHC's
+  -- @Makefile@ assembles its binary distribution that way.
+  --
+  -- Turning this off costs what in-place builds buy: each edit reinstalls the
+  -- package into the store under a fresh hash instead of rebuilding in situ.
   -- More things that only make sense for manual mode, not --local mode
   -- too much control!
   -- projectConfigShadowPkgs        :: Flag Bool,
@@ -280,6 +306,13 @@ data ProjectConfigProvenance
 data PackageConfig = PackageConfig
   { packageConfigProgramPaths :: MapLast String FilePath
   , packageConfigProgramArgs :: MapMappend String [String]
+  , packageConfigBuildProgramPaths :: MapLast String FilePath
+  -- ^ Like 'packageConfigProgramPaths', for packages built for the build
+  -- machine of a cross-compiling plan. 'packageConfigProgramPaths' then applies
+  -- to the host machine only; neither machine inherits the other's.
+  , packageConfigBuildProgramArgs :: MapMappend String [String]
+  -- ^ Like 'packageConfigProgramArgs', for the build machine. See
+  -- 'packageConfigBuildProgramPaths'.
   , packageConfigProgramPathExtra :: NubList FilePath
   , packageConfigFlagAssignment :: FlagAssignment
   , packageConfigVanillaLib :: Flag Bool
@@ -294,7 +327,7 @@ data PackageConfig = PackageConfig
   , packageConfigProfExe :: Flag Bool --      and consistency
   , packageConfigProfDetail :: Flag ProfDetailLevel
   , packageConfigProfLibDetail :: Flag ProfDetailLevel
-  , packageConfigConfigureArgs :: [String]
+  , packageConfigConfigureArgs :: [Text]
   , packageConfigOptimization :: Flag OptimisationLevel
   , packageConfigProgPrefix :: Flag PathTemplate
   , packageConfigProgSuffix :: Flag PathTemplate
@@ -318,7 +351,7 @@ data PackageConfig = PackageConfig
   -- Haddock options
   , packageConfigHaddockHoogle :: Flag Bool -- TODO: [required eventually] use this
   , packageConfigHaddockHtml :: Flag Bool -- TODO: [required eventually] use this
-  , packageConfigHaddockHtmlLocation :: Flag String -- TODO: [required eventually] use this
+  , packageConfigHaddockHtmlLocation :: Flag Text -- TODO: [required eventually] use this
   , packageConfigHaddockForeignLibs :: Flag Bool -- TODO: [required eventually] use this
   , packageConfigHaddockExecutables :: Flag Bool -- TODO: [required eventually] use this
   , packageConfigHaddockTestSuites :: Flag Bool -- TODO: [required eventually] use this
@@ -330,8 +363,8 @@ data PackageConfig = PackageConfig
   , packageConfigHaddockHscolourCss :: Flag FilePath -- TODO: [required eventually] use this
   , packageConfigHaddockContents :: Flag PathTemplate -- TODO: [required eventually] use this
   , packageConfigHaddockIndex :: Flag PathTemplate -- TODO: [required eventually] use this
-  , packageConfigHaddockBaseUrl :: Flag String -- TODO: [required eventually] use this
-  , packageConfigHaddockResourcesDir :: Flag String -- TODO: [required eventually] use this
+  , packageConfigHaddockBaseUrl :: Flag Text -- TODO: [required eventually] use this
+  , packageConfigHaddockResourcesDir :: Flag Text -- TODO: [required eventually] use this
   , packageConfigHaddockOutputDir :: Flag FilePath -- TODO: [required eventually] use this
   , packageConfigHaddockUseUnicode :: Flag Bool -- TODO: [required eventually] use this
   , packageConfigHaddockForHackage :: Flag HaddockTarget
@@ -492,7 +525,7 @@ data BuildTimeSettings = BuildTimeSettings
   , buildSettingRemoteRepos :: [RemoteRepo]
   , buildSettingLocalNoIndexRepos :: [LocalRepo]
   , buildSettingCacheDir :: FilePath
-  , buildSettingHttpTransport :: Maybe String
+  , buildSettingHttpTransport :: Maybe Text
   , buildSettingIgnoreExpiry :: Bool
   , buildSettingProgPathExtra :: [FilePath]
   , buildSettingHaddockOpen :: Bool

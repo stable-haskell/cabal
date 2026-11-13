@@ -78,6 +78,7 @@ library
     Distribution.Solver.Types.ConstraintSource
     Distribution.Solver.Types.DependencyResolver
     Distribution.Solver.Types.Flag
+    Distribution.Solver.Types.GoalScope
     Distribution.Solver.Types.InstalledPreference
     Distribution.Solver.Types.InstSolverPackage
     Distribution.Solver.Types.LabeledPackageConstraint
@@ -85,7 +86,6 @@ library
     Distribution.Solver.Types.PackageConstraint
     Distribution.Solver.Types.PackageFixedDeps
     Distribution.Solver.Types.PackageIndex
-    Distribution.Solver.Types.PackagePath
     Distribution.Solver.Types.PackagePreferences
     Distribution.Solver.Types.PkgConfigDb
     Distribution.Solver.Types.Progress
@@ -95,19 +95,20 @@ library
     Distribution.Solver.Types.SolverId
     Distribution.Solver.Types.SolverPackage
     Distribution.Solver.Types.SourcePackage
+    Distribution.Solver.Types.Machine
     Distribution.Solver.Types.SummarizedMessage
     Distribution.Solver.Types.Variable
 
   build-depends:
     , array         >=0.4      && <0.6
-    , base          >=4.17     && <4.24
+    , base          >=4.18     && <4.24
     , bytestring    >=0.10.6.0 && <0.13
     , Cabal         ^>=3.19
     , Cabal-syntax  ^>=3.19
     , containers    >=0.5.6.2  && <0.9
     , edit-distance ^>= 0.2.2
-    , directory     >= 1.3.7.0  && < 1.4
-    , filepath      >= 1.3.0.1  && < 1.6
+    , directory     >= 1.3.8.5  && < 1.4
+    , filepath      >= 1.4.301  && < 1.6
     , mtl           >=2.0      && <2.4
     , network-uri   >= 2.6.0.2 && < 2.7
     , pretty        ^>=1.1
@@ -133,7 +134,7 @@ Test-Suite unit-tests
      UnitTests.Distribution.Solver.Modular.MessageUtils
 
    build-depends:
-     , base        >= 4.17  && <4.24
+     , base        >= 4.18  && <4.24
      , Cabal-syntax
      , cabal-install-solver
      , tasty       >= 1.2.3 && <1.6

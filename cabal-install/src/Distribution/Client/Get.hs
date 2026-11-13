@@ -68,10 +68,12 @@ import Distribution.Client.VCS
 import Distribution.PackageDescription.PrettyPrint
   ( writeGenericPackageDescription
   )
+import Distribution.Solver.Types.Machine (always)
 import Distribution.Solver.Types.SourcePackage
 
 import Control.Monad (mapM_)
 import qualified Data.Map as Map
+import qualified Data.Text as Text
 import Distribution.Client.Errors
 import Distribution.Utils.NubList
   ( fromNubList
@@ -143,7 +145,7 @@ get verbosity repoCtxt globalFlags getFlags userTargets = do
     resolverParams :: SourcePackageDb -> [PackageSpecifier UnresolvedSourcePackage] -> DepResolverParams
     resolverParams sourcePkgDb pkgSpecifiers =
       -- TODO: add command-line constraint and preference args for unpack
-      standardInstallPolicy mempty sourcePkgDb pkgSpecifiers
+      standardInstallPolicy (always mempty) sourcePkgDb pkgSpecifiers
 
     onlyPkgDescr = fromFlagOrDefault False (getOnlyPkgDescr getFlags)
 
@@ -319,7 +321,7 @@ instance Exception ClonePackageException where
       "Failed to fetch the source repository for package "
         ++ prettyShow pkgid
         ++ ", repository location "
-        ++ srpLocation repo
+        ++ Text.unpack (srpLocation repo)
         ++ " ("
         ++ vcsprogname
         ++ " failed with "

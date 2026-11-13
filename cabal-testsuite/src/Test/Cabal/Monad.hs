@@ -54,6 +54,7 @@ module Test.Cabal.Monad
 
     -- * Skipping tests
   , skip
+  , withBuildCompiler
   , skipIO
   , skipIf
   , skipIfIO
@@ -89,6 +90,7 @@ import Distribution.Simple.Compiler
   , PackageDBStackCWD
   , PackageDBX (..)
   , compilerFlavor
+  , compilerProperties
   , compilerVersion
   , showCompilerIdWithAbi
   )
@@ -97,7 +99,7 @@ import Distribution.Simple.Configure
   )
 import Distribution.Simple.Program
 import Distribution.Simple.Program.Db
-import qualified Distribution.Simple.Utils as U (cabalVersion)
+import Distribution.Simple.Utils qualified as U (cabalVersion)
 import Distribution.System
 import Distribution.Text
 
@@ -107,12 +109,13 @@ import Test.Utils.TempTestDir (removeDirectoryRecursiveHack, withTestDir')
 
 import Control.Applicative
 import Control.Concurrent.Async
-import qualified Control.Exception as E
+import Control.Exception qualified as E
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
-import qualified Data.ByteString.Char8 as C
+import Data.ByteString.Char8 qualified as C
 import Data.List
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Monoid (mempty)
 import Distribution.Simple.Utils hiding (info)
@@ -129,6 +132,7 @@ import Test.Cabal.Run
 data CommonArgs = CommonArgs
   { argCabalInstallPath :: Maybe FilePath
   , argGhcPath :: Maybe FilePath
+  , argBuildCompilerPath :: Maybe FilePath
   , argHackageRepoToolPath :: Maybe FilePath
   , argHaddockPath :: Maybe FilePath
   , argKeepTmpFiles :: Bool
@@ -138,7 +142,8 @@ data CommonArgs = CommonArgs
 
 commonArgParser :: Parser CommonArgs
 commonArgParser = do
-  argCabalInstallPath <- optional
+  argCabalInstallPath <-
+    optional
       ( option
           str
           ( help "Path to cabal-install executable to test. If omitted, tests involving cabal-install are skipped!"
@@ -146,7 +151,8 @@ commonArgParser = do
               <> metavar "PATH"
           )
       )
-  argGhcPath <- optional
+  argGhcPath <-
+    optional
       ( option
           str
           ( help "GHC to ask Cabal to use via --with-ghc flag"
@@ -155,7 +161,17 @@ commonArgParser = do
               <> metavar "PATH"
           )
       )
-  argHackageRepoToolPath <- optional
+  argBuildCompilerPath <-
+    optional
+      ( option
+          str
+          ( help "Path to the build compiler (cross-compile build machine). If omitted, tests requiring a separate build compiler are skipped."
+              <> long "with-build-compiler"
+              <> metavar "PATH"
+          )
+      )
+  argHackageRepoToolPath <-
+    optional
       ( option
           str
           ( help "Path to hackage-repo-tool to use for repository manipulation"
@@ -163,7 +179,8 @@ commonArgParser = do
               <> metavar "PATH"
           )
       )
-  argHaddockPath <- optional
+  argHaddockPath <-
+    optional
       ( option
           str
           ( help "Path to haddock to use for --with-haddock flag"
@@ -171,11 +188,13 @@ commonArgParser = do
               <> metavar "PATH"
           )
       )
-  argKeepTmpFiles <- switch
+  argKeepTmpFiles <-
+    switch
       ( long "keep-tmp-files"
           <> help "Keep temporary files"
       )
-  argAccept <- switch
+  argAccept <-
+    switch
       ( long "accept"
           <> help "Accept output"
       )
@@ -186,6 +205,7 @@ renderCommonArgs :: CommonArgs -> [String]
 renderCommonArgs args =
   maybe [] (\x -> ["--with-cabal", x]) (argCabalInstallPath args)
     ++ maybe [] (\x -> ["--with-ghc", x]) (argGhcPath args)
+    ++ maybe [] (\x -> ["--with-build-compiler", x]) (argBuildCompilerPath args)
     ++ maybe [] (\x -> ["--with-haddock", x]) (argHaddockPath args)
     ++ maybe [] (\x -> ["--with-hackage-repo-tool", x]) (argHackageRepoToolPath args)
     ++ ["--accept" | argAccept args]
@@ -201,13 +221,15 @@ data TestArgs = TestArgs
 
 testArgParser :: Parser TestArgs
 testArgParser = do
-  testArgDistDir <- option
+  testArgDistDir <-
+    option
       str
       ( help "Build directory of cabal-testsuite"
           <> long "builddir"
           <> metavar "DIR"
       )
-  testArgPackageDb <- many
+  testArgPackageDb <-
+    many
       ( option
           str
           ( help "Package DB which contains Cabal and Cabal-syntax"
@@ -228,6 +250,15 @@ skipIO reason = do
 
 skip :: String -> TestM ()
 skip = liftIO . skipIO
+
+-- | Run a test only when @--with-build-compiler@ was supplied, passing the
+-- build-compiler path to the action. Skips the test otherwise.
+withBuildCompiler :: (FilePath -> TestM ()) -> TestM ()
+withBuildCompiler f = do
+  env <- getTestEnv
+  case testBuildCompilerPath env of
+    Nothing -> skip "no build compiler (pass --with-build-compiler)"
+    Just p -> f p
 
 skipIfIO :: String -> Bool -> IO ()
 skipIfIO reason b = when b (skipIO reason)
@@ -446,6 +477,7 @@ runTestM mode m =
                 , testSetupPath = dist_dir </> "build" </> "setup" </> "setup"
                 , testPackageDbPath = case testArgPackageDb args of [] -> Nothing; xs -> Just xs
                 , testSkipSetupTests = argSkipSetupTests (testCommonArgs args)
+                , testBuildCompilerPath = argBuildCompilerPath (testCommonArgs args)
                 , testHaveCabalShared = runnerWithSharedLib senv
                 , testEnvironment =
                     -- Use UTF-8 output on all platforms.
@@ -764,6 +796,8 @@ mkNormalizerEnv = do
           mapMaybe simpleParse (words list_out)
       , normalizerPlatform =
           testPlatform env
+      , normalizerTargetPlatform =
+          Map.lookup "Target platform" (compilerProperties (testCompiler env))
       , normalizerCabalVersion =
           cabalVersionLibrary
       , normalizerCabalInstallVersion =
@@ -860,6 +894,8 @@ data TestEnv = TestEnv
   -- use when compiling custom setups, plus the store with possible dependencies of those setup packages.
   , testSkipSetupTests :: Bool
   -- ^ Skip Setup tests?
+  , testBuildCompilerPath :: Maybe FilePath
+  -- ^ Path to the build compiler for cross-compile tests; 'Nothing' means skip such tests.
   , testHaveCabalShared :: Bool
   -- ^ Do we have shared libraries for the Cabal-under-tests?
   -- This is used for example to determine whether we can build

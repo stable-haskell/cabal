@@ -86,8 +86,10 @@ import Distribution.Client.ProjectFlags (ProjectFlags (..))
 import Distribution.Client.ProjectPlanning
   ( storePackageInstallDirs'
   )
+import Distribution.Client.ProjectPlanning.Machine (WithMachine (..))
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedInstallPlan
+  , pkgConfigToolchain
   )
 import Distribution.Client.RebuildMonad
   ( runRebuild
@@ -97,6 +99,7 @@ import Distribution.Client.Setup
   , GlobalFlags (..)
   , InstallFlags (..)
   )
+import Distribution.Client.Toolchain (Machine (..), Toolchain (..))
 import Distribution.Client.Types
   ( PackageLocation (..)
   , PackageSpecifier (..)
@@ -265,7 +268,6 @@ data InstallCfg = InstallCfg
   , baseCtx :: ProjectBaseContext
   , buildCtx :: ProjectBuildContext
   , platform :: Platform
-  , compiler :: Compiler
   , installConfigFlags :: ConfigFlags
   , installClientFlags :: ClientInstallFlags
   }
@@ -302,6 +304,9 @@ installCommand =
             ++ "If you want the installed executables to be available globally, "
             ++ "make sure that the PATH environment variable contains that directory. "
             ++ "\n\n"
+            ++ "A TARGET need not belong to a project. It may name a package on "
+            ++ "Hackage. Several targets, local or remote, may be given at once."
+            ++ "\n\n"
             ++ "If TARGET is a library and --lib (provisional) is used, "
             ++ "it will be added to the global environment. "
             ++ "When doing this, cabal will try to build a plan that includes all "
@@ -314,13 +319,16 @@ installCommand =
           ++ "    Install the package in the current directory\n"
           ++ "  "
           ++ pname
-          ++ " v2-install pkgname\n"
-          ++ "    Install the package named pkgname"
-          ++ " (fetching it from hackage if necessary)\n"
-          ++ "  "
-          ++ pname
           ++ " v2-install ./pkgfoo\n"
           ++ "    Install the package in the ./pkgfoo directory\n"
+          ++ "  "
+          ++ pname
+          ++ " v2-install pkgname\n"
+          ++ "    Install the package named pkgname\n"
+          ++ "  "
+          ++ pname
+          ++ " v2-install hlint-3.8 fourmolu\n"
+          ++ "    Install several packages at once, one versioned and one not\n"
     , commandOptions = \x -> filter notInstallDirOpt $ nixStyleOptions clientInstallOptions x
     , commandDefaultFlags = defaultNixStyleFlags defaultClientInstallFlags
     }
@@ -442,10 +450,17 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
   let
     GhcImplInfo{supportsPkgEnvFiles} = getImplInfo compiler
 
+  let hostToolchain =
+        Toolchain
+          { toolchainCompiler = compiler
+          , toolchainPlatform = platform
+          , toolchainProgramDb = progDb
+          }
+
   (usedPackageEnvFlag, envFile) <- getEnvFile clientInstallFlags platform compilerVersion
   (usedExistingPkgEnvFile, existingEnvEntries) <-
     getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile
-  packageDbs <- getPackageDbStack compiler projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
+  packageDbs <- getPackageDbStack hostToolchain projectConfigStoreDir projectConfigLogsDir projectConfigPackageDBs
   installedIndex <- getInstalledPackages verbosity compiler packageDbs progDb
 
   let
@@ -507,7 +522,7 @@ installAction flags@NixStyleFlags{extraFlags, configFlags, installFlags, project
     buildCtx <- constructProjectBuildContext verbosity (baseCtx{installedPackages = Just installedIndex'}) targetSelectors
 
     printPlan verbosity baseCtx buildCtx
-    let installCfg = InstallCfg verbosity baseCtx buildCtx platform compiler configFlags clientInstallFlags
+    let installCfg = InstallCfg verbosity baseCtx buildCtx platform configFlags clientInstallFlags
 
     let
       dryRun =
@@ -778,7 +793,8 @@ getSpecsAndTargetSelectors verbosity reducedVerbosity sourcePkgDb targetSelector
       gatherTargets :: UnitId -> TargetSelector
       gatherTargets targetId = TargetPackageNamed pkgName targetFilter
         where
-          targetUnit = Map.findWithDefault (error "cannot find target unit") targetId planMap
+          -- The target is the host-machine node (see 'availableTargets').
+          targetUnit = Map.findWithDefault (error "cannot find target unit") (WithMachine Host targetId) planMap
           PackageIdentifier{..} = packageId targetUnit
 
       localTargets = map gatherTargets (Map.keys targetsMap)
@@ -908,7 +924,7 @@ constructProjectBuildContext verbosity baseCtx targetSelectors = do
 -- actually perform its installation.
 prepareExeInstall :: InstallCfg -> IO InstallExe
 prepareExeInstall
-  InstallCfg{verbosity, baseCtx, buildCtx, platform, compiler, installConfigFlags, installClientFlags} = do
+  InstallCfg{verbosity, baseCtx, buildCtx, platform, installConfigFlags, installClientFlags} = do
     installPath <- defaultInstallPath
     let storeDirLayout = cabalStoreDirLayout $ cabalDirLayout baseCtx
 
@@ -918,7 +934,11 @@ prepareExeInstall
         mkUnitBinDir :: UnitId -> FilePath
         mkUnitBinDir =
           InstallDirs.bindir
-            . storePackageInstallDirs' storeDirLayout compiler
+            -- Installable exes are host-machine artifacts.
+            . storePackageInstallDirs'
+              storeDirLayout
+              Host
+              (pkgConfigToolchain (elaboratedShared buildCtx))
 
         mkExeName :: UnqualComponentName -> FilePath
         mkExeName exe = unUnqualComponentName exe <.> exeExtension platform
@@ -1288,7 +1308,7 @@ getExistingEnvEntries :: Verbosity -> CompilerFlavor -> Bool -> FilePath -> IO (
 getExistingEnvEntries verbosity compilerFlavor supportsPkgEnvFiles envFile = do
   envFileExists <- doesFileExist envFile
   (usedExisting, allEntries) <-
-    if (compilerFlavor == GHC || compilerFlavor == GHCJS)
+    if compilerFlavor == GHC
       && supportsPkgEnvFiles
       && envFileExists
       then catch ((True,) <$> readGhcEnvironmentFile envFile) $ \(ParseErrorExc parseError) ->
@@ -1326,17 +1346,18 @@ getLocalEnv dir platform compilerVersion =
     <> ghcPlatformAndVersionString platform compilerVersion
 
 getPackageDbStack
-  :: Compiler
+  :: Toolchain
   -> Flag FilePath
   -> Flag FilePath
   -> [Maybe PackageDBCWD]
   -> IO PackageDBStackCWD
-getPackageDbStack compiler storeDirFlag logsDirFlag packageDbs = do
+getPackageDbStack toolchain storeDirFlag logsDirFlag packageDbs = do
   mstoreDir <- traverse makeAbsolute $ flagToMaybe storeDirFlag
   let
     mlogsDir = flagToMaybe logsDirFlag
   cabalLayout <- mkCabalDirLayout mstoreDir mlogsDir
-  pure $ storePackageDBStack (cabalStoreDirLayout cabalLayout) compiler packageDbs
+  -- Installing puts artifacts on the host, so this is the host machine's store.
+  pure $ storePackageDBStack (cabalStoreDirLayout cabalLayout) Host toolchain packageDbs
 
 -- | This defines what a 'TargetSelector' means for the @bench@ command.
 -- It selects the 'AvailableTarget's that the 'TargetSelector' refers to,
