@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -49,9 +50,13 @@ module Distribution.Client.IndexUtils
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+#ifdef __MHS__
+import qualified Distribution.Client.Compat.Tar as Tar
+#else
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
 import qualified Codec.Archive.Tar.Index as Tar
+#endif
 import Distribution.Client.IndexUtils.ActiveRepos
 import Distribution.Client.IndexUtils.IndexState
 import Distribution.Client.IndexUtils.Timestamp
@@ -116,14 +121,18 @@ import Distribution.Solver.Types.PackageIndex (PackageIndex)
 import qualified Distribution.Solver.Types.PackageIndex as PackageIndex
 import Distribution.Solver.Types.SourcePackage
 
+#ifndef __MHS__
 import qualified Codec.Compression.GZip as GZip
+#endif
 import Control.Exception
 import qualified Data.ByteString.Char8 as BSS
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BS
+#ifndef __MHS__
 import Data.Either
   ( rights
   )
+#endif
 import Data.List (stripPrefix)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -132,10 +141,15 @@ import Distribution.Client.Utils
   ( byteStringToFilePath
   , tryReadAddSourcePackageDesc
   )
+import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS, readFileLBS)
 import Distribution.Compat.Time (getFileAge, getModTime)
 import Distribution.Utils.Generic (fstOf3)
 import Distribution.Utils.Structured (Structured (..), nominalStructure, structuredDecodeFileOrFail, structuredEncodeFile)
+#ifdef __MHS__
+import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist, listDirectory)
+#else
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
+#endif
 import System.FilePath
   ( normalise
   , splitDirectories
@@ -151,8 +165,10 @@ import System.IO.Error (isDoesNotExistError)
 import System.IO.Unsafe (unsafeInterleaveIO)
 
 import Distribution.Client.Errors
+#ifndef __MHS__
 import qualified Hackage.Security.Client as Sec
 import qualified Hackage.Security.Util.Some as Sec
+#endif
 
 -- | Reduced-verbosity version of 'Configure.getInstalledPackages'
 getInstalledPackages
@@ -775,6 +791,7 @@ lazySequence = unsafeInterleaveIO . go
       xs' <- lazySequence xs
       return (x' : xs')
 
+#ifndef __MHS__
 -- | A lazy unfolder for lookup operations which return the current
 -- value and (possibly) the next key
 lazyUnfold :: (k -> IO (v, Maybe k)) -> k -> IO [(k, v)]
@@ -787,6 +804,7 @@ lazyUnfold step = goLazy . Just
       (v, mk') <- step k
       vs' <- goLazy mk'
       return ((k, v) : vs')
+#endif
 
 -- | Which index do we mean?
 data Index
@@ -858,7 +876,13 @@ withIndexEntries
   -> ([IndexCacheEntry] -> IO a)
   -> ([NoIndexCacheEntry] -> IO a)
   -> IO a
+{- FOURMOLU_DISABLE -}
 withIndexEntries _ (RepoIndex repoCtxt repo@RepoSecure{}) callback _ =
+#ifdef __MHS__
+  -- Secure repositories are not supported in this build.
+  repoContextWithSecureRepo repoCtxt repo $ \_ ->
+    error "unreachable: secure repositories are not supported"
+#else
   repoContextWithSecureRepo repoCtxt repo $ \repoSecure ->
     Sec.withIndex repoSecure $ \Sec.IndexCallbacks{..} -> do
       -- Incrementally (lazily) read all the entries in the tar file in order,
@@ -891,6 +915,7 @@ withIndexEntries _ (RepoIndex repoCtxt repo@RepoSecure{}) callback _ =
         timestamp =
           epochTimeToTimestamp $
             Sec.indexEntryTime sie
+#endif
 withIndexEntries verbosity (RepoIndex _repoCtxt (RepoLocalNoIndex (LocalRepo name localDir _) _cacheDir)) _ callback = do
   dirContents <- listDirectory localDir
   let contentSet = Set.fromList dirContents
@@ -899,7 +924,7 @@ withIndexEntries verbosity (RepoIndex _repoCtxt (RepoLocalNoIndex (LocalRepo nam
     case isTarGz file of
       Nothing
         | isPreferredVersions file -> do
-            contents <- BS.readFile (localDir </> file)
+            contents <- readFileLBS (localDir </> file)
             let versionPreferencesParsed = parsePreferredVersionsWarnings contents
             let (warnings, versionPreferences) = partitionEithers versionPreferencesParsed
             unless (null warnings) $ do
@@ -924,8 +949,12 @@ withIndexEntries verbosity (RepoIndex _repoCtxt (RepoLocalNoIndex (LocalRepo nam
       Just pkgId -> do
         let tarFile = localDir </> file
         -- check for the right named .cabal file in the compressed tarball
-        tarGz <- BS.readFile tarFile
+        tarGz <- readFileLBS tarFile
+#ifdef __MHS__
+        let tar = maybeDecompress tarGz
+#else
         let tar = GZip.decompress tarGz
+#endif
             entries = Tar.read tar
             expectFilename = prettyShow pkgId FilePath.</> prettyShow (packageName pkgId) ++ ".cabal"
 
@@ -1017,10 +1046,11 @@ withIndexEntries verbosity (RepoIndex _repoCtxt (RepoLocalNoIndex (LocalRepo nam
                   Right genericPackageDescription ->
                     pure $ Just $ CacheGPD genericPackageDescription bytes
               _ -> pure Nothing
+{- FOURMOLU_ENABLE -}
 withIndexEntries verbosity index callback _ = do
   -- non-secure repositories
-  withFile (indexFile index) ReadMode $ \h -> do
-    bs <- maybeDecompress `fmap` BS.hGetContents h
+  withBinaryFile (indexFile index) ReadMode $ \h -> do
+    bs <- maybeDecompress `fmap` hGetContentsLBS h
     pkgsOrPrefs <- lazySequence $ parsePackageIndex verbosity bs
     callback $ map toCache (catMaybes pkgsOrPrefs)
   where
@@ -1466,7 +1496,7 @@ read00IndexCacheEntry = \line ->
       | otherwise = Nothing
 
     parseVer str vs =
-      case BSS.readInt str of
+      case bssReadInt str of
         Nothing -> Nothing
         Just (v, str') -> case BSS.uncons str' of
           Just ('.', str'') -> parseVer str'' (v : vs)
@@ -1474,7 +1504,7 @@ read00IndexCacheEntry = \line ->
           Nothing -> Just (mkVersion (reverse (v : vs)))
 
     parseBlockNo str =
-      case BSS.readInt str of
+      case bssReadInt str of
         Just (blockno, remainder)
           | BSS.null remainder -> Just (fromIntegral blockno)
         _ -> Nothing
@@ -1485,6 +1515,24 @@ read00IndexCacheEntry = \line ->
           | BSS.null remainder && Tar.isBuildTreeRefTypeCode typeCode ->
               Just (refTypeFromTypeCode typeCode)
         _ -> Nothing
+
+#ifdef __MHS__
+bssReadInt :: BSS.ByteString -> Maybe (Int, BSS.ByteString)
+bssReadInt bs =
+  case BSS.uncons bs of
+    Just ('-', bs') -> first negate <$> readUint bs'
+    Just ('+', bs') -> readUint bs'
+    _ -> readUint bs
+  where
+    readUint s =
+      let (digits, rest) = BSS.span isDigit s
+       in if BSS.null digits
+            then Nothing
+            else Just (foldl' (\acc c -> acc * 10 + (ord c - ord '0')) 0 (BSS.unpack digits), rest)
+#else
+bssReadInt :: BSS.ByteString -> Maybe (Int, BSS.ByteString)
+bssReadInt = BSS.readInt
+#endif
 
 -- legacy 00-index.cache format
 show00IndexCache :: Cache -> String

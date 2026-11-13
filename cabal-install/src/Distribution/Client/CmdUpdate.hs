@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 
 -- | cabal-install CLI command: update
@@ -71,17 +72,23 @@ import Distribution.Verbosity
   , modifyVerbosityFlags
   , normal
   )
+#ifdef __MHS__
+import Distribution.Compat.Directory
+  ( setModificationTime
+  )
+#else
 import System.Directory
   ( setModificationTime
   )
+#endif
 
 import qualified Data.Maybe as Unsafe (fromJust)
 import qualified Distribution.Compat.CharParsing as P
 import qualified Text.PrettyPrint as Disp
 
-import qualified Data.ByteString.Lazy as BS
 import Data.Time (getCurrentTime)
 import Distribution.Client.GZipUtils (maybeDecompress)
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Simple.Command
   ( CommandUI (..)
   , usageAlternatives
@@ -90,7 +97,9 @@ import System.FilePath (dropExtension, (<.>))
 
 import Distribution.Client.Errors
 import Distribution.Client.IndexUtils.Timestamp (Timestamp (NoTimestamp))
+#ifndef __MHS__
 import qualified Hackage.Security.Client as Sec
+#endif
 
 updateCommand :: CommandUI (NixStyleFlags ())
 updateCommand =
@@ -236,9 +245,16 @@ updateRepo verbosity repoCtxt (repo, indexState) = do
             =<< getCurrentTime
         FileDownloaded indexPath -> do
           writeFileAtomic (dropExtension indexPath) . maybeDecompress
-            =<< BS.readFile indexPath
+            =<< readFileLBS indexPath
           updateRepoIndexCache verbosity (RepoIndex repoCtxt repo)
-    RepoSecure{} -> repoContextWithSecureRepo repoCtxt repo $ \repoSecure -> do
+{- FOURMOLU_DISABLE -}
+    RepoSecure{} ->
+#ifdef __MHS__
+      -- Secure repositories are not supported in this build.
+      repoContextWithSecureRepo repoCtxt repo $ \_ ->
+        error "unreachable: secure repositories are not supported"
+#else
+      repoContextWithSecureRepo repoCtxt repo $ \repoSecure -> do
       let index = RepoIndex repoCtxt repo
       -- NB: This may be a NoTimestamp if we've never updated before
       current_ts <- currentIndexTimestamp (modifyVerbosityFlags lessVerbose verbosity) index
@@ -290,3 +306,5 @@ updateRepo verbosity repoCtxt (repo, indexState) = do
             ++ "    cabal v2-update '"
             ++ prettyShow (UpdateRequest rname (IndexStateTime current_ts))
             ++ "'\n"
+#endif
+{- FOURMOLU_ENABLE -}

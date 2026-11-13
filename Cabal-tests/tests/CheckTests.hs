@@ -12,7 +12,7 @@ import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec
 import Distribution.Parsec.Source
 import Distribution.Utils.Generic             (fromUTF8BS, toUTF8BS)
-import System.Directory                       (setCurrentDirectory)
+import Distribution.Compat.Directory                       (setCurrentDirectory)
 import System.Environment                     (getArgs, withArgs)
 import System.FilePath                        (replaceExtension, (</>))
 

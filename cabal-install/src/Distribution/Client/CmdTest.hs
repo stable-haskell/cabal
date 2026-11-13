@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -67,9 +68,18 @@ import Distribution.Verbosity
 import qualified System.Exit (exitSuccess)
 
 import Distribution.Client.Errors
+#ifdef __MHS__
+import System.Environment (getArgs)
+#else
 import GHC.Environment
   ( getFullArgs
   )
+#endif
+
+#ifdef __MHS__
+getFullArgs :: IO [String]
+getFullArgs = getArgs
+#endif
 
 testCommand :: CommandUI (NixStyleFlags ())
 testCommand =

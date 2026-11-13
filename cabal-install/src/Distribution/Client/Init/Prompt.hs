@@ -22,11 +22,10 @@ module Distribution.Client.Init.Prompt
   , promptList
   ) where
 
-import Prelude hiding (break, getLine, putStr, putStrLn)
-
 import Distribution.Client.Compat.Prelude hiding (break, empty, getLine, putStr, putStrLn)
 import Distribution.Client.Init.Types
 import qualified System.IO
+import Prelude ()
 
 -- | Create a prompt with optional default value that returns a
 -- String.

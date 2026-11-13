@@ -1,3 +1,6 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 module Distribution.Compat.NonEmptySet
   ( NonEmptySet
 
@@ -35,12 +38,28 @@ import Data.Semigroup (Semigroup (..))
 import qualified Data.Foldable as F
 import qualified Data.Set as Set
 
+#ifdef __MHS__
+import Distribution.Compat.MhsInstances ()
+#endif
+
 import Distribution.Compat.Binary (Binary (..))
 import Distribution.Utils.Structured
 
 -- | @since 3.4.0.0
+{- FOURMOLU_DISABLE -}
 newtype NonEmptySet a = NES (Set.Set a)
-  deriving (Eq, Ord, Data, Read)
+  deriving (Eq, Ord, Read
+#ifndef __MHS__
+    , Data
+#endif
+    )
+{- FOURMOLU_ENABLE -}
+
+#ifdef __MHS__
+-- MicroHs cannot derive 'Data' for parameterised types (it drops the
+-- required context), so the instance is spelled out explicitly.
+deriving instance (Data a, Ord a) => Data (NonEmptySet a)
+#endif
 
 -------------------------------------------------------------------------------
 -- Instances

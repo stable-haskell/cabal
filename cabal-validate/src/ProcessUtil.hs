@@ -13,7 +13,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as T (toStrict)
 import qualified Data.Text.Lazy.Encoding as T (decodeUtf8)
-import System.Directory (withCurrentDirectory)
+import Distribution.Compat.Directory (withCurrentDirectory)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.Process.Typed (ExitCodeException (..), proc, readProcess, runProcess)
 

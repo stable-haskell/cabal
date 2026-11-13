@@ -19,7 +19,7 @@ module Distribution.Compat.Async
   , withAsyncNF
   ) where
 
-import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent (ThreadId, forkIO, throwTo)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, readMVar)
 import Control.DeepSeq (NFData, force)
 import Control.Exception
@@ -32,7 +32,6 @@ import Control.Exception
   , evaluate
   , mask
   , throwIO
-  , throwTo
   , try
   , uninterruptibleMask_
   )

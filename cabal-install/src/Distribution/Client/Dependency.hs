@@ -1,4 +1,5 @@
 -----------------------------------------------------------------------------
+{-# LANGUAGE CPP #-}
 
 -- |
 -- Module      :  Distribution.Client.Dependency
@@ -67,6 +68,7 @@ module Distribution.Client.Dependency
   ) where
 
 import Distribution.Client.Compat.Prelude
+import Prelude ()
 
 import Distribution.Client.Dependency.Types
   ( PackagesPreferenceDefault (..)
@@ -720,6 +722,7 @@ addDefaultSetupDependencies applyDefaultSetupDeps defaultSetupDeps params =
 -- packages to not depend on @Cabal@ at all (although basically unheard of
 -- in practice).
 addCabalDepForHooks :: PD.BuildType -> Maybe PD.SetupBuildInfo -> Maybe PD.SetupBuildInfo
+#ifndef __MHS__
 addCabalDepForHooks PD.Hooks = fmap addDep
   where
     addDep sbi@(PD.SetupBuildInfo{PD.setupDepends = deps})
@@ -728,6 +731,7 @@ addCabalDepForHooks PD.Hooks = fmap addDep
       | otherwise =
           sbi{PD.setupDepends = Dependency cabalPkgName anyVersion mainLibSet : deps}
     cabalPkgName = mkPackageName "Cabal"
+#endif
 addCabalDepForHooks _ = id
 
 -- | Provides the fallback default "setup-depends", when:
@@ -1042,7 +1046,7 @@ validateSolverResult toolchains indepGoals pkgs =
       Left problems -> fail (formatPlanProblems problems)
     problems -> fail (formatPkgProblems problems)
   where
-    graph :: Graph.Graph (ResolverPackage UnresolvedPkgLoc)
+    graph :: Graph.Graph SolverId (ResolverPackage UnresolvedPkgLoc)
     graph = Graph.fromDistinctList pkgs
 
     formatPkgProblems :: [PlanPackageProblem] -> String

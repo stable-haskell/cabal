@@ -63,6 +63,7 @@ where
 import Distribution.Client.Compat.Prelude
 import Distribution.ReadE (ReadE (..))
 import qualified Text.ParserCombinators.ReadP as T
+import Prelude ()
 
 type Parser = T.ReadP
 

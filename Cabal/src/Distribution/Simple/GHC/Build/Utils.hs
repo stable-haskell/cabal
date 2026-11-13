@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 module Distribution.Simple.GHC.Build.Utils where
 
 import Distribution.Compat.Prelude

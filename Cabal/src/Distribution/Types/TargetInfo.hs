@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 module Distribution.Types.TargetInfo
   ( TargetInfo (..)
   ) where
@@ -32,7 +30,6 @@ data TargetInfo = TargetInfo
 instance Binary TargetInfo
 instance Structured TargetInfo
 
-instance IsNode TargetInfo where
-  type Key TargetInfo = UnitId
+instance IsNode UnitId TargetInfo where
   nodeKey = nodeKey . targetCLBI
   nodeNeighbors = nodeNeighbors . targetCLBI

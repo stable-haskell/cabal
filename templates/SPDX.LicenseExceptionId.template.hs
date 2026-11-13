@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {- FOURMOLU_DISABLE -}
 module Distribution.SPDX.LicenseExceptionId (
     LicenseExceptionId (..),
@@ -14,7 +15,7 @@ import Distribution.Compat.Lens (set)
 import Distribution.Pretty
 import Distribution.Parsec
 import Distribution.Utils.Generic (isAsciiAlphaNum)
-import Distribution.Utils.Structured (Structured (..), nominalStructure, typeVersion)
+import Distribution.Utils.Structured (nominalStructure, typeVersion)
 import Distribution.SPDX.LicenseListVersion
 
 import qualified Data.Binary.Get as Binary
@@ -23,6 +24,10 @@ import qualified Data.Map.Strict as Map
 import qualified Distribution.Compat.CharParsing as P
 import qualified Text.PrettyPrint as Disp
 
+#ifdef __MHS__
+import Data.Data (Constr, Data (..), DataType, Fixity (Prefix), constrIndex, mkConstrTag, mkDataType)
+#endif
+
 -------------------------------------------------------------------------------
 -- LicenseExceptionId
 -------------------------------------------------------------------------------
@@ -30,7 +35,16 @@ import qualified Text.PrettyPrint as Disp
 -- | SPDX License Exceptions identifiers list v3.28
 data LicenseExceptionId
 {{ licenseIds }}
-  deriving (Eq, Ord, Enum, Bounded, Show, Read, Data, Generic)
+  deriving (Eq,
+#ifdef __MHS__
+    -- No derived Ord/Data: same per-constructor compile cost as
+    -- LicenseId at scale; hand-written instances below keep the
+    -- semantics and the Data instance downstream deriving requires.
+    Enum, Bounded, Show, Read, Generic
+#else
+    Ord, Enum, Bounded, Show, Read, Data, Generic
+#endif
+    )
 
 instance Binary LicenseExceptionId where
     put = Binary.putWord8 . fromIntegral . fromEnum
@@ -39,6 +53,37 @@ instance Binary LicenseExceptionId where
         if i > fromIntegral (fromEnum (maxBound :: LicenseExceptionId))
         then fail "Too large LicenseExceptionId tag"
         else return (toEnum (fromIntegral i))
+
+#ifdef __MHS__
+-- Hand-written Ord/Data mirror the derived instances (declaration-order
+-- tags, constructor names as declared) without the measured
+-- end-to-end compile cost of the derived versions at scale
+-- (~10s user each at 150 constructors; root cause not isolated to a
+-- compiler phase). Compare via the derived Enum tags; Data round-trips
+-- via the tag index. Semantics match the derived instances; Binary
+-- (which also uses fromEnum) and all constructors are unchanged.
+instance Ord LicenseExceptionId where
+  compare a b = compare (fromEnum a) (fromEnum b)
+
+instance Data LicenseExceptionId where
+  gfoldl k z x = z x
+  gunfold _k z c = z (toEnum (constrIndex c - 1))
+  toConstr x = licenseExceptionIdConstrs !! fromEnum x
+  dataTypeOf _ = tyLicenseExceptionId
+
+tyLicenseExceptionId :: DataType
+tyLicenseExceptionId = mkDataType "Distribution.SPDX.LicenseExceptionId" licenseExceptionIdConstrs
+
+licenseExceptionIdConstrs :: [Constr]
+licenseExceptionIdConstrs =
+  [ mkConstrTag tyLicenseExceptionId name i [] Prefix
+  | (i, name) <- zip [1 ..] licenseExceptionIdConstrNames
+  ]
+
+licenseExceptionIdConstrNames :: [String]
+licenseExceptionIdConstrNames =
+{{ licenseIdNames }}
+#endif
 
 -- note: remember to bump version each time the definition changes
 instance Structured LicenseExceptionId where

@@ -1,7 +1,7 @@
 ---
 synopsis: Lay out the store by machine and toolchain
 packages: [cabal-install]
-prs:
+prs: 0
 significance: significant
 ---
 

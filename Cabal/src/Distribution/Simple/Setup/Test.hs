@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -14,7 +14,11 @@
 --
 -- Definition of the testing command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Test
+#ifdef __MHS__
+  ( TestFlags (..)
+#else
   ( TestFlags
       ( TestCommonFlags
       , testVerbosity
@@ -24,12 +28,14 @@ module Distribution.Simple.Setup.Test
       , testTargets
       , ..
       )
+#endif
   , emptyTestFlags
   , defaultTestFlags
   , testCommand
   , TestShowDetails (..)
   , testOptions'
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()
@@ -99,6 +105,7 @@ data TestFlags = TestFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically TestFlags
 
+#ifndef __MHS__
 pattern TestCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -122,6 +129,7 @@ pattern TestCommonFlags
         , setupTargets = testTargets
         }
     )
+#endif
 
 instance Binary TestFlags
 instance Structured TestFlags

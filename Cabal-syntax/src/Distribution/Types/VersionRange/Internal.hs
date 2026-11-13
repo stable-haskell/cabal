@@ -32,8 +32,9 @@ module Distribution.Types.VersionRange.Internal
   , wildcardUpperBound
   ) where
 
+import Data.Foldable (Foldable, foldr1)
 import Data.Functor (($>))
-import Distribution.Compat.Prelude
+import Distribution.Compat.Prelude hiding (foldr1)
 import Distribution.Types.Version
 import Prelude ()
 

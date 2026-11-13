@@ -11,11 +11,11 @@ module Test.Cabal.Run
 import Distribution.Simple.Program.Run
 
 import Control.Concurrent.Async
-import System.Directory
+import Distribution.Compat.Directory
+import Distribution.Compat.Process
 import System.Exit
 import System.FilePath
 import System.IO
-import System.Process
 
 -- | The result of invoking the command line.
 data Result = Result

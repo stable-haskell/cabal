@@ -203,14 +203,14 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Distribution.Client.Errors
-import Distribution.Utils.Path
-  ( unsafeMakeSymbolicPath
-  )
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , doesFileExist
   , getTemporaryDirectory
   , removePathForcibly
+  )
+import Distribution.Utils.Path
+  ( unsafeMakeSymbolicPath
   )
 import System.FilePath
   ( makeRelative

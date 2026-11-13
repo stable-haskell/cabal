@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -funbox-strict-fields #-}
-
 module Distribution.Client.Compat.Semaphore
   ( QSem
   , newQSem

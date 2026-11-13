@@ -1,4 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -52,24 +53,30 @@ infixl 4 <@>
 f <@> x = f <*> x
 {-# NOINLINE (<@>) #-}
 
+-- MicroHs supports tuples only up to 15 elements, so the 17-part
+-- constraint is nested into two smaller tuples. Both GHC and MicroHs
+-- accept nested constraint tuples; the meaning is identical to the
+-- flat tuple: conjunction of the same constraints.
 ipiFieldGrammar
-  :: ( FieldGrammar c g
-     , c (Identity AbiHash)
-     , c (Identity LibraryVisibility)
-     , c (Identity PackageName)
-     , c (Identity UnitId)
-     , c (Identity UnqualComponentName)
-     , c (List FSep (Identity AbiDependency) AbiDependency)
-     , c (List FSep (Identity UnitId) UnitId)
-     , c (List FSep (MQuoted ModuleName) ModuleName)
-     , c (List FSep FilePathNT String)
-     , c (List FSep Token Text)
-     , c (MQuoted MungedPackageName)
-     , c (MQuoted Version)
-     , c CompatPackageKey
-     , c ExposedModules
-     , c InstWith
-     , c SpecLicenseLenient
+  :: ( ( FieldGrammar c g
+       , c (Identity AbiHash)
+       , c (Identity LibraryVisibility)
+       , c (Identity PackageName)
+       , c (Identity UnitId)
+       , c (Identity UnqualComponentName)
+       , c (List FSep (Identity AbiDependency) AbiDependency)
+       , c (List FSep (Identity UnitId) UnitId)
+       , c (List FSep (MQuoted ModuleName) ModuleName)
+       )
+     , ( c (List FSep FilePathNT String)
+       , c (List FSep Token Text)
+       , c (MQuoted MungedPackageName)
+       , c (MQuoted Version)
+       , c CompatPackageKey
+       , c ExposedModules
+       , c InstWith
+       , c SpecLicenseLenient
+       )
      )
   => g InstalledPackageInfo InstalledPackageInfo
 ipiFieldGrammar =
@@ -297,6 +304,36 @@ basicFieldGrammar
      , c (MQuoted Version)
      )
   => g Basic Basic
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+basicFieldGrammar =
+  mkBasic
+    <$> optionalFieldDefAla "name" MQuoted basicName (mungedPackageName emptyInstalledPackageInfo)
+    <*> optionalFieldDefAla "version" MQuoted basicVersion nullVersion
+    <*> optionalField "package-name" basicPkgName
+    <*> (maybe LMainLibName LSubLibName <$> optionalField "lib-name" basicLibName)
+    <*> optionalFieldDef "visibility" basicLibVisibility LibraryVisibilityPrivate
+  where
+    mkBasic _basicName _basicVersion _basicPkgName _basicLibName _basicLibVisibility' =
+      Basic
+        { -- Older GHCs (<8.8) always report installed libraries as private
+          -- because their ghc-pkg builds with an older Cabal.
+          -- So we always set LibraryVisibilityPublic for main (unnamed) libs.
+          -- This can be removed once we stop supporting GHC<8.8, at the
+          -- condition that we keep marking main libraries as public when
+          -- registering them.
+          _basicLibVisibility =
+            if let MungedPackageName _ mln = _basicName
+                in -- We need to check both because on ghc<8.2 _basicLibName will always
+                   -- be LMainLibName
+                   _basicLibName == LMainLibName && mln == LMainLibName
+              then LibraryVisibilityPublic
+              else _basicLibVisibility'
+        , ..
+        }
+#else
 basicFieldGrammar = do
   _basicName <- optionalFieldDefAla "name" MQuoted basicName (mungedPackageName emptyInstalledPackageInfo)
   _basicVersion <- optionalFieldDefAla "version" MQuoted basicVersion nullVersion
@@ -320,6 +357,8 @@ basicFieldGrammar = do
             else _basicLibVisibility'
       , ..
       }
+
+#endif
 
 fromTextLens :: Lens' Text String
 fromTextLens f = fmap T.pack . f . T.unpack

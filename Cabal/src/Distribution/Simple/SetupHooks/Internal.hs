@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -121,7 +122,9 @@ import Distribution.Verbosity
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Coerce (coerce)
+#ifndef __MHS__
 import Data.Either (fromRight)
+#endif
 import qualified Data.Graph as Graph
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import qualified Data.List.NonEmpty as NE
@@ -130,8 +133,14 @@ import Data.Monoid (Ap (..))
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 
-import System.Directory (doesFileExist, getModificationTime)
+import Distribution.Compat.Directory (doesFileExist, getModificationTime)
 import qualified System.FilePath as FilePath
+
+#ifdef __MHS__
+fromRight :: b -> Either a b -> b
+fromRight _ (Right x) = x
+fromRight d (Left _) = d
+#endif
 
 --------------------------------------------------------------------------------
 -- SetupHooks
@@ -534,20 +543,20 @@ emptyComponentDiff :: ComponentName -> ComponentDiff
 emptyComponentDiff name = ComponentDiff $
   case name of
     CLibName{} -> CLib emptyLibrary
-    CFLibName{} -> CFLib emptyForeignLib
-    CExeName{} -> CExe emptyExecutable
-    CTestName{} -> CTest emptyTestSuite
-    CBenchName{} -> CBench emptyBenchmark
+    CFLibName _ -> CFLib emptyForeignLib
+    CExeName _ -> CExe emptyExecutable
+    CTestName _ -> CTest emptyTestSuite
+    CBenchName _ -> CBench emptyBenchmark
 
 buildInfoComponentDiff :: ComponentName -> BuildInfo -> ComponentDiff
 buildInfoComponentDiff name bi = ComponentDiff $
   BI.buildInfo .~ bi $
     case name of
       CLibName{} -> CLib emptyLibrary
-      CFLibName{} -> CFLib emptyForeignLib
-      CExeName{} -> CExe emptyExecutable
-      CTestName{} -> CTest emptyTestSuite
-      CBenchName{} -> CBench emptyBenchmark
+      CFLibName _ -> CFLib emptyForeignLib
+      CExeName _ -> CExe emptyExecutable
+      CTestName _ -> CTest emptyTestSuite
+      CBenchName _ -> CBench emptyBenchmark
 
 applyLibraryDiff :: Verbosity -> Library -> LibraryDiff -> IO Library
 applyLibraryDiff verbosity lib diff =
@@ -856,10 +865,13 @@ executeRules =
 
 -- | Like 'executeRules', except it can be used when communicating with
 -- an external hooks executable.
+{- FOURMOLU_DISABLE -}
 executeRulesUserOrSystem
   :: forall userOrSystem
    . ( Binary (RuleData userOrSystem)
+#ifndef __MHS__
      , Structured (RuleData userOrSystem)
+#endif
      , Eq (RuleData userOrSystem)
      )
   => SScope userOrSystem
@@ -870,6 +882,9 @@ executeRulesUserOrSystem
   -> TargetInfo
   -> Map RuleId (RuleData userOrSystem)
   -> IO ()
+{- FOURMOLU_ENABLE -}
+{- FOURMOLU_DISABLE -}
+#ifndef __MHS__
 executeRulesUserOrSystem scope runDepsCmdData runCmdData verbosity lbi tgtInfo allRules = do
   -- Load the rule cache from the previous build.
   -- Used to detect when rule definitions have changed.
@@ -1126,6 +1141,12 @@ pprNotDemandedRuleReasons
             case miss_files of
               [_] -> ("", "is", "It")
               _ -> ("s", "are", "They")
+#else
+-- MicroHs stub: Hooks execution is unsupported in the MHS build (no
+-- DataKinds promotion: the scope index is erased).
+executeRulesUserOrSystem _ _ _ _ _ _ _ = error "Distribution.Simple.SetupHooks.Internal: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#endif
+{- FOURMOLU_ENABLE -}
 
 directRuleDependencyMaybe :: Rule.Dependency -> Maybe RuleId
 directRuleDependencyMaybe (RuleDependency dep) = Just $ outputOfRule dep
@@ -1250,9 +1271,9 @@ hookedBuildInfoComponentDiff_maybe (mb_mainlib, exes) comp_nm =
     CExeName exe_nm ->
       let mb_exe = lookup exe_nm exes
        in return . ComponentDiff . CExe . buildInfoExecutableDiff <$> mb_exe
-    CFLibName{} -> Nothing
-    CTestName{} -> Nothing
-    CBenchName{} -> Nothing
+    CFLibName _ -> Nothing
+    CTestName _ -> Nothing
+    CBenchName _ -> Nothing
 
 buildInfoLibraryDiff :: BuildInfo -> LibraryDiff
 buildInfoLibraryDiff bi = emptyLibrary{libBuildInfo = bi}

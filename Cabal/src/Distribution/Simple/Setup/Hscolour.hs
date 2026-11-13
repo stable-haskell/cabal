@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -14,7 +14,11 @@
 --
 -- Definition of the hscolour command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Hscolour
+#ifdef __MHS__
+  ( HscolourFlags (..)
+#else
   ( HscolourFlags
       ( HscolourCommonFlags
       , hscolourVerbosity
@@ -24,10 +28,12 @@ module Distribution.Simple.Setup.Hscolour
       , hscolourTargets
       , ..
       )
+#endif
   , emptyHscolourFlags
   , defaultHscolourFlags
   , hscolourCommand
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()
@@ -55,6 +61,7 @@ data HscolourFlags = HscolourFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically HscolourFlags
 
+#ifndef __MHS__
 pattern HscolourCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -78,6 +85,7 @@ pattern HscolourCommonFlags
         , setupTargets = hscolourTargets
         }
     )
+#endif
 
 instance Binary HscolourFlags
 instance Structured HscolourFlags

@@ -7,7 +7,6 @@ module Distribution.PackageDescription.Quirks (patchQuirks) where
 
 import Distribution.Compat.Prelude
 import Distribution.Utils.MD5
-import GHC.Fingerprint (Fingerprint (..))
 import Prelude ()
 
 import qualified Data.ByteString as BS

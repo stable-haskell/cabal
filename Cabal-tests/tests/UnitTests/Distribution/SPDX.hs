@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
 module UnitTests.Distribution.SPDX (spdxTests) where
 
+import Data.Data (fromConstr, toConstr)
+import Data.List (sort)
 import Distribution.Compat.Prelude.Internal
 import Prelude ()
 
@@ -22,12 +24,33 @@ spdxTests =
     , testProperty "LicenseExpression roundtrip" licenseExpressionRoundtrip
     , testProperty "isAcceptableLicense l = True"  shouldAcceptProp
     , testProperty "isAcceptableLicense l = False" shouldRejectProp
+    , testProperty "LicenseId Ord matches Enum order" licenseIdOrdMatchesEnum
+    , testCase "LicenseId enumeration is dense and ordered" licenseIdEnumerationOrder
     ]
 
 licenseIdRoundtrip :: LicenseId -> Property
 licenseIdRoundtrip x =
     counterexample (prettyShow x) $
     Right x === eitherParsec (prettyShow x)
+
+-- The MicroHs build replaces the derived Ord for LicenseId (a
+-- ~700-constructor type) with comparison via fromEnum; pin the two
+-- to agree so the seam cannot silently change ordering.
+licenseIdOrdMatchesEnum :: LicenseId -> LicenseId -> Property
+licenseIdOrdMatchesEnum x y =
+    counterexample (prettyShow x ++ " vs " ++ prettyShow y) $
+    compare x y === compare (fromEnum x) (fromEnum y)
+
+-- | The full enumeration must be dense, ordered, and round-trip
+-- through 'toConstr'/'fromConstr'. This pins the constructor-name
+-- table used by the MicroHs hand-written 'Data' instance: every
+-- constructor must appear exactly once, in declaration order.
+licenseIdEnumerationOrder :: Assertion
+licenseIdEnumerationOrder = do
+    let ids = [minBound .. maxBound] :: [LicenseId]
+    assertEqual "sort is the identity" ids (sort ids)
+    assertEqual "fromEnum tags are 0-based and dense" [0 .. length ids - 1] (map fromEnum ids)
+    assertEqual "toConstr/fromConstr round-trips" ids (map (fromConstr . toConstr) ids)
 
 licenseExceptionIdRoundtrip :: LicenseExceptionId -> Property
 licenseExceptionIdRoundtrip x =

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -48,6 +49,7 @@ import Control.Concurrent
   , modifyMVar
   , newMVar
   )
+#ifndef __MHS__
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import Network.URI
@@ -55,11 +57,14 @@ import Network.URI
   , uriPath
   , uriScheme
   )
+#endif
 import System.FilePath
   ( isAbsolute
   , (</>)
   )
+import System.IO.Error (userError)
 
+#ifndef __MHS__
 import qualified Distribution.Client.Security.DNS as Sec.DNS
 import qualified Distribution.Client.Security.HTTP as Sec.HTTP
 import qualified Hackage.Security.Client as Sec
@@ -68,6 +73,7 @@ import qualified Hackage.Security.Client.Repository.Local as Sec.Local
 import qualified Hackage.Security.Client.Repository.Remote as Sec.Remote
 import qualified Hackage.Security.Util.Path as Sec
 import qualified Hackage.Security.Util.Pretty as Sec
+#endif
 
 -- ------------------------------------------------------------
 
@@ -124,6 +130,7 @@ defaultGlobalFlags =
 -- ------------------------------------------------------------
 
 -- | Access to repositories
+{- FOURMOLU_DISABLE -}
 data RepoContext = RepoContext
   { repoContextRepos :: [Repo]
   -- ^ All user-specified repositories
@@ -140,18 +147,41 @@ data RepoContext = RepoContext
   , repoContextWithSecureRepo
       :: forall a
        . Repo
+#ifdef __MHS__
+      -> (SecureRepository SecureRepoTag -> IO a)
+#else
       -> (forall down. Sec.Repository down -> IO a)
+#endif
       -> IO a
   -- ^ Get the (initialized) secure repo
   --
+#ifdef __MHS__
+  -- Secure repositories are not supported in this MHS build: using this
+  -- accessor always fails with an error.
+  --
+#endif
   -- (the 'Repo' type itself is stateless and must remain so, because it
   -- must be serializable)
   , repoContextIgnoreExpiry :: Bool
   -- ^ Should we ignore expiry times (when checking security)?
   }
+{- FOURMOLU_ENABLE -}
 
+#ifdef __MHS__
+-- | A secure repository handle.
+--
+-- Secure repositories are not supported in this build, so this type has
+-- no constructors: 'repoContextWithSecureRepo' always fails.
+data SecureRepository down
+
+-- | Tag for 'SecureRepository'. The stub accessor above is monomorphic
+-- in the tag (instead of rank-2 as upstream) because GHC rejects
+-- rank-2 record selectors used as functions.
+data SecureRepoTag
+#else
 -- | Wrapper around 'Repository', hiding the type argument
 data SecureRepo = forall down. SecureRepo (Sec.Repository down)
+#endif
 
 withRepoContext :: Verbosity -> GlobalFlags -> (RepoContext -> IO a) -> IO a
 withRepoContext verbosity globalFlags =
@@ -164,6 +194,7 @@ withRepoContext verbosity globalFlags =
     (flagToMaybe (globalIgnoreExpiry globalFlags))
     (fromNubList (globalProgPathExtra globalFlags))
 
+{- FOURMOLU_DISABLE -}
 withRepoContext'
   :: Verbosity
   -> [RemoteRepo]
@@ -188,6 +219,20 @@ withRepoContext'
           "file+noindex " ++ unRepoName (localRepoName local) ++ " repository path is not absolute; this is fragile, and not recommended"
 
     transportRef <- newMVar Nothing
+#ifdef __MHS__
+    callback
+      RepoContext
+        { repoContextRepos =
+            allRemoteRepos
+              ++ allLocalNoIndexRepos
+        , repoContextGetTransport = getTransport transportRef
+        , repoContextWithSecureRepo = \_ _ ->
+            throwIO $
+              userError
+                "Secure repositories are not supported in this build of cabal-install."
+        , repoContextIgnoreExpiry = fromMaybe False ignoreExpiry
+        }
+#else
     let httpLib =
           Sec.HTTP.transportAdapter
             verbosity
@@ -202,10 +247,13 @@ withRepoContext'
           , repoContextWithSecureRepo = withSecureRepo secureRepos'
           , repoContextIgnoreExpiry = fromMaybe False ignoreExpiry
           }
+#endif
     where
+#ifndef __MHS__
       secureRemoteRepos =
         [(remote, cacheDir) | RepoSecure remote cacheDir <- allRemoteRepos]
 
+#endif
       allRemoteRepos :: [Repo]
       allRemoteRepos =
         [ (if isSecure then RepoSecure else RepoRemote) remote cacheDir
@@ -231,6 +279,7 @@ withRepoContext'
             Nothing -> configureTransport verbosity extraPaths httpTransport
           return (Just transport, transport)
 
+#ifndef __MHS__
       withSecureRepo
         :: Map Repo SecureRepo
         -> Repo
@@ -240,7 +289,10 @@ withRepoContext'
         case Map.lookup repo secureRepos of
           Just (SecureRepo secureRepo) -> callback secureRepo
           Nothing -> throwIO $ userError "repoContextWithSecureRepo: unknown repo"
+#endif
+{- FOURMOLU_ENABLE -}
 
+#ifndef __MHS__
 -- | Initialize the provided secure repositories
 --
 -- Assumed invariant: `remoteRepoSecure` should be set for all these repos.
@@ -343,3 +395,4 @@ initSecureRepo verbosity httpLib RemoteRepo{..} cachePath = \callback -> do
     -- is thrown will of course be shown.
     logTUF :: Sec.LogMessage -> IO ()
     logTUF = info verbosity . Sec.pretty
+#endif

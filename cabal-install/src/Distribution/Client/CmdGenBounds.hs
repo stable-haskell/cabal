@@ -11,7 +11,7 @@ import Prelude ()
 
 import qualified Data.Map as Map
 
-import Control.Monad (mapM_)
+import Data.Foldable (mapM_)
 
 import Distribution.Client.Errors
 

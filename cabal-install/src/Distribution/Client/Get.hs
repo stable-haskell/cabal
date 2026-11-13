@@ -71,18 +71,18 @@ import Distribution.PackageDescription.PrettyPrint
 import Distribution.Solver.Types.Machine (always)
 import Distribution.Solver.Types.SourcePackage
 
-import Control.Monad (mapM_)
+import Data.Foldable (mapM_)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import Distribution.Client.Errors
-import Distribution.Utils.NubList
-  ( fromNubList
-  )
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , doesDirectoryExist
   , doesFileExist
   , listDirectory
+  )
+import Distribution.Utils.NubList
+  ( fromNubList
   )
 import System.FilePath
   ( addTrailingPathSeparator

@@ -46,7 +46,21 @@ data TargetProblem a
   | TargetProblemNoSuchComponent PackageId ComponentName
   | -- | A custom target problem
     CustomTargetProblem a
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show)
+
+instance Functor TargetProblem where
+  fmap _ (TargetNotInProject pn) = TargetNotInProject pn
+  fmap _ (TargetAvailableInIndex pn) = TargetAvailableInIndex pn
+  fmap _ (TargetComponentNotProjectLocal pid cn sct) = TargetComponentNotProjectLocal pid cn sct
+  fmap _ (TargetComponentNotBuildable pid cn sct) = TargetComponentNotBuildable pid cn sct
+  fmap _ (TargetOptionalStanzaDisabledByUser pid cn sct) = TargetOptionalStanzaDisabledByUser pid cn sct
+  fmap _ (TargetOptionalStanzaDisabledBySolver pid cn sct) = TargetOptionalStanzaDisabledBySolver pid cn sct
+  fmap _ (TargetProblemUnknownComponent pn c) = TargetProblemUnknownComponent pn c
+  fmap _ (TargetProblemNoneEnabled ts ats) = TargetProblemNoneEnabled ts ats
+  fmap _ (TargetProblemNoTargets ts) = TargetProblemNoTargets ts
+  fmap _ (TargetProblemNoSuchPackage pid) = TargetProblemNoSuchPackage pid
+  fmap _ (TargetProblemNoSuchComponent pid cn) = TargetProblemNoSuchComponent pid cn
+  fmap f (CustomTargetProblem x) = CustomTargetProblem (f x)
 
 -- | Type alias for a 'TargetProblem' with no user-defined problems/errors.
 --

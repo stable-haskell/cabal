@@ -71,7 +71,7 @@ import Distribution.Types.DependencySatisfaction
   )
 import Distribution.Types.UnqualComponentName
 
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , createFileLink
   , getSymbolicLinkTarget

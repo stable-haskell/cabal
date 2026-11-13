@@ -9,7 +9,9 @@ import Data.Proxy
 
 import qualified UnitTests.Distribution.Compat.CopyFile
 import qualified UnitTests.Distribution.Compat.Time
+import qualified UnitTests.Distribution.Compat.Directory
 import qualified UnitTests.Distribution.Compat.Graph
+import qualified UnitTests.Distribution.Compat.Prelude
 import qualified UnitTests.Distribution.PackageDescription.Check
 import qualified UnitTests.Distribution.Simple.Command
 import qualified UnitTests.Distribution.Simple.Compiler
@@ -41,8 +43,12 @@ tests =
         (UnitTests.Distribution.Compat.Time.tests mtimeChange)
     , testGroup "Distribution.Compat.CopyFile"
         UnitTests.Distribution.Compat.CopyFile.tests
+    , testGroup "Distribution.Compat.Directory"
+        UnitTests.Distribution.Compat.Directory.tests
     , testGroup "Distribution.Compat.Graph"
         UnitTests.Distribution.Compat.Graph.tests
+    , testGroup "Distribution.Compat.Prelude"
+        UnitTests.Distribution.Compat.Prelude.tests
     , testGroup "Distribution.Simple.Command"
         UnitTests.Distribution.Simple.Command.tests
     , testGroup "Distribution.Simple.Compiler"

@@ -181,7 +181,7 @@ import Distribution.Types.LibraryName
        (libraryNameString)
 #endif
 
-import System.Directory
+import Distribution.Compat.Directory
        (makeAbsolute)
 
 findFile' :: Verbosity -> [FilePath] -> FilePath -> IO FilePath

@@ -11,7 +11,7 @@ import Data.Maybe (mapMaybe)
 import Distribution.Simple.Glob
 import qualified Distribution.Verbosity as Verbosity
 import Distribution.CabalSpecVersion
-import System.Directory (createDirectoryIfMissing)
+import Distribution.Compat.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>), splitFileName, normalise)
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Tasty

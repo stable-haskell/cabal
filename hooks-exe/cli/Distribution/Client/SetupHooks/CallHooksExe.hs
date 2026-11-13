@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -18,6 +19,7 @@ module Distribution.Client.SetupHooks.CallHooksExe
 -- base
 import GHC.Stack
 
+#ifndef __MHS__
 -- bytestring
 import Data.ByteString.Lazy as LBS
   ( hGetContents
@@ -26,9 +28,10 @@ import Data.ByteString.Lazy as LBS
   )
 
 -- process
-import qualified System.Process as P
+import qualified Distribution.Compat.Process as P
 import System.Process.CommunicationHandle
   ( readCreateProcessWithExitCodeCommunicationHandle )
+#endif
 
 -- filepath
 import System.FilePath
@@ -36,6 +39,7 @@ import System.FilePath
 
 -- Cabal
 import Distribution.Compat.Prelude
+import Prelude ()
 import qualified Distribution.Compat.Binary as Binary
 import Distribution.Simple
   ( autoconfSetupHooks )
@@ -56,7 +60,7 @@ import Distribution.Utils.Path
   , Dist
   , Pkg
   , SymbolicPath
-  , FileOrDir(..)
+  , FileOrDir(..), Dir
   , interpretSymbolicPath
   )
 import Distribution.Verbosity
@@ -84,6 +88,10 @@ callHooksExe
   -> String   -- ^ name of the hook to run
   -> inputs   -- ^ argument to the hook
   -> IO outputs
+#ifdef __MHS__
+callHooksExe _ _ hookName _ =
+  error ("Distribution.Client.SetupHooks.CallHooksExe: build-type 'Hooks' (" ++ hookName ++ ") is not supported in this MHS build of Cabal.")
+#else
 callHooksExe verb hooksExe hookName input = do
   (ex, output) <-
     -- The arguments to the external hooks executable are:
@@ -116,6 +124,7 @@ callHooksExe verb hooksExe hookName input = do
             HookFailed hookName $
               CouldNotDecodeOutput output offset err
         Right (_, _, res) -> return res
+#endif
 
 -- | Construct a 'SetupHooks' that runs the hooks of the external hooks executable
 -- at the given path through the CLI.
@@ -201,6 +210,10 @@ runExternalPreBuildRules
   -> FilePath -- ^ path to external hooks executable
   -> PreBuildComponentInputs
   -> IO [MonitorFilePath]
+#ifdef __MHS__
+runExternalPreBuildRules _ _ _ =
+  error "Distribution.Client.SetupHooks.CallHooksExe: build-type 'Hooks' is not supported in this MHS build of Cabal."
+#else
 runExternalPreBuildRules verbHandles hooksExe
   pbci@PreBuildComponentInputs
     { buildingWhat = what
@@ -223,6 +236,7 @@ runExternalPreBuildRules verbHandles hooksExe
     ( \ rId cmd -> hook "runPreBuildRule" (rId, cmd) )
     verbosity lbi tgt rulesMap
   return monitors
+#endif
 
 -- | The path to the external hooks executable.
 hooksProgFilePath

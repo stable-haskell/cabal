@@ -35,7 +35,7 @@ import Distribution.Simple.Utils
   )
 
 import qualified Data.Set as Set
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath
 
 -- $concurrency

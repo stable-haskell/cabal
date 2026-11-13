@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 
 module Distribution.Client.InLibrary
@@ -52,8 +53,17 @@ import Distribution.Verbosity
   , mkVerbosity
   )
 
+import Distribution.Compat.Directory (canonicalizePath)
 import Distribution.Types.HookedBuildInfo (emptyHookedBuildInfo)
-import System.Directory (canonicalizePath)
+
+-- Note [MHS support]
+-- ~~~~~~~~~~~~~~~~~~
+-- When cabal-install itself is built with MHS (MicroHS), the in-library
+-- setup method is unavailable (see Note [MHS support] in
+-- "Distribution.Client.SetupWrapper", which always selects the external
+-- setup method). Under @__MHS__@ this module therefore only provides
+-- stubs with the same types as the GHC implementation, so that callers
+-- keep typechecking while the stubs are never invoked at runtime.
 
 --------------------------------------------------------------------------------
 -- Configure
@@ -131,6 +141,10 @@ configure
   :: LibraryConfigureInputs
   -> Cabal.ConfigFlags
   -> IO LocalBuildInfo
+#ifdef __MHS__
+configure _ _ =
+  error "Distribution.Client.InLibrary.configure: in-library setup is not supported under MHS"
+#else
 configure
   LibraryConfigureInputs
     { verbosityHandles = verbHandles
@@ -227,6 +241,7 @@ configure
         Just pkgFile -> return pkgFile
         Nothing -> relativeSymbolicPath <$> tryFindPackageDesc verbosity mbWorkDir
     return $ lbi1{pkgDescrFile = Just pkgDescrFilePath}
+#endif
 
 --------------------------------------------------------------------------------
 -- Build
@@ -237,6 +252,10 @@ build
   -> LocalBuildInfo
   -> [String]
   -> IO [MonitorFilePath]
+#ifdef __MHS__
+build _ _ _ _ =
+  error "Distribution.Client.InLibrary.build: in-library setup is not supported under MHS"
+#else
 build verbHandles flags lbi _args =
   build_setupHooks (preBuildHook, postBuildHook) verbHandles pkgDescr lbi flags Cabal.knownSuffixHandlers
   where
@@ -254,6 +273,7 @@ build verbHandles flags lbi _args =
     bt = PD.buildType pkgDescr
     mbWorkDir = mbWorkDirLBI lbi
     distPref = Cabal.fromFlag $ Cabal.buildDistPref flags
+#endif
 
 --------------------------------------------------------------------------------
 -- Haddock
@@ -264,6 +284,10 @@ haddock
   -> LocalBuildInfo
   -> [String]
   -> IO [MonitorFilePath]
+#ifdef __MHS__
+haddock _ _ _ _ =
+  error "Distribution.Client.InLibrary.haddock: in-library setup is not supported under MHS"
+#else
 haddock verbHandles flags lbi _args =
   haddock_setupHooks preBuildHook verbHandles pkgDescr lbi Cabal.knownSuffixHandlers flags
   where
@@ -272,6 +296,7 @@ haddock verbHandles flags lbi _args =
     bt = PD.buildType pkgDescr
     mbWorkDir = mbWorkDirLBI lbi
     distPref = Cabal.fromFlag $ Cabal.haddockDistPref flags
+#endif
 
 --------------------------------------------------------------------------------
 -- Repl
@@ -282,6 +307,10 @@ repl
   -> LocalBuildInfo
   -> [String]
   -> IO [MonitorFilePath]
+#ifdef __MHS__
+repl _ _ _ _ =
+  error "Distribution.Client.InLibrary.repl: in-library setup is not supported under MHS"
+#else
 repl verbHandles flags lbi _args =
   repl_setupHooks preBuildHook verbHandles pkgDescr lbi flags Cabal.knownSuffixHandlers []
   where
@@ -290,6 +319,7 @@ repl verbHandles flags lbi _args =
     bt = PD.buildType pkgDescr
     mbWorkDir = mbWorkDirLBI lbi
     distPref = Cabal.fromFlag $ Cabal.replDistPref flags
+#endif
 
 --------------------------------------------------------------------------------
 -- Copy
@@ -300,6 +330,10 @@ copy
   -> LocalBuildInfo
   -> [String]
   -> IO ()
+#ifdef __MHS__
+copy _ _ _ _ =
+  error "Distribution.Client.InLibrary.copy: in-library setup is not supported under MHS"
+#else
 copy verbHandles flags lbi _args =
   install_setupHooks hooks verbHandles pkgDescr lbi flags
   where
@@ -309,6 +343,7 @@ copy verbHandles flags lbi _args =
     bt = PD.buildType pkgDescr
     mbWorkDir = mbWorkDirLBI lbi
     distPref = Cabal.fromFlag $ Cabal.copyDistPref flags
+#endif
 
 --------------------------------------------------------------------------------
 -- Test, bench, register.
@@ -321,10 +356,15 @@ test
   -> LocalBuildInfo
   -> [String]
   -> IO ()
+#ifdef __MHS__
+test _ _ _ _ =
+  error "Distribution.Client.InLibrary.test: in-library setup is not supported under MHS"
+#else
 test verb flags lbi args =
   Cabal.test args verb pkgDescr lbi flags
   where
     pkgDescr = localPkgDescr lbi
+#endif
 
 bench
   :: VerbosityHandles
@@ -332,8 +372,13 @@ bench
   -> LocalBuildInfo
   -> [String]
   -> IO ()
+{- FOURMOLU_DISABLE -}
 bench verb flags lbi args =
+#ifdef __MHS__
+  error "Distribution.Client.InLibrary.bench: in-library setup is not supported under MHS"
+#else
   Cabal.bench args verb pkgDescr lbi flags
+#endif
   where
     pkgDescr = localPkgDescr lbi
 
@@ -342,6 +387,12 @@ register
   -> LocalBuildInfo
   -> [String]
   -> IO ()
+#ifdef __MHS__
+register _ _ _ =
+  error "Distribution.Client.InLibrary.register: in-library setup is not supported under MHS"
+#else
 register flags lbi _args = Cabal.register pkgDescr lbi flags
   where
     pkgDescr = localPkgDescr lbi
+#endif
+{- FOURMOLU_ENABLE -}

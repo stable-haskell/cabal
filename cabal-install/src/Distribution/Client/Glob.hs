@@ -24,7 +24,7 @@ import Distribution.Simple.Glob.Internal
   , GlobPieces
   )
 
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath
 
 --------------------------------------------------------------------------------

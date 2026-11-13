@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Client.Configure
 -- Copyright   :  (c) David Himmelstrup 2005,

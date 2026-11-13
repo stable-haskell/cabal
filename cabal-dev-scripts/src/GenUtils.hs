@@ -188,6 +188,7 @@ mkList (x:xs) =
 
 data Input = Input
     { inputLicenseIds       :: Text
+    , inputLicenseIdNames   :: Text
     , inputLicenses         :: [InputLicense]
     , inputLicenseList_all  :: Text
     , inputLicenseList_perv :: PerV Text

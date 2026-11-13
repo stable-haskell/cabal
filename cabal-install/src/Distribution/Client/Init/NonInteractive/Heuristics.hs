@@ -28,6 +28,7 @@ module Distribution.Client.Init.NonInteractive.Heuristics
   ) where
 
 import Distribution.Client.Compat.Prelude hiding (many, readFile, (<|>))
+import Prelude ()
 
 import Distribution.Simple.Setup (fromFlagOrDefault)
 

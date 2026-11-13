@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 module Distribution.Types.PackageDescription.Lens
   ( PackageDescription
   , module Distribution.Types.PackageDescription.Lens

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -14,7 +15,7 @@ module Distribution.Client.CmdHaddock
   ) where
 
 import Distribution.Client.Compat.Prelude
-import System.Directory (makeAbsolute)
+import Distribution.Compat.Directory (makeAbsolute)
 import Prelude ()
 
 import Distribution.Client.CmdErrorMessages
@@ -72,6 +73,13 @@ import Distribution.Verbosity
 
 import Distribution.Client.Errors
 import qualified System.Exit (exitSuccess)
+#ifdef __MHS__
+import Data.Monoid (Last (..))
+import Data.Traversable (Traversable (..))
+
+instance Traversable Last where
+  traverse f (Last ma) = Last <$> traverse f ma
+#endif
 
 newtype ClientHaddockFlags = ClientHaddockFlags {openInBrowser :: Flag Bool}
 

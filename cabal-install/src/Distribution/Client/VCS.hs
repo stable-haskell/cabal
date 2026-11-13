@@ -90,11 +90,12 @@ import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Text as Text
-import System.Directory
+import Distribution.Compat.Directory
   ( doesDirectoryExist
   , doesFileExist
   , removePathForcibly
   )
+import qualified Distribution.Compat.Process as Process
 import System.FilePath
   ( takeDirectory
   , (</>)
@@ -103,7 +104,6 @@ import System.IO.Error
   ( isDoesNotExistError
   , isPermissionError
   )
-import qualified System.Process as Process
 
 -- | A driver for a version control system, e.g. git, darcs etc.
 data VCS program = VCS

@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.PreProcess
 -- Copyright   :  (c) 2003-2005, Isaac Jones, Malcolm Wallace
@@ -69,7 +67,7 @@ import Distribution.Verbosity
 import Distribution.Version
 
 import qualified Data.Text as T
-import System.Directory (doesDirectoryExist, doesFileExist)
+import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath
   ( normalise
   , replaceExtension
@@ -684,7 +682,7 @@ ppC2hs bi lbi clbi =
                            --
                            --
                            -- DO NOT add Installed.cxxOptions unless this changes!
-                           c `elem` "DIU"
+                           c `elem` ("DIU" :: String)
                            ]
                    ]
                 -- TODO: install .chi files for packages, so we can --include
@@ -720,7 +718,7 @@ getCppOptions bi lbi =
   platformDefines lbi
     ++ map T.unpack (cppOptions bi)
     ++ ["-I" ++ getSymbolicPath dir | dir <- PD.includeDirs bi]
-    ++ [opt | opt@('-' : c : _) <- map T.unpack (PD.ccOptions bi ++ PD.cxxOptions bi), c `elem` "DIU"]
+    ++ [opt | opt@('-' : c : _) <- map T.unpack (PD.ccOptions bi ++ PD.cxxOptions bi), c `elem` ("DIU" :: String)]
 
 platformDefines :: LocalBuildInfo -> [String]
 platformDefines lbi =

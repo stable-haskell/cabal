@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -----------------------------------------------------------------------------
 
 -- Module      :  Distribution.Simple.Errors
@@ -311,6 +313,7 @@ versionRequirement range
   | isAnyVersion range = ""
   | otherwise = " version " ++ prettyShow range
 
+{- FOURMOLU_DISABLE -}
 exceptionMessage :: CabalException -> String
 exceptionMessage e = case e of
   NoBenchMarkProgram cmd -> "Could not find benchmark program \"" ++ cmd ++ "\". Did you build the package first?"
@@ -638,11 +641,21 @@ exceptionMessage e = case e of
             ]
           _ -> []
     where
+#ifdef __MHS__
+      plural = case libs of
+        _ : _ : _ -> True
+        _ -> False
+      missing =
+        case libs of
+          _ : _ -> True
+          [] -> case hdr of Just (Left _) -> True; _ -> False
+#else
       plural = length libs >= 2
       -- Is there something missing? (as opposed to broken)
       missing =
         not (null libs)
           || case hdr of Just (Left _) -> True; _ -> False
+#endif
       messageSingular =
         "This problem can usually be solved by installing the system "
           ++ "package that provides this library (you may need the "
@@ -791,3 +804,4 @@ exceptionMessage e = case e of
       [ "The ecosystem doesn't support building packages with just bytecode libraries yet."
       , "If you have run into this error, please comment on issue #<TODO>"
       ]
+{- FOURMOLU_ENABLE -}

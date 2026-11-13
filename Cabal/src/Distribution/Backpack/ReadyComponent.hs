@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
 module Distribution.Backpack.ReadyComponent
   ( ReadyComponent (..)
@@ -39,9 +37,10 @@ import Distribution.ModuleName
 import Distribution.Package
 import Distribution.Simple.Utils
 
-import Control.Monad
+import Control.Monad hiding (mapM, sequence)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Distribution.Utils.LogProgress
 import Text.PrettyPrint
 
 import Distribution.Pretty
@@ -162,8 +161,7 @@ instance Package ReadyComponent where
 instance HasUnitId ReadyComponent where
   installedUnitId = rc_uid
 
-instance IsNode ReadyComponent where
-  type Key ReadyComponent = UnitId
+instance IsNode UnitId ReadyComponent where
   nodeKey = rc_uid
   nodeNeighbors rc =
     ( case rc_i rc of

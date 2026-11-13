@@ -14,6 +14,7 @@ import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Types.ComponentName
 import Distribution.Types.LibraryName
 import Distribution.Version (mkVersion)
+
 import Test.Tasty
 import Test.Tasty.HUnit
 

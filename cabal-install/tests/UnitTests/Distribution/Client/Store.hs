@@ -4,7 +4,7 @@ module UnitTests.Distribution.Client.Store (tests) where
 -- import Control.Concurrent (forkIO, threadDelay)
 -- import Control.Concurrent.MVar
 import qualified Data.Set as Set
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath
 
 -- import System.Random

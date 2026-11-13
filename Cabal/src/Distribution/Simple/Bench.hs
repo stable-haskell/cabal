@@ -39,7 +39,7 @@ import Distribution.Types.UnqualComponentName
 import Distribution.Utils.Path
 import Distribution.Verbosity
 
-import System.Directory (doesFileExist)
+import Distribution.Compat.Directory (doesFileExist)
 
 -- | Perform the \"@.\/setup bench@\" action.
 bench
@@ -55,11 +55,11 @@ bench
   -> IO ()
 bench args verbHandles pkg_descr lbi flags = do
   curDir <- LBI.absoluteWorkingDirLBI lbi
-  let verbosity = mkVerbosity verbHandles (fromFlag $ benchmarkVerbosity flags)
+  let verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity $ benchmarkCommonFlags flags)
       benchmarkNames = args
       pkgBenchmarks = PD.benchmarks pkg_descr
       enabledBenchmarks = LBI.enabledBenchLBIs pkg_descr lbi
-      mbWorkDir = flagToMaybe $ benchmarkWorkingDir flags
+      mbWorkDir = flagToMaybe $ setupWorkingDir $ benchmarkCommonFlags flags
       i = interpretSymbolicPath mbWorkDir -- See Note [Symbolic paths] in Distribution.Utils.Path
 
       -- Run the benchmark

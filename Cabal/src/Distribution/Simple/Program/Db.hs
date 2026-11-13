@@ -75,7 +75,7 @@ import Distribution.Simple.Program.Builtin
 import Distribution.Simple.Program.Find
 import Distribution.Simple.Program.Types
 import Distribution.Simple.Utils
-import Distribution.Utils.Structured (Structure (..), Structured (..))
+import Distribution.Utils.Structured (Structure (..))
 import Distribution.Verbosity
 import Distribution.Version
 

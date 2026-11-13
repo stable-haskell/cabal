@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- Module      :  Distribution.Client.Errors
 -- Copyright   :  Suganya Arun
 -- License     :  BSD3
@@ -13,7 +15,11 @@ module Distribution.Client.Errors
   ) where
 
 import Data.ByteString (ByteString)
+#ifdef __MHS__
+import qualified Distribution.Client.Compat.Base16 as Base16
+#else
 import qualified Data.ByteString.Base16 as Base16
+#endif
 import qualified Data.ByteString.Char8 as BS8
 import Data.List (groupBy)
 import Distribution.Client.IndexUtils.Timestamp
@@ -28,7 +34,7 @@ import Distribution.Simple.Utils
 import Network.URI
 import Text.PrettyPrint hiding (render, (<>))
 import qualified Text.PrettyPrint as PP
-import Text.Regex.Posix.ByteString (WrapError)
+import Prelude ()
 
 import Distribution.Client.Errors.Parser
 
@@ -98,7 +104,7 @@ data CabalInstallException
   | ReplTakesNoArguments [String]
   | ReplTakesSingleArgument [String]
   | RenderReplTargetProblem [String]
-  | GetPkgList String WrapError
+  | GetPkgList String String
   | GatherPkgInfo PackageName VersionRange
   | UnableToParseRepo String
   | NullUnknownrepos [String] [String]
@@ -464,7 +470,7 @@ exceptionMessageCabalInstall e = case e of
   ReplTakesNoArguments targetStrings -> "'repl' takes no arguments or a script argument outside a project: " ++ unwords targetStrings
   ReplTakesSingleArgument targetStrings -> "'repl' takes a single argument which should be a script: " ++ unwords targetStrings
   RenderReplTargetProblem renderProblem -> unlines renderProblem
-  GetPkgList pat err -> "Failed to compile regex " ++ pat ++ ": " ++ snd err
+  GetPkgList pat err -> "Failed to compile regex " ++ pat ++ ": " ++ err
   GatherPkgInfo name verConstraint ->
     "There is no available version of "
       ++ prettyShow name

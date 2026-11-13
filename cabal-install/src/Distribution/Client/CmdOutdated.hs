@@ -57,13 +57,14 @@ import Distribution.Version
 
 import qualified Data.Set as S
 import Distribution.Client.NixStyleOptions
-import System.Directory
+import Distribution.Compat.Directory
   ( getCurrentDirectory
   )
 
 import Distribution.Client.ProjectOrchestration
 
-import Control.Monad
+import Control.Monad hiding (forM_, mapM, mapM_, sequence, sequence_)
+import Data.Foldable (forM_, mapM_)
 import Distribution.Client.ScriptUtils
 import Distribution.Package
 import Distribution.ReadE

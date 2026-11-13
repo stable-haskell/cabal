@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Client.List
 -- Copyright   :  (c) David Himmelstrup 2005
@@ -38,11 +40,16 @@ import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import qualified Distribution.Simple.PackageIndex as InstalledPackageIndex
 import Distribution.Simple.Program (ProgramDb)
 import Distribution.Simple.Setup (fromFlag, fromFlagOrDefault)
+{- FOURMOLU_DISABLE -}
 import Distribution.Simple.Utils
   ( dieWithException
   , equating
+#ifdef __MHS__
+  , lowercase
+#endif
   , notice
   )
+{- FOURMOLU_ENABLE -}
 import Distribution.Version
   ( Version
   , VersionRange
@@ -90,10 +97,17 @@ import Distribution.Client.Utils
 import Control.Exception
   ( assert
   )
+#ifndef __MHS__
 import Data.Bits ((.|.))
+#endif
+{- FOURMOLU_DISABLE -}
 import Data.List
   ( maximumBy
+#ifdef __MHS__
+  , isInfixOf
+#endif
   )
+{- FOURMOLU_ENABLE -}
 import qualified Data.List as L
 import Data.List.NonEmpty (groupBy)
 import qualified Data.Map as Map
@@ -102,9 +116,15 @@ import Data.Maybe
   )
 import qualified Data.Text as Text
 import Data.Tree as Tree
+#ifdef __MHS__
+import Distribution.Compat.Directory
+  ( doesDirectoryExist
+  )
+#else
 import System.Directory
   ( doesDirectoryExist
   )
+#endif
 import Text.PrettyPrint
   ( Doc
   , char
@@ -124,8 +144,10 @@ import qualified Text.PrettyPrint as Disp
 import Distribution.Client.Errors
 import Distribution.Utils.ShortText (ShortText)
 import qualified Distribution.Utils.ShortText as ShortText
+#ifndef __MHS__
 import qualified Text.Regex.Base as Regex
 import qualified Text.Regex.Posix.String as Regex
+#endif
 
 -- | Return a list of packages matching given search strings.
 getPkgList
@@ -136,16 +158,19 @@ getPkgList
   -> ListFlags
   -> [String]
   -> IO [PackageDisplayInfo]
+{- FOURMOLU_DISABLE -}
 getPkgList verbosity packageDBs repoCtxt mcompprogdb listFlags pats = do
   installedPkgIndex <- for mcompprogdb $ \(comp, progdb) ->
     getInstalledPackages verbosity comp packageDBs progdb
   sourcePkgDb <- getSourcePackages verbosity repoCtxt
 
+#ifndef __MHS__
   regexps <- for pats $ \pat -> do
     e <- Regex.compile compOption Regex.execBlank pat
     case e of
       Right r -> return r
-      Left err -> dieWithException verbosity $ GetPkgList pat err
+      Left err -> dieWithException verbosity $ GetPkgList pat (snd err)
+#endif
 
   let sourcePkgIndex = packageIndex sourcePkgDb
       prefs name =
@@ -154,15 +179,24 @@ getPkgList verbosity packageDBs repoCtxt mcompprogdb listFlags pats = do
       pkgsInfoMatching
         :: [(PackageName, [Installed.InstalledPackageInfo], [UnresolvedSourcePackage])]
       pkgsInfoMatching =
+#ifdef __MHS__
+        let matchingInstalled = maybe [] (matchingPackages InstalledPackageIndex.searchWithPredicate pats) installedPkgIndex
+            matchingSource = matchingPackages (\idx n -> concatMap snd (PackageIndex.searchWithPredicate idx n)) pats sourcePkgIndex
+#else
         let matchingInstalled = maybe [] (matchingPackages InstalledPackageIndex.searchWithPredicate regexps) installedPkgIndex
             matchingSource = matchingPackages (\idx n -> concatMap snd (PackageIndex.searchWithPredicate idx n)) regexps sourcePkgIndex
+#endif
          in mergePackages matchingInstalled matchingSource
 
       pkgsInfo
         :: [(PackageName, [Installed.InstalledPackageInfo], [UnresolvedSourcePackage])]
       pkgsInfo
         -- gather info for all packages
+#ifdef __MHS__
+        | null pats =
+#else
         | null regexps =
+#endif
             mergePackages
               (maybe [] InstalledPackageIndex.allPackages installedPkgIndex)
               (PackageIndex.allPackages sourcePkgIndex)
@@ -187,6 +221,19 @@ getPkgList verbosity packageDBs repoCtxt mcompprogdb listFlags pats = do
     onlyInstalled = fromFlagOrDefault False (listInstalled listFlags)
     caseInsensitive = fromFlagOrDefault True (listCaseInsensitive listFlags)
 
+#ifdef __MHS__
+    -- Substring fallback for matching package names, used in place of
+    -- regular expressions.
+    matchingPackages search pats index =
+      [ pkg
+      | pat <- pats
+      , pkg <- search index (matchSubstring pat)
+      ]
+      where
+        matchSubstring pat
+          | caseInsensitive = \name -> lowercase pat `isInfixOf` lowercase name
+          | otherwise = isInfixOf pat
+#else
     compOption
       | caseInsensitive = Regex.compExtended .|. Regex.compIgnoreCase
       | otherwise = Regex.compExtended
@@ -196,6 +243,8 @@ getPkgList verbosity packageDBs repoCtxt mcompprogdb listFlags pats = do
       | re <- regexps
       , pkg <- search index (Regex.matchTest re)
       ]
+#endif
+{- FOURMOLU_ENABLE -}
 
 -- | Show information about packages.
 list

@@ -136,11 +136,12 @@ import Distribution.Verbosity
   )
 
 import qualified Data.ByteString.Lazy.Char8 as BSL
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , getCurrentDirectory
   , makeAbsolute
   )
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import System.FilePath
   ( makeRelative
   , normalise
@@ -356,7 +357,7 @@ packageToSdist verbosity projectRootDir format outputFile pkg = do
     Left tgz -> do
       case format of
         TarGzArchive -> do
-          writeLBS =<< BSL.readFile tgz
+          writeLBS =<< readFileLBS tgz
         _ -> dieWithException verbosity $ CannotConvertTarballPackage (show format)
     Right dir -> do
       case format of

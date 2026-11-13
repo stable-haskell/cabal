@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeFamilies #-}
 
 -- | Types used while planning how to build everything in a project.
 --
@@ -157,6 +156,7 @@ import Text.PrettyPrint (hsep, parens, text)
 -- connections).
 type ElaboratedInstallPlan =
   GenericInstallPlan
+    (WithMachine UnitId)
     ElaboratedInstalledPackageInfo
     ElaboratedConfiguredPackage
 
@@ -612,8 +612,7 @@ instance HasConfiguredId ElaboratedConfiguredPackage where
 instance HasUnitId ElaboratedConfiguredPackage where
   installedUnitId = elabUnitId
 
-instance IsNode ElaboratedConfiguredPackage where
-  type Key ElaboratedConfiguredPackage = WithMachine UnitId
+instance IsNode (WithMachine UnitId) ElaboratedConfiguredPackage where
   nodeKey elab = WithMachine (elabMachine elab) (elabUnitId elab)
 
   -- Each neighbour carries the machine of the plan node it refers to; see

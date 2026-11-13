@@ -26,7 +26,7 @@ import Control.Exception
 import Control.Monad.State (StateT, execStateT, liftIO)
 import qualified Control.Monad.State as State
 
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath
 import System.IO
 import System.Random

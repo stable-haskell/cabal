@@ -44,6 +44,11 @@ import Distribution.Simple.Program
 -- constitute a significant new attack vector anyway.
 queryBootstrapMirrors :: Verbosity -> URI -> IO [URI]
 
+#ifdef __MHS__
+-- Secure repositories are not supported in this build, so no mirrors
+-- are ever returned.
+queryBootstrapMirrors _ _ = return []
+#else
 #if defined(MIN_VERSION_resolv) || defined(MIN_VERSION_windns)
 -- use @resolv@ package for performing DNS queries
 queryBootstrapMirrors verbosity repoUri
@@ -162,6 +167,7 @@ parseNsLookupTxt = go0 [] []
     qstr acc (c:cs)   = qstr (c:acc) cs
     qstr _   []       = Nothing
 
+#endif
 #endif
 ----------------------------------------------------------------------------
 

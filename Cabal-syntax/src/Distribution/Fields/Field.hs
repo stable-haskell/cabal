@@ -28,6 +28,7 @@ module Distribution.Fields.Field
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Char as Char
+import Data.Foldable (Foldable)
 import qualified Data.Foldable1 as F1
 import Distribution.Compat.Prelude
 import Distribution.Pretty (showTokenStr)

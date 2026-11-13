@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.BuildPaths
 -- Copyright   :  Isaac Jones 2003-2004,
@@ -246,7 +244,7 @@ getExeSourceFiles
   -> LocalBuildInfo
   -> Executable
   -> ComponentLocalBuildInfo
-  -> IO [(ModuleName.ModuleName, SymbolicPath Pkg 'File)]
+  -> IO [(ModuleName.ModuleName, SymbolicPath Pkg File)]
 getExeSourceFiles verbosity lbi exe clbi = do
   moduleFiles <- getSourceFiles verbosity mbWorkDir searchpaths modules
   srcMainPath <- findFileCwd verbosity mbWorkDir (hsSourceDirs bi) (modulePath exe)
@@ -266,7 +264,7 @@ getTestSourceFiles
   -> LocalBuildInfo
   -> TestSuite
   -> ComponentLocalBuildInfo
-  -> IO [(ModuleName.ModuleName, SymbolicPath Pkg 'File)]
+  -> IO [(ModuleName.ModuleName, SymbolicPath Pkg File)]
 getTestSourceFiles verbosity lbi test@TestSuite{testInterface = TestSuiteExeV10 _ path} clbi = do
   moduleFiles <- getSourceFiles verbosity mbWorkDir searchpaths modules
   srcMainPath <- findFileCwd verbosity mbWorkDir (hsSourceDirs bi) path
@@ -287,7 +285,7 @@ getBenchmarkSourceFiles
   -> LocalBuildInfo
   -> Benchmark
   -> ComponentLocalBuildInfo
-  -> IO [(ModuleName.ModuleName, SymbolicPath Pkg 'File)]
+  -> IO [(ModuleName.ModuleName, SymbolicPath Pkg File)]
 getBenchmarkSourceFiles verbosity lbi bench@Benchmark{benchmarkInterface = BenchmarkExeV10 _ path} clbi = do
   moduleFiles <- getSourceFiles verbosity mbWorkDir searchpaths modules
   srcMainPath <- findFileCwd verbosity mbWorkDir (hsSourceDirs bi) path
@@ -323,7 +321,7 @@ getFLibSourceFiles verbosity lbi flib clbi =
 
 getSourceFiles
   :: Verbosity
-  -> Maybe (SymbolicPath CWD ('Dir Pkg))
+  -> Maybe (SymbolicPath CWD (Dir Pkg))
   -> [SymbolicPathX allowAbsolute Pkg (Dir Source)]
   -> [ModuleName.ModuleName]
   -> IO [(ModuleName.ModuleName, SymbolicPathX allowAbsolute Pkg File)]

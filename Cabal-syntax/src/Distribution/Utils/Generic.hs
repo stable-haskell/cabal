@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- |
 -- Module      :  Distribution.Utils.Generic
 -- Copyright   :  Isaac Jones, Simon Marlow 2003-2004
@@ -96,25 +98,37 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.Encoding.Error as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL
-import GHC.IO.Exception (IOErrorType (UnsupportedOperation))
-import System.Directory
+import Distribution.Compat.Directory
   ( copyFile
   , getTemporaryDirectory
   , removeFile
   , renameFile
   )
+import Distribution.Compat.Internal.LazyByteString
+  ( hGetContentsLBS
+  , readFileLBS
+  )
+import GHC.IO.Exception (IOErrorType (UnsupportedOperation))
 import System.FilePath
   ( takeFileName
   , (<.>)
   )
+{- FOURMOLU_DISABLE -}
 import System.IO
   ( IOMode (ReadMode)
   , hClose
   , hGetContents
+#ifndef __MHS__
+  -- MicroHs lacks this; a compatible replacement is defined below.
   , openBinaryTempFileWithDefaultPermissions
+#else
+  , Handle
+  , openBinaryTempFile
+#endif
   , withBinaryFile
   , withFile
   )
+{- FOURMOLU_ENABLE -}
 import System.IO.Error (ioeGetErrorType)
 
 -- -----------------------------------------------------------------------------
@@ -180,6 +194,13 @@ withFileContents name action = withFile name ReadMode (hGetContents >=> action)
 -- - If the temp directory (@TMP@/@TEMP@/..., see haddocks on
 --   'getTemporaryDirectory') is in a different drive than the destination path,
 --   the write will be emulated via 'copyFile', then 'deleteFile'.
+#ifdef __MHS__
+-- MicroHs has no 'System.IO.openBinaryTempFileWithDefaultPermissions';
+-- its 'openBinaryTempFile' already creates files with default
+-- permissions, so it is used directly.
+openBinaryTempFileWithDefaultPermissions :: FilePath -> String -> IO (FilePath, Handle)
+openBinaryTempFileWithDefaultPermissions = openBinaryTempFile
+#endif
 writeFileAtomic :: FilePath -> LBS.ByteString -> IO ()
 writeFileAtomic targetPath content = do
   let targetFile = takeFileName targetPath
@@ -299,7 +320,7 @@ ignoreBOM string = string
 --
 -- Reads lazily using ordinary 'readFile'.
 readUTF8File :: FilePath -> IO String
-readUTF8File f = ignoreBOM . fromUTF8LBS <$> LBS.readFile f
+readUTF8File f = ignoreBOM . fromUTF8LBS <$> readFileLBS f
 
 -- | Reads a UTF8 encoded text file as a Unicode String
 --
@@ -309,7 +330,7 @@ withUTF8FileContents name action =
   withBinaryFile
     name
     ReadMode
-    (LBS.hGetContents >=> action . ignoreBOM . fromUTF8LBS)
+    (hGetContentsLBS >=> action . ignoreBOM . fromUTF8LBS)
 
 -- | Writes a Unicode String as a UTF8 encoded text file.
 --

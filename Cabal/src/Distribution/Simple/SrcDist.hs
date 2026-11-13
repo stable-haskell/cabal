@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- NOTE: FIX: we don't have a great way of testing this module, since
 -- we can't easily look inside a tarball once its created.
 
@@ -64,7 +62,7 @@ import Distribution.Version
 
 import qualified Data.Map as Map
 import Data.Time (UTCTime, getCurrentTime, toGregorian, utctDay)
-import System.Directory (doesFileExist)
+import Distribution.Compat.Directory (doesFileExist)
 import System.IO (IOMode (WriteMode), hPutStrLn, withFile)
 
 -- | Create a source distribution.

@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 module Distribution.Client.Types.ConfiguredPackage
   ( ConfiguredPackage (..)
   ) where
@@ -58,8 +56,7 @@ instance HasConfiguredId (ConfiguredPackage loc) where
 instance PackageFixedDeps (ConfiguredPackage loc) where
   depends = fmap (map (newSimpleUnitId . confInstId)) . confPkgDeps
 
-instance IsNode (ConfiguredPackage loc) where
-  type Key (ConfiguredPackage loc) = UnitId
+instance IsNode UnitId (ConfiguredPackage loc) where
   nodeKey = newSimpleUnitId . confPkgId
 
   -- TODO: if we update ConfiguredPackage to support order-only

@@ -99,8 +99,9 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Char qualified as Char
 import Data.List (isPrefixOf, stripPrefix)
 import Data.Maybe (fromMaybe, isJust, mapMaybe)
+import Distribution.Compat.Directory
+import Distribution.Compat.Process
 import Network.Wait (waitTcpVerbose)
-import System.Directory
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.FilePath
@@ -109,7 +110,6 @@ import System.FilePath.Posix qualified as Posix
 import System.FilePath.Windows qualified as Windows
 import System.IO
 import System.OsRelease qualified as OSR
-import System.Process
 
 #ifndef mingw32_HOST_OS
 import System.Posix.Resource
@@ -805,7 +805,7 @@ withRemoteRepo repoDir m = do
           r <- runReaderT m (env{testHaveRepo = True})
           -- Windows fails to kill the python server when the function above
           -- is complete, so we kill it directly via CMD.
-          when (buildOS == Windows) $ void $ createProcess_ "kill python" $ System.Process.shell "taskkill /F /IM python3.exe"
+          when (buildOS == Windows) $ void $ createProcess_ "kill python" $ Distribution.Compat.Process.shell "taskkill /F /IM python3.exe"
           pure r
       )
 

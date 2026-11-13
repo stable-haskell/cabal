@@ -9,7 +9,7 @@ import Distribution.System ( buildPlatform )
 import Distribution.Verbosity
 
 import Data.IORef
-import System.Directory ( doesDirectoryExist, doesFileExist
+import Distribution.Compat.Directory ( doesDirectoryExist, doesFileExist
                         , getTemporaryDirectory
                         , removePathForcibly )
 import System.FilePath ( (<.>) )

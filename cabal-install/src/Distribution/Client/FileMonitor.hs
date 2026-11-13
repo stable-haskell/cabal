@@ -32,7 +32,7 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.Map.Strict as Map
 
 import Control.Exception
-import Control.Monad
+import Control.Monad hiding (forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.Except
   ( ExceptT
   , runExceptT
@@ -42,6 +42,7 @@ import Control.Monad.Except
 import Control.Monad.State (StateT, mapStateT)
 import qualified Control.Monad.State as State
 import Control.Monad.Trans (MonadIO, liftIO)
+import Data.Foldable (forM_, mapM_)
 
 import Distribution.Client.Glob
 import Distribution.Client.HashValue
@@ -51,7 +52,8 @@ import Distribution.Simple.FileMonitor.Types
 import Distribution.Simple.Utils (handleDoesNotExist, writeFileAtomic)
 import Distribution.Utils.Structured (Tag (..), structuredEncode)
 
-import System.Directory
+import Distribution.Compat.Directory
+import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
 import System.FilePath
 import System.IO
 
@@ -429,7 +431,7 @@ withCacheFile
   -> IO r
 withCacheFile (FileMonitor{fileMonitorCacheFile}) k =
   withBinaryFile fileMonitorCacheFile ReadMode $ \hnd -> do
-    contents <- structuredDecodeTriple <$> BS.hGetContents hnd
+    contents <- structuredDecodeTriple <$> hGetContentsLBS hnd
     k contents
 
 -- | Helper for writing the cache file.

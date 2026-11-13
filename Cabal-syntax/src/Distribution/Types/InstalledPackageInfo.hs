@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies #-}
 
 module Distribution.Types.InstalledPackageInfo
   ( InstalledPackageInfo (..)
@@ -113,8 +112,7 @@ instance Package.HasUnitId InstalledPackageInfo where
 instance Package.PackageInstalled InstalledPackageInfo where
   installedDepends = depends
 
-instance IsNode InstalledPackageInfo where
-  type Key InstalledPackageInfo = UnitId
+instance IsNode UnitId InstalledPackageInfo where
   nodeKey = installedUnitId
   nodeNeighbors = depends
 

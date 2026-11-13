@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.PreProcess.Types
 -- Copyright   :  (c) 2003-2005, Isaac Jones, Malcolm Wallace

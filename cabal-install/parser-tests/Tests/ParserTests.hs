@@ -28,6 +28,7 @@ import Distribution.Client.Types.Repo (LocalRepo (..), RemoteRepo (..), asPosixP
 import Distribution.Client.Types.RepoName (RepoName (..))
 import Distribution.Client.Types.SourceRepo
 import Distribution.Client.Types.WriteGhcEnvironmentFilesPolicy (WriteGhcEnvironmentFilesPolicy (..))
+import Distribution.Compat.Directory (canonicalizePath, doesFileExist)
 import Distribution.Compat.Prelude
 import Distribution.Compiler (CompilerFlavor (..))
 import Distribution.Parsec (simpleParsec)
@@ -62,7 +63,6 @@ import Distribution.Utils.NubList
 import Distribution.Verbosity
 import GHC.Stack (HasCallStack)
 import Network.URI (parseURI)
-import System.Directory (canonicalizePath, doesFileExist)
 import System.FilePath ((</>))
 import Prelude ()
 

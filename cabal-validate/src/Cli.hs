@@ -21,6 +21,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as T (toStrict)
 import qualified Data.Text.Lazy.Encoding as T (decodeUtf8)
 import Data.Version (Version, parseVersion)
+import Distribution.Compat.Directory (getCurrentDirectory)
 import GHC.Conc (getNumCapabilities)
 import Options.Applicative
   ( FlagFields
@@ -46,7 +47,6 @@ import Options.Applicative
   , value
   )
 import qualified Options.Applicative as Opt
-import System.Directory (getCurrentDirectory)
 import System.Exit (exitSuccess)
 import System.Info (arch, os)
 import System.Process.Typed (proc, readProcessStdout_)

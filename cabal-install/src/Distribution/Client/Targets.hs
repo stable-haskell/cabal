@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE PatternSynonyms #-}
 
 -- |
@@ -39,6 +40,7 @@ module Distribution.Client.Targets
   , userToPackageConstraint
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
@@ -63,13 +65,16 @@ import Distribution.Solver.Types.PackageIndex (PackageIndex)
 import qualified Distribution.Solver.Types.PackageIndex as PackageIndex
 import Distribution.Solver.Types.SourcePackage
 
+#ifdef __MHS__
+import qualified Distribution.Client.Compat.Tar as Tar
+#else
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
+#endif
 import Distribution.Client.FetchUtils
 import Distribution.Client.GlobalFlags
   ( RepoContext (..)
   )
-import qualified Distribution.Client.Tar as Tar
 import Distribution.Client.Utils (tryReadGenericPackageDesc)
 import Distribution.Types.PackageVersionConstraint
   ( PackageVersionConstraint (..)
@@ -99,16 +104,17 @@ import qualified Data.Map as Map
 import Distribution.Client.Errors
 import qualified Distribution.Client.GZipUtils as GZipUtils
 import qualified Distribution.Compat.CharParsing as P
+import Distribution.Compat.Directory
+  ( doesDirectoryExist
+  , doesFileExist
+  )
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Solver.Types.Machine (Machine (..))
 import Distribution.Utils.Path (makeSymbolicPath)
 import Network.URI
   ( URI (..)
   , URIAuth (..)
   , parseAbsoluteURI
-  )
-import System.Directory
-  ( doesDirectoryExist
-  , doesFileExist
   )
 import System.FilePath
   ( dropExtension
@@ -428,10 +434,10 @@ readPackageTarget verbosity = traverse modifyLocation
       either (dieWithException verbosity . ExtractTarballPackageErr . formatErr) return
         . check
         . accumEntryMap
-        . Tar.filterEntries isCabalFile
+        . Tar.foldEntries (\e es -> if isCabalFile e then Tar.Next e es else es) Tar.Done Tar.Fail
         . Tar.read
         . GZipUtils.maybeDecompress
-        =<< BS.readFile tarballFile
+        =<< readFileLBS tarballFile
       where
         formatErr msg = "Error reading " ++ tarballOriginalLoc ++ ": " ++ msg
 

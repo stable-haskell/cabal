@@ -13,8 +13,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as Text
+import Distribution.Compat.Directory (canonicalizePath, withCurrentDirectory)
 import Network.URI (URI)
-import System.Directory (canonicalizePath, withCurrentDirectory)
 import System.FilePath
 import System.IO.Unsafe (unsafePerformIO)
 

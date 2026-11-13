@@ -22,7 +22,8 @@ import Distribution.Client.NixStyleOptions
 import Distribution.Client.ProjectOrchestration
 import Distribution.Client.ProjectPlanning
 import Distribution.Client.Setup
-  ( ConfigFlags (..)
+  ( CommonSetupFlags (..)
+  , ConfigFlags (..)
   , GlobalFlags
   )
 import Distribution.Client.TargetProblem
@@ -183,7 +184,7 @@ targetAction flags@NixStyleFlags{..} ts globalFlags = do
   where
     verbosity =
       mkVerbosity defaultVerbosityHandles $
-        fromFlagOrDefault normal (configVerbosity configFlags)
+        fromFlagOrDefault normal (setupVerbosity $ configCommonFlags configFlags)
     targetStrings = if null ts then ["all"] else ts
     cliConfig =
       commandLineFlagsToProjectConfig

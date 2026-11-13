@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Distribution.Solver.Modular.Validate (validateTree) where
 
 -- Validation of the tree.
@@ -8,7 +9,9 @@ module Distribution.Solver.Modular.Validate (validateTree) where
 
 import Control.Monad (foldM, mzero, liftM2)
 import Control.Monad.Reader (MonadReader, Reader, runReader, local, asks)
+#ifndef __MHS__
 import Data.Either (lefts)
+#endif
 import Data.Function (on)
 
 import qualified Data.List as L
@@ -34,6 +37,11 @@ import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb, pkgConfigPkgIsPresent
 import Distribution.Solver.Types.Machine (Machine, PerMachine, onMachine)
 import Distribution.Types.LibraryName
 import Distribution.Types.PkgconfigVersionRange
+
+#ifdef __MHS__
+lefts :: [Either a b] -> [a]
+lefts xs = [x | Left x <- xs]
+#endif
 
 -- In practice, most constraints are implication constraints (IF we have made
 -- a number of choices, THEN we also have to ensure that). We call constraints

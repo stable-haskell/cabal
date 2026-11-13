@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- Verbosity for Cabal functions.
 
 -- |
@@ -96,7 +98,11 @@ import qualified Distribution.Compat.CharParsing as P
 import Distribution.Utils.Structured
 import System.IO (Handle, stderr, stdout)
 import qualified Text.PrettyPrint as PP
+#ifdef __MHS__
+import qualified Data.Typeable as Typeable
+#else
 import qualified Type.Reflection as Typeable
+#endif
 
 -- | Rich verbosity, used for the Cabal library interface.
 data Verbosity = Verbosity
@@ -178,13 +184,17 @@ instance Structured VerbosityHandles where
       [
         ( "VerbosityHandles"
         ,
-          [ nominalStructure $ Proxy @Handle
-          , nominalStructure $ Proxy @Handle
+          [ nominalStructure (Proxy :: Proxy Handle)
+          , nominalStructure (Proxy :: Proxy Handle)
           ]
         )
       ]
     where
+#ifdef __MHS__
+      tr = Typeable.typeRep (Proxy :: Proxy VerbosityHandles)
+#else
       tr = Typeable.SomeTypeRep $ Typeable.typeRep @VerbosityHandles
+#endif
 
 instance NFData Verbosity
 instance Structured Verbosity

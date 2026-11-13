@@ -9,6 +9,7 @@ import Distribution.Pretty
 import Distribution.Simple.Utils
 import Distribution.Types.ComponentName
 import Distribution.Types.PackageId
+import Distribution.Utils.LogProgress
 import Distribution.Verbosity
 
 import Text.PrettyPrint

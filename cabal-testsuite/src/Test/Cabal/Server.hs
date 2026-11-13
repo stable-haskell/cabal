@@ -27,11 +27,11 @@ import Control.Monad
 import Data.IORef
 import Data.List (intercalate, isPrefixOf)
 import Data.Maybe
+import Distribution.Compat.Process
 import Distribution.Simple.Program
 import Foreign.C.Error (Errno (..), ePIPE)
 import System.Exit
 import System.IO
-import System.Process
 import Text.Read (readMaybe)
 import Prelude hiding (log)
 
