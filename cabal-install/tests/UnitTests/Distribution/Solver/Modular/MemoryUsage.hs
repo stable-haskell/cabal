@@ -151,6 +151,10 @@ issue2899 name =
 -- build-tool dependencies.
 duplicateDependencies :: String -> SolverTest
 duplicateDependencies name =
+  -- The plan projection is name/version. On this base the library and the
+  -- build-tool executable of B are one assignment, so a single B-1 is the
+  -- whole plan. The case still guards the exponential lift of duplicate
+  -- dependencies out of conditionals.
   mkTest pkgs name ["A"] $ solverSuccess [("A", 1), ("B", 1)]
   where
     copies, depth :: Int

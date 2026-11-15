@@ -12,15 +12,19 @@
 -- Portability :  portable
 module Distribution.Simple.ConfigureScript
   ( runConfigureScript
+  , runConfigureScriptWithCompiler
   ) where
 
 import Distribution.Compat.Prelude
 import Prelude ()
 
 -- local
+
+import qualified Data.Map as Map
 import Distribution.Compiler (CompilerFlavor (..))
 import Distribution.PackageDescription
 import Distribution.Pretty
+import Distribution.Simple.Compiler (Compiler, compilerProperties)
 import Distribution.Simple.Configure (findDistPrefOrDefault)
 import Distribution.Simple.Errors
 import Distribution.Simple.LocalBuildInfo
@@ -44,7 +48,6 @@ import Distribution.Compat.Environment (getEnvironment)
 import Distribution.Compat.GetShortPathName (getShortPathName)
 
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Map as Map
 
 runConfigureScript
   :: VerbosityHandles
@@ -55,8 +58,23 @@ runConfigureScript
   -- ^ host platform
   -> IO ()
 runConfigureScript verbHandles cfg flags programDb hp = do
+  runConfigureScriptWithCompiler Nothing verbHandles cfg flags programDb hp
+
+-- | Run the configure script using the selected compiler's full target
+-- platform metadata when available. The older API remains available above and
+-- falls back to the historical Cabal platform rendering.
+runConfigureScriptWithCompiler
+  :: Maybe Compiler
+  -> VerbosityHandles
+  -> ConfigFlags
+  -> FlagAssignment
+  -> ProgramDb
+  -> Platform
+  -> IO ()
+runConfigureScriptWithCompiler mbCompiler verbHandles cfg flags programDb hp = do
   let commonCfg = configCommonFlags cfg
       verbosity = mkVerbosity verbHandles (fromFlag $ setupVerbosity commonCfg)
+
   dist_dir <- findDistPrefOrDefault $ setupDistPref commonCfg
   let build_dir = dist_dir </> makeRelativePathEx "build"
       mbWorkDir = flagToMaybe $ setupWorkingDir commonCfg
@@ -214,16 +232,33 @@ runConfigureScript verbHandles cfg flags programDb hp = do
           : [("CXXFLAGS", Just (mkFlagsEnv cxxFlags "CXXFLAGS")) | Just cxxFlags <- [mcxxFlags]]
           ++ [("PATH", Just pathEnv) | not (null extraPath)]
           ++ hcEnv
+          -- Fall back to explicit @--with-ghc@/@--with-ghc-pkg@ program
+          -- paths when the program database provided neither (e.g. a
+          -- direct @Setup configure@ invocation). These only fire when
+          -- 'hcEnv' above left the variable unset, so the
+          -- program-database-backed paths always win and an absent key
+          -- never clears them.
+          ++ [ (var, Just (canonicalisePathSeparator path))
+             | Just GHC <- [flagToMaybe (configHcFlavor cfg)]
+             , (var, mpath, prog) <-
+                [ ("GHC", hcPath, "ghc")
+                , ("GHC_PKG", hcPkgPath, "ghc-pkg")
+                ]
+             , Nothing <- [mpath]
+             , Just path <- [lookup prog (configProgramPaths cfg)]
+             ]
           ++ cabalFlagEnv
-      -- Cross-compiling: tell the script which machine it configures for,
-      -- in the GNU spelling it understands (see 'platformGnuTriple').
-      maybeHostFlag =
-        [ flag
-        | hp /= buildPlatform
-        , flag <- ["--build=" ++ platformGnuTriple buildPlatform, "--host=" ++ platformGnuTriple hp]
-        ]
+      -- Tell the script which machine it configures for, in the GNU
+      -- spelling it understands (see 'platformGnuTriple'). The selected
+      -- compiler's full target platform is preferred when available;
+      -- explicit user --host/--build values are respected.
       backwardsCompatHack = False
-      args = configureArgs backwardsCompatHack cfg'
+      args =
+        configureScriptArgs
+          mbCompiler
+          hp
+          (platformGnuTriple buildPlatform)
+          (configureArgs backwardsCompatHack cfg')
       args' =
         configureFile'
           : args
@@ -232,8 +267,9 @@ runConfigureScript verbHandles cfg flags programDb hp = do
           -- The standard autoconf spelling for the Haskell compiler (#2947);
           -- '--with-compiler' above is kept for the scripts that use it.
           ++ ["HC=" ++ p | Just p <- [hcPath]]
-          ++ maybeHostFlag
       shProg = simpleProgram "sh"
+  validateTargetArg verbosity "--host" args
+  validateTargetArg verbosity "--build" args
   progDb <- prependProgramSearchPath verbosity extraPath [] emptyProgramDb
   shConfiguredProg <-
     lookupProgram shProg
@@ -247,6 +283,48 @@ runConfigureScript verbHandles cfg flags programDb hp = do
           { progInvokeCwd = Just build_in
           }
     Nothing -> dieWithException verbosity NotFoundMsg
+
+configureScriptArgs :: Maybe Compiler -> Platform -> String -> [String] -> [String]
+configureScriptArgs mbCompiler selectedPlatform buildTriple userArgs =
+  userArgs ++ configureTargetDefaults hostTriple buildTriple userArgs
+  where
+    hostTriple = fromMaybe (platformGnuTriple selectedPlatform) $ do
+      selectedCompiler <- mbCompiler
+      Map.lookup "Target platform" (compilerProperties selectedCompiler)
+
+validateTargetArg :: Verbosity -> String -> [String] -> IO ()
+validateTargetArg verbosity option args = do
+  for_ (configureTargetValues option args) $ \target ->
+    when (null target || "--" `isPrefixOf` target) $
+      die' verbosity $
+        "Autoconf " ++ option ++ " requires a machine target platform value."
+  for_ (configureTargetValues option args) $ rejectProfilingTarget verbosity option
+
+configureTargetValues :: String -> [String] -> [String]
+configureTargetValues option = go
+  where
+    go [] = []
+    go (arg : rest)
+      | arg == option = case rest of
+          value : more -> value : go more
+          [] -> [""]
+      | (option ++ "=") `isPrefixOf` arg =
+          drop (length option + 1) arg : go rest
+      | otherwise = go rest
+
+rejectProfilingTarget :: Verbosity -> String -> String -> IO ()
+rejectProfilingTarget verbosity option target =
+  when ("-prof" `isSuffixOf` target) $
+    die' verbosity $
+      "Autoconf "
+        ++ option
+        ++ " must name the machine target platform, not the logical "
+        ++ "profiling target name "
+        ++ target
+        ++ ". Use "
+        ++ option
+        ++ "=<machine> and "
+        ++ "select the profiling compiler with --with-compiler=<machine>-prof-ghc."
 
 -- | Convert Windows path to Unix ones
 toUnix :: String -> String

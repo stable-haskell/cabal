@@ -46,7 +46,7 @@ import Distribution.Client.ScriptUtils
 import Distribution.Client.Setup
   ( yesNoOpt
   )
-import Distribution.Client.Toolchain (Machine (..), Toolchain (..))
+import Distribution.Client.Toolchain (Machine (..), Toolchain (..), onMachine)
 import Distribution.Client.Utils.Json
   ( (.=)
   )
@@ -246,23 +246,15 @@ pathAction flags@NixStyleFlags{extraFlags = pathFlags'} cliTargetStrings globalF
     if not $ fromFlagOrDefault False (pathCompiler pathFlags)
       then pure Nothing
       else do
-        (compiler, platform, progDb) <-
-          runRebuild (distProjectRootDirectory . distDirLayout $ baseCtx) $
-            configureCompiler verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
-        compilerProg <- requireCompilerProg verbosity compiler
-        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg progDb
-
-        let toolchain =
-              Toolchain
-                { toolchainCompiler = compiler
-                , toolchainPlatform = platform
-                , toolchainProgramDb = progDb
-                }
-            compilerInfo' =
-              mkCompilerInfo configuredCompilerProg toolchain $
-                cabalStoreDirLayout (cabalDirLayout baseCtx)
-
-        pure $ Just compilerInfo'
+        let projectRoot = distProjectRootDirectory (distDirLayout baseCtx)
+        toolchains <- runRebuild projectRoot $ configureToolchains verbosity (distDirLayout baseCtx) (projectConfig baseCtx)
+        -- The project compiler produces Host artifacts; Build is reserved for
+        -- tools run while building them. Query the same configured Host
+        -- toolchain and store layout used by the build plan.
+        let toolchain@(Toolchain{toolchainCompiler}) = onMachine toolchains Host
+        compilerProg <- requireCompilerProg verbosity toolchainCompiler
+        (configuredCompilerProg, _) <- requireProgram verbosity compilerProg (toolchainProgramDb toolchain)
+        pure $ Just $ mkCompilerInfo configuredCompilerProg toolchain (cabalStoreDirLayout $ cabalDirLayout baseCtx)
 
   paths <- for (fromFlagOrDefault [] $ pathDirectories pathFlags) $ \p -> do
     t <- getPathLocation verbosity baseCtx p

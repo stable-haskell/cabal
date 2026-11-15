@@ -296,7 +296,13 @@ runTest SolverTest{..} = withFrozenCallStack $ askOption $ \(OptionShowSolverLog
         assertBool
           ("Unexpected error:\n" ++ err)
           (checkErrorMsg testResult err)
-      Right plan -> assertEqual "" (toMaybe testResult) (Just (extractInstallPlan plan))
+      -- The install plan is a dependency graph, not an ordered list. Compare
+      -- package/version multiplicity while ignoring traversal order.
+      Right plan ->
+        assertEqual
+          ""
+          (sort <$> toMaybe testResult)
+          (Just $ sort $ extractInstallPlan plan)
   where
     toMaybe :: SolverResult -> Maybe [(String, Int)]
     toMaybe = either (const Nothing) Just . resultErrorMsgPredicateOrPlan

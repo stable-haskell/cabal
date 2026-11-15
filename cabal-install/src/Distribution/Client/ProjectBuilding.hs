@@ -40,6 +40,7 @@ module Distribution.Client.ProjectBuilding
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+import Distribution.Client.HashValue (HashValue, readFileHashValue, showHashValue)
 import Distribution.Client.ProjectBuilding.Types
 import Distribution.Client.ProjectConfig
 import Distribution.Client.ProjectConfig.Types
@@ -49,7 +50,6 @@ import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.Store
 import Distribution.Client.Toolchain
   ( Machine (..)
-  , Toolchain (..)
   , toolMachine
   )
 
@@ -103,6 +103,16 @@ import Distribution.Simple.Flag (fromFlagOrDefault)
 
 import Distribution.Client.ProjectBuilding.PackageFileMonitor
 import Distribution.Client.ProjectBuilding.UnpackedPackage (annotateFailureNoLog, buildAndInstallUnpackedPackage, buildInplaceUnpackedPackage)
+
+------------------------------------------------------------------------------
+
+unpackHashForTarball :: ElaboratedConfiguredPackage -> FilePath -> IO HashValue
+unpackHashForTarball pkg tarball = do
+  tarballHash <- readFileHashValue tarball
+  pure $ combinedTarballHash tarballHash (elabPkgDescriptionOverride pkg)
+
+unpackedSrcDirectory :: DistDirLayout -> PackageId -> HashValue -> FilePath
+unpackedSrcDirectory = unpackedTarballDirectory
 
 ------------------------------------------------------------------------------
 
@@ -177,7 +187,7 @@ rebuildTargetsDryRun
   -> ElaboratedSharedConfig
   -> ElaboratedInstallPlan
   -> IO BuildStatusMap
-rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
+rebuildTargetsDryRun distDirLayout shared =
   -- Do the various checks to work out the 'BuildStatus' of each package.
   foldMInstallPlanDepOrder dryRunPkg
   where
@@ -214,19 +224,19 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} shared =
       -> [BuildStatus]
       -> FilePath
       -> IO BuildStatus
-    dryRunTarballPkg pkg depsBuildStatus tarball =
+    dryRunTarballPkg pkg depsBuildStatus tarball = do
+      unpackHash <- unpackHashForTarball pkg tarball
       case elabBuildStyle pkg of
-        BuildAndInstall -> return (BuildStatusUnpack tarball)
+        -- 'BuildAndInstall' packages are always unpacked into a fresh
+        -- temporary directory (with an internal ./dist for custom Setup
+        -- scripts), never rebuilt in the persistent source tree.
+        BuildAndInstall -> return (BuildStatusUnpack tarball unpackHash)
         BuildInplaceOnly{} -> do
-          -- TODO: [nice to have] use a proper file monitor rather
-          -- than this dir exists test
+          let srcdir = unpackedSrcDirectory distDirLayout (packageId pkg) unpackHash
           exists <- doesDirectoryExist srcdir
           if exists
             then dryRunLocalPkg pkg depsBuildStatus srcdir
-            else return (BuildStatusUnpack tarball)
-      where
-        srcdir :: FilePath
-        srcdir = distUnpackedSrcDirectory (packageId pkg)
+            else return (BuildStatusUnpack tarball unpackHash)
 
     dryRunLocalPkg
       :: ElaboratedConfiguredPackage
@@ -686,7 +696,7 @@ rebuildTarget
         -- We rely on the 'BuildStatus' to decide which phase to start from:
         case pkgBuildStatus of
           BuildStatusDownload -> downloadPhase
-          BuildStatusUnpack tarball -> unpackTarballPhase tarball
+          BuildStatusUnpack tarball unpackHash -> unpackTarballPhase tarball unpackHash
           BuildStatusRebuild srcdir status -> rebuildPhase status (makeSymbolicPath srcdir)
           -- TODO: perhaps re-nest the types to make these impossible
           BuildStatusPreExisting{} -> unexpectedState
@@ -701,17 +711,20 @@ rebuildTarget
           annotateFailureNoLog DownloadFailed $
             waitAsyncPackageDownload verbosity downloadMap pkg
         case downsrcloc of
-          DownloadedTarball tarball -> unpackTarballPhase tarball
+          DownloadedTarball tarball -> do
+            unpackHash <- unpackHashForTarball pkg tarball
+            unpackTarballPhase tarball unpackHash
       -- TODO: [nice to have] git/darcs repos etc
 
-      unpackTarballPhase :: FilePath -> IO BuildResult
-      unpackTarballPhase tarball =
+      unpackTarballPhase :: FilePath -> HashValue -> IO BuildResult
+      unpackTarballPhase tarball unpackHash =
         withTarballLocalDirectory
           verbosity
           distDirLayout
           unpackLock
           tarball
           (packageId pkg)
+          unpackHash
           (elabDistDirParams sharedPackageConfig pkg)
           (elabBuildStyle pkg)
           (elabPkgDescriptionOverride pkg)
@@ -853,6 +866,7 @@ withTarballLocalDirectory
   -- ^ serialises the check-and-unpack of the shared source directory
   -> FilePath
   -> PackageId
+  -> HashValue
   -> DistDirParams
   -> BuildStyle
   -> Maybe CabalFileText
@@ -867,6 +881,7 @@ withTarballLocalDirectory
   unpackLock
   tarball
   pkgid
+  unpackHash
   dparams
   buildstyle
   pkgTextOverride
@@ -897,8 +912,8 @@ withTarballLocalDirectory
       -- appropriate location under the shared dist dir, and then build it
       -- inplace there
       BuildInplaceOnly{} -> do
-        let srcrootdir = distUnpackedSrcRootDirectory
-            srcdir = distUnpackedSrcDirectory pkgid
+        let srcrootdir = distUnpackedSrcRootDirectory </> showHashValue unpackHash
+            srcdir = srcrootdir </> prettyShow pkgid
             builddir =
               makeSymbolicPath $
                 makeRelative (normalise srcdir) $

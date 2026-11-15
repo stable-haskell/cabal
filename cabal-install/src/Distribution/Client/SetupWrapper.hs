@@ -696,7 +696,7 @@ setupWrapper verbosity options mpkg cmd getCommonFlags getFlags getExtraArgs wra
              verbHandles
              (setupBuildType setup)
              setupProgDb
-             elabSharedConfig
+             (elabToolchain elabSharedConfig elabPkg)
              elabReadyPkg
              ipi
              extraArgs

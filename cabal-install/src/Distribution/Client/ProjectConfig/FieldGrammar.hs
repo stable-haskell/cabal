@@ -36,6 +36,8 @@ projectConfigFieldGrammar source knownPrograms = do
       projectConfigAllPackages = mempty
       projectConfigSpecificPackage = mempty
       projectConfigMachinePackages = mempty
+      -- Internal install overlay fields are not read from project files.
+      projectConfigInstallPackages = mempty
   projectConfigLocalPackages <- blurFieldGrammar L.projectConfigLocalPackages (packageConfigFieldGrammar knownPrograms)
   pure ProjectConfig{..}
 
@@ -80,6 +82,7 @@ projectConfigSharedFieldGrammar source = do
   projectConfigBuildHcFlavor <- optionalFieldDef "build-compiler" L.projectConfigBuildHcFlavor mempty
   projectConfigBuildHcPath <- optionalFieldDefAla "with-build-compiler" (alaFlag FilePathNT) L.projectConfigBuildHcPath mempty
   projectConfigBuildHcPkg <- optionalFieldDefAla "with-build-hc-pkg" (alaFlag FilePathNT) L.projectConfigBuildHcPkg mempty
+  projectConfigBuildPackageDBs <- monoidalFieldAla "build-package-dbs" (alaList' CommaFSep PackageDBNT) L.projectConfigBuildPackageDBs
   projectConfigHaddockIndex <- optionalFieldDef "doc-index-file" L.projectConfigHaddockIndex mempty
   projectConfigInstallDirs <- blurFieldGrammar L.projectConfigInstallDirs installDirsGrammar
   projectConfigPackageDBs <- monoidalFieldAla "package-dbs" (alaList' CommaFSep PackageDBNT) L.projectConfigPackageDBs

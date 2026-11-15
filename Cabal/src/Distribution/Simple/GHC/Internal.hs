@@ -18,8 +18,8 @@ module Distribution.Simple.GHC.Internal
   , componentGhcOptions
   , sourcesGhcOptions
   , mkGHCiLibName
-  , mkGHCiProfLibName
   , filterGhciFlags
+  , installExeSourcePath
   , ghcLookupProperty
   , getHaskellObjects
   , mkGhcOptPackages
@@ -36,10 +36,14 @@ module Distribution.Simple.GHC.Internal
   , ghcArchString
   , ghcOsString
   , ghcPlatformAndVersionString
+  , ghcPlatformAndVersionStringWithAbi
+  , ghcPlatformAndVersionStringWithTarget
 
     -- * Constructing GHC environment files
   , GhcEnvironmentFileEntry (..)
   , writeGhcEnvironmentFile
+  , writeGhcEnvironmentFileWithAbi
+  , writeGhcEnvironmentFileWithTarget
   , simpleGhcEnvironmentFile
   , ghcEnvironmentFileName
   , renderGhcEnvironmentFile
@@ -89,7 +93,8 @@ import Language.Haskell.Extension
 import System.Directory (listDirectory)
 import System.Environment (getEnv)
 import System.FilePath
-  ( takeDirectory
+  ( isRelative
+  , takeDirectory
   , takeExtension
   , takeFileName
   )
@@ -97,6 +102,24 @@ import System.IO (hClose, hPutStrLn)
 
 targetPlatform :: [(String, String)] -> Maybe Platform
 targetPlatform ghcInfo = platformFromTriple =<< lookup "Target platform" ghcInfo
+
+-- | Find the executable file written by GHC. Explicit @-o@ options override
+-- Cabal's usual component output path, and GHC resolves relative paths from
+-- its working directory. On Windows, GHC adds the executable extension when
+-- the supplied path does not already have one.
+installExeSourcePath :: Platform -> FilePath -> FilePath -> [String] -> FilePath
+installExeSourcePath platform workingDir defaultPath ghcOptions =
+  case lookup "-o" (reverse (zip ghcOptions (drop 1 ghcOptions))) of
+    Just path -> addExeExtension (resolve path)
+    Nothing -> defaultPath
+  where
+    resolve path
+      | isRelative path = workingDir </> path
+      | otherwise = path
+    exeExt = exeExtension platform
+    addExeExtension path
+      | null exeExt || not (null (takeExtension path)) = path
+      | otherwise = path <.> exeExt
 
 -- | Adjust the way we find and configure gcc and ld
 configureToolchain
@@ -638,9 +661,6 @@ filterGhciFlags = filter supported
 mkGHCiLibName :: UnitId -> String
 mkGHCiLibName lib = getHSLibraryName lib <.> "o"
 
-mkGHCiProfLibName :: UnitId -> String
-mkGHCiProfLibName lib = getHSLibraryName lib <.> "p_o"
-
 ghcLookupProperty :: String -> Compiler -> Bool
 ghcLookupProperty prop comp =
   case Map.lookup prop (compilerProperties comp) of
@@ -777,6 +797,20 @@ ghcPlatformAndVersionString :: Platform -> Version -> String
 ghcPlatformAndVersionString (Platform arch os) version =
   intercalate "-" [ghcArchString arch, ghcOsString os, prettyShow version]
 
+-- | Include an intrinsic target ABI after GHC's usual platform/version name.
+-- The empty ABI preserves the names used by existing compilers.
+ghcPlatformAndVersionStringWithAbi :: Platform -> Version -> String -> String
+ghcPlatformAndVersionStringWithAbi platform version abi =
+  ghcPlatformAndVersionString platform version ++ if null abi then "" else "-" ++ abi
+
+-- | Namespace for compilers advertising the canonical target protocol.
+-- Legacy compilers continue to use the ABI-suffixed machine namespace above.
+ghcPlatformAndVersionStringWithTarget :: Platform -> Version -> Maybe String -> String -> String
+ghcPlatformAndVersionStringWithTarget platform version targetName abi =
+  case targetName of
+    Just target -> target ++ "-" ++ prettyShow version
+    Nothing -> ghcPlatformAndVersionStringWithAbi platform version abi
+
 -- -----------------------------------------------------------------------------
 -- Constructing GHC environment files
 
@@ -823,11 +857,35 @@ writeGhcEnvironmentFile
   -> [GhcEnvironmentFileEntry FilePath]
   -- ^ the content
   -> IO FilePath
-writeGhcEnvironmentFile directory platform ghcversion entries = do
+writeGhcEnvironmentFile directory platform ghcversion =
+  writeGhcEnvironmentFileWithAbi directory platform ghcversion ""
+
+-- | Write an environment for a compiler with an intrinsic target ABI.
+writeGhcEnvironmentFileWithAbi
+  :: FilePath
+  -> Platform
+  -> Version
+  -> String
+  -> [GhcEnvironmentFileEntry FilePath]
+  -> IO FilePath
+writeGhcEnvironmentFileWithAbi directory platform ghcversion abi entries = do
+  writeGhcEnvironmentFileWithTarget directory platform ghcversion abi Nothing entries
+
+-- | Write an environment file using the new logical target namespace when
+-- supplied, while retaining the legacy ABI suffix for older compilers.
+writeGhcEnvironmentFileWithTarget
+  :: FilePath
+  -> Platform
+  -> Version
+  -> String
+  -> Maybe String
+  -> [GhcEnvironmentFileEntry FilePath]
+  -> IO FilePath
+writeGhcEnvironmentFileWithTarget directory platform ghcversion abi targetName entries = do
   writeFileAtomic envfile . BS.pack . renderGhcEnvironmentFile $ entries
   return envfile
   where
-    envfile = directory </> ghcEnvironmentFileName platform ghcversion
+    envfile = directory </> ".ghc.environment." ++ ghcPlatformAndVersionStringWithTarget platform ghcversion targetName abi
 
 -- | The @.ghc.environment-$arch-$os-$ver@ file name
 ghcEnvironmentFileName :: Platform -> Version -> FilePath

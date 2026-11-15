@@ -66,7 +66,11 @@ module Distribution.Simple.GHC
   , Internal.simpleGhcEnvironmentFile
   , Internal.renderGhcEnvironmentFile
   , Internal.writeGhcEnvironmentFile
+  , Internal.writeGhcEnvironmentFileWithAbi
+  , Internal.writeGhcEnvironmentFileWithTarget
   , Internal.ghcPlatformAndVersionString
+  , Internal.ghcPlatformAndVersionStringWithAbi
+  , Internal.ghcPlatformAndVersionStringWithTarget
   , readGhcEnvironmentFile
   , parseGhcEnvironmentFile
   , ParseErrorExc (..)
@@ -95,7 +99,7 @@ import Distribution.Simple.Compiler
 import Distribution.Simple.Errors
 import Distribution.Simple.Flag
 import qualified Distribution.Simple.GHC.Build as GHC
-import Distribution.Simple.GHC.Build.Modules (BuildWay (..))
+import Distribution.Simple.GHC.Build.Modules (BuildWay (..), buildWayExtraHcOptions)
 import Distribution.Simple.GHC.Build.Utils
 import Distribution.Simple.GHC.EnvironmentParser
 import Distribution.Simple.GHC.ImplInfo
@@ -126,7 +130,6 @@ import System.FilePath
   , takeDirectory
   , takeFileName
   )
-import qualified System.Info
 #ifndef mingw32_HOST_OS
 import System.Posix (createSymbolicLink)
 #endif /* mingw32_HOST_OS */
@@ -200,6 +203,14 @@ configureCompiler verbosity hcPath conf0 = do
   extensions0 <- Internal.getExtensions verbosity ghcProg
 
   ghcInfo <- Internal.getGhcInfo verbosity implInfo ghcProg
+  let identityKeys = ["Target name", "Target platform", "Target ABI", "GHC Profiled"]
+      duplicateIdentityKeys =
+        [ key
+        | key <- identityKeys
+        , length (filter ((== key) . fst) ghcInfo) > 1
+        ]
+  unless (null duplicateIdentityKeys) $
+    die' verbosity ("GHC --info contains duplicate target identity fields: " ++ intercalate ", " duplicateIdentityKeys)
 
   let ghcInfoMap = Map.fromList ghcInfo
       filterJS = if ghcVersion < mkVersion [9, 8] then filterExt JavaScriptFFI else id
@@ -235,22 +246,40 @@ configureCompiler verbosity hcPath conf0 = do
       -- If the @Project Unit Id@ exactly matches @compilerId@, stripping the
       -- common prefix yields the empty string, which should be treated as
       -- @NoAbiTag@ rather than @AbiTag ""@.
+      -- A @Target ABI@ reported by the compiler (e.g. @profiling@ for an
+      -- intrinsic profiling target) is appended to the project tag.
       compilerAbiTag :: AbiTag
-      compilerAbiTag =
-        let abiTagSuffix =
-              dropWhile (== '-') . stripCommonPrefix (prettyShow compilerId)
-                <$> projectUnitId
-         in case abiTagSuffix of
-              Nothing -> NoAbiTag
-              Just "" -> NoAbiTag
-              Just tag -> AbiTag tag
+      compilerAbiTag = projectAbiTag
+
+      projectAbiTag :: AbiTag
+      projectAbiTag =
+        case projectUnitId of
+          Nothing -> NoAbiTag
+          Just "" -> NoAbiTag
+          Just projectUnitId' ->
+            case dropWhile (== '-') $ stripCommonPrefix (prettyShow compilerId) projectUnitId' of
+              "" -> NoAbiTag
+              tag -> AbiTag tag
+
+      -- GHC reports "<unavailable>" (or an empty string) for a wired-in unit
+      -- id it doesn't know, e.g. an in-tree stage1 compiler that reports
+      -- @ghc-internal Unit Id: <unavailable>@. Treat those as absent rather
+      -- than as a real unit id, so we don't manufacture bogus wired-in entries.
+      validUnitId :: String -> Maybe UnitId
+      validUnitId s
+        | s == "" || s == "<unavailable>" = Nothing
+        | otherwise = Just (mkUnitId s)
 
       wiredInUnitIds = do
-        ghcInternalUnitId <- Map.lookup "ghc-internal Unit Id" ghcInfoMap
-        ghcUnitId <- projectUnitId
+        -- These baked-in IDs describe libraries used by the running compiler.
+        -- An intrinsic profiling target has a separate package universe; its
+        -- target libraries must be resolved from the target package database.
+        guard (Map.lookup "Target ABI" ghcInfoMap /= Just "profiling")
+        ghcUnitId <- validUnitId =<< projectUnitId
+        ghcInternalUnitId <- validUnitId =<< Map.lookup "ghc-internal Unit Id" ghcInfoMap
         pure
-          [ (mkPackageName "ghc", mkUnitId ghcUnitId)
-          , (mkPackageName "ghc-internal", mkUnitId ghcInternalUnitId)
+          [ (mkPackageName "ghc", ghcUnitId)
+          , (mkPackageName "ghc-internal", ghcInternalUnitId)
           ]
 
   let comp =
@@ -264,7 +293,24 @@ configureCompiler verbosity hcPath conf0 = do
           , compilerWiredInUnitIds = wiredInUnitIds
           }
       compPlatform = Internal.targetPlatform ghcInfo
-  return (comp, compPlatform, progdb1)
+  case compPlatform of
+    Nothing ->
+      when (Map.member "Target name" ghcInfoMap) $
+        die' verbosity "Invalid GHC target metadata: Target platform is missing"
+    Just platform -> do
+      when (Map.member "Target name" ghcInfoMap && not (Map.member "Target ABI" ghcInfoMap)) $
+        die' verbosity "Invalid GHC target metadata: Target ABI is missing"
+      case compilerTargetName platform comp of
+        Left problem -> die' verbosity ("Invalid GHC target metadata: " ++ problem)
+        Right _ -> when (Map.member "Target name" ghcInfoMap) $
+          case Map.lookup "GHC Profiled" ghcInfoMap of
+            Nothing -> die' verbosity "Invalid GHC target metadata: GHC Profiled is missing"
+            Just profiled ->
+              unless (profiled `elem` ["YES", "NO"] && profiled == (if compilerTargetAbi comp == "profiling" then "YES" else "NO")) $
+                die' verbosity "Invalid GHC target metadata: GHC Profiled contradicts Target ABI"
+  let ghcProgWithAbi =
+        ghcProg{programProperties = Map.union ghcInfoMap (programProperties ghcProg)}
+  return (comp, compPlatform, updateProgram ghcProgWithAbi progdb1)
 
 -- | Given a configured @ghc@ program, configure auxiliary programs such
 -- as @ghc-pkg@ or @haddock@, as well as toolchain programs such as @ar@, @ld@,
@@ -339,6 +385,38 @@ compilerProgramDb verbosity comp progdb1 hcPkgPath = do
   when (ghcVersion /= ghcPkgVersion) $
     dieWithException verbosity $
       VersionMismatchGHC (programPath ghcProg) ghcVersion (programPath ghcPkgProg) ghcPkgVersion
+
+  -- New target metadata is a protocol opt-in. Ask the selected package tool
+  -- for its own settings so aliases, wrappers, and configured arguments are
+  -- checked rather than inferred from the ghc executable path.
+  when (Map.member "Target name" (compilerProperties comp)) $ do
+    output <- getProgramOutput verbosity ghcPkgProg ["--info"]
+    pkgPairs <- case reads output of
+      [(pairs, rest)] | all isSpace rest -> pure pairs
+      _ -> die' verbosity "ghc-pkg --info did not return a valid property list"
+    let identityFields = ["Project version", "Target platform", "Target name", "Target ABI", "LibDir", "Global Package DB"]
+        duplicateFields = [field | field <- identityFields, length (filter ((== field) . fst) pkgPairs) > 1]
+    unless (null duplicateFields) $
+      die' verbosity ("ghc-pkg --info contains duplicate identity fields: " ++ intercalate ", " duplicateFields)
+    let pkgInfo = Map.fromList pkgPairs
+    let expected = compilerProperties comp
+        fields = ["Project version", "Target platform", "Target name", "Target ABI"]
+    forM_ fields $ \field ->
+      case (Map.lookup field pkgInfo, Map.lookup field expected) of
+        (Just actual, Just compilerValue) ->
+          when (actual /= compilerValue) $
+            die' verbosity ("ghc-pkg target metadata mismatch for " ++ field)
+        _ -> die' verbosity ("ghc-pkg --info is missing " ++ field)
+    compilerLibDir <- dropWhileEndLE isSpace <$> getProgramOutput verbosity ghcProg ["--print-libdir"]
+    compilerGlobalDb <- dropWhileEndLE isSpace <$> getProgramOutput verbosity ghcProg ["--print-global-package-db"]
+    forM_ [("LibDir", compilerLibDir), ("Global Package DB", compilerGlobalDb)] $ \(field, compilerPathValue) ->
+      case Map.lookup field pkgInfo of
+        Just actual -> do
+          actualPath <- canonicalizePath actual
+          compilerPath <- canonicalizePath compilerPathValue
+          when (actualPath /= compilerPath) $
+            die' verbosity ("ghc-pkg installation mismatch for " ++ field)
+        Nothing -> die' verbosity ("ghc-pkg --info is missing " ++ field)
 
   return progdb4
 
@@ -593,9 +671,11 @@ getUserPackageDB _verbosity ghcProg platform = do
   return (appdir </> platformAndVersion </> packageConfFileName)
   where
     platformAndVersion =
-      Internal.ghcPlatformAndVersionString
+      Internal.ghcPlatformAndVersionStringWithTarget
         platform
         ghcVersion
+        (Map.lookup "Target name" (programProperties ghcProg))
+        (Map.findWithDefault "" "Target ABI" (programProperties ghcProg))
     packageConfFileName = "package.conf.d"
     ghcVersion = fromMaybe (error "GHC.getUserPackageDB: no ghc version") $ programVersion ghcProg
 
@@ -818,6 +898,7 @@ libAbiHash verbosity _pkg_descr lbi lib clbi = do
         <> mempty
           { ghcOptMode = toFlag GhcModeAbiHash
           , ghcOptInputModules = toNubListR $ exposedModules lib
+          , ghcOptExtra = map Text.unpack $ hcOptions GHC libBi ++ buildWayExtraHcOptions StaticWay comp libBi
           }
     sharedArgs =
       vanillaArgs
@@ -826,39 +907,11 @@ libAbiHash verbosity _pkg_descr lbi lib clbi = do
           , ghcOptFPic = toFlag True
           , ghcOptHiSuffix = toFlag "dyn_hi"
           , ghcOptObjSuffix = toFlag "dyn_o"
-          , ghcOptExtra = map Text.unpack $ hcSharedOptions GHC libBi
-          }
-    profArgs =
-      vanillaArgs
-        <> mempty
-          { ghcOptProfilingMode = toFlag True
-          , ghcOptProfilingAuto =
-              Internal.profDetailLevelFlag
-                True
-                (withProfLibDetail lbi)
-          , ghcOptHiSuffix = toFlag "p_hi"
-          , ghcOptObjSuffix = toFlag "p_o"
-          , ghcOptExtra = map Text.unpack $ hcProfOptions GHC libBi
-          }
-    profDynArgs =
-      vanillaArgs
-        <> mempty
-          { ghcOptProfilingMode = toFlag True
-          , ghcOptProfilingAuto =
-              Internal.profDetailLevelFlag
-                True
-                (withProfLibDetail lbi)
-          , ghcOptDynLinkMode = toFlag GhcDynamicOnly
-          , ghcOptFPic = toFlag True
-          , ghcOptHiSuffix = toFlag "p_dyn_hi"
-          , ghcOptObjSuffix = toFlag "p_dyn_o"
-          , ghcOptExtra = map Text.unpack $ hcProfSharedOptions GHC libBi
+          , ghcOptExtra = map Text.unpack $ hcOptions GHC libBi ++ buildWayExtraHcOptions DynWay comp libBi
           }
     ghcArgs =
       let (libWays, _, _) = buildWays lbi
        in case libWays (componentIsIndefinite clbi) of
-            (ProfDynWay : _) -> profDynArgs
-            (ProfWay : _) -> profArgs
             (StaticWay : _) -> vanillaArgs
             (DynWay : _) -> sharedArgs
             _ -> error "libAbiHash: Can't find an enabled library way"
@@ -897,13 +950,21 @@ installExe
   _pkg
   exe = do
     createDirectoryIfMissingVerbose verbosity True binDir
+    workingDir <- getAbsolutePath <$> absoluteWorkingDirLBI lbi
     let exeName' = unUnqualComponentName $ exeName exe
         exeFileName = exeTargetName (hostPlatform lbi) (exeName exe)
+        ghcOptions = map Text.unpack $ hcOptions GHC (PD.buildInfo exe)
+        exeSourcePath =
+          Internal.installExeSourcePath
+            (hostPlatform lbi)
+            workingDir
+            (buildPref </> exeName' </> exeFileName)
+            ghcOptions
         fixedExeBaseName = progprefix ++ exeName' ++ progsuffix
         installBinary dest = do
           installExecutableFile
             verbosity
-            (buildPref </> exeName' </> exeFileName)
+            exeSourcePath
             (dest <.> exeExtension (hostPlatform lbi))
           when (stripExes lbi) $
             Strip.stripExe
@@ -991,8 +1052,6 @@ installLib verbosity lbi targetDir dynlibTargetDir bytecodeTargetDir _builtDir p
   forM_ (wantedLibWays isIndef) $ \case
     StaticWay -> copyModuleFiles (Suffix "hi")
     DynWay -> copyModuleFiles (Suffix "dyn_hi")
-    ProfWay -> copyModuleFiles (Suffix "p_hi")
-    ProfDynWay -> copyModuleFiles (Suffix "p_dyn_hi")
 
   -- copy extra compilation artifacts that ghc plugins may produce
   copyDirectoryIfExists extraCompilationArtifacts
@@ -1016,14 +1075,6 @@ installLib verbosity lbi targetDir dynlibTargetDir bytecodeTargetDir _builtDir p
           , f <- mempty : extraLibFlavours (libBuildInfo lib)
           ]
         whenGHCi $ installOrdinary builtDir targetDir ghciLibName
-      ProfWay -> do
-        installOrdinary builtDir targetDir profileLibName
-        whenGHCi $ installOrdinary builtDir targetDir ghciProfLibName
-      ProfDynWay -> do
-        installShared
-          builtDir
-          dynlibTargetDir
-          (mkProfSharedLibName platform compiler_id uid)
       DynWay -> do
         if
             -- The behavior for "extra-bundled-libraries" changed in version 2.5.0.
@@ -1111,10 +1162,8 @@ installLib verbosity lbi targetDir dynlibTargetDir bytecodeTargetDir _builtDir p
     compiler_id = compilerId (compiler lbi)
     platform = hostPlatform lbi
     uid = componentUnitId clbi
-    profileLibName = mkProfLibName uid
     bytecodeLibName = mkBytecodeLibName compiler_id uid
     ghciLibName = Internal.mkGHCiLibName uid
-    ghciProfLibName = Internal.mkGHCiProfLibName uid
 
     hasLib =
       not $
@@ -1165,11 +1214,11 @@ pkgRoot verbosity lbi = fmap makeSymbolicPath . pkgRoot'
       appDir <- getGhcAppDir
       let ver = compilerVersion (compiler lbi)
           subdir =
-            System.Info.arch
-              ++ '-'
-              : System.Info.os
-              ++ '-'
-              : prettyShow ver
+            Internal.ghcPlatformAndVersionStringWithTarget
+              (hostPlatform lbi)
+              ver
+              (Map.lookup "Target name" (compilerProperties (compiler lbi)))
+              (compilerTargetAbi (compiler lbi))
           rootDir = appDir </> subdir
       -- We must create the root directory for the user package database if it
       -- does not yet exist. Otherwise '${pkgroot}' will resolve to a

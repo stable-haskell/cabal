@@ -2029,11 +2029,34 @@ withTempDirectoryCwdEx opts mbWorkDir targetDir template f =
       (createTempDirectory (i targetDir) template)
       ( \tmpDirRelPath ->
           unless (optKeepTempFiles opts) $
-            removePathForcibly (i targetDir </> tmpDirRelPath)
+            removeTempDirectory (i targetDir </> tmpDirRelPath)
       )
       (withLexicalCallStack (\tmpDirRelPath -> f $ targetDir </> makeRelativePathEx tmpDirRelPath))
   where
     i = interpretSymbolicPath mbWorkDir -- See Note [Symbolic paths] in Distribution.Utils.Path
+
+-- | Remove a temporary directory, retrying permission errors on Windows.
+--
+-- Windows file handles can remain locked briefly after a waited child exits.
+-- Retry a small, bounded number of times; preserve the final error if removal
+-- still fails.
+removeTempDirectory :: FilePath -> IO ()
+removeTempDirectory path
+  | SI.os /= "mingw32" = removePathForcibly path
+  | otherwise = go 1
+  where
+    limit = 3
+
+    go :: Int -> IO ()
+    go n = do
+      result <- Exception.try (removePathForcibly path)
+      case result of
+        Left e
+          | isPermissionError e && n < limit -> do
+              threadDelay 1000000
+              go (n + 1)
+          | otherwise -> Exception.throwIO e
+        Right () -> pure ()
 
 -----------------------------------
 -- Safely reading and writing files

@@ -1,4 +1,5 @@
 import Test.Cabal.Prelude
+import Distribution.Pretty (prettyShow, showToken)
 
 {- Test for https://github.com/haskell/cabal/issues/11331
 
@@ -49,6 +50,11 @@ main = cabalTest $ recordMode DoNotRecord $ withPackageDb $ do
   -- that we carefully crafted above. This tests that cabal-install picks
   --  'Cabal-good' for the setup component of 'T11331', otherwise we will fail.
   dbDir <- testPackageDbDir <$> getTestEnv
+  -- Setup runs on Build, while --package-db selects Host libraries. This
+  -- fixture creates native packages for both roles, so expose its crafted
+  -- database explicitly to the Build solver as well.
+  writeSourceFile "cabal.project.local" $
+    "build-package-dbs: " ++ prettyShow (showToken dbDir) ++ "\n"
 
   -- This fails because the fake Cabal-good defaultMain doesn't do anything
   -- except print "Chosen GOOD Cabal".

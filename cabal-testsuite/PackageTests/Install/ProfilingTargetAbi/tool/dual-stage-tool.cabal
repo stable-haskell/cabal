@@ -1,0 +1,19 @@
+cabal-version: 3.0
+name: dual-stage-tool
+version: 0.1
+build-type: Simple
+
+library
+  exposed-modules: ToolABI
+  hs-source-dirs: src
+  c-sources: cbits/abi.c
+  build-depends: base
+  ghc-prof-options: -fprof-cafs
+  default-language: Haskell2010
+
+executable dual-stage-tool
+  main-is: Main.hs
+  hs-source-dirs: exe
+  build-depends: base, directory, dual-stage-tool
+  ghc-options: -rtsopts
+  default-language: Haskell2010

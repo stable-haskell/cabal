@@ -53,7 +53,7 @@ import System.Directory (createDirectoryIfMissing, doesFileExist)
 -- -------------------------------------------------------------------------
 -- Haskell Program Coverage
 
-data Way = Vanilla | Prof | Dyn | ProfDyn
+data Way = Vanilla | Dyn
   deriving (Bounded, Enum, Eq, Read, Show)
 
 hpcDir
@@ -66,9 +66,7 @@ hpcDir distPref way = distPref </> makeRelativePathEx ("hpc" </> wayDir)
   where
     wayDir = case way of
       Vanilla -> "vanilla"
-      Prof -> "prof"
       Dyn -> "dyn"
-      ProfDyn -> "prof_dyn"
 
 mixDir
   :: SymbolicPath Pkg (Dir Dist)
@@ -109,7 +107,6 @@ htmlDir distPref way = hpcDir distPref way </> makeRelativePathEx "html"
 -- and linked with the library so the correct module interfaces are found.
 guessWay :: LocalBuildInfo -> Way
 guessWay lbi
-  | withProfExe lbi = Prof
   | withDynExe lbi = Dyn
   | otherwise = Vanilla
 

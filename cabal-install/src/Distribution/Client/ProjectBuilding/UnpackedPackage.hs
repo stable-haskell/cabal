@@ -16,6 +16,7 @@
 module Distribution.Client.ProjectBuilding.UnpackedPackage
   ( buildInplaceUnpackedPackage
   , buildAndInstallUnpackedPackage
+  , createHackageDocumentationArchives
 
     -- ** Auxiliary definitions
   , buildAndRegisterUnpackedPackage
@@ -36,10 +37,10 @@ import Distribution.Client.ProjectConfig.Types
 import Distribution.Client.ProjectPlanning
 import Distribution.Client.ProjectPlanning.Types
 import Distribution.Client.RebuildMonad
-import Distribution.Client.Toolchain (Toolchain (..))
 
 import Distribution.Client.DistDirLayout
 import Distribution.Client.FileMonitor
+import qualified Distribution.Client.InstallPlan as InstallPlan
 import Distribution.Client.JobControl
 import Distribution.Client.Setup
   ( CommonSetupFlags
@@ -91,7 +92,7 @@ import qualified Distribution.Simple.PackageIndex as PackageIndex
 import Distribution.Simple.Program
 import qualified Distribution.Simple.Register as Cabal
 import qualified Distribution.Simple.Setup as Cabal
-import Distribution.Solver.Types.Machine (PerMachine, overMachine)
+import Distribution.Solver.Types.Machine (Machine (Host), PerMachine, overMachine)
 import Distribution.Types.BuildType
 import Distribution.Types.PackageDescription.Lens (componentModules)
 
@@ -111,12 +112,13 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS.Char8
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map as Map
 
 import Control.Concurrent.STM (TVar, atomically, modifyTVar)
 import Control.Exception (ErrorCall, Handler (..), SomeAsyncException, assert, catches, onException)
 import Data.IORef (newIORef, readIORef, writeIORef)
 import GHC.Clock (getMonotonicTime)
-import System.Directory (canonicalizePath, createDirectoryIfMissing)
+import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist)
 import System.FilePath (takeDirectory, (<.>), (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
 import System.Semaphore (SemaphoreIdentifier)
@@ -544,7 +546,6 @@ buildInplaceUnpackedPackage
   verbosity
   distDirLayout@DistDirLayout
     { distPackageCacheDirectory
-    , distDirectory
     , distHaddockOutputDir
     }
   maybe_semaphore
@@ -596,17 +597,9 @@ buildInplaceUnpackedPackage
             withFileMonitor runRepl
           PBHaddockPhase{runHaddock} -> do
             withFileMonitor runHaddock
+            -- Hackage archives are written once per package, after every
+            -- component has finished. See 'createHackageDocumentationArchives'.
             let haddockTarget = elabHaddockForHackage pkg
-            when (haddockTarget == Cabal.ForHackage) $ do
-              let dest = distDirectory </> name <.> "tar.gz"
-                  name = haddockDirName haddockTarget (elabPkgDescription pkg)
-                  docDir =
-                    distBuildDirectory distDirLayout dparams
-                      </> "doc"
-                      </> "html"
-              Tar.createTarGzFile dest docDir name
-              notice verbosity $ "Documentation tarball created: " ++ dest
-
             when (buildSettingHaddockOpen && haddockTarget /= Cabal.ForHackage) $ do
               let dest = docDir </> "index.html"
                   name = haddockDirName haddockTarget (elabPkgDescription pkg)
@@ -1018,6 +1011,37 @@ buildPhaseName PBReplPhase{} = "repl"
 buildPhaseName PBInstallPhase{} = "install"
 buildPhaseName PBTestPhase{} = "test"
 buildPhaseName PBBenchPhase{} = "bench"
+
+-- | Archive only after all component Haddocks have finished. Each component
+-- has its own build directory, but Hackage expects one archive per package.
+-- Merge their documentation trees in a fresh staging directory so parallel
+-- builds cannot overwrite each other's archive or include stale components.
+createHackageDocumentationArchives :: Verbosity -> DistDirLayout -> ElaboratedSharedConfig -> ElaboratedInstallPlan -> IO ()
+createHackageDocumentationArchives verbosity layout shared plan =
+  for_ (Map.toList packageDocs) $ \(name, directories) -> do
+    existing <- filterM doesDirectoryExist (ordNub directories)
+    unless (null existing) $ do
+      let tempRoot = distTempDirectory layout
+          destination = distDirectory layout </> name <.> "tar.gz"
+      createDirectoryIfMissingVerbose verbosity True tempRoot
+      withTempDirectory tempRoot "haddock-archive" $ \staging -> do
+        for_ existing $ \source ->
+          copyDirectoryRecursive verbosity source (staging </> name)
+        Tar.createTarGzFile destination staging name
+      notice verbosity $ "Documentation tarball created: " ++ destination
+  where
+    packageDocs =
+      Map.fromListWith (++)
+        [ (name, [docRoot </> name])
+        | pkg <- concatMap (InstallPlan.foldPlanPackage (const []) pure) (InstallPlan.toList plan)
+        , elabMachine pkg == Host
+        , elabHaddockForHackage pkg == Cabal.ForHackage
+        , hasValidHaddockTargets pkg
+        , let name = haddockDirName Cabal.ForHackage (elabPkgDescription pkg)
+              docRoot = fromMaybe
+                (distBuildDirectory layout (elabDistDirParams shared pkg) </> "doc" </> "html")
+                (elabHaddockOutputDir pkg)
+        ]
 
 hasValidHaddockTargets :: ElaboratedConfiguredPackage -> Bool
 hasValidHaddockTargets ElaboratedConfiguredPackage{..}

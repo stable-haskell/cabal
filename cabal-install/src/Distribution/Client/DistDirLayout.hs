@@ -30,7 +30,6 @@ module Distribution.Client.DistDirLayout
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
-import qualified Data.Map as Map
 import System.FilePath
 
 import Distribution.Client.Config
@@ -50,11 +49,12 @@ import Distribution.Package
   , UnitId
   )
 import Distribution.Simple.Compiler
-  ( Compiler (..)
-  , OptimisationLevel (..)
+  ( OptimisationLevel (..)
   , PackageDBCWD
   , PackageDBStackCWD
   , PackageDBX (..)
+  , compilerTargetName
+  , renderTargetName
   )
 import Distribution.Simple.Configure (interpretPackageDbFlags)
 import Distribution.System
@@ -355,19 +355,10 @@ defaultStoreDirLayout storeRoot =
     storeIncomingLock machine toolchain unitid =
       storeIncomingDirectory machine toolchain </> prettyShow unitid <.> "lock"
 
--- | The platform triple in the spelling the compiler itself uses, e.g.
--- @x86_64-unknown-linux@ rather than cabal's own @x86_64-linux@. Paths under
--- the store are consumed by other build systems (notably GHC's own), which
--- expect the compiler's spelling.
---
--- Falls back to pretty-printing the toolchain's 'Platform' for a compiler that
--- reports no @Target platform@ property.
+-- | Return the canonical logical target name used in store and dist paths.
 betterPlatform :: Toolchain -> String
 betterPlatform toolchain =
-  Map.findWithDefault
-    (prettyShow (toolchainPlatform toolchain))
-    "Target platform"
-    (compilerProperties (toolchainCompiler toolchain))
+  either error renderTargetName (compilerTargetName (toolchainPlatform toolchain) (toolchainCompiler toolchain))
 
 defaultCabalDirLayout :: IO CabalDirLayout
 defaultCabalDirLayout =

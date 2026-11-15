@@ -15,7 +15,7 @@ main = cabalTest $ do
           , compilerArgsPred = notElem "A-0.1.0.0-inplace"
           }
 
-  cabal' "v2-build" ["exe:A", "--disable-build-info"]
+  noCabalPackageDb $ cabal' "v2-build" ["exe:A", "--disable-build-info"]
   withPlan $ do
     Just plan <- fmap testPlan ask
     let fp = buildInfoFile plan "A" (exe "A")

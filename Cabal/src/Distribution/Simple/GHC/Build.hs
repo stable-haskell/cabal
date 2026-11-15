@@ -2,13 +2,16 @@
 
 module Distribution.Simple.GHC.Build where
 
+import qualified Data.Text as Text
 import Distribution.Compat.Prelude
 import Prelude ()
 
+import qualified Data.Map as Map
 import qualified Distribution.Compat.Graph as Graph
-
 import Distribution.PackageDescription as PD hiding (buildInfo)
 import Distribution.Simple.Build.Inputs
+import Distribution.Simple.Compiler
+import Distribution.Simple.Errors (CabalException (ProfilingRequiresTargetCompiler, UnsupportedTargetVariant))
 import Distribution.Simple.Flag (Flag)
 import Distribution.Simple.GHC.Build.ExtraSources
 import Distribution.Simple.GHC.Build.Link
@@ -17,6 +20,7 @@ import Distribution.Simple.GHC.Build.Utils (compilerBuildWay, isHaskell, withDyn
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Program.Builtin (ghcProgram)
 import Distribution.Simple.Program.Db (requireProgram)
+import Distribution.Simple.Program.Types (ConfiguredProgram (programDefaultArgs, programOverrideArgs))
 import Distribution.Simple.Utils
 
 import Distribution.Types.ComponentLocalBuildInfo
@@ -78,6 +82,7 @@ build numJobs verbHandles pkg_descr pbci = do
     verbosity = mkVerbosity verbHandles $ buildVerbosity pbci
     isLib = buildIsLib pbci
     lbi = localBuildInfo pbci
+    bi = buildBI pbci
     comp = buildComponent pbci
     clbi = buildCLBI pbci
     isIndef = componentIsIndefinite clbi
@@ -116,6 +121,33 @@ build numJobs verbHandles pkg_descr pbci = do
   -- can now fix after the refactor lands.
 
   (ghcProg, _) <- liftIO $ requireProgram verbosity ghcProgram (withPrograms lbi)
+  when
+    ( not (compilerTargetsProfiling (buildCompiler pbci))
+        && Text.pack "-prof" `elem` (hcOptions GHC bi ++ map Text.pack (programDefaultArgs ghcProg ++ programOverrideArgs ghcProg))
+    )
+    $ liftIO
+    $ dieWithException verbosity (ProfilingRequiresTargetCompiler (compilerId (buildCompiler pbci)))
+  let targetCompiler = buildCompiler pbci
+      requestedGhcOptions = hcOptions GHC bi ++ hcProfOptions GHC bi ++ map Text.pack (programDefaultArgs ghcProg ++ programOverrideArgs ghcProg)
+      unsupportedVariant =
+        if not (compilerTargetsProfiling targetCompiler)
+          then Nothing
+          else case () of
+            _
+              | any (`elem` requestedGhcOptions) [Text.pack "-dynamic", Text.pack "-dynamic-too"]
+                  && profilingDynamicSupported targetCompiler == Just False ->
+                  Just "dynamic profiling objects"
+              | Text.pack "-debug" `elem` requestedGhcOptions
+                  && profilingDebugSupported targetCompiler == Just False ->
+                  Just "debug profiling objects"
+              | otherwise -> Nothing
+  for_ unsupportedVariant $ \variant ->
+    liftIO $
+      dieWithException verbosity $
+        UnsupportedTargetVariant
+          (Map.findWithDefault (showCompilerIdWithAbi targetCompiler) "Target name" (compilerProperties targetCompiler))
+          variant
+          ["static nondebug libraries and executables"]
 
   -- Ways which are wanted from configuration flags
   let wantedWays@(wantedLibWays, wantedFLibWay, wantedExeWay) = buildWays lbi

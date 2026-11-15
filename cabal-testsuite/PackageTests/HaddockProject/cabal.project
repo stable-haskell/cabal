@@ -1,4 +1,4 @@
-packages: .
+packages: . subonly
 -- `jobs` is necessary to use `InternalMethod :: SetupMethod`.
 jobs: 1
 

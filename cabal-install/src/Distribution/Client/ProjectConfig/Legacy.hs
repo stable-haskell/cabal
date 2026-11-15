@@ -626,8 +626,10 @@ convertLegacyProjectConfig
       , projectConfigAllPackages = configAllPackages
       , projectConfigLocalPackages = configLocalPackages
       , projectConfigSpecificPackage = fmap perPackage legacySpecificConfig
-      , -- The legacy format has no machine-qualified package stanzas.
+      , -- The legacy format has no machine-qualified package stanzas,
+        -- and no install-target overlay.
         projectConfigMachinePackages = mempty
+      , projectConfigInstallPackages = mempty
       }
     where
       configAllPackages = convertLegacyPerPackageFlags g bpp bpa i h t b
@@ -704,6 +706,7 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       } = globalFlags
 
     projectConfigPackageDBs = (fmap . fmap) (interpretPackageDB Nothing) projectConfigPackageDBs_
+    projectConfigBuildPackageDBs = (fmap . fmap) (interpretPackageDB Nothing) projectConfigBuildPackageDBs_
 
     ConfigFlags
       { configCommonFlags = commonFlags
@@ -734,6 +737,7 @@ convertLegacyAllPackageFlags globalFlags configFlags configExFlags installFlags 
       , configBuildHcFlavor = projectConfigBuildHcFlavor
       , configBuildHcPath = projectConfigBuildHcPath
       , configBuildHcPkg = projectConfigBuildHcPkg
+      , configBuildPackageDBs = projectConfigBuildPackageDBs_
       } = configExFlags
 
     InstallFlags
@@ -1033,6 +1037,7 @@ convertToLegacySharedConfig
             -- 'convertToLegacyPerPackageConfig'
             configBuildProgramPaths = mempty
           , configBuildProgramArgs = mempty
+          , configBuildPackageDBs = fmap (fmap (fmap unsafeMakeSymbolicPath)) projectConfigBuildPackageDBs
           }
 
       installFlags =
@@ -1444,7 +1449,7 @@ legacySharedConfigFieldDescrs constraintSrc =
         . addFields
           [ commaNewLineListFieldParsec
               "package-dbs"
-              (Disp.text . showPackageDb)
+              (showTokenQ . showPackageDb)
               (fmap readPackageDb parsecToken)
               configPackageDBs
               (\v conf -> conf{configPackageDBs = v})
@@ -1487,6 +1492,12 @@ legacySharedConfigFieldDescrs constraintSrc =
               (toFlag <$> parsec <|> pure mempty)
               configBuildHcFlavor
               (\v conf -> conf{configBuildHcFlavor = v})
+          , commaNewLineListFieldParsec
+              "build-package-dbs"
+              (showTokenQ . showPackageDb)
+              (fmap readPackageDb parsecToken)
+              configBuildPackageDBs
+              (\v conf -> conf{configBuildPackageDBs = v})
           ]
         . filterFields
           [ "cabal-lib-version"
