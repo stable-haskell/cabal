@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | This module provides a 'FieldGrammarParser', one way to parse
@@ -116,7 +117,18 @@ data ParsecFieldGrammar s a = ParsecFG
   , fieldGrammarKnownPrefixes :: !(Set FieldName)
   , fieldGrammarParser :: forall src. (CabalSpecVersion -> Fields Position -> ParseResult src a)
   }
+#ifndef __MHS__
   deriving (Functor)
+#endif
+
+#ifdef __MHS__
+-- MicroHs cannot derive Functor through the rank-2 'fieldGrammarParser'
+-- field, so spell out the same mapping by hand. Semantics are identical
+-- to the derived instance: mapped over the parsed result value.
+instance Functor (ParsecFieldGrammar s) where
+  fmap f (ParsecFG known prefixes parser) =
+    ParsecFG known prefixes (\v fields -> fmap f (parser v fields))
+#endif
 
 parseFieldGrammar :: CabalSpecVersion -> Fields Position -> ParsecFieldGrammar s a -> ParseResult src a
 parseFieldGrammar v fields grammar = do

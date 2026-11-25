@@ -58,6 +58,7 @@ module Distribution.Deprecated.ParseUtils
   , UnrecFieldParser
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Client.Compat.Prelude hiding (get)
 import Prelude ()
 

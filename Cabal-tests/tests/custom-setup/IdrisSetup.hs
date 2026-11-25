@@ -71,9 +71,9 @@ import Distribution.Utils.Path
 import System.Environment
 import System.Exit
 import System.FilePath ((</>), splitDirectories,isAbsolute)
-import System.Directory
+import Distribution.Compat.Directory
 import qualified System.FilePath.Posix as Px
-import System.Process
+import Distribution.Compat.Process
 
 -- This is difference from vanilla idris-1.1.1
 configConfigurationsFlags :: S.ConfigFlags -> [(FlagName, Bool)]

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -----------------------------------------------------------------------------
@@ -32,9 +33,16 @@ module Distribution.Client.Tar
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+#ifdef __MHS__
+-- MicroHs has no @tar@ package: 'Distribution.Client.Compat.Tar'
+-- is a full tar implementation there, so use it for everything.
+import qualified Distribution.Client.Compat.Tar as Tar
+import qualified Distribution.Client.Compat.Tar as TarComp
+#else
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
 import qualified Distribution.Client.Compat.Tar as TarComp
+#endif
 
 -- for foldEntries...
 import Control.Exception (throw)

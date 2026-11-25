@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Distribution.Solver.Types.ProjectConfigPath
@@ -27,12 +28,13 @@ module Distribution.Solver.Types.ProjectConfigPath
 
 import Distribution.Solver.Compat.Prelude hiding (toList, (<>))
 import qualified Distribution.Solver.Compat.Prelude as P ((<>))
-import Prelude (sequence)
+import Prelude ()
+import qualified Data.Traversable as T
 
 import Data.Coerce (coerce)
 import Data.List.NonEmpty ((<|))
 import Network.URI (parseURI, parseAbsoluteURI)
-import System.Directory
+import Distribution.Compat.Directory
 import System.FilePath hiding (splitPath)
 import qualified System.FilePath as FP (splitPath)
 import qualified System.FilePath.Posix as Posix
@@ -105,7 +107,13 @@ compareLexicographically (ProjectConfigPath as) (ProjectConfigPath bs) =
             (_, _ :| []) -> GT
 
             (a :| aImporters, b :| bImporters) -> case (parseAbsoluteURI a, parseAbsoluteURI b) of
-                (Just ua, Just ub) -> compare ua ub P.<> compare aImporters bImporters
+                (Just ua, Just ub) ->
+#ifdef __MHS__
+                    -- MicroHs URI has no Ord; compare renderings instead.
+                    compare (show ua) (show ub) P.<> compare aImporters bImporters
+#else
+                    compare ua ub P.<> compare aImporters bImporters
+#endif
                 (Just _, Nothing) -> GT
                 (Nothing, Just _) -> LT
                 (Nothing, Nothing) -> compare (splitPath a) (splitPath b) P.<> compare aImporters bImporters
@@ -132,7 +140,13 @@ compareSegmentally pa@(ProjectConfigPath as) pb@(ProjectConfigPath bs) =
             (_, _ :| []) -> GT
 
             (a :| _, b :| _) -> case (parseAbsoluteURI a, parseAbsoluteURI b) of
-                (Just ua, Just ub) -> compare ua ub P.<> compare aImporters bImporters
+                (Just ua, Just ub) ->
+#ifdef __MHS__
+                    -- MicroHs URI has no Ord; compare renderings instead.
+                    compare (show ua) (show ub) P.<> compare aImporters bImporters
+#else
+                    compare ua ub P.<> compare aImporters bImporters
+#endif
                 (Just _, Nothing) -> GT
                 (Nothing, Just _) -> LT
                 (Nothing, Nothing) ->
@@ -336,7 +350,7 @@ makeRelativeConfigPath dir (ProjectConfigPath p) =
 -- "https://www.stackage.org/nightly-2024-12-05/cabal.config\n  imported by: cabal.project"
 canonicalizeConfigPath :: FilePath -> ProjectConfigPath -> IO ProjectConfigPath
 canonicalizeConfigPath d (ProjectConfigPath p) = do
-    xs <- sequence $ NE.scanr (\importee@(trim -> trimImportee) -> (>>= \importer@(trim -> trimImporter) ->
+    xs <- T.sequence $ NE.scanr (\importee@(trim -> trimImportee) -> (>>= \importer@(trim -> trimImporter) ->
             if isURI trimImportee || isURI trimImporter
                 then pure trimImportee
                 else canonicalizePath $ d </> takeDirectory importer </> importee))

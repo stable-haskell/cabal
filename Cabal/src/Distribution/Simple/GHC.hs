@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 
@@ -127,19 +126,22 @@ import System.FilePath
   , takeFileName
   )
 import qualified System.Info
-#ifndef mingw32_HOST_OS
+#if !defined(mingw32_HOST_OS) && !defined(__MHS__) && !defined(MHS)
+-- MicroHs has no @unix@ package, so there is no 'System.Posix' under
+-- MHS: versioned foreign-library symlinks are skipped there, as on
+-- Windows (see below).
 import System.Posix (createSymbolicLink)
 #endif /* mingw32_HOST_OS */
 
 {- FOURMOLU_DISABLE -}
-import System.Directory
+import Distribution.Compat.Directory
   ( canonicalizePath
   , createDirectoryIfMissing
   , doesDirectoryExist
   , doesFileExist
   , getAppUserDataDirectory
   , listDirectory
-#ifndef mingw32_HOST_OS
+#if !defined(mingw32_HOST_OS) && !defined(__MHS__) && !defined(MHS)
   , renameFile
 #endif
   )
@@ -943,7 +945,7 @@ installFLib verbosity lbi targetDir builtDir _pkg flib =
       let (Platform _ os) = hostPlatform lbi
       unless (null (foreignLibVersion flib os)) $ do
         when (os /= Linux) $ dieWithException verbosity CantInstallForeignLib
-#ifndef mingw32_HOST_OS
+#if !defined(mingw32_HOST_OS) && !defined(__MHS__) && !defined(MHS)
         -- 'createSymbolicLink file1 file2' creates a symbolic link
         -- named 'file2' which points to the file 'file1'.
         -- Note that we do want a symlink to 'name' rather than

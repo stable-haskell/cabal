@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -128,6 +129,16 @@ import Distribution.Client.Version
   ( cabalInstallVersion
   )
 import qualified Distribution.Compat.CharParsing as P
+import Distribution.Compat.Directory
+  ( XdgDirectory (XdgCache, XdgConfig, XdgState)
+  , createDirectoryIfMissing
+  , doesDirectoryExist
+  , doesFileExist
+  , getAppUserDataDirectory
+  , getHomeDirectory
+  , getXdgDirectory
+  , renameFile
+  )
 import Distribution.Compiler
   ( CompilerFlavor (..)
   , defaultCompilerFlavor
@@ -218,16 +229,6 @@ import Network.URI
   , URIAuth (..)
   , parseURI
   )
-import System.Directory
-  ( XdgDirectory (XdgCache, XdgConfig, XdgState)
-  , createDirectoryIfMissing
-  , doesDirectoryExist
-  , doesFileExist
-  , getAppUserDataDirectory
-  , getHomeDirectory
-  , getXdgDirectory
-  , renameFile
-  )
 import System.FilePath
   ( normalise
   , takeDirectory
@@ -236,18 +237,30 @@ import System.FilePath
 import System.IO.Error
   ( isDoesNotExistError
   )
+#ifdef __MHS__
+-- @pretty-mhs@ provides only 'Text.PrettyPrint' (no @HughesPJ@
+-- submodule), which exports the same 'Doc'/'text' API.
+import Text.PrettyPrint
+  ( Doc
+  , text
+  , ($+$)
+  )
+#else
 import Text.PrettyPrint
   ( ($+$)
   )
+#endif
 import qualified Text.PrettyPrint as Disp
   ( empty
   , render
   , text
   )
+#ifndef __MHS__
 import Text.PrettyPrint.HughesPJ
   ( Doc
   , text
   )
+#endif
 
 --
 

@@ -8,7 +8,7 @@ where
 
 import qualified Control.Exception as Exception
 
-#ifndef mingw32_HOST_OS
+#if !defined(mingw32_HOST_OS) && !defined(__MHS__)
 import Control.Concurrent (myThreadId)
 import Control.Monad (void)
 import qualified System.Posix.Signals as Signals
@@ -33,8 +33,10 @@ instance Show Terminated where
 -- It is a noop on Windows.
 installTerminationHandler :: IO ()
 
-#ifdef mingw32_HOST_OS
+#if defined(mingw32_HOST_OS) || defined(__MHS__)
 
+-- MicroHs has no 'System.Posix.Signals', so like on Windows there is
+-- nothing to install.
 installTerminationHandler = return ()
 
 #else

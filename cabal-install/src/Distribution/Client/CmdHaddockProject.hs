@@ -6,7 +6,6 @@ module Distribution.Client.CmdHaddockProject
   , haddockProjectAction
   ) where
 
-import Control.Monad (mapM)
 import Distribution.Client.Compat.Prelude hiding (get)
 import Prelude ()
 
@@ -20,6 +19,9 @@ import Distribution.Client.DistDirLayout
   )
 import Distribution.Client.InstallPlan (foldPlanPackage)
 import qualified Distribution.Client.InstallPlan as InstallPlan
+import Distribution.Client.NixStyleOptions
+  ( NixStyleFlags (NixStyleFlags, configFlags, haddockFlags)
+  )
 import qualified Distribution.Client.NixStyleOptions as NixStyleOptions
 import Distribution.Client.ProjectOrchestration
   ( AvailableTarget (..)
@@ -119,7 +121,7 @@ import Distribution.Verbosity as Verbosity
   )
 
 import Distribution.Client.Errors
-import System.Directory (doesDirectoryExist, doesFileExist)
+import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath (normalise, takeDirectory, (</>))
 
 haddockProjectAction :: HaddockProjectFlags -> [String] -> GlobalFlags -> IO ()
@@ -374,7 +376,7 @@ haddockProjectAction flags _extraArgs globalFlags = do
       mkVerbosity defaultVerbosityHandles $
         fromFlagOrDefault normal (setupVerbosity commonFlags)
 
-    haddockFlags =
+    haddockFlags' =
       defaultHaddockFlags
         { haddockCommonFlags = commonFlags
         , haddockHtml = Flag True
@@ -417,13 +419,15 @@ haddockProjectAction flags _extraArgs globalFlags = do
         }
 
     nixFlags =
-      (commandDefaultFlags CmdHaddock.haddockCommand)
-        { NixStyleOptions.haddockFlags = haddockFlags
-        , NixStyleOptions.configFlags =
-            (NixStyleOptions.configFlags (commandDefaultFlags CmdBuild.buildCommand))
-              { configCommonFlags = commonFlags
-              }
-        }
+      case commandDefaultFlags CmdHaddock.haddockCommand of
+        baseFlags@NixStyleFlags{} ->
+          baseFlags
+            { haddockFlags = haddockFlags'
+            , configFlags =
+                (NixStyleOptions.configFlags (commandDefaultFlags CmdBuild.buildCommand))
+                  { configCommonFlags = commonFlags
+                  }
+            }
 
     -- Build a self contained directory which contains haddocks of all
     -- transitive dependencies; or depend on `--haddocks-html-location` to

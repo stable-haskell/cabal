@@ -1,13 +1,16 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE RoleAnnotations #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Distribution.Utils.Path
   ( -- * Symbolic path endpoints
-    FileOrDir (..)
-  , AllowAbsolute (..)
+    FileOrDir
+  , File
+  , Dir
+  , AllowAbsolute
+  , OnlyRelative
 
     -- ** Abstract directory locations
   , CWD
@@ -69,6 +72,7 @@ import Distribution.Compat.Prelude
 import Prelude ()
 
 import Data.Coerce
+import Data.Kind (Type)
 
 import Distribution.ModuleName (ModuleName)
 import qualified Distribution.ModuleName as ModuleName
@@ -80,18 +84,22 @@ import Distribution.Utils.Generic (isAbsoluteOnAnyPlatform)
 
 import qualified Distribution.Compat.CharParsing as P
 
-import qualified System.Directory as Directory
+import qualified Distribution.Compat.Directory as Directory
 import qualified System.FilePath as FilePath
 
-import Data.Kind
-  ( Type
-  )
 import Data.List
   ( stripPrefix
   )
+#ifdef __MHS__
+-- MicroHs has no 'GHC.Stack'; the 'HasCallStack' constraint on
+-- 'makeRelativePathEx' is vestigial there.
+class HasCallStack
+instance HasCallStack
+#else
 import GHC.Stack
   ( HasCallStack
   )
+#endif
 
 -------------------------------------------------------------------------------
 
@@ -159,16 +167,19 @@ In practice, we often use:
 
 Note [Symbolic relative paths]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-This module defines:
+This module defines plain phantom marker types (no @DataKinds@
+promotion, so this module stays parsable by MicroHs):
 
-  data kind AllowAbsolute = AllowAbsolute | OnlyRelative
-  data kind FileOrDir = File | Dir Symbol
+  data File
+  data Dir (dir :: Type)
+  data AllowAbsolute
+  data OnlyRelative
 
-  type SymbolicPathX :: AllowAbsolute -> Symbol -> FileOrDir -> Type
-  newtype SymbolicPathX allowAbsolute from to = SymbolicPath FilePath
+  newtype SymbolicPathX (allowAbsolute :: Type) (from :: Type) (to :: Type)
+    = SymbolicPath FilePath
 
-  type RelativePath = SymbolicPathX 'OnlyRelative
-  type SymbolicPath = SymbolicPathX 'AllowAbsolute
+  type RelativePath = SymbolicPathX OnlyRelative
+  type SymbolicPath = SymbolicPathX AllowAbsolute
 
 A 'SymbolicPath' is thus a symbolic path that is allowed to be absolute, whereas
 a 'RelativePath' is a symbolic path that is additionally required to be relative.
@@ -177,30 +188,60 @@ This distinction allows us to keep track of which filepaths must be kept
 relative.
 -}
 
--- | A type-level symbolic name, to an abstract file or directory
--- (e.g. the Cabal package directory).
-data FileOrDir
-  = -- | A file (with no further information).
-    File
-  | -- | The abstract name of a directory or category of directories,
-    -- e.g. the package directory or a source directory.
-    Dir Type
+-- | Phantom marker for 'SymbolicPathX': the path refers to a file.
+data File deriving (Data)
 
--- | Is this symbolic path allowed to be absolute, or must it be relative?
-data AllowAbsolute
-  = -- | The path may be absolute, or it may be relative.
-    AllowAbsolute
-  | -- | The path must be relative.
-    OnlyRelative
+-- | Phantom marker for 'SymbolicPathX': the path refers to a
+-- directory or category of directories, e.g. the package directory
+-- or a source directory. The parameter names which directory.
+{- FOURMOLU_DISABLE -}
+data Dir (dir :: Type)
+#ifndef __MHS__
+  deriving Data
+#endif
+{- FOURMOLU_ENABLE -}
+
+#ifdef __MHS__
+-- MicroHs cannot derive 'Data' for parameterised types (it drops the
+-- required context), so the instance is spelled out explicitly.
+deriving instance Data dir => Data (Dir dir)
+#endif
+
+-- | Phantom marker for 'SymbolicPathX': the path may be absolute,
+-- or it may be relative.
+data AllowAbsolute deriving (Data)
+
+-- | Phantom marker for 'SymbolicPathX': the path must be relative.
+data OnlyRelative deriving (Data)
+
+-- | Compatibility shim: 'FileOrDir' used to be a datatype whose
+-- constructors were promoted to the type level with @DataKinds@.
+-- The markers are now the plain types above; this empty datatype is
+-- kept so that existing @FileOrDir (..)@ imports keep working.
+data FileOrDir deriving (Data)
 
 -- | A symbolic path, possibly relative to an abstract location specified
 -- by the @from@ type parameter.
 --
 -- They are *symbolic*, which means we cannot perform any 'IO'
 -- until we interpret them (using e.g. 'interpretSymbolicPath').
-newtype SymbolicPathX (allowAbsolute :: AllowAbsolute) (from :: Type) (to :: FileOrDir)
+{- FOURMOLU_DISABLE -}
+newtype SymbolicPathX (allowAbsolute :: Type) (from :: Type) (to :: Type)
   = SymbolicPath FilePath
-  deriving (Generic, Show, Read, Eq, Ord, Data)
+  deriving (Generic, Show, Read, Eq, Ord
+#ifndef __MHS__
+    , Data
+#endif
+    )
+{- FOURMOLU_ENABLE -}
+
+#ifdef __MHS__
+-- MicroHs cannot derive 'Data' for parameterised types (it drops the
+-- required context), so the instance is spelled out explicitly.
+deriving instance
+  (Data allowAbsolute, Data from, Data to) =>
+  Data (SymbolicPathX allowAbsolute from to)
+#endif
 
 type role SymbolicPathX nominal nominal nominal
 
@@ -209,15 +250,15 @@ type role SymbolicPathX nominal nominal nominal
 --
 -- They are *symbolic*, which means we cannot perform any 'IO'
 -- until we interpret them (using e.g. 'interpretSymbolicPath').
-type RelativePath = SymbolicPathX 'OnlyRelative
+type RelativePath = SymbolicPathX OnlyRelative
 
 -- | A symbolic path which is allowed to be absolute.
 --
 -- They are *symbolic*, which means we cannot perform any 'IO'
 -- until we interpret them (using e.g. 'interpretSymbolicPath').
-type SymbolicPath = SymbolicPathX 'AllowAbsolute
+type SymbolicPath = SymbolicPathX AllowAbsolute
 
-newtype AbsolutePath (to :: FileOrDir) = AbsolutePath (forall from. SymbolicPath from to)
+newtype AbsolutePath to = AbsolutePath (forall (from :: Type). SymbolicPath from to)
 
 unsafeMakeAbsolutePath :: FilePath -> AbsolutePath to
 unsafeMakeAbsolutePath fp = AbsolutePath (makeSymbolicPath fp)
@@ -392,7 +433,7 @@ tryMakeRelative mbWorkDir (SymbolicPath fp) = do
 
 -------------------------------------------------------------------------------
 
-instance Parsec (SymbolicPathX 'OnlyRelative from to) where
+instance Parsec (SymbolicPathX OnlyRelative from to) where
   parsec = do
     token <- parsecToken
     if null token
@@ -402,7 +443,7 @@ instance Parsec (SymbolicPathX 'OnlyRelative from to) where
           then P.unexpected "absolute FilePath"
           else return (SymbolicPath token)
 
-instance Parsec (SymbolicPathX 'AllowAbsolute from to) where
+instance Parsec (SymbolicPathX AllowAbsolute from to) where
   parsec = do
     token <- parsecToken
     if null token
@@ -428,7 +469,7 @@ class FileLike p where
 instance FileLike FilePath where
   (<.>) = (FilePath.<.>)
 
-instance p ~ File => FileLike (SymbolicPathX allowAbsolute dir p) where
+instance FileLike (SymbolicPathX allowAbsolute dir File) where
   SymbolicPath p <.> ext = SymbolicPath (p <.> ext)
 
 infixr 5 </>
@@ -446,7 +487,7 @@ instance PathLike FilePath FilePath FilePath where
 --
 -- (Recall that @a </> b = b@ whenever @b@ is absolute.)
 instance
-  (b1 ~ 'Dir b2, a3 ~ a1, c2 ~ c3, midAbsolute ~ OnlyRelative)
+  (b1 ~ Dir b2, a3 ~ a1, c2 ~ c3, midAbsolute ~ OnlyRelative)
   => PathLike
       (SymbolicPathX allowAbsolute a1 b1)
       (SymbolicPathX midAbsolute b2 c2)
@@ -455,7 +496,7 @@ instance
   SymbolicPath p1 </> SymbolicPath p2 = SymbolicPath (p1 </> p2)
 
 instance
-  (b1 ~ 'Dir b2, c2 ~ c3, midAbsolute ~ OnlyRelative)
+  (b1 ~ Dir b2, c2 ~ c3, midAbsolute ~ OnlyRelative)
   => PathLike
       (AbsolutePath b1)
       (SymbolicPathX midAbsolute b2 c2)
@@ -470,79 +511,79 @@ instance
 -- | Abstract directory: current working directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data CWD
+data CWD deriving (Data)
 
 -- | Abstract directory: package directory (e.g. a directory containing the @.cabal@ file).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Pkg
+data Pkg deriving (Data)
 
 -- | Abstract directory: dist directory (e.g. @dist-newstyle@).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Dist
+data Dist deriving (Data)
 
 -- | Abstract directory: source directory (a search directory for source files).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Source
+data Source deriving (Data)
 
 -- | Abstract directory: include directory (a search directory for CPP includes like header files, e.g. with @ghc -I@).
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Include
+data Include deriving (Data)
 
 -- | Abstract directory: search directory for extra libraries.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Lib
+data Lib deriving (Data)
 
 -- | Abstract directory: MacOS framework directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Framework
+data Framework deriving (Data)
 
 -- | Abstract directory: build directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Build
+data Build deriving (Data)
 
 -- | Abstract directory: directory for build artifacts, such as documentation or @.hie@ files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Artifacts
+data Artifacts deriving (Data)
 
 -- | Abstract directory: package database directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data PkgDB
+data PkgDB deriving (Data)
 
 -- | Abstract directory: data files directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data DataDir
+data DataDir deriving (Data)
 
 -- | Abstract directory: directory for HPC @.mix@ files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Mix
+data Mix deriving (Data)
 
 -- | Abstract directory: directory for HPC @.tix@ files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Tix
+data Tix deriving (Data)
 
 -- | Abstract directory: a temporary directory.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Tmp
+data Tmp deriving (Data)
 
 -- | Abstract directory: directory for response files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data Response
+data Response deriving (Data)
 
 -- | Abstract directory: directory for pkg-config files.
 --
 -- See Note [Symbolic paths] in Distribution.Utils.Path.
-data PkgConf
+data PkgConf deriving (Data)

@@ -14,7 +14,9 @@ module Distribution.Solver.Types.Machine
   , isCross
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
+import Prelude ()
 
 -- | The machine whose toolchain a package is compiled with.
 --

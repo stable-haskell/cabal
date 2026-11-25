@@ -1,11 +1,10 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Distribution.Simple.GHC.Build.ExtraSources where
 
 import Control.Monad
-import Data.Foldable
+import Data.Foldable (traverse_)
 import Distribution.Simple.Flag
 import qualified Distribution.Simple.GHC.Internal as Internal
 import Distribution.Simple.Program

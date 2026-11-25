@@ -76,6 +76,7 @@ config = ModuleConfig
     { mcRender = "render"
     , mcHeader =
         [ "{- FOURMOLU_DISABLE -}"
+        , "{-# LANGUAGE CPP #-}"
         , "{-# LANGUAGE DeriveGeneric #-}"
         , "module Distribution.Simple.Build.Macros.Z (render, Z(..), ZPackage (..), ZTool (..)) where"
         , "import Distribution.ZinzaPrelude"

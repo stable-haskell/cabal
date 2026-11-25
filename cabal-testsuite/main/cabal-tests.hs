@@ -36,8 +36,8 @@ import qualified System.Clock as Clock
 import System.IO
 import System.FilePath
 import System.Exit
-import System.Process (readProcessWithExitCode, showCommandForUser)
-import System.Directory
+import Distribution.Compat.Process (readProcessWithExitCode, showCommandForUser)
+import Distribution.Compat.Directory
 import Distribution.Pretty
 import Data.Maybe
 

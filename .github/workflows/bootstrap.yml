@@ -10,6 +10,7 @@ on:
     branches:
       - master
   pull_request:
+  workflow_dispatch:
   release:
     types:
       - created
@@ -78,6 +79,61 @@ jobs:
           name: cabal-${{ matrix.os }}-${{ matrix.ghc }}-bootstrapped
           path: _build/artifacts/*
 
+  bootstrap-mhs:
+    name: Bootstrap ubuntu-latest mhs-0.16.12.0
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Get runner OS/version for cache keys
+        id: get-osver
+        run: echo "osver=$ImageOS" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@v6
+        name: Restore MicroHs toolchain and packages
+        id: cache-mhs-toolchain
+        with:
+          path: ~/.mcabal
+          key: mhs-toolchain-${{ steps.get-osver.outputs.osver }}-0.16.12.0-${{ hashFiles('bootstrap/mhs/microhs-full.patch', 'mhs-compat-shims/**') }}
+          restore-keys: |
+            mhs-toolchain-${{ steps.get-osver.outputs.osver }}-0.16.12.0-
+
+      - uses: actions/cache/restore@v6
+        name: Restore MicroHs stage checkpoints
+        id: cache-mhs-checkpoints
+        with:
+          path: _build/mhs-cache
+          key: mhs-cache-${{ steps.get-osver.outputs.osver }}-0.16.12.0-${{ hashFiles('bootstrap/mhs/**', 'mhs-compat-shims/**', 'Cabal-syntax/src/**', 'Cabal/src/**', 'hooks-exe/**', 'cabal-install-solver/src/**', 'cabal-install/src/**', 'cabal-install/main/**') }}
+
+      - name: Build MicroHs 0.16.12.0 toolchain and packages
+        run: bash bootstrap/mhs/build-cabal-mhs.sh toolchain
+
+      - uses: actions/cache/save@v6
+        name: Save MicroHs toolchain and packages
+        if: always() && steps.cache-mhs-toolchain.outputs.cache-hit != 'true'
+        with:
+          path: ~/.mcabal
+          key: ${{ steps.cache-mhs-toolchain.outputs.cache-primary-key }}
+
+      - name: Bootstrap cabal-install with MicroHs
+        run: bash bootstrap/mhs/build-cabal-mhs.sh build
+
+      - uses: actions/cache/save@v6
+        name: Save MicroHs stage checkpoints
+        if: always() && steps.cache-mhs-checkpoints.outputs.cache-hit != 'true'
+        with:
+          path: _build/mhs-cache
+          key: ${{ steps.cache-mhs-checkpoints.outputs.cache-primary-key }}
+
+      - name: Smoke test MicroHs-built cabal
+        run: bash bootstrap/mhs/build-cabal-mhs.sh test
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cabal-ubuntu-latest-mhs-0.16.12.0-bootstrapped
+          path: _build/artifacts/*
+
   # We use this job as a summary of the workflow
   # It will fail if any of the previous jobs does it
   # This way we can use it exclusively in branch protection rules
@@ -87,7 +143,7 @@ jobs:
     name: Bootstrap post job
     runs-on: ubuntu-latest
     # IMPORTANT! Any job added to the workflow should be added here too
-    needs: [bootstrap]
+    needs: [bootstrap, bootstrap-mhs]
 
     steps:
       - run: |

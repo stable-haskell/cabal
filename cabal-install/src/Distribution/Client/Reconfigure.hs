@@ -3,9 +3,10 @@
 module Distribution.Client.Reconfigure (Check (..), reconfigure) where
 
 import Distribution.Client.Compat.Prelude
+import Prelude ()
 
 import Data.Monoid (Any (..))
-import System.Directory (doesFileExist)
+import Distribution.Compat.Directory (doesFileExist)
 
 import Distribution.Simple.Configure (localBuildInfoFile)
 import Distribution.Simple.Setup (Flag, flagToMaybe, toFlag)
@@ -123,7 +124,7 @@ reconfigure
       when frc $ configureAction flags extraArgs globalFlags
       return config'
     where
-      mbWorkDir = flagToMaybe $ configWorkingDir $ savedConfigureFlags config
+      mbWorkDir = flagToMaybe $ setupWorkingDir $ configCommonFlags $ savedConfigureFlags config
       -- Changing the verbosity does not require reconfiguration, but the new
       -- verbosity should be used if reconfiguring.
       checkVerb :: Check (ConfigFlags, b)

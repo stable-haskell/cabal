@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | This module provides @newtype@ wrappers to be used with "Distribution.FieldGrammar".

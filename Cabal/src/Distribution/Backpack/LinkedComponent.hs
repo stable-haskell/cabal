@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP #-}
 
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
 module Distribution.Backpack.LinkedComponent
@@ -39,7 +39,11 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Traversable (mapAccumM)
 import Distribution.Pretty (pretty)
+#ifdef __MHS__
+import Text.PrettyPrint (Doc, hsep, quotes, text, vcat, ($+$))
+#else
 import Text.PrettyPrint (Doc, hang, hsep, quotes, text, vcat, ($+$))
+#endif
 
 -- | A linked component is a component that has been mix-in linked, at
 -- which point we have determined how all the dependencies of the

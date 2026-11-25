@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 
 -- |
@@ -71,7 +70,7 @@ import qualified Distribution.Simple.GHC as GHC
 import Distribution.Simple.Setup.Common
 import qualified Distribution.Simple.UHC as UHC
 
-import System.Directory
+import Distribution.Compat.Directory
   ( doesDirectoryExist
   , doesFileExist
   )
@@ -117,7 +116,7 @@ install_setupHooks
   lbi
   flags = do
     checkHasLibsOrExes
-    targets <- readTargetInfos verbosity pkg_descr lbi (copyTargets flags)
+    targets <- readTargetInfos verbosity pkg_descr lbi (setupTargets $ copyCommonFlags flags)
 
     copyPackage verbosity pkg_descr lbi distPref copydest
 

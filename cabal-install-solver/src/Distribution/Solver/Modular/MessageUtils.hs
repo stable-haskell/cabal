@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- | Utility functions providing extra context to cabal error messages
 
 module Distribution.Solver.Modular.MessageUtils (
@@ -14,7 +15,12 @@ import Data.Ord (comparing)
 import Distribution.Pretty (prettyShow) -- from Cabal
 import Language.Haskell.Extension
          ( Extension(..), Language(..), knownLanguages, knownExtensions )
+#ifdef __MHS__
+-- MicroHs has no edit-distance package; provide a small local
+-- Levenshtein implementation preserving solver behavior.
+#else
 import Text.EditDistance ( defaultEditCosts, levenshteinDistance )
+#endif
 
 showUnsupportedExtension :: Extension -> String
 showUnsupportedExtension (UnknownExtension extStr) = formatMessage cutoffRange "extension" extStr (mostSimilarElement extStr allKnownExtensions)
@@ -31,8 +37,33 @@ allKnownExtensions = enabledExtensions ++ disabledExtensions
     disabledExtensions =  map (prettyShow . DisableExtension) knownExtensions
 
 -- Measure the Levenshtein distance between two strings
+#ifdef __MHS__
+defaultEditCosts :: ()
+defaultEditCosts = ()
+
+levenshteinDistance :: () -> String -> String -> Int
+levenshteinDistance _ = lev
+  where
+    lev s t = table !! ls !! lt
+      where
+        ls = length s
+        lt = length t
+        table = [[cell i j | j <- [0 .. lt]] | i <- [0 .. ls]]
+        cell 0 j = j
+        cell i 0 = i
+        cell i j =
+          minimum
+            [ table !! (i - 1) !! j + 1
+            , table !! i !! (j - 1) + 1
+            , table !! (i - 1) !! (j - 1) + if s !! (i - 1) == t !! (j - 1) then 0 else 1
+            ]
+
 distance :: String -> String -> Int
 distance = levenshteinDistance defaultEditCosts
+#else
+distance :: String -> String -> Int
+distance = levenshteinDistance defaultEditCosts
+#endif
 
 -- Given an `unknownElement` and a list of `elements` return the element
 -- from the list with the closest Levenshtein distance to the `unknownElement`

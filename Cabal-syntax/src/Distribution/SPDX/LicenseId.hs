@@ -1,4 +1,5 @@
 -- This file is generated. See Makefile's spdx rule
+{-# LANGUAGE CPP #-}
 {- FOURMOLU_DISABLE -}
 module Distribution.SPDX.LicenseId (
     LicenseId (..),
@@ -19,7 +20,7 @@ import Distribution.Compat.Lens (set)
 import Distribution.Pretty
 import Distribution.Parsec
 import Distribution.Utils.Generic (isAsciiAlphaNum)
-import Distribution.Utils.Structured (Structured (..), nominalStructure, typeVersion)
+import Distribution.Utils.Structured (nominalStructure, typeVersion)
 import Distribution.SPDX.LicenseListVersion
 
 import qualified Data.Binary.Get as Binary
@@ -27,6 +28,10 @@ import qualified Data.Binary.Put as Binary
 import qualified Data.Map.Strict as Map
 import qualified Distribution.Compat.CharParsing as P
 import qualified Text.PrettyPrint as Disp
+
+#ifdef __MHS__
+import Data.Data (Constr, Data (..), DataType, Fixity (Prefix), constrIndex, mkConstrTag, mkDataType)
+#endif
 
 -------------------------------------------------------------------------------
 -- LicenseId
@@ -734,7 +739,20 @@ data LicenseId
     | ZPL_1_1 -- ^ @ZPL-1.1@, Zope Public License 1.1
     | ZPL_2_0 -- ^ @ZPL-2.0@, Zope Public License 2.0
     | ZPL_2_1 -- ^ @ZPL-2.1@, Zope Public License 2.1
-  deriving (Eq, Ord, Enum, Bounded, Show, Read, Data)
+  deriving (Eq,
+#ifdef __MHS__
+    -- No Ord: MicroHs compiles the derived Ord for this ~700-constructor
+    -- type pathologically slowly (see instance below).
+    -- No derived Data: costs as much as derived Ord at scale (~9s
+    -- user at 150 constructors); a hand-written instance below keeps
+    -- the Data LicenseId instance that downstream deriving
+    -- (LicenseExpression) requires. Nothing in the tree calls Data
+    -- methods on LicenseId.
+    Enum, Bounded, Show, Read
+#else
+    Ord, Enum, Bounded, Show, Read, Data
+#endif
+    )
 
 instance Binary LicenseId where
     -- Word16 is encoded in big endianness
@@ -745,6 +763,133 @@ instance Binary LicenseId where
         if i > fromIntegral (fromEnum (maxBound :: LicenseId))
         then fail "Too large LicenseId tag"
         else return (toEnum (fromIntegral i))
+
+#ifdef __MHS__
+-- MicroHs takes pathologically long to compile the derived Ord for
+-- this ~700-constructor type (measured end to end: ~548s user for a
+-- 700-constructor synthetic analogue vs ~0.4s with this instance;
+-- root cause not isolated to a compiler phase). Compare via the
+-- derived Enum tags instead. Semantics are identical to derived Ord
+-- for a plain enumeration (declaration order); Binary (which also
+-- uses fromEnum) and all constructors are unchanged.
+instance Ord LicenseId where
+  compare a b = compare (fromEnum a) (fromEnum b)
+#endif
+
+#ifdef __MHS__
+-- Hand-written Data mirrors the derived instance (declaration-order
+-- tags, constructor names as declared) without the measured
+-- end-to-end compile cost (~9s user at 150 constructors for derived
+-- Data; root cause not isolated to a compiler phase).
+-- toConstr/fromConstr round-trip via the tag index; gfoldl is trivial
+-- for nullary constructors. Nothing in the tree calls Data methods
+-- on LicenseId; the instance exists for downstream deriving.
+instance Data LicenseId where
+  gfoldl k z x = z x
+  gunfold _k z c = z (toEnum (constrIndex c - 1))
+  toConstr x = licenseIdConstrs !! fromEnum x
+  dataTypeOf _ = tyLicenseId
+
+tyLicenseId :: DataType
+tyLicenseId = mkDataType "Distribution.SPDX.LicenseId" licenseIdConstrs
+
+licenseIdConstrs :: [Constr]
+licenseIdConstrs =
+  [ mkConstrTag tyLicenseId name i [] Prefix
+  | (i, name) <- zip [1 ..] licenseIdConstrNames
+  ]
+
+licenseIdConstrNames :: [String]
+licenseIdConstrNames =
+  [ "N_0BSD", "N_3D_Slicer_1_0", "AAL", "Abstyles", "AdaCore_doc", "Adobe_2006", "Adobe_Display_PostScript", "Adobe_Glyph"
+  , "Adobe_Utopia", "ADSL", "Advanced_Cryptics_Dictionary", "AFL_1_1", "AFL_1_2", "AFL_2_0", "AFL_2_1", "AFL_3_0"
+  , "Afmparse", "AGPL_1_0", "AGPL_1_0_only", "AGPL_1_0_or_later", "AGPL_3_0_only", "AGPL_3_0_or_later", "Aladdin", "ALGLIB_Documentation"
+  , "AMD_newlib", "AMDPLPA", "AML_glslang", "AML", "AMPAS", "ANTLR_PD_fallback", "ANTLR_PD", "Any_OSI_perl_modules"
+  , "Any_OSI", "Apache_1_0", "Apache_1_1", "Apache_2_0", "APAFML", "APL_1_0", "App_s2p", "APSL_1_0"
+  , "APSL_1_1", "APSL_1_2", "APSL_2_0", "Arphic_1999", "Artistic_1_0_cl8", "Artistic_1_0_Perl", "Artistic_1_0", "Artistic_2_0"
+  , "Artistic_dist", "Aspell_RU", "ASWF_Digital_Assets_1_0", "ASWF_Digital_Assets_1_1", "Baekmuk", "Bahyph", "Barr", "Bcrypt_Solar_Designer"
+  , "Beerware", "Bitstream_Charter", "Bitstream_Vera", "BitTorrent_1_0", "BitTorrent_1_1", "Blessing", "BlueOak_1_0_0", "Boehm_GC_without_fee"
+  , "Boehm_GC", "BOLA_1_1", "Borceux", "Brian_Gladman_2_Clause", "Brian_Gladman_3_Clause", "BSD_1_Clause", "BSD_2_Clause_FreeBSD", "BSD_2_Clause_NetBSD"
+  , "BSD_2_Clause_Darwin", "BSD_2_Clause_first_lines", "BSD_2_Clause_Patent", "BSD_2_Clause_pkgconf_disclaimer", "BSD_2_Clause_Views", "BSD_2_Clause", "BSD_3_Clause_acpica", "BSD_3_Clause_Attribution"
+  , "BSD_3_Clause_Clear", "BSD_3_Clause_flex", "BSD_3_Clause_HP", "BSD_3_Clause_LBNL", "BSD_3_Clause_Modification", "BSD_3_Clause_No_Military_License", "BSD_3_Clause_No_Nuclear_License_2014", "BSD_3_Clause_No_Nuclear_License"
+  , "BSD_3_Clause_No_Nuclear_Warranty", "BSD_3_Clause_Open_MPI", "BSD_3_Clause_Sun", "BSD_3_Clause_Tso", "BSD_3_Clause", "BSD_4_Clause_Shortened", "BSD_4_Clause_UC", "BSD_4_Clause"
+  , "BSD_4_3RENO", "BSD_4_3TAHOE", "BSD_Advertising_Acknowledgement", "BSD_Attribution_HPND_disclaimer", "BSD_Inferno_Nettverk", "BSD_Mark_Modifications", "BSD_Protection", "BSD_Source_beginning_file"
+  , "BSD_Source_Code", "BSD_Systemics_W3Works", "BSD_Systemics", "BSL_1_0", "Bzip2_1_0_5", "Buddy", "BUSL_1_1", "Bzip2_1_0_6"
+  , "C_UDA_1_0", "CAL_1_0_Combined_Work_Exception", "CAL_1_0", "Caldera_no_preamble", "Caldera", "CAPEC_tou", "Catharon", "CATOSL_1_1"
+  , "CC_BY_1_0", "CC_BY_2_0", "CC_BY_2_5_AU", "CC_BY_2_5", "CC_BY_3_0_AT", "CC_BY_3_0_AU", "CC_BY_3_0_DE", "CC_BY_3_0_IGO"
+  , "CC_BY_3_0_NL", "CC_BY_3_0_US", "CC_BY_3_0", "CC_BY_4_0", "CC_BY_NC_1_0", "CC_BY_NC_2_0", "CC_BY_NC_2_5", "CC_BY_NC_3_0_DE"
+  , "CC_BY_NC_3_0", "CC_BY_NC_4_0", "CC_BY_NC_ND_1_0", "CC_BY_NC_ND_2_0", "CC_BY_NC_ND_2_5", "CC_BY_NC_ND_3_0_DE", "CC_BY_NC_ND_3_0_IGO", "CC_BY_NC_ND_3_0"
+  , "CC_BY_NC_ND_4_0", "CC_BY_NC_SA_1_0", "CC_BY_NC_SA_2_0_DE", "CC_BY_NC_SA_2_0_FR", "CC_BY_NC_SA_2_0_UK", "CC_BY_NC_SA_2_0", "CC_BY_NC_SA_2_5", "CC_BY_NC_SA_3_0_DE"
+  , "CC_BY_NC_SA_3_0_IGO", "CC_BY_NC_SA_3_0", "CC_BY_NC_SA_4_0", "CC_BY_ND_1_0", "CC_BY_ND_2_0", "CC_BY_ND_2_5", "CC_BY_ND_3_0_DE", "CC_BY_ND_3_0"
+  , "CC_BY_ND_4_0", "CC_BY_SA_1_0", "CC_BY_SA_2_0_UK", "CC_BY_SA_2_0", "CC_BY_SA_2_1_JP", "CC_BY_SA_2_5", "CC_BY_SA_3_0_AT", "CC_BY_SA_3_0_DE"
+  , "CC_BY_SA_3_0_IGO", "CC_BY_SA_3_0", "CC_BY_SA_4_0", "CC_PDDC", "CC_PDM_1_0", "CC_SA_1_0", "CC0_1_0", "CDDL_1_0"
+  , "CDDL_1_1", "CDL_1_0", "CDLA_Permissive_1_0", "CDLA_Permissive_2_0", "CDLA_Sharing_1_0", "CECILL_1_0", "CECILL_1_1", "CECILL_2_0"
+  , "CECILL_2_1", "CECILL_B", "CECILL_C", "CERN_OHL_1_1", "CERN_OHL_1_2", "CERN_OHL_P_2_0", "CERN_OHL_S_2_0", "CERN_OHL_W_2_0"
+  , "CFITSIO", "Check_cvs", "Checkmk", "ClArtistic", "Clips", "CMU_Mach_nodoc", "CMU_Mach", "CNRI_Jython"
+  , "CNRI_Python_GPL_Compatible", "CNRI_Python", "COIL_1_0", "Community_Spec_1_0", "Condor_1_1", "Copyleft_next_0_3_0", "Copyleft_next_0_3_1", "Cornell_Lossless_JPEG"
+  , "CPAL_1_0", "CPL_1_0", "CPOL_1_02", "Cronyx", "Crossword", "CryptoSwift", "CrystalStacker", "CUA_OPL_1_0"
+  , "Cube", "Curl", "Cve_tou", "D_FSL_1_0", "DEC_3_Clause", "Diffmark", "DL_DE_BY_2_0", "DL_DE_ZERO_2_0"
+  , "DocBook_DTD", "DocBook_Schema", "DocBook_Stylesheet", "DocBook_XML", "DOC", "Dotseqn", "DRL_1_0", "DRL_1_1"
+  , "DSDP", "Dtoa", "Dvipdfm", "ECL_1_0", "ECL_2_0", "EFL_1_0", "EFL_2_0", "EGenix"
+  , "Elastic_2_0", "Entessa", "EPICS", "EPL_1_0", "EPL_2_0", "ErlPL_1_1", "ESA_PL_permissive_2_4", "ESA_PL_strong_copyleft_2_4"
+  , "ESA_PL_weak_copyleft_2_4", "Etalab_2_0", "EUDatagrid", "EUPL_1_0", "EUPL_1_1", "EUPL_1_2", "Eurosym", "Fair"
+  , "FBM", "FDK_AAC", "Ferguson_Twofish", "Frameworx_1_0", "FreeBSD_DOC", "FreeImage", "FSFAP_no_warranty_disclaimer", "FSFAP"
+  , "FSFULLRSD", "FSFULLRWD", "FSFULLR", "FSFUL", "FSL_1_1_ALv2", "FSL_1_1_MIT", "FTL", "Furuseth"
+  , "Fwlw", "Game_Programming_Gems", "GCR_docs", "GD", "Generic_xts", "GFDL_1_1_invariants_only", "GFDL_1_1_invariants_or_later", "GFDL_1_1_no_invariants_only"
+  , "GFDL_1_1_no_invariants_or_later", "GFDL_1_1_only", "GFDL_1_1_or_later", "GFDL_1_2_invariants_only", "GFDL_1_2_invariants_or_later", "GFDL_1_2_no_invariants_only", "GFDL_1_2_no_invariants_or_later", "GFDL_1_2_only"
+  , "GFDL_1_2_or_later", "GFDL_1_3_invariants_only", "GFDL_1_3_invariants_or_later", "GFDL_1_3_no_invariants_only", "GFDL_1_3_no_invariants_or_later", "GFDL_1_3_only", "GFDL_1_3_or_later", "Giftware"
+  , "GL2PS", "Glide", "Glulxe", "GLWTPL", "Gnuplot", "GPL_1_0_only", "GPL_1_0_or_later", "GPL_2_0_only"
+  , "GPL_2_0_or_later", "GPL_3_0_only", "GPL_3_0_or_later", "Graphics_Gems", "GSOAP_1_3b", "Gtkbook", "Gutmann", "HaskellReport"
+  , "HDF5", "Hdparm", "HIDAPI", "Hippocratic_2_1", "HP_1986", "HP_1989", "HPND_DEC", "HPND_doc_sell"
+  , "HPND_doc", "HPND_export_US_acknowledgement", "HPND_export_US_modify", "HPND_export_US", "HPND_export2_US", "HPND_Fenneberg_Livingston", "HPND_INRIA_IMAG", "HPND_Intel"
+  , "HPND_Kevlin_Henney", "HPND_Markus_Kuhn", "HPND_merchantability_variant", "HPND_MIT_disclaimer", "HPND_Netrek", "HPND_Pbmplus", "HPND_sell_MIT_disclaimer_xserver", "HPND_sell_regexpr"
+  , "HPND_sell_variant_critical_systems", "HPND_sell_variant_MIT_disclaimer_rev", "HPND_sell_variant_MIT_disclaimer", "HPND_sell_variant", "HPND_SMC", "HPND_UC_export_US", "HPND_UC", "HPND"
+  , "HTMLTIDY", "Hyphen_bulgarian", "IBM_pibs", "ICU", "IEC_Code_Components_EULA", "IJG_short", "IJG", "ImageMagick"
+  , "IMatix", "Imlib2", "Info_ZIP", "Inner_Net_2_0", "InnoSetup", "Intel_ACPI", "Intel", "Interbase_1_0"
+  , "IPA", "IPL_1_0", "ISC_Veillard", "ISC", "ISO_permission", "Jam", "JasPer_2_0", "Jove"
+  , "JPL_image", "JPNIC", "JSON", "Kastrup", "Kazlib", "Knuth_CTAN", "LAL_1_2", "LAL_1_3"
+  , "Latex2e_translated_notice", "Latex2e", "Leptonica", "LGPL_2_0_only", "LGPL_2_0_or_later", "LGPL_2_1_only", "LGPL_2_1_or_later", "LGPL_3_0_only"
+  , "LGPL_3_0_or_later", "LGPLLR", "Libpng_1_6_35", "Libpng_2_0", "Libpng", "Libselinux_1_0", "Libtiff", "Libutil_David_Nugent"
+  , "LiLiQ_P_1_1", "LiLiQ_R_1_1", "LiLiQ_Rplus_1_1", "Linux_man_pages_1_para", "Linux_man_pages_copyleft_2_para", "Linux_man_pages_copyleft_var", "Linux_man_pages_copyleft", "Linux_OpenIB"
+  , "LOOP", "LPD_document", "LPL_1_02", "LPL_1_0", "LPPL_1_0", "LPPL_1_1", "LPPL_1_2", "LPPL_1_3a"
+  , "LPPL_1_3c", "Lsof", "Lucida_Bitmap_Fonts", "LZMA_SDK_9_11_to_9_20", "LZMA_SDK_9_22", "Mackerras_3_Clause_acknowledgment", "Mackerras_3_Clause", "Magaz"
+  , "Mailprio", "MakeIndex", "Man2html", "Martin_Birgmeier", "McPhee_slideshow", "Metamail", "Minpack", "MIPS"
+  , "MirOS", "MIT_0", "MIT_advertising", "MIT_Click", "MIT_CMU", "MIT_enna", "MIT_feh", "MIT_Festival"
+  , "MIT_Khronos_old", "MIT_Modern_Variant", "MIT_open_group", "MIT_STK", "MIT_testregex", "MIT_Wu", "MITNFA", "MIT"
+  , "MMIXware", "MMPL_1_0_1", "Motosoto", "MPEG_SSG", "Mpi_permissive", "Mpich2", "MPL_1_0", "MPL_1_1"
+  , "MPL_2_0_no_copyleft_exception", "MPL_2_0", "Mplus", "MS_LPL", "MS_PL", "MS_RL", "MTLL", "MulanPSL_1_0"
+  , "MulanPSL_2_0", "Multics", "Mup", "NAIST_2003", "NASA_1_3", "Naumen", "NBPL_1_0", "NCBI_PD"
+  , "NCGL_UK_2_0", "NCL", "NCSA", "Net_SNMP", "NetCDF", "Newsletr", "NGPL", "Ngrep"
+  , "NICTA_1_0", "NIST_PD_fallback", "NIST_PD_TNT", "NIST_PD", "NIST_Software", "NLOD_1_0", "NLOD_2_0", "NLPL"
+  , "Nokia", "NOSL", "Noweb", "NPL_1_0", "NPL_1_1", "NPOSL_3_0", "NRL", "NTIA_PD"
+  , "NTP_0", "NTP", "O_UDA_1_0", "OAR", "OCCT_PL", "OCLC_2_0", "ODbL_1_0", "ODC_By_1_0"
+  , "OFFIS", "OFL_1_0_no_RFN", "OFL_1_0_RFN", "OFL_1_0", "OFL_1_1_no_RFN", "OFL_1_1_RFN", "OFL_1_1", "OGC_1_0"
+  , "OGDL_Taiwan_1_0", "OGL_Canada_2_0", "OGL_UK_1_0", "OGL_UK_2_0", "OGL_UK_3_0", "OGTSL", "OLDAP_1_1", "OLDAP_1_2"
+  , "OLDAP_1_3", "OLDAP_1_4", "OLDAP_2_0_1", "OLDAP_2_0", "OLDAP_2_1", "OLDAP_2_2_1", "OLDAP_2_2_2", "OLDAP_2_2"
+  , "OLDAP_2_3", "OLDAP_2_4", "OLDAP_2_5", "OLDAP_2_6", "OLDAP_2_7", "OLDAP_2_8", "OLFL_1_3", "OML"
+  , "OpenMDW_1_0", "OpenPBS_2_3", "OpenSSL_standalone", "OpenSSL", "OpenVision", "OPL_1_0", "OPL_UK_3_0", "OPUBL_1_0"
+  , "OSC_1_0", "OSET_PL_2_1", "OSL_1_0", "OSL_1_1", "OSL_2_0", "OSL_2_1", "OSL_3_0", "OSSP"
+  , "PADL", "ParaType_Free_Font_1_3", "Parity_6_0_0", "Parity_7_0_0", "PDDL_1_0", "PHP_3_01", "PHP_3_0", "Pixar"
+  , "Pkgconf", "Plexus", "Pnmstitch", "PolyForm_Noncommercial_1_0_0", "PolyForm_Small_Business_1_0_0", "PostgreSQL", "PPL", "PSF_2_0"
+  , "Psfrag", "Psutils", "Python_2_0_1", "Python_2_0", "Python_ldap", "Qhull", "QPL_1_0_INRIA_2004", "QPL_1_0"
+  , "Radvd", "Rdisc", "RHeCos_1_1", "RPL_1_1", "RPL_1_5", "RPSL_1_0", "RSA_MD", "RSCPL"
+  , "Ruby_pty", "Ruby", "SAX_PD_2_0", "SAX_PD", "Saxpath", "SCEA", "SchemeReport", "Sendmail_8_23"
+  , "Sendmail_Open_Source_1_1", "Sendmail", "SGI_B_1_0", "SGI_B_1_1", "SGI_B_2_0", "SGI_OpenGL", "SGMLUG_PM", "SGP4"
+  , "SHL_0_51", "SHL_0_5", "SimPL_2_0", "SISSL_1_2", "SISSL", "Sleepycat", "SL", "SMAIL_GPL"
+  , "SMLNJ", "SMPPL", "SNIA", "Snprintf", "SOFA", "SoftSurfer", "Soundex", "Spencer_86"
+  , "Spencer_94", "Spencer_99", "SPL_1_0", "Ssh_keyscan", "SSH_OpenSSH", "SSH_short", "SSLeay_standalone", "SSPL_1_0"
+  , "SugarCRM_1_1_3", "SUL_1_0", "Sun_PPP_2000", "Sun_PPP", "SunPro", "SWL", "Swrule", "Symlinks"
+  , "TAPR_OHL_1_0", "TCL", "TCP_wrappers", "TekHVC", "TermReadKey", "TGPPL_1_0", "ThirdEye", "Threeparttable"
+  , "TMate", "TORQUE_1_1", "TOSL", "TPDL", "TPL_1_0", "TrustedQSL", "TTWL", "TTYP0"
+  , "TU_Berlin_1_0", "TU_Berlin_2_0", "Ubuntu_font_1_0", "UCAR", "UCL_1_0", "Ulem", "UMich_Merit", "Unicode_3_0"
+  , "Unicode_DFS_2015", "Unicode_DFS_2016", "Unicode_TOU", "UnixCrypt", "Unlicense_libtelnet", "Unlicense_libwhirlpool", "Unlicense", "UnRAR"
+  , "UPL_1_0", "URT_RLE", "Vim", "Vixie_Cron", "VOSTROM", "VSL_1_0", "W3C_19980720", "W3C_20150513"
+  , "W3C", "W3m", "Watcom_1_0", "Widget_Workshop", "WordNet", "Wsuipa", "WTFNMFPL", "WTFPL"
+  , "Wwl", "X11_distribute_modifications_variant", "X11_no_permit_persons", "X11_swapped", "X11", "Xdebug_1_03", "Xerox", "Xfig"
+  , "XFree86_1_1", "Xinetd", "Xkeyboard_config_Zinoviev", "Xlock", "Xnet", "Xpp", "XSkat", "Xzoom"
+  , "YPL_1_0", "YPL_1_1", "Zed", "Zeeff", "Zend_2_0", "Zimbra_1_3", "Zimbra_1_4", "Zlib_acknowledgement"
+  , "Zlib", "ZPL_1_1", "ZPL_2_0", "ZPL_2_1" ]
+#endif
 
 -- note: remember to bump version each time the definition changes
 instance Structured LicenseId where

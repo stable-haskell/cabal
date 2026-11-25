@@ -23,6 +23,7 @@ import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
 import Distribution.Solver.Types.ProjectConfigPath
 import Distribution.Solver.Types.Settings (PreferVersion (..))
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
+import Prelude ()
 
 projectConfigFieldGrammar :: ProjectConfigPath -> [String] -> ParsecFieldGrammar' ProjectConfig
 projectConfigFieldGrammar source knownPrograms = do

@@ -7,6 +7,7 @@ module Distribution.Client.ManpageFlags
   ) where
 
 import Distribution.Client.Compat.Prelude
+import Prelude ()
 
 import Distribution.Simple.Command (OptionField (..), ShowOrParseArgs (..), option)
 import Distribution.Simple.Setup (Flag, optionVerbosity, toFlag, trueArg)

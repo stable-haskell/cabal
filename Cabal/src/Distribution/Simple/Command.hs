@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 
 -- |
@@ -84,7 +85,9 @@ import Distribution.Compat.Prelude hiding (get)
 import Prelude ()
 
 import qualified Data.Array as Array
+#ifndef __MHS__
 import Data.Either (rights)
+#endif
 import qualified Data.List as List
 import Distribution.Compat.Lens (ALens', (#~), (^#))
 import qualified Distribution.GetOpt as GetOpt

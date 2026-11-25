@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Types.PackageDescription
 -- Copyright   :  Isaac Jones 2003-2005

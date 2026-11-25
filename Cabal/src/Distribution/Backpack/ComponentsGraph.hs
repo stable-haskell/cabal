@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
 module Distribution.Backpack.ComponentsGraph
   ( ComponentsGraph
@@ -23,6 +25,9 @@ import Distribution.Utils.Generic
 
 import Distribution.Pretty (pretty)
 import Text.PrettyPrint
+#ifdef __MHS__
+import Distribution.Utils.LogProgress (hang)
+#endif
 
 ------------------------------------------------------------------------------
 -- Components graph
@@ -30,7 +35,7 @@ import Text.PrettyPrint
 
 -- | A graph of source-level components by their source-level
 -- dependencies
-type ComponentsGraph = Graph (Node ComponentName Component)
+type ComponentsGraph = Graph ComponentName (Node ComponentName Component)
 
 -- | A list of components associated with the source level
 -- dependencies between them.

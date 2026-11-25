@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.Program.Hpc
 -- Copyright   :  Thomas Tuegel 2011

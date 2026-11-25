@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Distribution.Simple.Build.PackageInfoModule.Z (render, Z (..)) where
 
 import Distribution.ZinzaPrelude (Generic, execWriter, tell)
@@ -9,7 +11,9 @@ data Z = Z
   , zCopyright :: String
   , zHomepage :: String
   }
+#ifndef __MHS__
   deriving (Generic)
+#endif
 
 render :: Z -> String
 render z_root = execWriter $ do

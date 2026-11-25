@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-
@@ -128,7 +128,7 @@ import Language.Haskell.Extension
 
 -- Base
 import Data.List (unionBy, (\\))
-import System.Directory (removePathForcibly)
+import Distribution.Compat.Directory (removePathForcibly)
 import System.Environment (getArgs, getProgName)
 import System.IO (hPutStr, hPutStrLn)
 
@@ -153,6 +153,10 @@ defaultMainWithSetupHooks setupHooks =
   getArgs >>= defaultMainWithSetupHooksArgs setupHooks defaultVerbosityHandles
 
 defaultMainWithSetupHooksArgs :: SetupHooks -> VerbosityHandles -> [String] -> IO ()
+#ifdef __MHS__
+defaultMainWithSetupHooksArgs _ _ _ =
+  error "build-type: Hooks is not supported in this MHS build of Cabal."
+#else
 defaultMainWithSetupHooksArgs setupHooks verbHandles =
   defaultMainHelper $
     simpleUserHooks
@@ -274,6 +278,7 @@ defaultMainWithSetupHooksArgs setupHooks verbHandles =
           lbi
           (allSuffixHandlers hooks)
           flags
+#endif
 
 -- | A customizable version of 'defaultMain'.
 defaultMainWithHooks :: UserHooks -> IO ()
@@ -603,7 +608,7 @@ cleanAction verbHandles globalFlags hooks flags args = do
       flags' =
         flags{cleanCommonFlags = common'}
 
-      mbWorkDirFlag = cleanWorkingDir flags'
+      mbWorkDirFlag = setupWorkingDir $ cleanCommonFlags flags'
       mbWorkDir = flagToMaybe mbWorkDirFlag
 
   pbi <- preClean hooks args flags'
@@ -661,7 +666,7 @@ installAction verbHandles globalFlags hooks flags args = do
 -- Since Cabal-3.4 UserHooks are completely ignored
 sdistAction :: VerbosityHandles -> GlobalFlags -> UserHooks -> SDistFlags -> Args -> IO ()
 sdistAction verbHandles _globalFlags _hooks flags _args = do
-  let mbWorkDir = flagToMaybe $ sDistWorkingDir flags
+  let mbWorkDir = flagToMaybe $ setupWorkingDir $ sDistCommonFlags flags
   (_, ppd) <- confPkgDescr emptyUserHooks verbosity mbWorkDir Nothing
   let pkg_descr = flattenPackageDescription ppd
   sdist verbHandles pkg_descr flags srcPref knownSuffixHandlers
@@ -1082,9 +1087,9 @@ autoconfSetupHooks =
           , SetupHooks.component = component
           }
         ) = do
-        let verbosity = mkVerbosity defaultVerbosityHandles (fromFlag $ configVerbosity cfg)
-            mbWorkDir = flagToMaybe $ configWorkingDir cfg
-            distPref = configDistPref cfg
+        let verbosity = mkVerbosity defaultVerbosityHandles (fromFlag $ setupVerbosity $ configCommonFlags cfg)
+            mbWorkDir = flagToMaybe $ setupWorkingDir $ configCommonFlags cfg
+            distPref = setupDistPref $ configCommonFlags cfg
         dist_dir <- findDistPrefOrDefault distPref
         -- Read the ".buildinfo" file and use that to update
         -- the components (main library + executables only).

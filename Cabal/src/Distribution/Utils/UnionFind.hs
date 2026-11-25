@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 
@@ -18,11 +19,24 @@ module Distribution.Utils.UnionFind
 import Control.Monad
 import Control.Monad.ST
 import Data.STRef
+#ifdef __MHS__
+import Data.IORef (IORef)
+import Unsafe.Coerce (unsafeCoerce)
+#endif
 
 -- | A variable which can be unified; alternately, this can be thought
 -- of as an equivalence class with a distinguished representative.
 newtype Point s a = Point (STRef s (Link s a))
+#ifndef __MHS__
   deriving (Eq)
+#endif
+
+#ifdef __MHS__
+-- MicroHs 'STRef' is @newtype STRef s a = R (IORef a)@ with no 'Eq'
+-- instance, whereas 'IORef' has pointer-identity 'Eq' via @primArrEQ@.
+instance Eq (Point s a) where
+  Point r1 == Point r2 = (unsafeCoerce r1 :: IORef ()) == unsafeCoerce r2
+#endif
 
 -- | Mutable write to a 'Point'
 writePoint :: Point s a -> Link s a -> ST s ()

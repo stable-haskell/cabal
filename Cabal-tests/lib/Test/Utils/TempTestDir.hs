@@ -14,7 +14,7 @@ import Control.Monad (unless, when)
 import Control.Monad.Catch ( bracket, MonadMask)
 import Control.Monad.IO.Class
 
-import System.Directory
+import Distribution.Compat.Directory
 import System.IO.Error
 import System.FilePath ((</>))
 import qualified System.Info (os)

@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
 module Distribution.Solver.Types.ResolverPackage
     ( ResolverPackage(..)
     , solverId
@@ -51,8 +50,7 @@ resolverPackageExeDeps :: ResolverPackage loc -> CD.ComponentDeps [SolverId]
 resolverPackageExeDeps (PreExisting ipkg) = instSolverPkgExeDeps ipkg
 resolverPackageExeDeps (Configured spkg) = solverPkgExeDeps spkg
 
-instance IsNode (ResolverPackage loc) where
-  type Key (ResolverPackage loc) = SolverId
+instance IsNode SolverId (ResolverPackage loc) where
   nodeKey = solverId
   -- Use dependencies for ALL components
   nodeNeighbors pkg =

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Utilities to implement cabal @v2-sdist@.
@@ -26,13 +27,22 @@ import Distribution.Utils.Path
   , makeSymbolicPath
   )
 
+#ifdef __MHS__
+import qualified Distribution.Client.Compat.Tar as Tar
+import qualified Distribution.Client.GZipUtils as GZipUtils
+#else
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
 import qualified Codec.Compression.GZip as GZip
+#endif
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Set as Set
+#ifdef __MHS__
+import Distribution.Compat.Directory (canonicalizePath)
+#else
 import System.Directory (canonicalizePath)
+#endif
 import System.FilePath
 
 -- | List all source files of a given add-source dependency. Exits with error if
@@ -108,4 +118,8 @@ packageDirToSdist verbosity gpd dir = do
     -- nicely. See #5596.
     setModTime :: Tar.Entry -> Tar.Entry
     setModTime entry = entry{Tar.entryTime = 1000000000}
+#ifdef __MHS__
+  normalize <$> GZipUtils.gzipCompress (Tar.write (fmap setModTime entries))
+#else
   return . normalize . GZip.compress . Tar.write $ fmap setModTime entries
+#endif

@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Distribution.Client.Types.ReadyPackage
   ( GenericReadyPackage (..)
@@ -31,8 +31,7 @@ newtype GenericReadyPackage srcpkg = ReadyPackage srcpkg -- see 'ConfiguredPacka
     )
 
 -- Can't newtype derive this
-instance IsNode srcpkg => IsNode (GenericReadyPackage srcpkg) where
-  type Key (GenericReadyPackage srcpkg) = Key srcpkg
+instance IsNode k srcpkg => IsNode k (GenericReadyPackage srcpkg) where
   nodeKey (ReadyPackage spkg) = nodeKey spkg
   nodeNeighbors (ReadyPackage spkg) = nodeNeighbors spkg
 

@@ -1,5 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -109,6 +109,67 @@ packageDescriptionFieldGrammar
      , c CompatDataDir
      )
   => g PackageDescription PackageDescription
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+packageDescriptionFieldGrammar =
+  mkPackageDescription
+    <$> optionalFieldDefAla "cabal-version" SpecVersion L.specVersion CabalSpecV1_0
+    <*> blurFieldGrammar L.package packageIdentifierGrammar
+    <*> optionalFieldDefAla "license" SpecLicense L.licenseRaw (Left SPDX.NONE)
+    <*> licenseFilesGrammar
+    <*> freeTextFieldDef "copyright" L.copyright
+    <*> freeTextFieldDef "maintainer" L.maintainer
+    <*> freeTextFieldDef "author" L.author
+    <*> freeTextFieldDef "stability" L.stability
+    <*> monoidalFieldAla "tested-with" (alaList' FSep TestedWith) L.testedWith
+    <*> freeTextFieldDef "homepage" L.homepage
+    <*> freeTextFieldDef "package-url" L.pkgUrl
+    <*> freeTextFieldDef "bug-reports" L.bugReports
+    <*> freeTextFieldDef "synopsis" L.synopsis
+    <*> freeTextFieldDef "description" L.description
+    <*> freeTextFieldDef "category" L.category
+    <*> (map (bimap T.unpack T.unpack) <$> prefixedFields "x-" L.customFieldsPDText)
+    <*> optionalField "build-type" L.buildTypeRaw
+    <*> monoidalFieldAla "data-files" (alaList' VCat RelativePathNT) L.dataFiles
+    <*> ( optionalFieldDefAla "data-dir" CompatDataDir L.dataDir sameDirectory
+            ^^^ fmap (\x -> if null (getSymbolicPath x) then sameDirectory else x) -- map empty directories to "."
+        )
+    <*> monoidalFieldAla "extra-source-files" formatExtraSourceFiles L.extraSrcFiles
+    <*> monoidalFieldAla "extra-tmp-files" (alaList' VCat RelativePathNT) L.extraTmpFiles
+    <*> monoidalFieldAla "extra-doc-files" formatExtraSourceFiles L.extraDocFiles
+    <*> ( monoidalFieldAla "extra-files" formatExtraSourceFiles L.extraFiles
+            ^^^ availableSince CabalSpecV3_14 []
+        )
+  where
+    mkPackageDescription specVersion package licenseRaw licenseFiles copyright maintainer author stability testedWith homepage pkgUrl bugReports synopsis description category customFieldsPD buildTypeRaw dataFiles dataDir extraSrcFiles extraTmpFiles extraDocFiles extraFiles =
+      PackageDescription{..}
+      where
+        sourceRepos = []
+        setupBuildInfo = Nothing
+        -- components
+        library = Nothing
+        subLibraries = []
+        executables = []
+        foreignLibs = []
+        testSuites = []
+        benchmarks = []
+
+    packageIdentifierGrammar =
+      PackageIdentifier
+        <$> uniqueField "name" L.pkgName
+        <*> uniqueField "version" L.pkgVersion
+
+    licenseFilesGrammar =
+      (++)
+        -- TODO: neither field is deprecated
+        -- should we pretty print license-file if there's single license file
+        -- and license-files when more
+        <$> monoidalFieldAla "license-file" CompatLicenseFile L.licenseFiles
+        <*> monoidalFieldAla "license-files" (alaList' FSep RelativePathNT) L.licenseFiles
+          ^^^ hiddenField
+#else
 packageDescriptionFieldGrammar = do
   specVersion <- optionalFieldDefAla "cabal-version" SpecVersion L.specVersion CabalSpecV1_0
   package <- blurFieldGrammar L.package packageIdentifierGrammar
@@ -162,37 +223,69 @@ packageDescriptionFieldGrammar = do
         <$> monoidalFieldAla "license-file" CompatLicenseFile L.licenseFiles
         <*> monoidalFieldAla "license-files" (alaList' FSep RelativePathNT) L.licenseFiles
           ^^^ hiddenField
+#endif
 
 -------------------------------------------------------------------------------
 -- Library
 -------------------------------------------------------------------------------
 
+-- MicroHs supports tuples only up to 15 elements, so constraints beyond
+-- that are nested into smaller tuples. Both GHC and MicroHs accept
+-- nested constraint tuples with identical meaning.
 libraryFieldGrammar
-  :: ( FieldGrammar c g
-     , c (Identity LibraryVisibility)
-     , c (List CommaFSep (Identity ExeDependency) ExeDependency)
-     , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
-     , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
-     , c (List CommaVCat (Identity Dependency) Dependency)
-     , c (List CommaVCat (Identity Mixin) Mixin)
-     , c (List CommaVCat (Identity ModuleReexport) ModuleReexport)
-     , c (List FSep (MQuoted Extension) Extension)
-     , c (List FSep (MQuoted Language) Language)
-     , c (List NoCommaFSep Token' Text)
-     , c (List VCat (MQuoted ModuleName) ModuleName)
-     , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
-     , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
-     , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
-     , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
-     , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
-     , c (List VCat Token Text)
-     , c (MQuoted Language)
+  :: ( ( FieldGrammar c g
+       , c (Identity LibraryVisibility)
+       , c (List CommaFSep (Identity ExeDependency) ExeDependency)
+       , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
+       , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
+       , c (List CommaVCat (Identity Dependency) Dependency)
+       , c (List CommaVCat (Identity Mixin) Mixin)
+       , c (List CommaVCat (Identity ModuleReexport) ModuleReexport)
+       , c (List FSep (MQuoted Extension) Extension)
+       , c (List FSep (MQuoted Language) Language)
+       , c (List NoCommaFSep Token' Text)
+       )
+     , ( c (List VCat (MQuoted ModuleName) ModuleName)
+       , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
+       , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
+       , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
+       , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
+       , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+       , c (List VCat Token Text)
+       , c (MQuoted Language)
+       )
      )
   => LibraryName
   -> g Library Library
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+libraryFieldGrammar libName =
+  mkLibrary
+    <$> monoidalFieldAla "exposed-modules" formatExposedModules L.exposedModules
+    <*> monoidalFieldAla "reexported-modules" (alaList CommaVCat) L.reexportedModules
+    <*> ( monoidalFieldAla "signatures" (alaList' VCat MQuoted) L.signatures
+            ^^^ availableSince CabalSpecV2_0 []
+        )
+    <*> booleanFieldDef "exposed" L.libExposed True
+    <*> visibilityField
+    <*> blurFieldGrammar L.libBuildInfo buildInfoFieldGrammar
+  where
+    mkLibrary exposedModules reexportedModules signatures libExposed libVisibility libBuildInfo =
+      Library{..}
+
+    visibilityField = case libName of
+      -- nameless/"main" libraries are public
+      LMainLibName -> pure LibraryVisibilityPublic
+      -- named libraries have the field
+      LSubLibName _ ->
+        optionalFieldDef "visibility" L.libVisibility LibraryVisibilityPrivate
+          ^^^ availableSince CabalSpecV3_0 LibraryVisibilityPrivate
+#else
 libraryFieldGrammar libName = do
   exposedModules <- monoidalFieldAla "exposed-modules" formatExposedModules L.exposedModules
   reexportedModules <- monoidalFieldAla "reexported-modules" (alaList CommaVCat) L.reexportedModules
@@ -211,6 +304,7 @@ libraryFieldGrammar libName = do
       LSubLibName _ ->
         optionalFieldDef "visibility" L.libVisibility LibraryVisibilityPrivate
           ^^^ availableSince CabalSpecV3_0 LibraryVisibilityPrivate
+#endif
 {-# SPECIALIZE libraryFieldGrammar :: LibraryName -> ParsecFieldGrammar' Library #-}
 {-# SPECIALIZE libraryFieldGrammar :: LibraryName -> PrettyFieldGrammar' Library #-}
 
@@ -219,34 +313,49 @@ libraryFieldGrammar libName = do
 -------------------------------------------------------------------------------
 
 foreignLibFieldGrammar
-  :: ( FieldGrammar c g
-     , c (Identity ForeignLibType)
-     , c (Identity LibVersionInfo)
-     , c (Identity Version)
-     , c (List CommaFSep (Identity ExeDependency) ExeDependency)
-     , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
-     , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
-     , c (List CommaVCat (Identity Dependency) Dependency)
-     , c (List CommaVCat (Identity Mixin) Mixin)
-     , c (List FSep (Identity ForeignLibOption) ForeignLibOption)
-     , c (List FSep (MQuoted Extension) Extension)
-     , c (List FSep (MQuoted Language) Language)
-     , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
-     , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
-     , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
-     , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
-     , c (List FSep (RelativePathNT Source File) (RelativePath Source File))
-     , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
-     , c (List NoCommaFSep Token' Text)
-     , c (List VCat (MQuoted ModuleName) ModuleName)
-     , c (List VCat Token Text)
-     , c (MQuoted Language)
+  :: ( ( FieldGrammar c g
+       , c (Identity ForeignLibType)
+       , c (Identity LibVersionInfo)
+       , c (Identity Version)
+       , c (List CommaFSep (Identity ExeDependency) ExeDependency)
+       , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
+       , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
+       , c (List CommaVCat (Identity Dependency) Dependency)
+       , c (List CommaVCat (Identity Mixin) Mixin)
+       , c (List FSep (Identity ForeignLibOption) ForeignLibOption)
+       , c (List FSep (MQuoted Extension) Extension)
+       , c (List FSep (MQuoted Language) Language)
+       , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
+       )
+     , ( c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
+       , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
+       , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
+       , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
+       , c (List FSep (RelativePathNT Source File) (RelativePath Source File))
+       , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+       , c (List NoCommaFSep Token' Text)
+       , c (List VCat (MQuoted ModuleName) ModuleName)
+       , c (List VCat Token Text)
+       , c (MQuoted Language)
+       )
      )
   => UnqualComponentName
   -> g ForeignLib ForeignLib
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+foreignLibFieldGrammar foreignLibName =
+  ForeignLib foreignLibName
+    <$> optionalFieldDef "type" L.foreignLibType ForeignLibTypeUnknown
+    <*> monoidalFieldAla "options" (alaList FSep) L.foreignLibOptions
+    <*> blurFieldGrammar L.foreignLibBuildInfo buildInfoFieldGrammar
+    <*> optionalField "lib-version-info" L.foreignLibVersionInfo
+    <*> optionalField "lib-version-linux" L.foreignLibVersionLinux
+    <*> monoidalFieldAla "mod-def-file" (alaList' FSep RelativePathNT) L.foreignLibModDefFile
+#else
 foreignLibFieldGrammar foreignLibName = do
   foreignLibType <- optionalFieldDef "type" L.foreignLibType ForeignLibTypeUnknown
   foreignLibOptions <- monoidalFieldAla "options" (alaList FSep) L.foreignLibOptions
@@ -255,6 +364,7 @@ foreignLibFieldGrammar foreignLibName = do
   foreignLibVersionLinux <- optionalField "lib-version-linux" L.foreignLibVersionLinux
   foreignLibModDefFile <- monoidalFieldAla "mod-def-file" (alaList' FSep RelativePathNT) L.foreignLibModDefFile
   pure ForeignLib{..}
+#endif
 {-# SPECIALIZE foreignLibFieldGrammar :: UnqualComponentName -> ParsecFieldGrammar' ForeignLib #-}
 {-# SPECIALIZE foreignLibFieldGrammar :: UnqualComponentName -> PrettyFieldGrammar' ForeignLib #-}
 
@@ -263,31 +373,46 @@ foreignLibFieldGrammar foreignLibName = do
 -------------------------------------------------------------------------------
 
 executableFieldGrammar
-  :: ( FieldGrammar c g
-     , c (Identity ExecutableScope)
-     , c (List CommaFSep (Identity ExeDependency) ExeDependency)
-     , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
-     , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
-     , c (List CommaVCat (Identity Dependency) Dependency)
-     , c (List CommaVCat (Identity Mixin) Mixin)
-     , c (List FSep (MQuoted Extension) Extension)
-     , c (List FSep (MQuoted Language) Language)
-     , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
-     , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
-     , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
-     , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
-     , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
-     , c (RelativePathNT Source File)
-     , c (List NoCommaFSep Token' Text)
-     , c (List VCat (MQuoted ModuleName) ModuleName)
-     , c (List VCat Token Text)
-     , c (MQuoted Language)
+  :: ( ( FieldGrammar c g
+       , c (Identity ExecutableScope)
+       , c (List CommaFSep (Identity ExeDependency) ExeDependency)
+       , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
+       , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
+       , c (List CommaVCat (Identity Dependency) Dependency)
+       , c (List CommaVCat (Identity Mixin) Mixin)
+       , c (List FSep (MQuoted Extension) Extension)
+       , c (List FSep (MQuoted Language) Language)
+       , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
+       )
+     , ( c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
+       , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
+       , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
+       , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
+       , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+       , c (RelativePathNT Source File)
+       , c (List NoCommaFSep Token' Text)
+       , c (List VCat (MQuoted ModuleName) ModuleName)
+       , c (List VCat Token Text)
+       , c (MQuoted Language)
+       )
      )
   => UnqualComponentName
   -> g Executable Executable
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+executableFieldGrammar exeName =
+  Executable exeName
+    -- main-is is optional as conditional blocks don't have it
+    <$> optionalFieldDefAla "main-is" RelativePathNT L.modulePath (modulePath mempty)
+    <*> ( optionalFieldDef "scope" L.exeScope ExecutablePublic
+            ^^^ availableSince CabalSpecV2_0 ExecutablePublic
+        )
+    <*> blurFieldGrammar L.buildInfo buildInfoFieldGrammar
+#else
 executableFieldGrammar exeName = do
   -- main-is is optional as conditional blocks don't have it
   modulePath <- optionalFieldDefAla "main-is" RelativePathNT L.modulePath (modulePath mempty)
@@ -296,6 +421,7 @@ executableFieldGrammar exeName = do
       ^^^ availableSince CabalSpecV2_0 ExecutablePublic
   buildInfo <- blurFieldGrammar L.buildInfo buildInfoFieldGrammar
   pure Executable{..}
+#endif
 {-# SPECIALIZE executableFieldGrammar :: UnqualComponentName -> ParsecFieldGrammar' Executable #-}
 {-# SPECIALIZE executableFieldGrammar :: UnqualComponentName -> PrettyFieldGrammar' Executable #-}
 
@@ -337,32 +463,48 @@ testStanzaCodeGenerators f s = fmap (\x -> s{_testStanzaCodeGenerators = x}) (f 
 {-# INLINE testStanzaCodeGenerators #-}
 
 testSuiteFieldGrammar
-  :: ( FieldGrammar c g
-     , c (Identity ModuleName)
-     , c (Identity TestType)
-     , c (List CommaFSep (Identity ExeDependency) ExeDependency)
-     , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
-     , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
-     , c (List CommaFSep Token Text)
-     , c (List CommaVCat (Identity Dependency) Dependency)
-     , c (List CommaVCat (Identity Mixin) Mixin)
-     , c (List FSep (MQuoted Extension) Extension)
-     , c (List FSep (MQuoted Language) Language)
-     , c (List NoCommaFSep Token' Text)
-     , c (List VCat (MQuoted ModuleName) ModuleName)
-     , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
-     , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
-     , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
-     , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
-     , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
-     , c (RelativePathNT Source File)
-     , c (List VCat Token Text)
-     , c (MQuoted Language)
+  :: ( ( FieldGrammar c g
+       , c (Identity ModuleName)
+       , c (Identity TestType)
+       , c (List CommaFSep (Identity ExeDependency) ExeDependency)
+       , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
+       , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
+       , c (List CommaFSep Token Text)
+       , c (List CommaVCat (Identity Dependency) Dependency)
+       , c (List CommaVCat (Identity Mixin) Mixin)
+       , c (List FSep (MQuoted Extension) Extension)
+       , c (List FSep (MQuoted Language) Language)
+       , c (List NoCommaFSep Token' Text)
+       )
+     , ( c (List VCat (MQuoted ModuleName) ModuleName)
+       , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
+       , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
+       , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
+       , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
+       , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+       , c (RelativePathNT Source File)
+       , c (List VCat Token Text)
+       , c (MQuoted Language)
+       )
      )
   => g TestSuiteStanza TestSuiteStanza
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+testSuiteFieldGrammar =
+  TestSuiteStanza
+    <$> optionalField "type" testStanzaTestType
+    <*> optionalFieldAla "main-is" RelativePathNT testStanzaMainIs
+    <*> optionalField "test-module" testStanzaTestModule
+    <*> blurFieldGrammar testStanzaBuildInfo buildInfoFieldGrammar
+    <*> ( monoidalFieldAla "code-generators" (alaList' CommaFSep Token) testStanzaCodeGenerators
+            ^^^ availableSince CabalSpecV3_8 []
+        )
+#else
 testSuiteFieldGrammar = do
   _testStanzaTestType <- optionalField "type" testStanzaTestType
   _testStanzaMainIs <- optionalFieldAla "main-is" RelativePathNT testStanzaMainIs
@@ -372,6 +514,7 @@ testSuiteFieldGrammar = do
     monoidalFieldAla "code-generators" (alaList' CommaFSep Token) testStanzaCodeGenerators
       ^^^ availableSince CabalSpecV3_8 []
   pure TestSuiteStanza{..}
+#endif
 
 validateTestSuite :: CabalSpecVersion -> Position -> TestSuiteStanza -> ParseResult src TestSuite
 validateTestSuite cabalSpecVersion pos stanza = case testSuiteType of
@@ -485,37 +628,51 @@ benchmarkStanzaBuildInfo f s = fmap (\x -> s{_benchmarkStanzaBuildInfo = x}) (f 
 {-# INLINE benchmarkStanzaBuildInfo #-}
 
 benchmarkFieldGrammar
-  :: ( FieldGrammar c g
-     , c (Identity BenchmarkType)
-     , c (Identity ModuleName)
-     , c (List CommaFSep (Identity ExeDependency) ExeDependency)
-     , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
-     , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
-     , c (List CommaVCat (Identity Dependency) Dependency)
-     , c (List CommaVCat (Identity Mixin) Mixin)
-     , c (List FSep (MQuoted Extension) Extension)
-     , c (List FSep (MQuoted Language) Language)
-     , c (List NoCommaFSep Token' Text)
-     , c (List VCat (MQuoted ModuleName) ModuleName)
-     , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
-     , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
-     , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
-     , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
-     , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
-     , c (RelativePathNT Source File)
-     , c (List VCat Token Text)
-     , c (MQuoted Language)
+  :: ( ( FieldGrammar c g
+       , c (Identity BenchmarkType)
+       , c (Identity ModuleName)
+       , c (List CommaFSep (Identity ExeDependency) ExeDependency)
+       , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
+       , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
+       , c (List CommaVCat (Identity Dependency) Dependency)
+       , c (List CommaVCat (Identity Mixin) Mixin)
+       , c (List FSep (MQuoted Extension) Extension)
+       , c (List FSep (MQuoted Language) Language)
+       , c (List NoCommaFSep Token' Text)
+       , c (List VCat (MQuoted ModuleName) ModuleName)
+       )
+     , ( c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
+       , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
+       , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
+       , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
+       , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+       , c (RelativePathNT Source File)
+       , c (List VCat Token Text)
+       , c (MQuoted Language)
+       )
      )
   => g BenchmarkStanza BenchmarkStanza
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+benchmarkFieldGrammar =
+  BenchmarkStanza
+    <$> optionalField "type" benchmarkStanzaBenchmarkType
+    <*> optionalFieldAla "main-is" RelativePathNT benchmarkStanzaMainIs
+    <*> optionalField "benchmark-module" benchmarkStanzaBenchmarkModule
+    <*> blurFieldGrammar benchmarkStanzaBuildInfo buildInfoFieldGrammar
+#else
 benchmarkFieldGrammar = do
   _benchmarkStanzaBenchmarkType <- optionalField "type" benchmarkStanzaBenchmarkType
   _benchmarkStanzaMainIs <- optionalFieldAla "main-is" RelativePathNT benchmarkStanzaMainIs
   _benchmarkStanzaBenchmarkModule <- optionalField "benchmark-module" benchmarkStanzaBenchmarkModule
   _benchmarkStanzaBuildInfo <- blurFieldGrammar benchmarkStanzaBuildInfo buildInfoFieldGrammar
   pure BenchmarkStanza{..}
+#endif
 
 validateBenchmark :: CabalSpecVersion -> Position -> BenchmarkStanza -> ParseResult src Benchmark
 validateBenchmark cabalSpecVersion pos stanza = case benchmarkStanzaType of
@@ -592,28 +749,146 @@ unvalidateBenchmark b =
 -------------------------------------------------------------------------------
 
 buildInfoFieldGrammar
-  :: ( FieldGrammar c g
-     , c (List CommaFSep (Identity ExeDependency) ExeDependency)
-     , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
-     , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
-     , c (List CommaVCat (Identity Dependency) Dependency)
-     , c (List CommaVCat (Identity Mixin) Mixin)
-     , c (List FSep (MQuoted Extension) Extension)
-     , c (List FSep (MQuoted Language) Language)
-     , c (List NoCommaFSep Token' Text)
-     , c (List VCat (MQuoted ModuleName) ModuleName)
-     , c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
-     , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
-     , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
-     , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
-     , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
-     , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
-     , c (List VCat Token Text)
-     , c (MQuoted Language)
+  :: ( ( FieldGrammar c g
+       , c (List CommaFSep (Identity ExeDependency) ExeDependency)
+       , c (List CommaFSep (Identity LegacyExeDependency) LegacyExeDependency)
+       , c (List CommaFSep (Identity PkgconfigDependency) PkgconfigDependency)
+       , c (List CommaVCat (Identity Dependency) Dependency)
+       , c (List CommaVCat (Identity Mixin) Mixin)
+       , c (List FSep (MQuoted Extension) Extension)
+       , c (List FSep (MQuoted Language) Language)
+       , c (List NoCommaFSep Token' Text)
+       , c (List VCat (MQuoted ModuleName) ModuleName)
+       )
+     , ( c (List FSep (SymbolicPathNT Pkg (Dir Framework)) (SymbolicPath Pkg (Dir Framework)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Lib)) (SymbolicPath Pkg (Dir Lib)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Source)) (SymbolicPath Pkg (Dir Source)))
+       , c (List FSep (SymbolicPathNT Pkg (Dir Include)) (SymbolicPath Pkg (Dir Include)))
+       , c (List FSep (SymbolicPathNT Include File) (SymbolicPath Include File))
+       , c (List FSep (RelativePathNT Framework File) (RelativePath Framework File))
+       , c (List FSep (RelativePathNT Include File) (RelativePath Include File))
+       , c (List VCat (SymbolicPathNT Pkg File) (SymbolicPath Pkg File))
+       , c (List VCat Token Text)
+       , c (MQuoted Language)
+       )
      )
   => g BuildInfo BuildInfo
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+buildInfoFieldGrammar =
+  mkBuildInfo
+    <$> booleanFieldDef "buildable" L.buildable True
+    <*> ( monoidalFieldAla "build-tools" (alaList CommaFSep) L.buildTools
+            ^^^ deprecatedSince
+              CabalSpecV2_0
+              "Please use 'build-tool-depends' field"
+            ^^^ removedIn
+              CabalSpecV3_0
+              "Please use 'build-tool-depends' field."
+        )
+    -- {- ^^^ availableSince [2,0] [] -}
+    -- here, we explicitly want to recognise build-tool-depends for all Cabal files
+    -- as otherwise cabal new-build cannot really work.
+    --
+    -- I.e. we don't want trigger unknown field warning
+    <*> monoidalFieldAla "build-tool-depends" (alaList CommaFSep) L.buildToolDepends
+    <*> monoidalFieldAla "cpp-options" (alaList' NoCommaFSep Token') L.cppOptions
+    <*> ( monoidalFieldAla "asm-options" (alaList' NoCommaFSep Token') L.asmOptions
+            ^^^ availableSince CabalSpecV3_0 []
+        )
+    <*> ( monoidalFieldAla "cmm-options" (alaList' NoCommaFSep Token') L.cmmOptions
+            ^^^ availableSince CabalSpecV3_0 []
+        )
+    <*> monoidalFieldAla "cc-options" (alaList' NoCommaFSep Token') L.ccOptions
+    <*> ( monoidalFieldAla "cxx-options" (alaList' NoCommaFSep Token') L.cxxOptions
+            ^^^ availableSince CabalSpecV2_2 []
+        )
+    <*> ( monoidalFieldAla "jspp-options" (alaList' NoCommaFSep Token') L.jsppOptions
+            ^^^ availableSince CabalSpecV3_16 []
+        )
+    <*> monoidalFieldAla "ld-options" (alaList' NoCommaFSep Token') L.ldOptions
+    <*> ( monoidalFieldAla "hsc2hs-options" (alaList' NoCommaFSep Token') L.hsc2hsOptions
+            ^^^ availableSince CabalSpecV3_6 []
+        )
+    <*> monoidalFieldAla "pkgconfig-depends" (alaList CommaFSep) L.pkgconfigDepends
+    <*> monoidalFieldAla "frameworks" (alaList' FSep RelativePathNT) L.frameworks
+    <*> monoidalFieldAla "extra-framework-dirs" (alaList' FSep SymbolicPathNT) L.extraFrameworkDirs
+    <*> ( monoidalFieldAla "asm-sources" (alaList' VCat SymbolicPathNT) L.asmSources
+            ^^^ availableSince CabalSpecV3_0 []
+        )
+    <*> ( monoidalFieldAla "cmm-sources" (alaList' VCat SymbolicPathNT) L.cmmSources
+            ^^^ availableSince CabalSpecV3_0 []
+        )
+    <*> monoidalFieldAla "c-sources" (alaList' VCat SymbolicPathNT) L.cSources
+    <*> ( monoidalFieldAla "cxx-sources" (alaList' VCat SymbolicPathNT) L.cxxSources
+            ^^^ availableSince CabalSpecV2_2 []
+        )
+    <*> monoidalFieldAla "js-sources" (alaList' VCat SymbolicPathNT) L.jsSources
+    <*> hsSourceDirsGrammar
+    <*> monoidalFieldAla "other-modules" formatOtherModules L.otherModules
+    <*> ( monoidalFieldAla "virtual-modules" (alaList' VCat MQuoted) L.virtualModules
+            ^^^ availableSince CabalSpecV2_2 []
+        )
+    <*> ( monoidalFieldAla "autogen-modules" (alaList' VCat MQuoted) L.autogenModules
+            ^^^ availableSince CabalSpecV2_0 []
+        )
+    <*> ( optionalFieldAla "default-language" MQuoted L.defaultLanguage
+            ^^^ availableSince CabalSpecV1_10 Nothing
+        )
+    <*> ( monoidalFieldAla "other-languages" (alaList' FSep MQuoted) L.otherLanguages
+            ^^^ availableSince CabalSpecV1_10 []
+        )
+    <*> ( monoidalFieldAla "default-extensions" (alaList' FSep MQuoted) L.defaultExtensions
+            ^^^ availableSince CabalSpecV1_10 []
+        )
+    <*> ( monoidalFieldAla "other-extensions" formatOtherExtensions L.otherExtensions
+            ^^^ availableSinceWarn CabalSpecV1_10
+        )
+    <*> ( monoidalFieldAla "extensions" (alaList' FSep MQuoted) L.oldExtensions
+            ^^^ deprecatedSince
+              CabalSpecV1_12
+              "Please use 'default-extensions' or 'other-extensions' fields."
+            ^^^ removedIn
+              CabalSpecV3_0
+              "Please use 'default-extensions' or 'other-extensions' fields."
+        )
+    <*> monoidalFieldAla "extra-libraries" (alaList' VCat Token) L.extraLibs
+    <*> ( monoidalFieldAla "extra-libraries-static" (alaList' VCat Token) L.extraLibsStatic
+            ^^^ availableSince CabalSpecV3_8 []
+        )
+    <*> monoidalFieldAla "extra-ghci-libraries" (alaList' VCat Token) L.extraGHCiLibs
+    <*> monoidalFieldAla "extra-bundled-libraries" (alaList' VCat Token) L.extraBundledLibs
+    <*> monoidalFieldAla "extra-library-flavours" (alaList' VCat Token) L.extraLibFlavours
+    <*> ( monoidalFieldAla "extra-dynamic-library-flavours" (alaList' VCat Token) L.extraDynLibFlavours
+            ^^^ availableSince CabalSpecV3_0 []
+        )
+    <*> monoidalFieldAla "extra-lib-dirs" (alaList' FSep SymbolicPathNT) L.extraLibDirs
+    <*> ( monoidalFieldAla "extra-lib-dirs-static" (alaList' FSep SymbolicPathNT) L.extraLibDirsStatic
+            ^^^ availableSince CabalSpecV3_8 []
+        )
+    <*> monoidalFieldAla "include-dirs" (alaList' FSep SymbolicPathNT) L.includeDirs
+    <*> monoidalFieldAla "includes" (alaList' FSep SymbolicPathNT) L.includes
+    <*> ( monoidalFieldAla "autogen-includes" (alaList' FSep RelativePathNT) L.autogenIncludes
+            ^^^ availableSince CabalSpecV3_0 []
+        )
+    <*> monoidalFieldAla "install-includes" (alaList' FSep RelativePathNT) L.installIncludes
+    <*> optionsFieldGrammar
+    <*> profOptionsFieldGrammar
+    <*> sharedOptionsFieldGrammar
+    <*> profSharedOptionsFieldGrammar
+    <*> prefixedFields "x-" L.customFieldsBI
+    <*> monoidalFieldAla "build-depends" formatDependencyList L.targetBuildDepends
+    <*> ( monoidalFieldAla "mixins" formatMixinList L.mixins
+            ^^^ availableSince CabalSpecV2_0 []
+        )
+  where
+    mkBuildInfo buildable buildTools buildToolDepends cppOptions asmOptions cmmOptions ccOptions cxxOptions jsppOptions ldOptions hsc2hsOptions pkgconfigDepends frameworks extraFrameworkDirs asmSources cmmSources cSources cxxSources jsSources hsSourceDirs otherModules virtualModules autogenModules defaultLanguage otherLanguages defaultExtensions otherExtensions oldExtensions extraLibs extraLibsStatic extraGHCiLibs extraBundledLibs extraLibFlavours extraDynLibFlavours extraLibDirs extraLibDirsStatic includeDirs includes autogenIncludes installIncludes options profOptions sharedOptions profSharedOptions customFieldsBI targetBuildDepends mixins =
+      BuildInfo{..}
+      where
+        staticOptions = mempty
+#else
 buildInfoFieldGrammar = do
   buildable <- booleanFieldDef "buildable" L.buildable True
   buildTools <-
@@ -721,6 +996,7 @@ buildInfoFieldGrammar = do
     monoidalFieldAla "mixins" formatMixinList L.mixins
       ^^^ availableSince CabalSpecV2_0 []
   pure BuildInfo{..}
+#endif
 {-# SPECIALIZE buildInfoFieldGrammar :: ParsecFieldGrammar' BuildInfo #-}
 {-# SPECIALIZE buildInfoFieldGrammar :: PrettyFieldGrammar' BuildInfo #-}
 
@@ -809,11 +1085,22 @@ flagFieldGrammar
   :: FieldGrammar c g
   => FlagName
   -> g PackageFlag PackageFlag
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+flagFieldGrammar flagName =
+  MkPackageFlag flagName
+    <$> (T.unpack <$> freeTextFieldDef "description" L.flagDescription)
+    <*> booleanFieldDef "default" L.flagDefault True
+    <*> booleanFieldDef "manual" L.flagManual False
+#else
 flagFieldGrammar flagName = do
   flagDescription <- T.unpack <$> freeTextFieldDef "description" L.flagDescription
   flagDefault <- booleanFieldDef "default" L.flagDefault True
   flagManual <- booleanFieldDef "manual" L.flagManual False
   pure MkPackageFlag{..}
+#endif
 {-# SPECIALIZE flagFieldGrammar :: FlagName -> ParsecFieldGrammar' PackageFlag #-}
 {-# SPECIALIZE flagFieldGrammar :: FlagName -> PrettyFieldGrammar' PackageFlag #-}
 
@@ -825,6 +1112,19 @@ sourceRepoFieldGrammar
   :: (FieldGrammar c g, c (Identity RepoType))
   => RepoKind
   -> g SourceRepo SourceRepo
+#ifdef __MHS__
+-- MicroHs does not implement ApplicativeDo, so the do-block below is
+-- spelled out with explicit Applicative combinators. Semantics are
+-- identical to the ApplicativeDo desugaring GHC performs.
+sourceRepoFieldGrammar repoKind =
+  SourceRepo repoKind
+    <$> optionalField "type" L.repoType
+    <*> freeTextField "location" L.repoLocation
+    <*> optionalFieldAla "module" Token L.repoModule
+    <*> optionalFieldAla "branch" Token L.repoBranch
+    <*> optionalFieldAla "tag" Token L.repoTag
+    <*> optionalFieldAla "subdir" FilePathNT L.repoSubdir
+#else
 sourceRepoFieldGrammar repoKind = do
   repoType <- optionalField "type" L.repoType
   repoLocation <- freeTextField "location" L.repoLocation
@@ -833,6 +1133,7 @@ sourceRepoFieldGrammar repoKind = do
   repoTag <- optionalFieldAla "tag" Token L.repoTag
   repoSubdir <- optionalFieldAla "subdir" FilePathNT L.repoSubdir
   pure SourceRepo{..}
+#endif
 {-# SPECIALIZE sourceRepoFieldGrammar :: RepoKind -> ParsecFieldGrammar' SourceRepo #-}
 {-# SPECIALIZE sourceRepoFieldGrammar :: RepoKind -> PrettyFieldGrammar' SourceRepo #-}
 

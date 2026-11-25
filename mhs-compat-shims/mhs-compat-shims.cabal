@@ -1,0 +1,83 @@
+cabal-version: 3.6
+name:          mhs-compat-shims
+version:       0.1.0.0
+copyright:     2026, Cabal Development Team (see AUTHORS file)
+license:       BSD-3-Clause
+license-file:  LICENSE
+author:        Cabal Development Team <cabal-devel@haskell.org>
+maintainer:    cabal-devel@haskell.org
+homepage:      http://www.haskell.org/cabal/
+bug-reports:   https://github.com/haskell/cabal/issues
+synopsis:      MicroHs compatibility shims for Cabal and cabal-install
+description:
+  Lightweight pure-Haskell and POSIX C compatibility shims used when
+  building Cabal, cabal-install-solver, and cabal-install with MicroHs (mhs).
+category:      Distribution
+build-type:    Simple
+
+extra-doc-files:
+  README.md
+  ChangeLog.md
+
+extra-source-files:
+  cbits/mhs_handle.h
+  cbits/mhs_posix.h
+  cbits/mhs_sha256.h
+  cbits/mhs_spawn.h
+  src/Data/Text/Encoding/Error.hs
+  src/Data/Text/Internal/Encoding/Utf8.hs
+  src/Data/Text/Lazy/Encoding.hs
+
+source-repository head
+  type:     git
+  location: https://github.com/haskell/cabal/
+  subdir:   mhs-compat-shims
+
+library
+  default-language: GHC2021
+  default-extensions: NoImportQualifiedPost
+  hs-source-dirs: src
+  include-dirs: cbits
+  install-includes:
+    mhs_handle.h
+    mhs_posix.h
+    mhs_sha256.h
+    mhs_spawn.h
+  c-sources:
+    cbits/mhs_handle.c
+    cbits/mhs_posix.c
+    cbits/mhs_sha256.c
+    cbits/mhs_spawn.c
+
+  if !os(darwin) && !os(windows)
+    extra-libraries: crypto
+
+  build-depends:
+    , base       >= 4.18     && < 5
+    , bytestring >= 0.10.4.0 && < 0.13
+    , containers >= 0.5.2    && < 0.9
+    , directory  >= 1.2.7    && < 1.4
+    , filepath   >= 1.4.301  && < 1.6
+    , text       >= 1.2.3.0  && < 2.2
+    , time       >= 1.4.0.1  && < 1.17
+
+  exposed-modules:
+    Data.Binary
+    Data.Binary.Get
+    Data.Binary.Put
+    Distribution.Client.Compat.Base16
+    Distribution.Compat.Internal.MhsPosix
+    Distribution.Compat.Internal.MhsProcess
+    Distribution.Compat.MhsInstances
+    Network.URI
+    Text.PrettyPrint
+
+  if !impl(ghc)
+    exposed-modules:
+      Data.Text.Encoding.Error
+      Data.Text.Internal.Encoding.Utf8
+      Data.Text.Lazy.Encoding
+
+  ghc-options:
+    -Wall
+    -Wtabs

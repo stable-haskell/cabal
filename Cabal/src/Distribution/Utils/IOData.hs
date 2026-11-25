@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GADTs #-}
 
 -- | @since 2.2.0
@@ -12,6 +13,7 @@ module Distribution.Utils.IOData
   ) where
 
 import qualified Data.ByteString.Lazy as LBS
+import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS)
 import Distribution.Compat.Prelude hiding (null)
 import qualified System.IO
 import qualified Prelude
@@ -60,21 +62,35 @@ data IODataMode mode where
   IODataModeText :: IODataMode String
   IODataModeBinary :: IODataMode LBS.ByteString
 
+{- FOURMOLU_DISABLE -}
 instance a ~ Char => KnownIODataMode [a] where
   hGetIODataContents h = do
+#ifdef __MHS__
+    -- MicroHs handles have no text/binary mode switch.
+    System.IO.hGetContents h
+#else
     System.IO.hSetBinaryMode h False
     System.IO.hGetContents h
+#endif
 
   toIOData = IODataText
   iodataMode = IODataModeText
+{- FOURMOLU_ENABLE -}
 
+{- FOURMOLU_DISABLE -}
 instance KnownIODataMode LBS.ByteString where
   hGetIODataContents h = do
+#ifndef __MHS__
     System.IO.hSetBinaryMode h True
-    LBS.hGetContents h
+#endif
+    -- 'hGetContentsLBS' is 'LBS.hGetContents' on GHC; under MHS it
+    -- avoids 'hGetSome', which MicroHs does not implement (and
+    -- MicroHs handles have no text/binary mode switch to set).
+    hGetContentsLBS h
 
   toIOData = IODataBinary
   iodataMode = IODataModeBinary
+{- FOURMOLU_ENABLE -}
 
 -- | 'IOData' Wrapper for 'System.IO.hPutStr' and 'System.IO.hClose'
 --
@@ -84,12 +100,24 @@ instance KnownIODataMode LBS.ByteString where
 -- /Note:/ this performs lazy-IO.
 --
 -- @since 2.2
+{- FOURMOLU_DISABLE -}
 hPutContents :: System.IO.Handle -> IOData -> Prelude.IO ()
 hPutContents h (IODataText c) = do
+#ifdef __MHS__
+  -- MicroHs handles have no text/binary mode switch.
+  System.IO.hPutStr h c
+#else
   System.IO.hSetBinaryMode h False
   System.IO.hPutStr h c
+#endif
   System.IO.hClose h
 hPutContents h (IODataBinary c) = do
+#ifdef __MHS__
+  -- MicroHs handles have no text/binary mode switch.
+  LBS.hPutStr h c
+#else
   System.IO.hSetBinaryMode h True
   LBS.hPutStr h c
+#endif
   System.IO.hClose h
+{- FOURMOLU_ENABLE -}

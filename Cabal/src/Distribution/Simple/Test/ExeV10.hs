@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Distribution.Simple.Test.ExeV10
   ( runTest
   ) where
@@ -38,14 +40,22 @@ import Distribution.Verbosity
 import Distribution.Utils.Path
 
 import qualified Data.ByteString.Lazy as LBS
-import Distribution.Simple.LocalBuildInfo (interpretSymbolicPathLBI, packageRoot)
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , doesFileExist
   , removePathForcibly
   )
-import System.Process (createPipe)
+import Distribution.Simple.LocalBuildInfo (interpretSymbolicPathLBI, packageRoot)
+#ifdef __MHS__
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
+#endif
+#ifndef __MHS__
+import Distribution.Compat.Process (createPipe)
+#else
+import qualified Distribution.Compat.Process as Process
+#endif
 
+{- FOURMOLU_DISABLE -}
 runTest
   :: VerbosityHandles
   -> PD.PackageDescription
@@ -107,6 +117,27 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
         return (addLibraryPath os paths shellEnv)
       else return shellEnv
 
+#ifdef __MHS__
+  -- MHS: capture sequentially (stage, spawn, wait, read) instead of
+  -- streaming through a pipe; complete by construction.  Standard
+  -- output and error are concatenated (in that order) rather than
+  -- interleaved as with a real pipe.
+  let runExe exe exeArgs workDir = do
+        (exitcode, captured) <-
+          Process.captureProcess
+            ((Process.proc exe exeArgs) {Process.env = Just shellEnv', Process.cwd = workDir})
+            Process.NoInput
+        outLog <- readFileLBS (Process.capturedOutPath captured)
+        errLog <- readFileLBS (Process.capturedErrPath captured)
+        let logText = outLog <> errLog
+        _ <- evaluate (force logText)
+        Process.capturedRelease captured
+        -- '--show-details=streaming': the log is only shown once it is
+        -- complete, not while the test is running.
+        when (details == Streaming) $
+          LBS.hPutStr (verbosityChosenOutputHandle verbosity) logText
+        return (exitcode, logText)
+#else
   -- Output logger
   (wOut, wErr, getLogText) <- case details of
     Direct -> return (Nothing, Nothing, return LBS.empty)
@@ -123,12 +154,17 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
 
         -- drain the output.
         evaluate (force logText)
+#endif
 
   let mbWorkDir =
         interpretSymbolicPathCWD
           <$> flagToMaybe (setupWorkingDir (testCommonFlags flags))
 
   (exit, logText) <- case testWrapper flags of
+#ifdef __MHS__
+    Flag path -> runExe path (cmd : opts) mbWorkDir
+    NoFlag -> runExe cmd opts mbWorkDir
+#else
     Flag path ->
       rawSystemIOWithEnvAndAction
         verbosity
@@ -151,6 +187,7 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
         Nothing
         wOut
         wErr
+#endif
 
   -- Generate TestSuiteLog from executable exit code and a machine-
   -- readable test log.
@@ -228,6 +265,7 @@ runTest verbHandles pkg_descr lbi clbi hpcMarkupInfo flags suite = do
                     testName'
                     l
             }
+{- FOURMOLU_ENABLE -}
 
 -- TODO: This is abusing the notion of a 'PathTemplate'.  The result isn't
 -- necessarily a path.

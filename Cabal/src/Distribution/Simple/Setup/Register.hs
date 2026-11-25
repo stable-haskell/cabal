@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -14,7 +14,11 @@
 --
 -- Definition of the register command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Register
+#ifdef __MHS__
+  ( RegisterFlags (..)
+#else
   ( RegisterFlags
       ( RegisterCommonFlags
       , registerVerbosity
@@ -24,11 +28,13 @@ module Distribution.Simple.Setup.Register
       , registerTargets
       , ..
       )
+#endif
   , emptyRegisterFlags
   , defaultRegisterFlags
   , registerCommand
   , unregisterCommand
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()
@@ -59,6 +65,7 @@ data RegisterFlags = RegisterFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically RegisterFlags
 
+#ifndef __MHS__
 pattern RegisterCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -82,6 +89,7 @@ pattern RegisterCommonFlags
         , setupTargets = registerTargets
         }
     )
+#endif
 
 defaultRegisterFlags :: RegisterFlags
 defaultRegisterFlags =

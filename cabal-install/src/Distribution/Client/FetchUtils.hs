@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 
 -- |
@@ -70,17 +71,31 @@ import Distribution.Verbosity
 
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
+#ifdef __MHS__
+import qualified Control.Exception as Safe
+  ( try
+  )
+#else
 import qualified Control.Exception.Safe as Safe
+#endif
 import qualified Data.Map as Map
 import Network.URI
   ( URI (uriPath)
   )
+#ifdef __MHS__
+import Distribution.Compat.Directory
+  ( createDirectoryIfMissing
+  , doesFileExist
+  , getTemporaryDirectory
+  )
+#else
 import System.Directory
   ( createDirectoryIfMissing
   , doesFileExist
   , getFileSize
   , getTemporaryDirectory
   )
+#endif
 import System.FilePath
   ( (<.>)
   , (</>)
@@ -91,14 +106,20 @@ import qualified System.FilePath.Posix as FilePath.Posix
   )
 import System.IO
   ( hClose
-  , openTempFile
   )
+#ifdef __MHS__
+import Distribution.Compat.Internal.TempFile (openTempFile)
+#else
+import System.IO (openTempFile)
+#endif
 
 import Control.Monad (forM)
 import Distribution.Client.Errors
+#ifndef __MHS__
 import qualified Hackage.Security.Client as Sec
 import qualified Hackage.Security.Util.Checked as Sec
 import qualified Hackage.Security.Util.Path as Sec
+#endif
 
 -- ------------------------------------------------------------
 
@@ -159,6 +180,34 @@ verifyFetchedTarballs
           (Repo, PackageId) -- Verified
           (Repo, PackageId) -- unverified)
       ]
+#ifdef __MHS__
+verifyFetchedTarballs verbosity repoCtxt repo pkgids =
+  case repo of
+    -- Secure repositories are not supported in this build.
+    RepoSecure{} -> repoContextWithSecureRepo repoCtxt repo $ \_ ->
+      error "unreachable: secure repositories are not supported"
+    _ -> forM pkgids $ \pkgid -> do
+      let file = packageFile repo pkgid
+      res <- verifyFetchedTarball verbosity file pkgid
+      return $ if res then Left (repo, pkgid) else Right (repo, pkgid)
+
+verifyFetchedTarball :: Verbosity -> FilePath -> PackageId -> IO Bool
+verifyFetchedTarball verbosity file _pkgid =
+  let
+    handleError :: IO Bool -> IO Bool
+    handleError act = do
+      res <- Safe.try act
+      case res of
+        Left e -> warn verbosity ("Error verifying fetched tarball " ++ file ++ ", will redownload: " ++ show (e :: SomeException)) >> pure False
+        Right b -> pure b
+   in
+    handleError $ do
+      -- Without repository metadata there are no hashes to verify
+      -- against, so an existing file is accepted as-is, while a
+      -- missing file vacuously passes validation (it will be
+      -- downloaded, and the download hash-checked, as necessary).
+      doesFileExist file
+#else
 verifyFetchedTarballs verbosity repoCtxt repo pkgids =
   -- Establish the context once per repo (see #10110), this codepath is important
   -- to be fast as it can happen when no other building happens.
@@ -208,6 +257,7 @@ verifyFetchedTarball verbosity file mCallbacks pkgid =
                   `Sec.catchChecked` (\(e :: Sec.InvalidPackageException) -> warnAndFail (show e))
                   `Sec.catchChecked` (\(e :: Sec.VerificationError) -> warnAndFail (show e))
           _ -> pure True
+#endif
 
 -- | Fetch a package if we don't have it already.
 fetchPackage
@@ -275,14 +325,23 @@ fetchRepoTarball verbosity' repoCtxt repo pkgid = do
         createDirectoryIfMissing True dir
         _ <- downloadURI transport verbosity uri path
         return path
-      RepoSecure{} -> repoContextWithSecureRepo repoCtxt repo $ \rep -> do
-        let dir = packageDir repo pkgid
-            path = packageFile repo pkgid
-        createDirectoryIfMissing True dir
-        Sec.uncheckClientErrors $ do
-          info verbosity ("Writing " ++ path)
-          Sec.downloadPackage' rep pkgid path
-        return path
+{- FOURMOLU_DISABLE -}
+      RepoSecure{} ->
+#ifdef __MHS__
+        -- Secure repositories are not supported in this build.
+        repoContextWithSecureRepo repoCtxt repo $ \_ ->
+          error "unreachable: secure repositories are not supported"
+#else
+        repoContextWithSecureRepo repoCtxt repo $ \rep -> do
+          let dir = packageDir repo pkgid
+              path = packageFile repo pkgid
+          createDirectoryIfMissing True dir
+          Sec.uncheckClientErrors $ do
+            info verbosity ("Writing " ++ path)
+            Sec.downloadPackage' rep pkgid path
+          return path
+#endif
+{- FOURMOLU_ENABLE -}
 
 -- | Downloads an index file to [config-dir/packages/serv-id] without
 -- hackage-security. You probably don't want to call this directly;

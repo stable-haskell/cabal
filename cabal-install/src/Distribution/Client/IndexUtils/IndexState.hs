@@ -18,6 +18,7 @@ module Distribution.Client.IndexUtils.IndexState
 import Distribution.Client.Compat.Prelude
 import Distribution.Client.IndexUtils.Timestamp (Timestamp)
 import Distribution.Client.Types.RepoName (RepoName (..))
+import Prelude ()
 
 import Distribution.Parsec (parsecLeadingCommaNonEmpty)
 

@@ -42,6 +42,7 @@ module Distribution.Compiler
   , abiTagString
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
 import Prelude ()
 

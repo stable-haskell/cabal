@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 module Distribution.Types.ForeignLib
   ( ForeignLib (..)
   , emptyForeignLib

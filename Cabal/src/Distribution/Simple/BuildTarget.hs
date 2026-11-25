@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 
 -- |
@@ -60,7 +59,7 @@ import Control.Monad (msum)
 import Data.List (groupBy, stripPrefix)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
-import System.Directory (doesDirectoryExist, doesFileExist)
+import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath as FilePath
   ( dropExtension
   , hasTrailingPathSeparator

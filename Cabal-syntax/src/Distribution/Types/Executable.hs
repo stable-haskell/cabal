@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 module Distribution.Types.Executable
   ( Executable (..)
   , emptyExecutable

@@ -13,6 +13,7 @@ module Distribution.Backpack.ModuleScope
   , emptyModuleScope
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
 import Prelude ()
 

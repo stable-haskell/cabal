@@ -15,7 +15,7 @@ import Distribution.Compat.Binary
 import Distribution.Simple.Utils
 
 -- base
-import GHC.Exception
+import Control.Exception (Exception (..))
 import Data.Int
   ( Int64 )
 import Data.Typeable

@@ -1,6 +1,6 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoMonoLocalBinds #-}
 
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
@@ -47,9 +47,11 @@ import Distribution.Types.MungedPackageName
 import Distribution.Utils.LogProgress
 import Distribution.Verbosity
 
+#ifndef __MHS__
 import Data.Either
   ( lefts
   )
+#endif
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Distribution.Pretty
@@ -231,12 +233,12 @@ toComponentLocalBuildInfos
       -- since we will pay for the ALL installed packages even if
       -- they are not related to what we are building.  This was true
       -- in the old configure code.
-      external_graph :: Graph (Either InstalledPackageInfo ReadyComponent)
+      external_graph :: Graph UnitId (Either InstalledPackageInfo ReadyComponent)
       external_graph =
         Graph.fromDistinctList
           . map Left
           $ PackageIndex.allPackages installedPackageSet
-      internal_graph :: Graph (Either InstalledPackageInfo ReadyComponent)
+      internal_graph :: Graph UnitId (Either InstalledPackageInfo ReadyComponent)
       internal_graph =
         Graph.fromDistinctList
           . map Right

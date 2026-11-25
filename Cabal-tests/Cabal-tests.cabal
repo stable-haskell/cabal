@@ -22,7 +22,7 @@ source-repository head
 library
   hs-source-dirs: lib
   exposed-modules: Test.Utils.TempTestDir
-  build-depends: base, directory, Cabal, filepath, exceptions
+  build-depends: base, Cabal, filepath, exceptions
 
 -- Small, fast running tests.
 test-suite unit-tests
@@ -32,7 +32,9 @@ test-suite unit-tests
     Test.Laws
     UnitTests.Distribution.CabalSpecVersion
     UnitTests.Distribution.Compat.CopyFile
+    UnitTests.Distribution.Compat.Directory
     UnitTests.Distribution.Compat.Graph
+    UnitTests.Distribution.Compat.Prelude
     UnitTests.Distribution.Compat.Time
     UnitTests.Distribution.Described
     UnitTests.Distribution.PackageDescription.Check
@@ -66,10 +68,8 @@ test-suite unit-tests
     , Cabal-QuickCheck
     , containers
     , Diff                >=0.4   && <2.1
-    , directory           >=1.2.7
     , filepath
     , pretty
-    , process
     , QuickCheck          >=2.14  && <2.20
     , tasty               >=1.2.3 && <1.6
     , tasty-hunit
@@ -78,7 +78,10 @@ test-suite unit-tests
     , text
 
   if !os(windows)
-    build-depends: unix
+    build-depends:
+      , directory >=1.2.7
+      , process
+      , unix
 
   ghc-options:      -Wall
   default-language: GHC2021
@@ -93,7 +96,6 @@ test-suite parser-tests
     , Cabal-syntax
     , Cabal-tree-diff
     , Diff              >=0.4     && <2.1
-    , directory
     , filepath
     , tasty             >=1.2.3   && <1.6
     , tasty-golden      >=2.3.1.1 && <2.4
@@ -113,7 +115,6 @@ test-suite check-tests
     , Cabal
     , Cabal-syntax
     , Diff          >=0.4     && <2.1
-    , directory
     , filepath
     , tasty         >=1.2.3   && <1.6
     , tasty-golden  >=2.3.1.1 && <2.4
@@ -133,9 +134,7 @@ test-suite custom-setup-tests
     , base
     , Cabal
     , Cabal-syntax
-    , directory
     , filepath
-    , process
     , text
 
   default-language: GHC2021
@@ -153,7 +152,6 @@ test-suite hackage-tests
     , Cabal-syntax
     , Cabal-tree-diff
     , deepseq >= 1.4
-    , directory
     , filepath
     , time
 

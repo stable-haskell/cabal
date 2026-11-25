@@ -1,21 +1,40 @@
+{-# LANGUAGE CPP #-}
+
 -- | Separate module for HTTP actions, using a proxy server if one exists.
+{- FOURMOLU_DISABLE -}
 module Distribution.Client.HttpUtils
   ( DownloadResult (..)
   , configureTransport
   , HttpTransport (..)
   , HttpCode
+#ifdef __MHS__
+  , Header (..)
+  , HeaderName (..)
+  , headerNameString
+#endif
   , downloadURI
   , transportCheckHttps
   , remoteRepoCheckHttps
   , remoteRepoTryUpgradeToHttps
   , isOldHackageURI
   ) where
+{- FOURMOLU_ENABLE -}
 
+#ifdef __MHS__
+import Distribution.Client.Compat.Prelude
+#else
 import Distribution.Client.Compat.Prelude hiding (Proxy (..))
+#endif
 import Distribution.Utils.Generic
 import Prelude ()
 
 import qualified Control.Exception as Exception
+#ifdef __MHS__
+import Distribution.Client.HashValue
+  ( hashValue
+  , unHashValue
+  )
+#endif
 import Distribution.Client.Types
   ( RemoteRepo (..)
   , unRepoName
@@ -63,6 +82,7 @@ import Distribution.System
   , buildOS
   )
 import Distribution.Utils.String (trim)
+#ifndef __MHS__
 import Network.Browser
   ( browse
   , request
@@ -82,17 +102,26 @@ import Network.HTTP
   , lookupHeader
   )
 import Network.HTTP.Proxy (Proxy (..), fetchProxy)
+#endif
 import Network.URI
   ( URI (..)
   , URIAuth (..)
   , uriToString
   )
 import Numeric (showHex)
+#ifdef __MHS__
+import Distribution.Compat.Directory
+  ( canonicalizePath
+  , doesFileExist
+  , renameFile
+  )
+#else
 import System.Directory
   ( canonicalizePath
   , doesFileExist
   , renameFile
   )
+#endif
 import System.FilePath
   ( takeDirectory
   , takeFileName
@@ -107,20 +136,29 @@ import System.IO
   , hGetContents
   , withFile
   )
+#ifndef __MHS__
 import System.IO.Error
   ( isDoesNotExistError
   )
+#endif
 import System.Random (randomRIO)
 
+#ifndef __MHS__
 import qualified Crypto.Hash.SHA256 as SHA256
+#endif
 import qualified Data.ByteString as BS
+#ifdef __MHS__
+import qualified Distribution.Client.Compat.Base16 as Base16
+#else
 import qualified Data.ByteString.Base16 as Base16
+#endif
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import qualified Data.Char as Char
 import Distribution.Client.Errors
 import qualified Distribution.Compat.CharParsing as P
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 
 ------------------------------------------------------------------------------
 -- Downloading a URI, given an HttpTransport
@@ -140,6 +178,73 @@ data DownloadCheck
     NeedsDownload (Maybe BS.ByteString)
   deriving (Eq)
 
+#ifdef __MHS__
+------------------------------------------------------------------------------
+-- HTTP headers
+--
+-- Local replacement for the @HTTP@ package's 'Network.HTTP.Header'
+-- type, so that the external-program transports below do not need the
+-- @HTTP@ package (in particular its pure-Haskell @plainHttpTransport@
+-- and @Network.Browser@ proxy handling, which have been removed).
+--
+
+-- | An HTTP header: a name and its value.
+data Header = Header HeaderName String
+  deriving (Eq)
+
+instance Show Header where
+  showsPrec _ (Header name value) =
+    showString (headerNameString name ++ ": " ++ value)
+
+-- | An HTTP header name.
+data HeaderName
+  = HdrAccept
+  | HdrAuthorization
+  | HdrCacheControl
+  | HdrConnection
+  | HdrContentEncoding
+  | HdrContentLength
+  | HdrContentType
+  | HdrDate
+  | HdrETag
+  | HdrExpect
+  | HdrHost
+  | HdrIfModifiedSince
+  | HdrIfNoneMatch
+  | HdrRange
+  | HdrReferer
+  | HdrTransferEncoding
+  | HdrUserAgent
+  | HdrCustom String
+  deriving (Eq)
+
+instance Show HeaderName where
+  showsPrec _ name = showString (headerNameString name)
+
+-- | The canonical rendering of a 'HeaderName', e.g. for @--header@
+-- arguments to external download programs.
+headerNameString :: HeaderName -> String
+headerNameString name = case name of
+  HdrAccept -> "Accept"
+  HdrAuthorization -> "Authorization"
+  HdrCacheControl -> "Cache-Control"
+  HdrConnection -> "Connection"
+  HdrContentEncoding -> "Content-Encoding"
+  HdrContentLength -> "Content-Length"
+  HdrContentType -> "Content-Type"
+  HdrDate -> "Date"
+  HdrETag -> "ETag"
+  HdrExpect -> "Expect"
+  HdrHost -> "Host"
+  HdrIfModifiedSince -> "If-Modified-Since"
+  HdrIfNoneMatch -> "If-None-Match"
+  HdrRange -> "Range"
+  HdrReferer -> "Referer"
+  HdrTransferEncoding -> "Transfer-Encoding"
+  HdrUserAgent -> "User-Agent"
+  HdrCustom s -> s
+#endif
+
 downloadURI
   :: HttpTransport
   -> Verbosity
@@ -151,9 +256,11 @@ downloadURI
 downloadURI _transport verbosity uri path | uriScheme uri == "file:" = do
   copyFileVerbose verbosity (uriPath uri) path
   return (FileDownloaded path)
+
 -- Can we store the hash of the file so we can safely return path when the
 -- hash matches to avoid unnecessary computation?
 
+{- FOURMOLU_DISABLE -}
 downloadURI transport verbosity uri path = do
   targetExists <- doesFileExist path
 
@@ -163,8 +270,12 @@ downloadURI transport verbosity uri path = do
       then case sha256parsed of
         -- we know the hash, and target exists
         Right expected | targetExists -> do
-          contents <- LBS.readFile path
+          contents <- readFileLBS path
+#ifdef __MHS__
+          let actual = unHashValue (hashValue contents)
+#else
           let actual = SHA256.hashlazy contents
+#endif
           if expected == actual
             then return Downloaded
             else return (NeedsDownload (Just expected))
@@ -182,6 +293,12 @@ downloadURI transport verbosity uri path = do
           then return (CheckETag etagPath)
           else return (NeedsDownload Nothing)
 
+#ifdef __MHS__
+  case downloadCheck of
+    Downloaded -> return FileAlreadyInCache
+    CheckETag etag -> makeDownload transport Nothing (Just etag)
+    NeedsDownload hash -> makeDownload transport hash Nothing
+#else
   -- Only use the external http transports if we actually have to
   -- (or have been told to do so)
   let transport'
@@ -195,6 +312,7 @@ downloadURI transport verbosity uri path = do
     Downloaded -> return FileAlreadyInCache
     CheckETag etag -> makeDownload transport' Nothing (Just etag)
     NeedsDownload hash -> makeDownload transport' hash Nothing
+#endif
   where
     makeDownload :: HttpTransport -> Maybe BS8.ByteString -> Maybe String -> IO DownloadResult
     makeDownload transport' sha256 etag = withTempFileName (takeDirectory path) (takeFileName path) $ \tmpFile -> do
@@ -205,8 +323,12 @@ downloadURI transport verbosity uri path = do
       case result of
         -- if we have hash, we don't care about etag.
         (200, _) | Just expected <- sha256 -> do
-          contents <- LBS.readFile tmpFile
+          contents <- readFileLBS tmpFile
+#ifdef __MHS__
+          let actual = unHashValue (hashValue contents)
+#else
           let actual = SHA256.hashlazy contents
+#endif
           unless (actual == expected) $
             dieWithException verbosity $
               MakeDownload uri expected actual
@@ -235,6 +357,7 @@ downloadURI transport verbosity uri path = do
       str <- some P.hexDigit
       let bs = Base16.decode (BS8.pack str)
       either fail return bs
+{- FOURMOLU_ENABLE -}
 
 ------------------------------------------------------------------------------
 -- Utilities for repo url management
@@ -371,6 +494,7 @@ noPostYet
   -> IO (Int, String)
 noPostYet verbosity _ _ _ = dieWithException verbosity NoPostYet
 
+{- FOURMOLU_DISABLE -}
 supportedTransports
   :: [ ( String
        , Maybe Program
@@ -397,14 +521,18 @@ supportedTransports =
         , True
         , \db -> powershellTransport <$> lookupProgram prog db
         )
+#ifndef __MHS__
   ,
     ( "plain-http"
     , Nothing
     , False
     , \_ -> Just plainHttpTransport
     )
+#endif
   ]
+{- FOURMOLU_ENABLE -}
 
+{- FOURMOLU_DISABLE -}
 configureTransport :: Verbosity -> [FilePath] -> Maybe String -> IO HttpTransport
 configureTransport verbosity extraPath (Just name) =
   -- the user specifically selected a transport by name so we'll try and
@@ -440,11 +568,22 @@ configureTransport verbosity extraPath Nothing = do
         | (name, _, _, mkTrans) <- supportedTransports
         , transport <- maybeToList (mkTrans progdb)
         ]
+#ifdef __MHS__
+  (name, transport) <- case safeHead availableTransports of
+    Just selected -> return selected
+    Nothing ->
+      dieWithException verbosity $
+        UnknownHttpTransportSpecified
+          "(automatic selection)"
+          [name' | (name', _, _, _) <- supportedTransports]
+#else
   let (name, transport) =
         fromMaybe ("plain-http", plainHttpTransport) (safeHead availableTransports)
+#endif
   debug verbosity $ "Selected http transport implementation: " ++ name
 
   return transport{transportManuallySelected = False}
+{- FOURMOLU_ENABLE -}
 
 ------------------------------------------------------------------------------
 -- The HttpTransports based on external programs
@@ -967,6 +1106,7 @@ powershellTransport prog =
         , "}"
         ]
 
+#ifndef __MHS__
 ------------------------------------------------------------------------------
 -- The builtin plain HttpTransport
 --
@@ -1019,7 +1159,7 @@ plainHttpTransport =
       return (convertRspCode (rspCode resp), rspErrorString resp)
 
     puthttpfile verbosity uri path auth headers = do
-      body <- LBS8.readFile path
+      body <- readFileLBS path
       let req =
             Request
               { rqURI = uri
@@ -1066,6 +1206,7 @@ plainHttpTransport =
 
     fixupEmptyProxy (Proxy uri _) | null uri = NoProxy
     fixupEmptyProxy p = p
+#endif
 
 ------------------------------------------------------------------------------
 -- Common stuff used by multiple transport impls
@@ -1093,7 +1234,7 @@ statusParseFail verbosity uri r =
 
 generateMultipartBody :: FilePath -> IO (LBS.ByteString, String)
 generateMultipartBody path = do
-  content <- LBS.readFile path
+  content <- readFileLBS path
   boundary <- genBoundary
   let !body = formatBody content (LBS8.pack boundary)
   return (body, boundary)

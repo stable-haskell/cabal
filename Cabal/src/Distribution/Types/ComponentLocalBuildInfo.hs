@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
-
 module Distribution.Types.ComponentLocalBuildInfo
   ( ComponentLocalBuildInfo (..)
   , componentIsIndefinite
@@ -113,8 +111,7 @@ data ComponentLocalBuildInfo
 instance Binary ComponentLocalBuildInfo
 instance Structured ComponentLocalBuildInfo
 
-instance IsNode ComponentLocalBuildInfo where
-  type Key ComponentLocalBuildInfo = UnitId
+instance IsNode UnitId ComponentLocalBuildInfo where
   nodeKey = componentUnitId
   nodeNeighbors = componentInternalDeps
 

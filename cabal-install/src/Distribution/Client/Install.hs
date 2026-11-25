@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
 
 -- |
 -- Module      :  Distribution.Client.Install
@@ -40,7 +39,7 @@ import Control.Exception as Exception
   )
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , doesDirectoryExist
   , doesFileExist

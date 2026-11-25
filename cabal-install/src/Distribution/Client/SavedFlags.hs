@@ -16,7 +16,7 @@ import Distribution.Simple.Utils
   )
 import Distribution.Verbosity
 
-import System.Directory (doesFileExist)
+import Distribution.Compat.Directory (doesFileExist)
 import System.FilePath (takeDirectory)
 
 writeSavedArgs :: Verbosity -> FilePath -> [String] -> IO ()

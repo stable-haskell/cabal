@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Distribution.Solver.Modular.WeightedPSQ (
     WeightedPSQ
   , fromList
@@ -78,7 +79,12 @@ traverseWithKey
   -> WeightedPSQ w k v
   -> f (WeightedPSQ w k v')
 traverseWithKey f (WeightedPSQ q) = WeightedPSQ <$>
+#ifdef __MHS__
+  -- MicroHs does not parse tuple sections like (w,k,); spell out the lambda.
+  traverse (\(w,k,v) -> (\x -> (w, k, x)) <$> f k v) q
+#else
   traverse (\(w,k,v) -> (w,k,) <$> f k v) q
+#endif
 
 -- | /O((N + M) log (N + M))/. Combine two @WeightedPSQ@s, preserving all
 -- elements. Elements from the first @WeightedPSQ@ come before elements in the

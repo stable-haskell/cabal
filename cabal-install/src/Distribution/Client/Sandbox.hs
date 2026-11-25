@@ -56,7 +56,7 @@ import Distribution.Utils.Path hiding
   , (</>)
   )
 
-import System.Directory
+import Distribution.Compat.Directory
   ( getCurrentDirectory
   )
 

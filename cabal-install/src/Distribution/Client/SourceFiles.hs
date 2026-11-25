@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | Contains an @sdist@ like function which computes the source files
 -- that we should track to determine if a rebuild is necessary.
 -- Unlike @sdist@, we can operate directly on the true
@@ -84,7 +86,9 @@ needComponent pkg_descr comp =
 needSetup :: Rebuild ()
 needSetup = do
   void $ findFirstFileMonitored id ["Setup.hs", "Setup.lhs"]
+#ifndef __MHS__
   void $ findFirstFileMonitored id ["SetupHooks.hs", "SetupHooks.lhs"]
+#endif
 
 needLibrary :: PackageDescription -> Library -> Rebuild ()
 needLibrary

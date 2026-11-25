@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
 module Distribution.Backpack.UnifyM
   ( -- * Unification monad
@@ -58,8 +60,10 @@ import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import Data.STRef
 import qualified Data.Set as Set
-import Data.Traversable
 import Text.PrettyPrint
+#ifdef __MHS__
+import Distribution.Utils.LogProgress (hang)
+#endif
 
 -- TODO: more detailed trace output on high verbosity would probably
 -- be appreciated by users debugging unification errors.  Collect

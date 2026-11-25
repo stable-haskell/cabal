@@ -26,7 +26,7 @@ module Distribution.Client.Init.FileCreators
   ) where
 
 import Distribution.Client.Compat.Prelude hiding (empty, head, readFile, writeFile)
-import Prelude hiding (readFile, writeFile)
+import Prelude ()
 
 import qualified Data.Set as Set (member)
 

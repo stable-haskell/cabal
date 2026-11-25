@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -14,8 +14,12 @@
 --
 -- Definition of the haddock command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Haddock
   ( HaddockTarget (..)
+#ifdef __MHS__
+  , HaddockFlags (..)
+#else
   , HaddockFlags
     ( HaddockCommonFlags
     , haddockVerbosity
@@ -25,6 +29,7 @@ module Distribution.Simple.Setup.Haddock
     , haddockTargets
     , ..
     )
+#endif
   , emptyHaddockFlags
   , defaultHaddockFlags
   , haddockCommand
@@ -36,6 +41,7 @@ module Distribution.Simple.Setup.Haddock
   , haddockOptions
   , haddockProjectOptions
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()
@@ -114,6 +120,7 @@ data HaddockFlags = HaddockFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically HaddockFlags
 
+#ifndef __MHS__
 pattern HaddockCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -137,6 +144,7 @@ pattern HaddockCommonFlags
         , setupTargets = haddockTargets
         }
     )
+#endif
 
 instance Binary HaddockFlags
 instance Structured HaddockFlags

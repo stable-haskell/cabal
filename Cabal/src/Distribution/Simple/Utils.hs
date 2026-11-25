@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 #if MIN_VERSION_base(4,21,0)
 {-# LANGUAGE ImplicitParams #-}
@@ -214,6 +213,7 @@ module Distribution.Simple.Utils
 
 import Distribution.Compat.Async (waitCatch, withAsyncNF)
 import Distribution.Compat.CopyFile
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 import Distribution.Compat.Internal.TempFile
 import Distribution.Compat.Lens (Lens', over)
 import Distribution.Compat.Prelude
@@ -255,10 +255,19 @@ import qualified Data.Version as DV
 import Distribution.Compat.Process (proc)
 import Foreign.C.Error (Errno (..), ePIPE)
 import qualified GHC.IO.Exception as GHC
+#ifndef __MHS__
 import GHC.IO.Handle.Lock (LockMode (..), hLock, hTryLock, hUnlock)
-import GHC.Stack (HasCallStack)
-import Numeric (showFFloat)
-import System.Directory
+#else
+-- MicroHs ships no GHC.IO.Handle.Lock; file locking is best-effort there.
+data LockMode = ExclusiveLock deriving (Eq, Show)
+hLock :: Handle -> LockMode -> IO ()
+hLock _ _ = pure ()
+hTryLock :: Handle -> LockMode -> IO Bool
+hTryLock _ _ = pure True
+hUnlock :: Handle -> IO ()
+hUnlock _ = pure ()
+#endif
+import Distribution.Compat.Directory
   ( Permissions (executable)
   , createDirectory
   , doesDirectoryExist
@@ -270,6 +279,7 @@ import System.Directory
   , removeFile
   , removePathForcibly
   )
+import Numeric (showFFloat)
 import System.Environment
   ( getProgName
   )
@@ -285,6 +295,7 @@ import System.FilePath as FilePath
   , stripExtension
   , takeDirectory
   )
+{- FOURMOLU_DISABLE -}
 import System.IO
   ( BufferMode (..)
   , Handle
@@ -294,19 +305,27 @@ import System.IO
   , hGetContents
   , hPutStr
   , hPutStrLn
+#ifndef __MHS__
   , hSetBinaryMode
+#endif
   , hSetBuffering
   , openFile
   , stderr
   , stdin
   , stdout
   )
+{- FOURMOLU_ENABLE -}
+#ifdef __MHS__
+-- MicroHs System.IO has no binary/text mode distinction.
+hSetBinaryMode :: Handle -> Bool -> IO ()
+hSetBinaryMode _ _ = pure ()
+#endif
+import qualified Distribution.Compat.Process as Process
 import System.IO.Error
 import System.IO.Unsafe
   ( unsafeInterleaveIO
   )
 import qualified System.Info as SI
-import qualified System.Process as Process
 import qualified Text.PrettyPrint as Disp
 
 #ifdef GIT_REV
@@ -1212,6 +1231,57 @@ rawSystemStdInOut
   -- ^ iodata mode, acts as proxy
   -> IO (mode, String, ExitCode)
   -- ^ output, errors, exit
+{- FOURMOLU_DISABLE -}
+#ifdef __MHS__
+rawSystemStdInOut verbosity path args mcwd menv input iomode = withFrozenCallStack $ do
+  -- MHS: temporary files cannot emulate blocking pipes, so capture
+  -- sequentially (stage input, spawn, wait, read outputs) instead of
+  -- streaming.  Complete by construction; never silently truncates.
+  -- Text is locale-encoded like 'System.IO.hPutStr'/'hGetContents',
+  -- never truncated to Latin-1.
+  let cp =
+        (proc path args)
+          { Process.cwd = mcwd
+          , Process.env = menv
+          }
+      staged = case input of
+        Nothing -> Process.NoInput
+        Just (IODataText s) -> Process.TextInput s
+        Just (IODataBinary b) -> Process.BinaryInput b
+  (exitcode, captured) <- Process.captureProcess cp staged
+  -- The output mode determines the decoding; each branch reads,
+  -- forces, releases, reports and returns on its own so the types
+  -- line up.
+  case iomode of
+    IODataModeText -> do
+      out <- readFile (Process.capturedOutPath captured)
+      errors <- readFile (Process.capturedErrPath captured)
+      length out `seq` length errors `seq` return ()
+      Process.capturedRelease captured
+      unless (exitcode == ExitSuccess) $
+        debug verbosity $
+          path
+            ++ " returned "
+            ++ show exitcode
+            ++ if null errors
+              then ""
+              else " with error message:\n" ++ errors
+      return (out, errors, exitcode)
+    IODataModeBinary -> do
+      out <- readFileLBS (Process.capturedOutPath captured)
+      errors <- readFile (Process.capturedErrPath captured)
+      BS.length out `seq` length errors `seq` return ()
+      Process.capturedRelease captured
+      unless (exitcode == ExitSuccess) $
+        debug verbosity $
+          path
+            ++ " returned "
+            ++ show exitcode
+            ++ if null errors
+              then ""
+              else " with error message:\n" ++ errors
+      return (out, errors, exitcode)
+#else
 rawSystemStdInOut verbosity path args mcwd menv input _ = withFrozenCallStack $ do
   let cp =
         (proc path args)
@@ -1273,6 +1343,8 @@ rawSystemStdInOut verbosity path args mcwd menv input _ = withFrozenCallStack $ 
     reportOutputIOError (Left exc) = case fromException exc of
       Just ioe -> throwIO (ioeSetFileName ioe ("output of " ++ path))
       Nothing -> throwIO exc
+#endif
+{- FOURMOLU_ENABLE -}
 
 -- | Ignore SIGPIPE in a subcomputation.
 ignoreSigPipe :: IO () -> IO ()
@@ -2053,7 +2125,7 @@ rewriteFileEx verbosity path =
 rewriteFileLBS :: Verbosity -> FilePath -> BS.ByteString -> IO ()
 rewriteFileLBS verbosity path newContent =
   flip catchIO mightNotExist $ do
-    existingContent <- annotateIO verbosity $ BS.readFile path
+    existingContent <- annotateIO verbosity $ readFileLBS path
     _ <- evaluate (BS.length existingContent)
     unless (existingContent == newContent) $
       annotateIO verbosity $

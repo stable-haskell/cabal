@@ -20,6 +20,12 @@ lib: ## Builds the Cabal libraries.
 exe: ## Builds the cabal-install executables.
 	$(CABALBUILD) cabal-install:exes
 
+# minimal-toolchain (mhs) build, see cabal.mhs.project. Requires the
+# pregenerated Distribution.Fields.Lexer (alex is needed to regenerate it).
+.PHONY: mhs-build
+mhs-build: ## Build with the minimal (mhs/stable-haskell) toolchain profile.
+	$(CABALBUILD) --project-file=cabal.mhs.project all
+
 .PHONY: init
 init: ## Set up git hooks and ignored revisions.
 	@git config core.hooksPath .githooks
@@ -57,6 +63,7 @@ check:
 	@cd Cabal-hooks && cabal check | grep -q "No errors or warnings could be found in the package."
 	@cd hooks-exe && cabal check | grep -q "No errors or warnings could be found in the package."
 	@cd cabal-install-solver && cabal check | grep -q "No errors or warnings could be found in the package."
+	@cd mhs-compat-shims && cabal check | grep -q "No errors or warnings could be found in the package."
 
 .PHONY: style-todo
 style-todo: ## Configured for fourmolu, avoiding GHC parser failures.

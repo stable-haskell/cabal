@@ -66,6 +66,7 @@ import Distribution.Utils.NubList
   ( NubList
   )
 import Distribution.Verbosity
+import Prelude ()
 
 projectPackages :: Lens' ProjectConfig [Text]
 projectPackages f s = fmap (\x -> s{T.projectPackages = x}) (f (T.projectPackages s))

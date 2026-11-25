@@ -188,7 +188,7 @@ cannotApplyComponentDiffMessage = \case
         CTest{} -> "a testsuite"
         CBench{} -> "a benchmark"
       to = case componentName comp of
-        nm@(CExeName{}) -> "an " ++ showComponentName nm
+        nm@(CExeName _) -> "an " ++ showComponentName nm
         nm -> "a " ++ showComponentName nm
   IllegalComponentDiff comp reasons ->
     unlines $

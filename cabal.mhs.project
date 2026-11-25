@@ -1,0 +1,47 @@
+-- Project file for building with the minimal/stable (mhs) toolchain.
+--
+-- The mhs backend cannot use every dependency of the default build.
+-- Sources that need such dependencies are adapted behind compatibility
+-- seams or fallbacks instead:
+--
+-- * @cabal list@ pattern matching uses a case-insensitive substring
+--   fallback ('Distribution.Client.List') rather than regex-posix, and
+--   the corresponding error carries a plain 'String'
+--   ('Distribution.Client.Errors');
+-- * 'Distribution.Compat.Directory' stands in for "System.Directory";
+-- * opening a browser prints the URL instead of using open-browser;
+-- * password prompts use @stty@ through the compatibility shim instead
+--   of the echo package;
+-- * @Distribution.Fields.Lexer@ is used from its pregenerated form
+--   (regenerating it requires alex, and without GHC-specific extensions,
+--   i.e. WITHOUT @alex -g@).
+--
+-- The generated SPDX and Extension enumerations are intentionally left
+-- unpruned.
+--
+-- NOTE: the pregenerated lexer is checked in as
+-- @Cabal-syntax/src/Distribution/Fields/Lexer.hs@ (alex 3.5.4.2,
+-- WITHOUT @-g@), so the GHC side of this project builds end to end.
+-- The @.x@ source remains authoritative; regenerate it from
+-- @Cabal-syntax/@ with @alex src/Distribution/Fields/Lexer.x@
+-- @-o src/Distribution/Fields/Lexer.hs@ (without @-g@).
+--
+-- CPP macro convention: MicroHs defines @__MHS__@ itself, so @__MHS__@ is
+-- the canonical macro; a manual @-DMHS@ flag is accepted as a fallback.
+-- Portability seams use @#if defined(__MHS__) || defined(MHS)@.
+import: project-cabal/constraints.config
+
+packages:
+    Cabal
+  , Cabal-syntax
+  , Cabal-hooks
+  , cabal-install
+  , cabal-install-solver
+  , hooks-exe
+  , mhs-compat-shims
+
+-- Don't include tests or benchmarks for the minimal-toolchain build
+tests: False
+benchmarks: False
+
+index-state: hackage.haskell.org 2026-07-02T14:25:01Z

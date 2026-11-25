@@ -9,7 +9,7 @@ where
 import Distribution.Compat.Prelude
 import Prelude ()
 
-import System.Directory (getModificationTime)
+import Distribution.Compat.Directory (getModificationTime)
 
 import Data.Time (diffUTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime, posixDayLength, utcTimeToPOSIXSeconds)

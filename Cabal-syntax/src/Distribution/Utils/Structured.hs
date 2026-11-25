@@ -1,6 +1,5 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
 
 -- |
 --
@@ -33,6 +32,7 @@
 --
 -- Technically, 'Structured' is not related to 'Binary', and may
 -- be useful in other uses.
+{- FOURMOLU_DISABLE -}
 module Distribution.Utils.Structured
   ( -- * Encoding and decoding
 
@@ -49,8 +49,10 @@ module Distribution.Utils.Structured
   , MD5
   , structureHash
   , structureBuilder
+#ifndef __MHS__
   , genericStructure
   , GStructured
+#endif
   , nominalStructure
   , containerStructure
 
@@ -65,6 +67,7 @@ module Distribution.Utils.Structured
   , typeVersion
   , typeName
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Data.Functor ((<&>))
 import Data.Int (Int16, Int32, Int64, Int8)
@@ -91,6 +94,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Time as Time
 import qualified Distribution.Compat.Binary as Binary
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
 
 #ifdef MIN_VERSION_aeson
 import qualified Data.Aeson as Aeson
@@ -98,6 +102,9 @@ import qualified Data.Aeson as Aeson
 
 import Data.Kind (Type)
 import Data.Typeable (TypeRep, Typeable, typeRep)
+#ifdef __MHS__
+import Data.Typeable (_mkTyCon)
+#endif
 
 import Distribution.Utils.MD5
 
@@ -220,21 +227,41 @@ structureBuilder s0 = State.evalState (go s0) Map.empty
 -- @
 --
 -- @since 3.2.0.0
+{- FOURMOLU_DISABLE -}
 class Typeable a => Structured a where
   structure :: Proxy a -> Structure
+#ifdef __MHS__
+  -- MicroHs has no GHC.Generics metadata ('Datatype' etc.), so the
+  -- generic default below is unavailable; instances without an explicit
+  -- method throw if called at runtime.
+  structure = error "Distribution.Utils.Structured.structure: generic structures are not supported under MicroHs"
+#else
   default structure :: GStructured (Rep a) => Proxy a -> Structure
   structure = genericStructure
+#endif
 
+#ifndef __MHS__
   -- This member is hidden. It's there to precalc
   structureHash' :: Tagged a MD5
   structureHash' = Tagged (hashStructure (structure (Proxy :: Proxy a)))
+#endif
+{- FOURMOLU_ENABLE -}
 
 -- private Tagged
 newtype Tagged a b = Tagged {untag :: b}
 
 -- | Semantically @'hashStructure' . 'structure'@.
+{- FOURMOLU_DISABLE -}
 structureHash :: forall a. Structured a => Proxy a -> MD5
+#ifdef __MHS__
+-- MicroHs does not provide the class constraint to default method
+-- bodies, so the 'structureHash'' method cannot be implemented there;
+-- inline its definition instead.
+structureHash p = hashStructure (structure p)
+#else
 structureHash _ = untag (structureHash' :: Tagged a MD5)
+#endif
+{- FOURMOLU_ENABLE -}
 
 -------------------------------------------------------------------------------
 -- Functions
@@ -272,7 +299,7 @@ structuredDecodeOrFailIO bs =
 
 -- | Lazily reconstruct a value previously written to a file.
 structuredDecodeFileOrFail :: (Binary.Binary a, Structured a) => FilePath -> IO (Either String a)
-structuredDecodeFileOrFail f = structuredDecodeOrFailIO =<< LBS.readFile f
+structuredDecodeFileOrFail f = structuredDecodeOrFailIO =<< readFileLBS f
 
 -------------------------------------------------------------------------------
 -- Helper data
@@ -280,6 +307,7 @@ structuredDecodeFileOrFail f = structuredDecodeOrFailIO =<< LBS.readFile f
 
 data Tag a = Tag
 
+{- FOURMOLU_DISABLE -}
 instance Structured a => Binary.Binary (Tag a) where
   get = do
     actual <- binaryGetMD5
@@ -294,11 +322,20 @@ instance Structured a => Binary.Binary (Tag a) where
             , showMD5 expected
             ]
     where
+#ifdef __MHS__
+      expected = hashStructure (structure (Proxy :: Proxy a))
+#else
       expected = untag (structureHash' :: Tagged a MD5)
+#endif
 
   put _ = binaryPutMD5 expected
     where
+#ifdef __MHS__
+      expected = hashStructure (structure (Proxy :: Proxy a))
+#else
       expected = untag (structureHash' :: Tagged a MD5)
+#endif
+{- FOURMOLU_ENABLE -}
 
 -------------------------------------------------------------------------------
 -- Smart constructors
@@ -326,6 +363,10 @@ containerStructure _ =
 -- Generic
 -------------------------------------------------------------------------------
 
+#ifndef __MHS__
+-- MicroHs has no GHC.Generics metadata ('Datatype', 'Constructor',
+-- 'Selector'), so none of the generic machinery below is available.
+
 -- | Derive 'structure' generically.
 genericStructure :: forall a. (Typeable a, GStructured (Rep a)) => Proxy a -> Structure
 genericStructure _ = gstructured (typeRep (Proxy :: Proxy a)) (Proxy :: Proxy (Rep a)) 0
@@ -334,22 +375,22 @@ genericStructure _ = gstructured (typeRep (Proxy :: Proxy a)) (Proxy :: Proxy (R
 class GStructured (f :: Type -> Type) where
   gstructured :: TypeRep -> Proxy f -> TypeVersion -> Structure
 
-instance (i ~ D, Datatype c, GStructuredSum f) => GStructured (M1 i c f) where
+instance (Datatype c, GStructuredSum f) => GStructured (M1 D c f) where
   gstructured tr _ v = case sop of
     [(_, [s])] | isNewtype p -> Newtype tr v name s
     _ -> Structure tr v name sop
     where
-      p = undefined :: M1 i c f ()
+      p = undefined :: M1 D c f ()
       name = datatypeName p
       sop = gstructuredSum (Proxy :: Proxy f) []
 
 class GStructuredSum (f :: Type -> Type) where
   gstructuredSum :: Proxy f -> SopStructure -> SopStructure
 
-instance (i ~ C, Constructor c, GStructuredProd f) => GStructuredSum (M1 i c f) where
+instance (Constructor c, GStructuredProd f) => GStructuredSum (M1 C c f) where
   gstructuredSum _ xs = (name, prod) : xs
     where
-      name = conName (undefined :: M1 i c f ())
+      name = conName (undefined :: M1 C c f ())
       prod = gstructuredProd (Proxy :: Proxy f) []
 
 instance (GStructuredSum f, GStructuredSum g) => GStructuredSum (f :+: g) where
@@ -363,7 +404,7 @@ instance GStructuredSum V1 where
 class GStructuredProd (f :: Type -> Type) where
   gstructuredProd :: Proxy f -> [Structure] -> [Structure]
 
-instance (i ~ S, GStructuredProd f) => GStructuredProd (M1 i c f) where
+instance GStructuredProd f => GStructuredProd (M1 S c f) where
   gstructuredProd _ = gstructuredProd (Proxy :: Proxy f)
 
 instance Structured c => GStructuredProd (K1 i c) where
@@ -376,6 +417,7 @@ instance (GStructuredProd f, GStructuredProd g) => GStructuredProd (f :*: g) whe
   gstructuredProd _ xs =
     gstructuredProd (Proxy :: Proxy f) $
       gstructuredProd (Proxy :: Proxy g) xs
+#endif /* __MHS__ */
 
 -------------------------------------------------------------------------------
 -- instances
@@ -417,6 +459,14 @@ instance Structured a => Structured (NonEmpty a) where structure = containerStru
 --
 -- By defining our own instances the STuple2 identifier will be used in the hash and
 -- hence the same on all GHC versions.
+
+#ifdef __MHS__
+-- MicroHs only provides 'Typeable' for tuples up to 5-tuples; the
+-- 6- and 7-tuple 'Structured' instances below need these two,
+-- written the same way as the ones in MicroHs's own Data.Typeable.
+instance Typeable (,,,,,) where typeRep = _mkTyCon "Data.Tuple" ",,,,,"
+instance Typeable (,,,,,,) where typeRep = _mkTyCon "Data.Tuple" ",,,,,,"
+#endif
 
 data STuple2 a b = STuple2 a b deriving (Generic)
 data STuple3 a b c = STuple3 a b c deriving (Generic)

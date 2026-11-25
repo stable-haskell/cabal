@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Distribution.FieldGrammar.FieldDescrs
@@ -31,7 +32,18 @@ data SP s = SP
 
 -- | A collection of field parsers and pretty-printers.
 newtype FieldDescrs s a = F {runF :: Map P.FieldName (SP s)}
+#ifndef __MHS__
   deriving (Functor)
+#endif
+
+#ifdef __MHS__
+-- MicroHs cannot derive Functor here ('a' is phantom and its deriving
+-- machinery demands a 'Functor SP' instance), so spell out the same
+-- mapping by hand. Semantics are identical to the derived instance:
+-- the map is carried over unchanged.
+instance Functor (FieldDescrs s) where
+  fmap _ (F m) = F m
+#endif
 
 instance Applicative (FieldDescrs s) where
   pure _ = F mempty

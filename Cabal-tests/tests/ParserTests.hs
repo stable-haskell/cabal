@@ -29,7 +29,7 @@ import Distribution.Parsec                         (PWarnType (..), PWarning (..
 import Distribution.Pretty                         (prettyShow)
 import Distribution.Fields.ParseResult
 import Distribution.Utils.Generic                  (fromUTF8BS, toUTF8BS)
-import System.Directory                            (setCurrentDirectory)
+import Distribution.Compat.Directory                            (setCurrentDirectory)
 import System.Environment                          (getArgs, withArgs)
 import System.FilePath                             (replaceExtension, (</>))
 import Distribution.Parsec.Source

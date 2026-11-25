@@ -30,7 +30,7 @@ parseEnvironmentFileLine =
       P.try $
         P.string "package-id"
           *> P.spaces
-          *> (mkUnitId <$> P.many1 (P.satisfy $ \c -> isAlphaNum c || c `elem` "-_.+"))
+          *> (mkUnitId <$> P.many1 (P.satisfy $ \c -> isAlphaNum c || c `elem` ("-_.+" :: String)))
     packageDb =
       (P.string "global-package-db" $> GlobalPackageDB)
         <|> (P.string "user-package-db" $> UserPackageDB)

@@ -1,4 +1,5 @@
 -- This file is generated. See Makefile's spdx rule
+{-# LANGUAGE CPP #-}
 {- FOURMOLU_DISABLE -}
 module Distribution.SPDX.LicenseExceptionId (
     LicenseExceptionId (..),
@@ -15,7 +16,7 @@ import Distribution.Compat.Lens (set)
 import Distribution.Pretty
 import Distribution.Parsec
 import Distribution.Utils.Generic (isAsciiAlphaNum)
-import Distribution.Utils.Structured (Structured (..), nominalStructure, typeVersion)
+import Distribution.Utils.Structured (nominalStructure, typeVersion)
 import Distribution.SPDX.LicenseListVersion
 
 import qualified Data.Binary.Get as Binary
@@ -23,6 +24,10 @@ import qualified Data.Binary.Put as Binary
 import qualified Data.Map.Strict as Map
 import qualified Distribution.Compat.CharParsing as P
 import qualified Text.PrettyPrint as Disp
+
+#ifdef __MHS__
+import Data.Data (Constr, Data (..), DataType, Fixity (Prefix), constrIndex, mkConstrTag, mkDataType)
+#endif
 
 -------------------------------------------------------------------------------
 -- LicenseExceptionId
@@ -114,7 +119,16 @@ data LicenseExceptionId
     | Vsftpd_openssl_exception -- ^ @vsftpd-openssl-exception@, vsftpd OpenSSL exception, SPDX License List 3.23, SPDX License List 3.25, SPDX License List 3.26, SPDX License List 3.28
     | WxWindows_exception_3_1 -- ^ @WxWindows-exception-3.1@, WxWindows Library Exception 3.1
     | X11vnc_openssl_exception -- ^ @x11vnc-openssl-exception@, x11vnc OpenSSL Exception, SPDX License List 3.23, SPDX License List 3.25, SPDX License List 3.26, SPDX License List 3.28
-  deriving (Eq, Ord, Enum, Bounded, Show, Read, Data, Generic)
+  deriving (Eq,
+#ifdef __MHS__
+    -- No derived Ord/Data: same per-constructor compile cost as
+    -- LicenseId at scale; hand-written instances below keep the
+    -- semantics and the Data instance downstream deriving requires.
+    Enum, Bounded, Show, Read, Generic
+#else
+    Ord, Enum, Bounded, Show, Read, Data, Generic
+#endif
+    )
 
 instance Binary LicenseExceptionId where
     put = Binary.putWord8 . fromIntegral . fromEnum
@@ -123,6 +137,47 @@ instance Binary LicenseExceptionId where
         if i > fromIntegral (fromEnum (maxBound :: LicenseExceptionId))
         then fail "Too large LicenseExceptionId tag"
         else return (toEnum (fromIntegral i))
+
+#ifdef __MHS__
+-- Hand-written Ord/Data mirror the derived instances (declaration-order
+-- tags, constructor names as declared) without the measured
+-- end-to-end compile cost of the derived versions at scale
+-- (~10s user each at 150 constructors; root cause not isolated to a
+-- compiler phase). Compare via the derived Enum tags; Data round-trips
+-- via the tag index. Semantics match the derived instances; Binary
+-- (which also uses fromEnum) and all constructors are unchanged.
+instance Ord LicenseExceptionId where
+  compare a b = compare (fromEnum a) (fromEnum b)
+
+instance Data LicenseExceptionId where
+  gfoldl k z x = z x
+  gunfold _k z c = z (toEnum (constrIndex c - 1))
+  toConstr x = licenseExceptionIdConstrs !! fromEnum x
+  dataTypeOf _ = tyLicenseExceptionId
+
+tyLicenseExceptionId :: DataType
+tyLicenseExceptionId = mkDataType "Distribution.SPDX.LicenseExceptionId" licenseExceptionIdConstrs
+
+licenseExceptionIdConstrs :: [Constr]
+licenseExceptionIdConstrs =
+  [ mkConstrTag tyLicenseExceptionId name i [] Prefix
+  | (i, name) <- zip [1 ..] licenseExceptionIdConstrNames
+  ]
+
+licenseExceptionIdConstrNames :: [String]
+licenseExceptionIdConstrNames =
+  [ "N_389_exception", "Asterisk_exception", "Asterisk_linking_protocols_exception", "Autoconf_exception_2_0", "Autoconf_exception_3_0", "Autoconf_exception_generic_3_0", "Autoconf_exception_generic", "Autoconf_exception_macro"
+  , "Bison_exception_1_24", "Bison_exception_2_2", "Bootloader_exception", "CGAL_linking_exception", "Classpath_exception_2_0_short", "Classpath_exception_2_0", "CLISP_exception_2_0", "Cryptsetup_OpenSSL_exception"
+  , "Digia_Qt_LGPL_exception_1_1", "DigiRule_FOSS_exception", "ECos_exception_2_0", "Erlang_otp_linking_exception", "Fawkes_Runtime_exception", "FLTK_exception", "Fmt_exception", "Font_exception_2_0"
+  , "Freertos_exception_2_0", "GCC_exception_2_0_note", "GCC_exception_2_0", "GCC_exception_3_1", "Gmsh_exception", "GNAT_exception", "GNOME_examples_exception", "GNU_compiler_exception"
+  , "Gnu_javamail_exception", "GPL_3_0_389_ds_base_exception", "GPL_3_0_interface_exception", "GPL_3_0_linking_exception", "GPL_3_0_linking_source_exception", "GPL_CC_1_0", "GStreamer_exception_2005", "GStreamer_exception_2008"
+  , "Harbour_exception", "I2p_gpl_java_exception", "Independent_modules_exception", "KiCad_libraries_exception", "Kvirc_openssl_exception", "LGPL_3_0_linking_exception", "Libpri_OpenH323_exception", "Libtool_exception"
+  , "Linux_syscall_note", "LLGPL", "LLVM_exception", "LZMA_exception", "Mif_exception", "Nokia_Qt_exception_1_1", "Mxml_exception", "OCaml_LGPL_linking_exception"
+  , "OCCT_exception_1_0", "OpenJDK_assembly_exception_1_0", "Openvpn_openssl_exception", "PCRE2_exception", "Polyparse_exception", "PS_or_PDF_font_exception_20170817", "QPL_1_0_INRIA_2004_exception", "Qt_GPL_exception_1_0"
+  , "Qt_LGPL_exception_1_1", "Qwt_exception_1_0", "Romic_exception", "RRDtool_FLOSS_exception_2_0", "Rsync_linking_exception", "SANE_exception", "SHL_2_0", "SHL_2_1"
+  , "Simple_Library_Usage_exception", "Sqlitestudio_OpenSSL_exception", "Stunnel_exception", "SWI_exception", "Swift_exception", "Texinfo_exception", "U_boot_exception_2_0", "UBDL_exception"
+  , "Universal_FOSS_exception_1_0", "Vsftpd_openssl_exception", "WxWindows_exception_3_1", "X11vnc_openssl_exception" ]
+#endif
 
 -- note: remember to bump version each time the definition changes
 instance Structured LicenseExceptionId where

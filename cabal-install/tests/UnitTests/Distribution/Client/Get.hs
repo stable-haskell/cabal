@@ -13,7 +13,7 @@ import Control.Exception
 import Control.Monad
 import qualified Data.Text as T
 import Data.Typeable
-import System.Directory
+import Distribution.Compat.Directory
 import System.Exit
 import System.FilePath
 import System.IO.Error

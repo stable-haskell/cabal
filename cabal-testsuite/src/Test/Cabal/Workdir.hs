@@ -6,15 +6,15 @@ module Test.Cabal.Workdir where
 import Distribution.Simple.Configure
 import Distribution.Simple.Setup
 import Distribution.Utils.Path
-  ( Dist
-  , FileOrDir (..)
+  ( Dir
+  , Dist
   , Pkg
   , SymbolicPath
   , getSymbolicPath
   , makeSymbolicPath
   )
 
-import System.Directory
+import Distribution.Compat.Directory
 import System.Environment (getExecutablePath)
 import System.FilePath
 

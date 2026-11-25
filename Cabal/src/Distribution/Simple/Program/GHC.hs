@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -48,8 +47,8 @@ import Distribution.Utils.Path
 import Distribution.Verbosity
 import Distribution.Version
 
-import GHC.IO.Encoding (TextEncoding)
 import Language.Haskell.Extension
+import System.IO (TextEncoding)
 
 import Data.List (stripPrefix)
 import qualified Data.Map as Map
@@ -57,7 +56,7 @@ import Data.Monoid (All (..), Any (..), Endo (..))
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
-import qualified System.Process as Process
+import qualified Distribution.Compat.Process as Process
 
 normaliseGhcArgs :: Maybe Version -> PackageDescription -> [String] -> [String]
 normaliseGhcArgs (Just ghcVersion) PackageDescription{..} ghcArgs

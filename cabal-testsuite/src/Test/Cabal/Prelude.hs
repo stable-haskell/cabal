@@ -99,8 +99,9 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Char qualified as Char
 import Data.List (isPrefixOf, stripPrefix)
 import Data.Maybe (fromMaybe, isJust, mapMaybe)
+import Distribution.Compat.Directory
+import Distribution.Compat.Process
 import Network.Wait (waitTcpVerbose)
-import System.Directory
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.FilePath
@@ -109,7 +110,6 @@ import System.FilePath.Posix qualified as Posix
 import System.FilePath.Windows qualified as Windows
 import System.IO
 import System.OsRelease qualified as OSR
-import System.Process
 
 #ifndef mingw32_HOST_OS
 import System.Posix.Resource
@@ -805,7 +805,7 @@ withRemoteRepo repoDir m = do
           r <- runReaderT m (env{testHaveRepo = True})
           -- Windows fails to kill the python server when the function above
           -- is complete, so we kill it directly via CMD.
-          when (buildOS == Windows) $ void $ createProcess_ "kill python" $ System.Process.shell "taskkill /F /IM python3.exe"
+          when (buildOS == Windows) $ void $ createProcess_ "kill python" $ Distribution.Compat.Process.shell "taskkill /F /IM python3.exe"
           pure r
       )
 
@@ -1458,15 +1458,10 @@ findDependencyInStore pkgName = do
     -- name ("lib" matches "libHSlib-...so"), so only directories can match.
     packageDirs <-
       filterM (doesDirectoryExist . (storeLibDir </>)) =<< listDirectory storeLibDir
-    -- Ideally, we should call 'hashedInstalledPackageId' from 'Distribution.Client.PackageHash'.
-    -- But 'PackageHashInputs', especially 'PackageHashConfigInputs', is too hard to construct.
-    let pkgName' =
-          if buildOS == OSX
-            then filter (not . flip elem "aeiou") pkgName
-            else -- simulates the way 'hashedInstalledPackageId' uses to compress package name
-              pkgName
-    let libDir = case filter (pkgName' `isPrefixOf`) packageDirs of
-          [] -> error $ "Could not find " <> pkgName' <> " when searching for " <> pkgName' <> " in\n" <> show packageDirs
+    -- Long unit ids start with the package name, version, and hash.
+    -- macOS no longer strips vowels from that name, so the name is the prefix.
+    let libDir = case filter (pkgName `isPrefixOf`) packageDirs of
+          [] -> error $ "Could not find " <> pkgName <> " when searching for " <> pkgName <> " in\n" <> show packageDirs
           (dir : _) -> dir
     pure (storeLibDir </> libDir)
 

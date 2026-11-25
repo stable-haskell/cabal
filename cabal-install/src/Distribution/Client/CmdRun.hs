@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | cabal-install CLI command: run
@@ -30,6 +31,9 @@ import Distribution.Client.CmdErrorMessages
   , targetSelectorFilter
   , targetSelectorPluralPkgs
   )
+import Distribution.Client.DistDirLayout
+  ( DistDirLayout (distBuildDirectory)
+  )
 import Distribution.Client.Errors
 import Distribution.Client.GlobalFlags
   ( defaultGlobalFlags
@@ -38,6 +42,7 @@ import Distribution.Client.InstallPlan
   ( foldPlanPackage
   , toList
   )
+import qualified Distribution.Client.InstallPlan as IP
 import Distribution.Client.NixStyleOptions
   ( NixStyleFlags (..)
   , cfgVerbosity
@@ -53,12 +58,20 @@ import qualified Distribution.Client.ProjectOrchestration as Orchestration (targ
 import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
+  , ElaboratedSharedConfig
   , binDirectoryFor
+  )
+import Distribution.Client.ProjectPlanning.Machine
+  ( withoutMachine
   )
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedPackageOrComponent (..)
   , dataDirsEnvironmentForPlan
+  , elabDistDirParams
   , elabExeDependencyPaths
+  , elabOrderLibDependencies
+  , elabPlatform
+  , isInplaceBuildStyle
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -79,6 +92,7 @@ import Distribution.Client.Utils
   , occursOnlyOrBefore
   )
 
+import qualified Distribution.InstalledPackageInfo as IPI
 import Distribution.Simple.BuildToolDepends
   ( getAllInternalToolDependencies
   )
@@ -86,6 +100,7 @@ import Distribution.Simple.Command
   ( CommandUI (..)
   , usageAlternatives
   )
+import qualified Distribution.Simple.InstallDirs as InstallDirs
 import Distribution.Simple.Program.Find
   ( ProgramSearchPathEntry (ProgramSearchPathDir)
   , defaultProgramSearchPath
@@ -104,6 +119,10 @@ import Distribution.Simple.Utils
   , sortNub
   , warn
   , wrapText
+  )
+import Distribution.System
+  ( OS (..)
+  , Platform (..)
   )
 
 import Distribution.Types.ComponentName
@@ -130,15 +149,31 @@ import Distribution.Verbosity
   ( normal
   , silent
   )
+#ifdef __MHS__
+import System.Environment
+  ( getArgs
+  , lookupEnv
+  )
+#else
 import GHC.Environment
   ( getFullArgs
   )
-import System.Directory
+import System.Environment
+  ( lookupEnv
+  )
+#endif
+import Distribution.Compat.Directory
   ( doesFileExist
   )
+
+#ifdef __MHS__
+getFullArgs :: IO [String]
+getFullArgs = getArgs
+#endif
 import System.FilePath
   ( isPathSeparator
   , isValid
+  , searchPathSeparator
   , (</>)
   )
 
@@ -340,6 +375,38 @@ runAction flags targetAndArgs globalFlags = do
     logExtraProgramSearchPath verbosity extraPath
     progPath <- programSearchPathAsPATHVar (map ProgramSearchPathDir extraPath ++ defaultProgramSearchPath)
 
+    -- Inplace dynamic libraries are not on the executable RPATH (Cabal
+    -- #4025). The install-relative $ORIGIN rpath of an external library
+    -- (GHC's base, for example) is computed against the install bindir, so
+    -- it does not resolve from the build directory where v2-run executes
+    -- the binary. Put both sets of directories on the loader path for this
+    -- run. Windows loads DLLs from PATH. Keep any path the caller already set.
+    dyld0 <- lookupEnv "DYLD_LIBRARY_PATH"
+    ld0 <- lookupEnv "LD_LIBRARY_PATH"
+    let Platform _ os = elabPlatform (elaboratedShared buildCtx) pkg
+        libDirs = runLibDirs (distDirLayout baseCtx) (elaboratedShared buildCtx) elaboratedPlan pkg
+        libPath = intercalate [searchPathSeparator] libDirs
+        keepOld Nothing p = p
+        keepOld (Just old) p
+          | null old = p
+          | otherwise = p ++ searchPathSeparator : old
+        progPath' =
+          case os of
+            Windows
+              | not (null libDirs) ->
+                  libPath ++ searchPathSeparator : progPath
+            _ -> progPath
+        loaderEnv =
+          case os of
+            OSX
+              | not (null libDirs) ->
+                  [("DYLD_LIBRARY_PATH", Just (keepOld dyld0 libPath))]
+            Windows -> []
+            _
+              | not (null libDirs) ->
+                  [("LD_LIBRARY_PATH", Just (keepOld ld0 libPath))]
+            _ -> []
+
     if dryRun
       then notice verbosity "Running of executable suppressed by flag(s)"
       else
@@ -349,11 +416,53 @@ runAction flags targetAndArgs globalFlags = do
             { progInvokePath = exePath
             , progInvokeArgs = args
             , progInvokeEnv =
-                ("PATH", Just progPath)
-                  : dataDirsEnvironmentForPlan
+                ("PATH", Just progPath')
+                  : loaderEnv
+                  ++ dataDirsEnvironmentForPlan
                     (distDirLayout baseCtx)
                     elaboratedPlan
             }
+
+-- | Directories the dynamic loader searches when 'v2-run' executes an
+-- artifact from its component build directory.
+--
+-- Inplace libraries are intentionally absent from the executable RPATH
+-- (Cabal #4025). Pre-existing libraries such as GHC's base are recorded
+-- with an install-relative rpath, which does not resolve from that build
+-- directory, so their dynamic-library directories are included here too.
+runLibDirs
+  :: DistDirLayout
+  -> ElaboratedSharedConfig
+  -> ElaboratedInstallPlan
+  -> ElaboratedConfiguredPackage
+  -> [FilePath]
+runLibDirs layout shared plan pkg =
+  sortNub
+    [ dir
+    | key <- elabOrderLibDependencies pkg
+    , Just depPkg <- [IP.lookup plan key]
+    , dir <- depDirs depPkg
+    ]
+  where
+    depDirs (IP.PreExisting ipkg) =
+      case IPI.libraryDynDirs (withoutMachine ipkg) of
+        [] -> IPI.libraryDirs (withoutMachine ipkg)
+        dirs -> dirs
+    depDirs (IP.Configured elab) = elabDirs elab
+    depDirs (IP.Installed elab) = elabDirs elab
+
+    elabDirs elab
+      | isInplaceBuildStyle (elabBuildStyle elab) =
+          [ distBuildDirectory layout (elabDistDirParams shared elab)
+              </> "build"
+          ]
+      | otherwise =
+          let dirs = elabInstallDirs elab
+           in filter
+                (not . null)
+                [ InstallDirs.dynlibdir dirs
+                , InstallDirs.libdir dirs
+                ]
 
 -- | Split @cabal run@ arguments (@exe cmd@ arguments in the examples) into
 -- target selectors and target executable arguments.

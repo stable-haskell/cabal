@@ -18,6 +18,7 @@ module Distribution.Client.Utils.Json
 where
 
 import Distribution.Client.Compat.Prelude
+import Prelude ()
 
 import Data.Char (intToDigit)
 

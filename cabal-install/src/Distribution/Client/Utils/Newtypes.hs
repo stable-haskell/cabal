@@ -20,6 +20,7 @@ import Distribution.Parsec
 import Distribution.Simple.Compiler (PackageDBCWD, interpretPackageDB, readPackageDb)
 import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
 import Network.URI (URI, parseURI)
+import Prelude ()
 
 newtype PackageDBNT = PackageDBNT {getPackageDBNT :: Maybe PackageDBCWD}
 

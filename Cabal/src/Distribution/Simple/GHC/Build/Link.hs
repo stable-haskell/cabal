@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Distribution.Simple.GHC.Build.Link where
@@ -6,7 +5,6 @@ module Distribution.Simple.GHC.Build.Link where
 import Distribution.Compat.Prelude
 import Prelude ()
 
-import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.Set as Set
@@ -52,7 +50,7 @@ import Distribution.Utils.Path
 import Distribution.Verbosity
 import Distribution.Version
 
-import System.Directory
+import Distribution.Compat.Directory
   ( createDirectoryIfMissing
   , doesDirectoryExist
   , renameFile
@@ -608,10 +606,10 @@ getRPaths pbci = do
       let hostPref = case hostOS of
             OSX -> "@loader_path"
             _ -> "$ORIGIN"
-          -- The directory this artifact is installed to: a library goes to
-          -- the libdir, an executable to the bindir (the same split as
-          -- 'depLibraryPaths'). Absolute rpaths are re-expressed relative to
-          -- it below.
+          -- The directory this artifact is installed to. A foreign library
+          -- is copied to 'flibdir', not 'libdir'; using 'libdir' there bakes
+          -- @$ORIGIN/..@, which does not contain the Haskell dynlib once the
+          -- .so lives in 'flibdir'.
           installDirs =
             absoluteComponentInstallDirs
               (localPkgDescr lbi)
@@ -620,6 +618,7 @@ getRPaths pbci = do
               NoCopyDest
           ownDir = case clbi of
             ExeComponentLocalBuildInfo{} -> bindir installDirs
+            FLibComponentLocalBuildInfo{} -> flibdir installDirs
             _ -> libdir installDirs
           -- Every rpath entry is loader-relative:
           --
@@ -638,9 +637,9 @@ getRPaths pbci = do
           --    dependencies live in sibling prefixes, and changes how
           --    @library-dirs@ are registered, neither of which rpath
           --    generation needs.
-          relPath p
+          relTo origin p
             | isRelative p = hostPref </> p
-            | otherwise = hostPref </> shortRelativePath ownDir p
+            | otherwise = hostPref </> shortRelativePath origin p
           rpaths =
             -- The artifact's own directory comes first, so a library
             -- installed next to it is found: 'depLibraryPaths' can yield the
@@ -651,8 +650,13 @@ getRPaths pbci = do
             -- the missing self-rpath is fatal: a Backpack signature
             -- implementation installed next to the instantiated unit fails
             -- to load (GHC's testsuite T14304 on Alpine).
+            --
+            -- Inplace build directories are intentionally absent. Baking the
+            -- dist dir into an executable RPATH lets 'runExe' find an internal
+            -- library that was never installed (Cabal #4025). 'v2-run' puts
+            -- those directories on the loader path instead.
             toNubListR [hostPref]
-              <> toNubListR (map relPath libraryPaths)
+              <> toNubListR (map (relTo ownDir) libraryPaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
       return rpaths
     else return mempty

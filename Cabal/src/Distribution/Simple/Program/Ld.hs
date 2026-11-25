@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.Program.Ld
 -- Copyright   :  Duncan Coutts 2009
@@ -43,7 +41,7 @@ import Distribution.Verbosity
   ( Verbosity
   )
 
-import System.Directory
+import Distribution.Compat.Directory
   ( renameFile
   )
 

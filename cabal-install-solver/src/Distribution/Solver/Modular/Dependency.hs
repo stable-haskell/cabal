@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 module Distribution.Solver.Modular.Dependency (
     -- * Variables
@@ -142,7 +143,18 @@ data ExposedComponent =
 -- everything needed for creating ConflictSets or describing conflicts in solver
 -- log messages.
 data DependencyReason qpn = DependencyReason qpn (Map Flag FlagValue) (S.Set Stanza)
+#ifndef __MHS__
   deriving (Functor, Eq, Show)
+#else
+  deriving (Eq, Show)
+#endif
+
+#ifdef __MHS__
+-- MicroHs's derived Functor requires Functor for concrete Map/Set fields;
+-- spell out the instance (map over the package name only).
+instance Functor DependencyReason where
+  fmap f (DependencyReason qpn flags stanzas) = DependencyReason (f qpn) flags stanzas
+#endif
 
 -- | Print the reason that a dependency was introduced.
 showDependencyReason :: DependencyReason QPN -> String

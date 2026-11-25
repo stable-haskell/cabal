@@ -1,3 +1,6 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 module Distribution.Types.Condition
   ( Condition (..)
   , cNot
@@ -6,17 +9,30 @@ module Distribution.Types.Condition
   , simplifyCondition
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
 import Prelude ()
 
 -- | A boolean expression parameterized over the variable type used.
+{- FOURMOLU_DISABLE -}
 data Condition c
   = Var c
   | Lit Bool
   | CNot (Condition c)
   | COr (Condition c) (Condition c)
   | CAnd (Condition c) (Condition c)
-  deriving (Show, Eq, Data, Generic)
+  deriving (Show, Eq, Generic
+#ifndef __MHS__
+    , Data
+#endif
+    )
+{- FOURMOLU_ENABLE -}
+
+#ifdef __MHS__
+-- MicroHs cannot derive 'Data' for parameterised types (it drops the
+-- required context), so the instance is spelled out explicitly.
+deriving instance Data c => Data (Condition c)
+#endif
 
 -- | Boolean negation of a 'Condition' value.
 cNot :: Condition a -> Condition a

@@ -168,8 +168,6 @@ import Language.Haskell.Extension
   ( Language (..)
   )
 
-import Control.Monad (mapM)
-import qualified Data.ByteString.Lazy as BS
 import Data.List
   ( (\\)
   )
@@ -189,18 +187,19 @@ import Distribution.Client.ReplFlags
   )
 import Distribution.Client.Toolchain (Machine (..))
 import Distribution.Compat.Binary (decode)
-import qualified Distribution.Compat.Graph as Graph
-import Distribution.Simple.Flag (flagToMaybe, fromFlagOrDefault, pattern Flag)
-import Distribution.Simple.Program.Builtin (ghcProgram)
-import Distribution.Simple.Program.Db (requireProgram)
-import Distribution.Simple.Program.Types
-import Distribution.Types.PackageName.Magic (fakePackageId)
-import System.Directory
+import Distribution.Compat.Directory
   ( doesFileExist
   , getCurrentDirectory
   , listDirectory
   , makeAbsolute
   )
+import qualified Distribution.Compat.Graph as Graph
+import Distribution.Compat.Internal.LazyByteString (readFileLBS)
+import Distribution.Simple.Flag (flagToMaybe, fromFlagOrDefault, pattern Flag)
+import Distribution.Simple.Program.Builtin (ghcProgram)
+import Distribution.Simple.Program.Db (requireProgram)
+import Distribution.Simple.Program.Types
+import Distribution.Types.PackageName.Magic (fakePackageId)
 import System.FilePath
   ( searchPathSeparator
   , splitSearchPath
@@ -548,7 +547,7 @@ targetedRepl
 
         -- Note: decode is partial. Should we use Structured here?
         -- This might blow up with @build-type: Custom@ stuff.
-        ghcProgs <- mapM (\f -> decode @ConfiguredProgram <$> BS.readFile (dir </> "paths" </> f)) path_files
+        ghcProgs <- mapM (\f -> decode @ConfiguredProgram <$> readFileLBS (dir </> "paths" </> f)) path_files
 
         let all_paths = concatMap programOverrideEnv ghcProgs
         let sp = intercalate [searchPathSeparator] (map fst (sortBy (comparing @Int snd) $ Map.toList (combine_search_paths all_paths)))

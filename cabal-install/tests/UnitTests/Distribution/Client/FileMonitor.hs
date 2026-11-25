@@ -7,7 +7,7 @@ import Control.Exception
 import Control.Monad
 import Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
-import qualified System.Directory as IO
+import qualified Distribution.Compat.Directory as IO
 import System.FilePath
 import Prelude hiding (writeFile)
 import qualified Prelude as IO (writeFile)

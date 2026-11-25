@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 module Distribution.Types.TestSuiteInterface
   ( TestSuiteInterface (..)
   ) where

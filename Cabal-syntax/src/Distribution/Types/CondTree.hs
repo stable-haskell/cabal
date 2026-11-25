@@ -1,3 +1,6 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 module Distribution.Types.CondTree
   ( CondTree (..)
   , CondBranch (..)
@@ -17,6 +20,7 @@ module Distribution.Types.CondTree
   , ignoreConditions
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
 import Prelude ()
 
@@ -48,11 +52,23 @@ import qualified Distribution.Compat.Lens as L
 -- derived off of 'targetBuildInfo' (perhaps a good refactoring
 -- would be to convert this into an opaque type, with a smart
 -- constructor that pre-computes the dependencies.)
+{- FOURMOLU_DISABLE -}
 data CondTree v a = CondNode
   { condTreeData :: a
   , condTreeComponents :: [CondBranch v a]
   }
-  deriving (Show, Eq, Data, Generic, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Generic, Functor, Foldable, Traversable
+#ifndef __MHS__
+    , Data
+#endif
+    )
+{- FOURMOLU_ENABLE -}
+
+#ifdef __MHS__
+-- MicroHs cannot derive 'Data' for parameterised types (it drops the
+-- required context), so the instances are spelled out explicitly.
+deriving instance (Data v, Data a) => Data (CondTree v a)
+#endif
 
 instance (Binary v, Binary a) => Binary (CondTree v a)
 instance (Structured v, Structured a) => Structured (CondTree v a)
@@ -67,12 +83,22 @@ instance Monoid a => Monoid (CondTree v a) where
 -- | A 'CondBranch' represents a conditional branch, e.g., @if
 -- flag(foo)@ on some syntax @a@.  It also has an optional false
 -- branch.
+{- FOURMOLU_DISABLE -}
 data CondBranch v a = CondBranch
   { condBranchCondition :: Condition v
   , condBranchIfTrue :: CondTree v a
   , condBranchIfFalse :: Maybe (CondTree v a)
   }
-  deriving (Show, Eq, Data, Generic, Functor, Traversable, Foldable)
+  deriving (Show, Eq, Generic, Functor, Traversable, Foldable
+#ifndef __MHS__
+    , Data
+#endif
+    )
+{- FOURMOLU_ENABLE -}
+
+#ifdef __MHS__
+deriving instance (Data v, Data a) => Data (CondBranch v a)
+#endif
 
 instance (Binary v, Binary a) => Binary (CondBranch v a)
 instance (Structured v, Structured a) => Structured (CondBranch v a)

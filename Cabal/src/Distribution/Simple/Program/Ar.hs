@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -59,16 +59,36 @@ import Distribution.Verbosity
   , verbosityLevel
   )
 
-import System.Directory (doesFileExist, renameFile)
+import Distribution.Compat.Directory (doesFileExist, renameFile)
 import System.FilePath (splitFileName)
+{- FOURMOLU_DISABLE -}
 import System.IO
   ( Handle
   , IOMode (ReadWriteMode)
   , SeekMode (AbsoluteSeek)
   , hFileSize
+#ifndef __MHS__
   , hSeek
+#endif
   , withBinaryFile
   )
+{- FOURMOLU_ENABLE -}
+#ifdef __MHS__
+import Data.Int (Int64)
+import Foreign.C.Error (throwErrnoIfMinus1_)
+import Foreign.C.Types (CInt (..))
+import Foreign.Ptr (Ptr)
+import System.IO.Internal (BFILE, withHandleAny)
+
+foreign import ccall "mhs_handle.h mhs_handle_seek"
+  c_handleSeek :: Ptr BFILE -> CInt -> Int64 -> IO CInt
+
+hSeek :: Handle -> SeekMode -> Integer -> IO ()
+hSeek h mode off =
+  withHandleAny h $ \p ->
+    throwErrnoIfMinus1_ "hSeek" $
+      c_handleSeek p (fromIntegral (fromEnum mode)) (fromIntegral off)
+#endif
 
 -- | Call @ar@ to create a library archive from a bunch of object files.
 createArLibArchive

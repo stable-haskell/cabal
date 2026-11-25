@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -24,15 +25,24 @@ import Prelude (read)
 import Data.Time (UTCTime (..), fromGregorianValid, makeTimeOfDayValid, showGregorian, timeOfDayToTime, timeToTimeOfDay)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 
-import qualified Codec.Archive.Tar.Entry as Tar
 import qualified Distribution.Compat.CharParsing as P
 import qualified Text.PrettyPrint as Disp
 
 -- | UNIX timestamp (expressed in seconds since unix epoch, i.e. 1970).
-data Timestamp = NoTimestamp | TS Int64 -- Tar.EpochTime
-  deriving (Eq, Ord, NFData, Show, Generic)
+data Timestamp = NoTimestamp | TS Int64
+#ifdef __MHS__
+  -- MicroHs cannot derive 'NFData' (no Generic-based default method),
+  -- so spell out the trivial instance.
+  deriving (Eq, Ord, Show, Generic)
 
-epochTimeToTimestamp :: Tar.EpochTime -> Timestamp
+instance NFData Timestamp where
+  rnf NoTimestamp = ()
+  rnf (TS t) = rnf t
+#else
+  deriving (Eq, Ord, NFData, Show, Generic)
+#endif
+
+epochTimeToTimestamp :: Int64 -> Timestamp
 epochTimeToTimestamp = TS
 
 timestampToUTCTime :: Timestamp -> Maybe UTCTime

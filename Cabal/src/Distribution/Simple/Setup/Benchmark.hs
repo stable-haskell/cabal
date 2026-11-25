@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -14,7 +14,11 @@
 --
 -- Definition of the benchmarking command-line options.
 -- See: @Distribution.Simple.Setup@
+{- FOURMOLU_DISABLE -}
 module Distribution.Simple.Setup.Benchmark
+#ifdef __MHS__
+  ( BenchmarkFlags (..)
+#else
   ( BenchmarkFlags
       ( BenchmarkCommonFlags
       , benchmarkVerbosity
@@ -24,11 +28,13 @@ module Distribution.Simple.Setup.Benchmark
       , benchmarkTargets
       , ..
       )
+#endif
   , emptyBenchmarkFlags
   , defaultBenchmarkFlags
   , benchmarkCommand
   , benchmarkOptions'
   ) where
+{- FOURMOLU_ENABLE -}
 
 import Distribution.Compat.Prelude hiding (get)
 import Prelude ()
@@ -53,6 +59,7 @@ data BenchmarkFlags = BenchmarkFlags
   deriving (Show, Generic)
   deriving (Semigroup, Monoid) via Generically BenchmarkFlags
 
+#ifndef __MHS__
 pattern BenchmarkCommonFlags
   :: Flag VerbosityFlags
   -> Flag (SymbolicPath Pkg (Dir Dist))
@@ -76,6 +83,7 @@ pattern BenchmarkCommonFlags
         , setupTargets = benchmarkTargets
         }
     )
+#endif
 
 instance Binary BenchmarkFlags
 instance Structured BenchmarkFlags

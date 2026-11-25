@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- |
 -- Module      :  Distribution.Client.ProjectPlanning.Machine
@@ -17,6 +17,7 @@ module Distribution.Client.ProjectPlanning.Machine
   , toolMachine
   ) where
 
+import Data.Foldable (Foldable)
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
@@ -44,8 +45,7 @@ instance Structured a => Structured (WithMachine a)
 instance Package pkg => Package (WithMachine pkg) where
   packageId (WithMachine _machine pkg) = packageId pkg
 
-instance IsNode a => IsNode (WithMachine a) where
-  type Key (WithMachine a) = WithMachine (Key a)
+instance IsNode k a => IsNode (WithMachine k) (WithMachine a) where
   nodeKey = fmap nodeKey
   nodeNeighbors = traverse nodeNeighbors
 

@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Distribution.Simple.GHC.Build.Modules
@@ -10,6 +9,7 @@ module Distribution.Simple.GHC.Build.Modules
 
 import Control.Monad.IO.Class
 import Distribution.Compat.Prelude
+import Prelude ()
 
 import Data.List (sortOn, (\\))
 import qualified Data.Set as Set
@@ -107,7 +107,7 @@ buildHaskellModules
   -- ^ Optional path to a Haskell Main file to build
   -> [ModuleName]
   -- ^ The Haskell modules to build
-  -> SymbolicPath Pkg ('Dir Artifacts)
+  -> SymbolicPath Pkg (Dir Artifacts)
   -- ^ The path to the build directory for this target, which
   -- has already been created.
   -> [BuildWay]

@@ -25,9 +25,9 @@ module Distribution.Client.Init.Utils
 
 import Distribution.Client.Compat.Prelude hiding (Parsec, empty, many, putStrLn, readFile)
 import Distribution.Utils.Generic (isInfixOf, safeLast)
-import qualified Prelude ()
+import Prelude ()
 
-import Control.Monad (forM)
+import Data.Traversable (forM)
 
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M

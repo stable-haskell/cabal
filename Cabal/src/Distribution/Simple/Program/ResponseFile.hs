@@ -1,5 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-
 -- |
 -- Module      :  Distribution.Simple.Program.ResponseFile
 -- Copyright   :  (c) Sergey Vinokurov 2017

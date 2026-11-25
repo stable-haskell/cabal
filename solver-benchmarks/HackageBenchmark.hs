@@ -27,13 +27,13 @@ import Statistics.Test.MannWhitneyU ( PositionTest(..), TestResult(..)
                                     , mannWhitneyUCriticalValue
                                     , mannWhitneyUtest)
 import Statistics.Types (PValue, mkPValue)
-import System.Directory (getTemporaryDirectory, createDirectoryIfMissing)
+import Distribution.Compat.Directory (getTemporaryDirectory, createDirectoryIfMissing)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode(..), exitWith, exitFailure)
 import System.FilePath ((</>))
 import System.IO ( BufferMode(LineBuffering), hPutStrLn, hSetBuffering, stderr
                  , stdout)
-import System.Process ( StdStream(CreatePipe), CreateProcess(..), callProcess
+import Distribution.Compat.Process ( StdStream(CreatePipe), CreateProcess(..), callProcess
                       , createProcess, readProcess, shell, waitForProcess, proc, readCreateProcessWithExitCode )
 import Text.Printf (printf)
 

@@ -1,3 +1,31 @@
+{-# LANGUAGE CPP #-}
+#ifdef __MHS__
+-- | Implementation of the HTTP hook used by secure repositories.
+--
+-- Secure (@hackage-security@) repositories are not supported in this
+-- build: every use of a secure repository fails with an error. This
+-- module is retained as a stub so that existing import sites keep
+-- resolving.
+module Distribution.Client.Security.HTTP (transportAdapter) where
+
+import Distribution.Client.Compat.Prelude
+import Prelude ()
+
+import Distribution.Client.HttpUtils
+  ( HttpTransport
+  )
+import System.IO.Error (userError)
+
+-- | Translate from a secure repository's HTTP hook to cabal-install's
+-- own 'HttpTransport'.
+--
+-- Secure repositories are not supported in this build; this always fails.
+transportAdapter :: Verbosity -> IO HttpTransport -> IO a
+transportAdapter _ _ =
+  throwIO $
+    userError
+      "Secure repositories are not supported in this build of cabal-install."
+#else
 -- | Implementation of 'HttpLib' using cabal-install's own 'HttpTransport'
 module Distribution.Client.Security.HTTP (HttpLib, transportAdapter) where
 
@@ -195,3 +223,4 @@ wrapCustomEx act =
     HC.handleChecked (\(ex :: IOException) -> go ex) act
   where
     go ex = HC.throwChecked (HC.SomeRemoteError ex)
+#endif

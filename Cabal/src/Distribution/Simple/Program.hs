@@ -5,7 +5,6 @@
  - Ideally, a set of unit tests that check whether certain
  - flags trigger recompilation should be added.
  - -}
-{-# LANGUAGE DataKinds #-}
 
 -- |
 -- Module      :  Distribution.Simple.Program

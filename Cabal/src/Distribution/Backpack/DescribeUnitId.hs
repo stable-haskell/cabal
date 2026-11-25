@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Distribution.Backpack.DescribeUnitId where
 
 import Distribution.Compat.Prelude
@@ -12,6 +14,9 @@ import Distribution.Types.PackageId
 import Distribution.Verbosity
 
 import Text.PrettyPrint
+#ifdef __MHS__
+import Distribution.Utils.LogProgress (hang)
+#endif
 
 -- Unit identifiers have a well defined, machine-readable format,
 -- but this format isn't very user-friendly for users.  This

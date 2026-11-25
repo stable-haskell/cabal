@@ -42,7 +42,7 @@ import Distribution.Simple.Utils
 import Distribution.System
 import Distribution.Verbosity
 
-import System.Directory
+import Distribution.Compat.Directory
   ( findExecutable
   )
 import System.FilePath as FilePath

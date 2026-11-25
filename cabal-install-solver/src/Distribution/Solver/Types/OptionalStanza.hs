@@ -27,7 +27,7 @@ import Prelude ()
 
 import Data.Bits                                 (testBit, (.|.), (.&.))
 import Distribution.Types.ComponentRequestedSpec (ComponentRequestedSpec (..))
-import Distribution.Utils.Structured (Structured (..), nominalStructure)
+import Distribution.Utils.Structured (nominalStructure)
 
 -------------------------------------------------------------------------------
 -- OptionalStanza

@@ -1,6 +1,7 @@
 ---
 synopsis: Fix intermittent failure to run a just-installed build tool
 packages: [Cabal]
+prs: 0
 ---
 
 During a parallel build, a process started while `copyFile` was running could

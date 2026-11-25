@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | cabal-install CLI command: bench
 module Distribution.Client.CmdBench
   ( -- * The @bench@ CLI and action
@@ -54,9 +56,18 @@ import Distribution.Verbosity
   ( normal
   )
 
+#ifdef __MHS__
+import System.Environment (getArgs)
+#else
 import GHC.Environment
   ( getFullArgs
   )
+#endif
+
+#ifdef __MHS__
+getFullArgs :: IO [String]
+getFullArgs = getArgs
+#endif
 
 benchCommand :: CommandUI (NixStyleFlags ())
 benchCommand =

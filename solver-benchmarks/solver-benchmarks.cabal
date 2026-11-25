@@ -31,11 +31,10 @@ library
     , base
     , bytestring
     , containers
+    , Cabal ^>= 3.19
     , Cabal-syntax ^>= 3.19
-    , directory
     , filepath
     , optparse-applicative
-    , process
     , time
     , statistics >= 0.14 && < 0.17
     , vector

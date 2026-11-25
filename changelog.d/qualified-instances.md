@@ -1,6 +1,7 @@
 ---
 synopsis: "Let build tools and setup scripts have their own instance of a package version"
 packages: [cabal-install-solver, cabal-install]
+prs: 0
 ---
 
 A build tool (`build-tool-depends`) and a setup script (`setup-depends`) are

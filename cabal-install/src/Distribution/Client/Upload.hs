@@ -1,12 +1,20 @@
+{-# LANGUAGE CPP #-}
+
 module Distribution.Client.Upload (upload, uploadDoc, report) where
 
 import Distribution.Client.Compat.Prelude
+#ifndef __MHS__
 import qualified Prelude as Unsafe (read)
+#else
+import Prelude ()
+#endif
 
+#ifndef __MHS__
 import Distribution.Client.HttpUtils
   ( HttpTransport (..)
   , remoteRepoTryUpgradeToHttps
   )
+#endif
 import Distribution.Client.Setup
   ( IsCandidate (..)
   , RepoContext (..)
@@ -17,17 +25,22 @@ import Distribution.Client.Types.Credentials
   , Token (..)
   , Username (..)
   )
+#ifndef __MHS__
 import Distribution.Client.Types.Repo (RemoteRepo (..), Repo, maybeRepoRemote)
 import Distribution.Client.Types.RepoName (unRepoName)
 
 import Distribution.Client.Config
+#endif
 import Distribution.Simple.Utils (dieWithException, info, notice, toUTF8BS, warn)
+#ifndef __MHS__
 import Distribution.Utils.String (trim)
 
 import Distribution.Client.BuildReports.Anonymous (parseBuildReport)
 import qualified Distribution.Client.BuildReports.Anonymous as BuildReport
 import qualified Distribution.Client.BuildReports.Upload as BuildReport
+#endif
 import Distribution.Client.Errors
+#ifndef __MHS__
 import Network.HTTP (Header (..), HeaderName (..))
 import Network.URI (URI (uriAuthority, uriPath), URIAuth (uriRegName))
 import System.Directory
@@ -35,7 +48,9 @@ import System.FilePath (dropExtension, takeExtension, takeFileName, (</>))
 import qualified System.FilePath.Posix as FilePath.Posix ((</>))
 import System.IO (hFlush, stdout)
 import System.IO.Echo (withoutInputEcho)
+#endif
 
+#ifndef __MHS__
 -- > stripExtensions ["tar", "gz"] "foo.tar.gz"
 -- Just "foo"
 -- > stripExtensions ["tar", "gz"] "foo.gz.tar"
@@ -46,6 +61,7 @@ stripExtensions exts path = foldM f path (reverse exts)
     f p e
       | takeExtension p == '.' : e = Just (dropExtension p)
       | otherwise = Nothing
+#endif
 
 upload
   :: Verbosity
@@ -56,6 +72,13 @@ upload
   -> IsCandidate
   -> [FilePath]
   -> IO ()
+#ifdef __MHS__
+-- | Upload packages to Hackage.
+--
+-- Uploading is not supported in this build (there is no HTTP upload
+-- transport); this always fails.
+upload verbosity _ _ _ _ _ _ = dieWithException verbosity NoPostYet
+#else
 upload verbosity repoCtxt mToken mUsername mPassword isCandidate paths = do
   let repos :: [Repo]
       repos = repoContextRepos repoCtxt
@@ -106,6 +129,7 @@ upload verbosity repoCtxt mToken mUsername mPassword isCandidate paths = do
       -- This case shouldn't really happen, since we check in Main that we
       -- only pass tar.gz files to upload.
       Nothing -> dieWithException verbosity $ NotATarDotGzFile path
+#endif
 
 uploadDoc
   :: Verbosity
@@ -116,6 +140,13 @@ uploadDoc
   -> IsCandidate
   -> FilePath
   -> IO ()
+#ifdef __MHS__
+-- | Upload documentation to Hackage.
+--
+-- Uploading is not supported in this build (there is no HTTP upload
+-- transport); this always fails.
+uploadDoc verbosity _ _ _ _ _ _ = dieWithException verbosity NoPostYet
+#else
 uploadDoc verbosity repoCtxt mToken mUsername mPassword isCandidate path = do
   let repos = repoContextRepos repoCtxt
   transport <- repoContextGetTransport repoCtxt
@@ -199,7 +230,9 @@ uploadDoc verbosity repoCtxt mToken mUsername mPassword isCandidate path = do
         "Package documentation successfully published. You can now view it at '"
           ++ show packageUri
           ++ "'."
+#endif
 
+#ifndef __MHS__
 promptUsername :: String -> IO Username
 promptUsername domain = do
   putStr $ domain ++ " username: "
@@ -214,8 +247,16 @@ promptPassword domain = do
   passwd <- withoutInputEcho $ fmap Password getLine
   putStrLn ""
   return passwd
+#endif
 
 report :: Verbosity -> RepoContext -> Maybe Token -> Maybe Username -> Maybe Password -> IO ()
+#ifdef __MHS__
+-- | Upload build reports to Hackage.
+--
+-- Uploading is not supported in this build (there is no HTTP upload
+-- transport); this always fails.
+report verbosity _ _ _ _ = dieWithException verbosity NoPostYet
+#else
 report verbosity repoCtxt mToken mUsername mPassword = do
   let repos :: [Repo]
       repos = repoContextRepos repoCtxt
@@ -251,7 +292,9 @@ report verbosity repoCtxt mToken mUsername mPassword = do
                   (remoteRepoURI remoteRepo)
                   [(report', Just buildLog)]
                 return ()
+#endif
 
+#ifndef __MHS__
 handlePackage
   :: HttpTransport
   -> Verbosity
@@ -308,3 +351,4 @@ createAuth domain mToken mUsername mPassword = case mToken of
     Username username <- maybe (promptUsername domain) return mUsername
     Password password <- maybe (promptPassword domain) return mPassword
     return $ Left (username, password)
+#endif

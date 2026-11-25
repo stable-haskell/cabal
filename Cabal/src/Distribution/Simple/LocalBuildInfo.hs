@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 
 -- |
@@ -104,7 +103,7 @@ import Distribution.Simple.Utils
 import Distribution.Utils.Path
 
 import Data.List (stripPrefix)
-import qualified System.Directory as Directory
+import qualified Distribution.Compat.Directory as Directory
   ( canonicalizePath
   , doesDirectoryExist
   )
