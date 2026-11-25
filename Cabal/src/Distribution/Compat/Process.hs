@@ -385,7 +385,7 @@ module Distribution.Compat.Process
 import qualified Data.ByteString.Lazy as LBS
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.Exit (ExitCode (..))
-import System.IO (IOMode (..), hClose, hPutStr, openFile, openTempFile)
+import System.IO (Handle, IOMode (..), hClose, hPutStr, openFile, openTempFile)
 import System.Process hiding (proc)
 import qualified System.Process as Process
 
@@ -463,7 +463,10 @@ data CapturedOutputs = CapturedOutputs
 captureProcess :: CreateProcess -> StagedInput -> IO (ExitCode, CapturedOutputs)
 captureProcess cp staged = do
   tmpDir <- getTemporaryDirectory
-  let stage put = do
+  -- `put` must return IO (). A polymorphic result is discarded here, and
+  -- validate builds with -Werror, so -Wunused-do-bind rejects it.
+  let stage :: (Handle -> IO ()) -> IO (StdStream, FilePath)
+      stage put = do
         (p, h) <- openTempFile tmpDir "cabal-captured-in"
         put h
         hClose h
