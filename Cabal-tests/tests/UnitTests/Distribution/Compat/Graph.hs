@@ -7,7 +7,7 @@ module UnitTests.Distribution.Compat.Graph
 import Distribution.Compat.Graph
 
 import qualified Prelude
-import Prelude hiding (null)
+import Prelude hiding (lookup, null)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -19,6 +19,7 @@ import Data.Array ((!))
 import Data.Maybe
 import Data.List (sort)
 import Data.Proxy (Proxy (..))
+import Data.Typeable (Typeable)
 import Distribution.Utils.Structured (Structure (Nominal), Structured (..), nominalStructure)
 
 tests :: [TestTree]
@@ -175,8 +176,8 @@ keyParamTests =
         -- every topological order starts with 1 and ends with 3.
         let sorted = map nodeKey (topSort keyGraph)
         sort sorted @?= [TKey 1, TKey 2, TKey 3]
-        head sorted @?= TKey 1
-        last sorted @?= TKey 3
+        take 1 sorted @?= [TKey 1]
+        drop (length sorted - 1) sorted @?= [TKey 3]
         sort (map nodeKey (revTopSort keyGraph)) @?= [TKey 1, TKey 2, TKey 3]
         cycles keyGraph @?= []
     , testCase "broken" $ do
@@ -195,7 +196,7 @@ newtype TKey = TKey Int
   deriving (Eq, Ord, Show)
 
 data TNode = TNode TKey [TKey]
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance IsNode TKey TNode where
   nodeKey (TNode k _) = k
@@ -204,11 +205,10 @@ instance IsNode TKey TNode where
 instance Structured TNode where
   structure = nominalStructure
 
--- | The 'Structured' instance for 'Graph' must stay usable with only
--- 'Structured a' in scope (no 'Typeable k'), so that generically
--- derived plan types keep compiling. This helper only typechecks
--- while the instance head is weak enough.
-graphStructureOf :: Structured a => Proxy (Graph k a) -> Structure
+-- | Pin the 'Structured' instance context. 'Structured' has a 'Typeable'
+-- superclass, so 'Structured (Graph k a)' needs 'Typeable k' as well as
+-- 'Structured a'. 'structure' itself tags the node list, not @k@.
+graphStructureOf :: (Typeable k, Structured a) => Proxy (Graph k a) -> Structure
 graphStructureOf = structure
 
 prop_structure_tag :: Bool

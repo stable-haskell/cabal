@@ -30,7 +30,9 @@ import qualified Crypto.Hash.SHA256 as SHA256
 #endif
 
 import System.IO (IOMode (..), withBinaryFile)
+#ifdef __MHS__
 import System.IO.Unsafe (unsafePerformIO)
+#endif
 
 #ifdef __MHS__
 import Foreign.C.Types (CSize (..), CUChar (..))

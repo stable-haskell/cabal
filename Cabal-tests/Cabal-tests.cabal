@@ -68,10 +68,8 @@ test-suite unit-tests
     , Cabal-QuickCheck
     , containers
     , Diff                >=0.4   && <2.1
-    , directory           >=1.2.7
     , filepath
     , pretty
-    , process
     , QuickCheck          >=2.14  && <2.20
     , tasty               >=1.2.3 && <1.6
     , tasty-hunit
@@ -80,7 +78,10 @@ test-suite unit-tests
     , text
 
   if !os(windows)
-    build-depends: unix
+    build-depends:
+      , directory >=1.2.7
+      , process
+      , unix
 
   ghc-options:      -Wall
   default-language: GHC2021

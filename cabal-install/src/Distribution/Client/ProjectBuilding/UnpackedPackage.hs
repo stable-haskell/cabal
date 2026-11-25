@@ -121,8 +121,8 @@ import GHC.Clock (getMonotonicTime)
 #ifdef __MHS__
 import System.CPUTime (getCPUTime)
 #endif
-import Distribution.Compat.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, listDirectory)
-import System.FilePath (dropDrive, normalise, takeDirectory, (<.>), (</>))
+import Distribution.Compat.Directory (canonicalizePath, createDirectoryIfMissing)
+import System.FilePath (takeDirectory, (<.>), (</>))
 import System.IO (Handle, IOMode (AppendMode), withFile)
 #ifdef __MHS__
 type SemaphoreIdentifier = String

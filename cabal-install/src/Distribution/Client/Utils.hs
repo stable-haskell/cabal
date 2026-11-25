@@ -86,7 +86,6 @@ import Distribution.Utils.Path
   ( CWD
   , Dir
   , File
-  , FileOrDir (..)
   , Pkg
   , RelativePath
   , SymbolicPath

@@ -62,7 +62,6 @@ import System.FilePath
   ( isAbsolute
   , (</>)
   )
-import System.IO.Error (userError)
 
 #ifndef __MHS__
 import qualified Distribution.Client.Security.DNS as Sec.DNS

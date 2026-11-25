@@ -144,7 +144,7 @@ import Distribution.Client.Utils
 import Distribution.Compat.Internal.LazyByteString (hGetContentsLBS, readFileLBS)
 import Distribution.Compat.Time (getFileAge, getModTime)
 import Distribution.Utils.Generic (fstOf3)
-import Distribution.Utils.Structured (Structured (..), nominalStructure, structuredDecodeFileOrFail, structuredEncodeFile)
+import Distribution.Utils.Structured (nominalStructure, structuredDecodeFileOrFail, structuredEncodeFile)
 #ifdef __MHS__
 import Distribution.Compat.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 #else

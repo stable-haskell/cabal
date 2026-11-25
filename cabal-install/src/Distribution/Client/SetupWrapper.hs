@@ -851,6 +851,11 @@ externalSetupMethod path verbosity options _ args NotInLibrary =
 
 #endif
 
+-- The external method is only selected for 'NotInLibrary'. 'InLibraryArgs'
+-- is handled by 'runSetupMethod' before this runner is called.
+externalSetupMethod _ _ _ _ _ (InLibraryArgs _) =
+  error "internal error: externalSetupMethod called for the in-library setup method"
+
 useCachedSetupExecutable :: BuildType -> Bool
 useCachedSetupExecutable bt =
   bt == Simple || bt == Configure

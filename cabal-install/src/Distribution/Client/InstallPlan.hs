@@ -108,7 +108,7 @@ import Distribution.Solver.Types.Settings
 import Distribution.Solver.Types.SolverId
 
 import Distribution.Utils.LogProgress
-import Distribution.Utils.Structured (Structure (Nominal), Structured (..))
+import Distribution.Utils.Structured (Structure (Nominal))
 
 -- TODO: Need this when we compute final UnitIds
 -- import qualified Distribution.Simple.Configure as Configure

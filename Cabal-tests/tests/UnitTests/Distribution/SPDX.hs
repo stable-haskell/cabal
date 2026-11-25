@@ -2,7 +2,6 @@
 module UnitTests.Distribution.SPDX (spdxTests) where
 
 import Data.Data (fromConstr, toConstr)
-import Data.List (sort)
 import Distribution.Compat.Prelude.Internal
 import Prelude ()
 
@@ -11,6 +10,7 @@ import Distribution.Parsec (eitherParsec)
 import Distribution.Pretty (prettyShow)
 
 import Test.Tasty
+import Test.Tasty.HUnit (Assertion, assertEqual, testCase)
 import Test.Tasty.QuickCheck
 
 import Test.QuickCheck.Instances.Cabal ()

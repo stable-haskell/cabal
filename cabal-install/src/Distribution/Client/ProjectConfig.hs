@@ -228,7 +228,6 @@ import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
 #endif
 import qualified Distribution.Client.GZipUtils as GZipUtils
-import qualified Distribution.Client.Tar as Tar
 
 import Control.Exception (handle)
 import Control.Monad.Trans (liftIO)

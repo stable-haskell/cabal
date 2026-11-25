@@ -19,7 +19,7 @@ import Distribution.Client.DistDirLayout
   )
 import Distribution.Client.InstallPlan (foldPlanPackage)
 import qualified Distribution.Client.InstallPlan as InstallPlan
-import Distribution.Client.NixStyleOptions (NixStyleFlags (NixStyleFlags, configFlags, haddockFlags))
+import Distribution.Client.NixStyleOptions (configFlags, haddockFlags)
 import qualified Distribution.Client.NixStyleOptions as NixStyleOptions
 import Distribution.Client.ProjectOrchestration
   ( AvailableTarget (..)

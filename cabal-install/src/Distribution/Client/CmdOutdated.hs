@@ -64,7 +64,6 @@ import Distribution.Compat.Directory
 import Distribution.Client.ProjectOrchestration
 
 import Control.Monad hiding (forM_, mapM, mapM_, sequence, sequence_)
-import Data.Foldable (forM_, mapM_)
 import Distribution.Client.ScriptUtils
 import Distribution.Package
 import Distribution.ReadE

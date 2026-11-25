@@ -8,7 +8,6 @@ import Distribution.Simple.Setup
 import Distribution.Utils.Path
   ( Dir
   , Dist
-  , FileOrDir (..)
   , Pkg
   , SymbolicPath
   , getSymbolicPath

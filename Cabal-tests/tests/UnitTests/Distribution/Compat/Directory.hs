@@ -1,7 +1,6 @@
 module UnitTests.Distribution.Compat.Directory (tests) where
 
 import Control.Exception (IOException, try)
-import System.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath ((</>), isAbsolute)
 import System.IO.Error (isAlreadyExistsError)
 

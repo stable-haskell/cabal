@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module UnitTests.Distribution.Compat.Prelude
     ( tests
@@ -16,8 +17,11 @@ import qualified Data.List.NonEmpty as NE
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
+-- QuickCheck 2.17 added 'Arbitrary' for most of 'base', including 'NonEmpty'.
+#if !MIN_VERSION_QuickCheck(2,17,0)
 instance Arbitrary a => Arbitrary (NE.NonEmpty a) where
     arbitrary = (NE.:|) <$> arbitrary <*> arbitrary
+#endif
 
 tests :: [TestTree]
 tests =

@@ -173,7 +173,6 @@ import qualified Distribution.Client.InstallPlan as InstallPlan
 import qualified Distribution.Client.SolverInstallPlan as SolverInstallPlan
 
 import Distribution.CabalSpecVersion
-import Distribution.Utils.LogProgress
 import Distribution.Utils.NubList
 import Distribution.Utils.Path hiding
   ( (<.>)
@@ -246,7 +245,7 @@ import qualified Distribution.PackageDescription as PD
 import qualified Distribution.PackageDescription.Configuration as PD
 import qualified Distribution.Simple.Configure as Cabal
 import qualified Distribution.Simple.GHC as GHC
-import Distribution.Simple.InstallDirs (InstallDirs (InstallDirs, datasubdir, libexecsubdir, libsubdir))
+import Distribution.Simple.InstallDirs (datasubdir, libexecsubdir, libsubdir)
 import qualified Distribution.Simple.InstallDirs as InstallDirs
 import qualified Distribution.Simple.LocalBuildInfo as Cabal
 import qualified Distribution.Simple.Setup as Cabal
