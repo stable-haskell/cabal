@@ -95,7 +95,6 @@ test-suite parser-tests
     , Cabal-syntax
     , Cabal-tree-diff
     , Diff              >=0.4     && <2.1
-    , directory
     , filepath
     , tasty             >=1.2.3   && <1.6
     , tasty-golden      >=2.3.1.1 && <2.4
@@ -115,7 +114,6 @@ test-suite check-tests
     , Cabal
     , Cabal-syntax
     , Diff          >=0.4     && <2.1
-    , directory
     , filepath
     , tasty         >=1.2.3   && <1.6
     , tasty-golden  >=2.3.1.1 && <2.4
@@ -153,7 +151,6 @@ test-suite hackage-tests
     , Cabal-syntax
     , Cabal-tree-diff
     , deepseq >= 1.4
-    , directory
     , filepath
     , time
 

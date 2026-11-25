@@ -387,7 +387,6 @@ test-suite unit-tests
       , Cabal-QuickCheck
       , Cabal-tests
       , containers
-      , directory
       , filepath
       , mtl
       , network-uri >= 2.6.2.0 && <2.7
@@ -418,7 +417,6 @@ test-suite parser-tests
     build-depends:
       , cabal-install
       , containers
-      , directory
       , filepath
       , network-uri >= 2.6.2.0 && <2.7
       , tasty >= 1.2.3 && <1.6
@@ -470,9 +468,7 @@ test-suite integration-tests2
     , bytestring
     , cabal-install
     , containers
-    , directory
     , filepath
-    , process
     , tasty >= 1.5.4 && <1.6
     , tasty-hunit >= 0.10
     , tasty-expected-failure
@@ -506,7 +502,6 @@ test-suite long-tests
     , Cabal-tests
     , cabal-install
     , containers
-    , directory
     , filepath
     , mtl
     , network-uri >= 2.6.2.0 && <2.7
