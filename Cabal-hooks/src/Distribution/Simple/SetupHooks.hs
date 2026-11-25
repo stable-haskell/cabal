@@ -302,7 +302,7 @@ import Distribution.Types.LocalBuildConfig
 import Distribution.Types.TargetInfo
   ( TargetInfo(..) )
 import Distribution.Utils.Path
-  ( SymbolicPath, CWD, Pkg, FileOrDir(..), Dir
+  ( SymbolicPath, CWD, Pkg, Dir
   , interpretSymbolicPath, makeRelativePathEx
   , RelativePath, Source, Build
   , getSymbolicPath, sameDirectory, moduleNameSymbolicPath

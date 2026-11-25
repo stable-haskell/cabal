@@ -60,7 +60,7 @@ import Distribution.Utils.Path
   , Dist
   , Pkg
   , SymbolicPath
-  , FileOrDir(..), Dir
+  , Dir
   , interpretSymbolicPath
   )
 import Distribution.Verbosity
