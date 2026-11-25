@@ -2403,11 +2403,18 @@ elaborateInstallPlan
       -- This is a set of SolverIds, which are obtained from the packages in the solver plan
       -- and checking if their package id or one of their dependencies' package ids
       -- is in the set of project source packages.
+      --
+      -- Only configured packages are roots: a project package is built from
+      -- its source, never taken pre-existing.  A pre-existing package can
+      -- share the package id of a project package on the other machine (the
+      -- build compiler's own @system-cxx-std-lib-1.0@ and a project that
+      -- builds the target's from source), and as a root it would put every
+      -- package built on top of it into the closure.
       projectSourcePackagesClosure :: Set SolverId
       projectSourcePackagesClosure =
         Set.fromList
           [ solverId pkg
-          | spkg <- SolverInstallPlan.toList solverPlan
+          | spkg@ResolverPackage.Configured{} <- SolverInstallPlan.toList solverPlan
           , packageId spkg `elem` projectSourcePackages
           , pkg <- SolverInstallPlan.reverseDependencyClosure solverPlan [solverId spkg]
           ]
