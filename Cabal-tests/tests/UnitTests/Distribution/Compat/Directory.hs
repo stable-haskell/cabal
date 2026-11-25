@@ -3,6 +3,7 @@ module UnitTests.Distribution.Compat.Directory (tests) where
 import Control.Exception (IOException, try)
 import System.FilePath ((</>), isAbsolute)
 import System.IO.Error (isAlreadyExistsError)
+import System.Info (os)
 
 import Distribution.Compat.Directory
 import Distribution.Simple.Utils (withTempDirectory)
@@ -19,8 +20,13 @@ tests =
   , testCase "canonicalizePath resolves existing files" canonExistingTest
   , testCase "createDirectoryIfMissing rejects existing files" mkdirOnFileTest
   , testCase "createDirectoryIfMissing accepts existing directories" mkdirOnDirTest
-  , testCase "getPermissions gates searchable on directories" permsSearchableTest
   ]
+    -- 'System.Directory' on Windows does not round-trip the owner-execute
+    -- bit for a file that is not a program. The gating this checks is the
+    -- POSIX behaviour of 'directory'.
+    ++ [ testCase "getPermissions gates searchable on directories" permsSearchableTest
+       | os /= "mingw32"
+       ]
 
 removeFileTest :: Assertion
 removeFileTest =

@@ -603,10 +603,6 @@ getRPaths pbci = do
   if supportRPaths hostOS
     then do
       libraryPaths <- liftIO $ depLibraryPaths False (relocatable lbi) lbi clbi
-      -- Inplace `v2-run` executes the artifact from the component build
-      -- directory. Install-relative rpaths only resolve after the file is
-      -- copied to 'ownDir', so also emit rpaths relative to the build dir.
-      inplacePaths <- liftIO $ depLibraryPaths True False lbi clbi
       let hostPref = case hostOS of
             OSX -> "@loader_path"
             _ -> "$ORIGIN"
@@ -624,8 +620,6 @@ getRPaths pbci = do
             ExeComponentLocalBuildInfo{} -> bindir installDirs
             FLibComponentLocalBuildInfo{} -> flibdir installDirs
             _ -> libdir installDirs
-          buildOwnDir =
-            interpretSymbolicPathLBI lbi (componentBuildDir lbi clbi)
           -- Every rpath entry is loader-relative:
           --
           --  * a relative path gets the @$ORIGIN@ / @\@loader_path@ prefix, as
@@ -657,12 +651,12 @@ getRPaths pbci = do
             -- implementation installed next to the instantiated unit fails
             -- to load (GHC's testsuite T14304 on Alpine).
             --
-            -- Build-dir rpaths are dangling once the artifact is copied into
-            -- the store. They stay relative, so a missing directory is skipped
-            -- rather than aborting dyld the way an absolute rpath would.
+            -- Inplace build directories are intentionally absent. Baking the
+            -- dist dir into an executable RPATH lets 'runExe' find an internal
+            -- library that was never installed (Cabal #4025). 'v2-run' puts
+            -- those directories on the loader path instead.
             toNubListR [hostPref]
               <> toNubListR (map (relTo ownDir) libraryPaths)
-              <> toNubListR (map (relTo buildOwnDir) inplacePaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
       return rpaths
     else return mempty

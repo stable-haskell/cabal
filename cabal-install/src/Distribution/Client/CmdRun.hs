@@ -31,6 +31,9 @@ import Distribution.Client.CmdErrorMessages
   , targetSelectorFilter
   , targetSelectorPluralPkgs
   )
+import Distribution.Client.DistDirLayout
+  ( DistDirLayout (distBuildDirectory)
+  )
 import Distribution.Client.Errors
 import Distribution.Client.GlobalFlags
   ( defaultGlobalFlags
@@ -39,6 +42,7 @@ import Distribution.Client.InstallPlan
   ( foldPlanPackage
   , toList
   )
+import qualified Distribution.Client.InstallPlan as IP
 import Distribution.Client.NixStyleOptions
   ( NixStyleFlags (..)
   , cfgVerbosity
@@ -54,12 +58,17 @@ import qualified Distribution.Client.ProjectOrchestration as Orchestration (targ
 import Distribution.Client.ProjectPlanning
   ( ElaboratedConfiguredPackage (..)
   , ElaboratedInstallPlan
+  , ElaboratedSharedConfig
   , binDirectoryFor
   )
 import Distribution.Client.ProjectPlanning.Types
   ( ElaboratedPackageOrComponent (..)
   , dataDirsEnvironmentForPlan
+  , elabDistDirParams
   , elabExeDependencyPaths
+  , elabOrderLibDependencies
+  , elabPlatform
+  , isInplaceBuildStyle
   )
 import Distribution.Client.ScriptUtils
   ( AcceptNoTargets (..)
@@ -106,6 +115,10 @@ import Distribution.Simple.Utils
   , warn
   , wrapText
   )
+import Distribution.System
+  ( OS (..)
+  , Platform (..)
+  )
 
 import Distribution.Types.ComponentName
   ( componentNameRaw
@@ -134,10 +147,14 @@ import Distribution.Verbosity
 #ifdef __MHS__
 import System.Environment
   ( getArgs
+  , lookupEnv
   )
 #else
 import GHC.Environment
   ( getFullArgs
+  )
+import System.Environment
+  ( lookupEnv
   )
 #endif
 import Distribution.Compat.Directory
@@ -151,6 +168,7 @@ getFullArgs = getArgs
 import System.FilePath
   ( isPathSeparator
   , isValid
+  , searchPathSeparator
   , (</>)
   )
 
@@ -352,6 +370,35 @@ runAction flags targetAndArgs globalFlags = do
     logExtraProgramSearchPath verbosity extraPath
     progPath <- programSearchPathAsPATHVar (map ProgramSearchPathDir extraPath ++ defaultProgramSearchPath)
 
+    -- Inplace dynamic libraries are not on the executable RPATH (Cabal
+    -- #4025). Put their build directories on the loader path for this run.
+    -- Windows loads DLLs from PATH. Keep any path the caller already set.
+    dyld0 <- lookupEnv "DYLD_LIBRARY_PATH"
+    ld0 <- lookupEnv "LD_LIBRARY_PATH"
+    let Platform _ os = elabPlatform (elaboratedShared buildCtx) pkg
+        libDirs = inplaceRunLibDirs (distDirLayout baseCtx) (elaboratedShared buildCtx) elaboratedPlan pkg
+        libPath = intercalate [searchPathSeparator] libDirs
+        keepOld Nothing p = p
+        keepOld (Just old) p
+          | null old = p
+          | otherwise = p ++ searchPathSeparator : old
+        progPath' =
+          case os of
+            Windows
+              | not (null libDirs) ->
+                  libPath ++ searchPathSeparator : progPath
+            _ -> progPath
+        loaderEnv =
+          case os of
+            OSX
+              | not (null libDirs) ->
+                  [("DYLD_LIBRARY_PATH", Just (keepOld dyld0 libPath))]
+            Windows -> []
+            _
+              | not (null libDirs) ->
+                  [("LD_LIBRARY_PATH", Just (keepOld ld0 libPath))]
+            _ -> []
+
     if dryRun
       then notice verbosity "Running of executable suppressed by flag(s)"
       else
@@ -361,11 +408,34 @@ runAction flags targetAndArgs globalFlags = do
             { progInvokePath = exePath
             , progInvokeArgs = args
             , progInvokeEnv =
-                ("PATH", Just progPath)
-                  : dataDirsEnvironmentForPlan
-                    (distDirLayout baseCtx)
-                    elaboratedPlan
+                ("PATH", Just progPath')
+                  : loaderEnv
+                    ++ dataDirsEnvironmentForPlan
+                      (distDirLayout baseCtx)
+                      elaboratedPlan
             }
+
+-- | Build directories of inplace library dependencies. 'v2-run' executes the
+-- artifact from the component build directory, and those libraries are not
+-- on its RPATH.
+inplaceRunLibDirs
+  :: DistDirLayout
+  -> ElaboratedSharedConfig
+  -> ElaboratedInstallPlan
+  -> ElaboratedConfiguredPackage
+  -> [FilePath]
+inplaceRunLibDirs layout shared plan pkg =
+  sortNub
+    [ distBuildDirectory layout (elabDistDirParams shared dep) </> "build"
+    | key <- elabOrderLibDependencies pkg
+    , Just depPkg <- [IP.lookup plan key]
+    , Just dep <- [planSource depPkg]
+    , isInplaceBuildStyle (elabBuildStyle dep)
+    ]
+  where
+    planSource (IP.Configured elab) = Just elab
+    planSource (IP.Installed elab) = Just elab
+    planSource _ = Nothing
 
 -- | Split @cabal run@ arguments (@exe cmd@ arguments in the examples) into
 -- target selectors and target executable arguments.
