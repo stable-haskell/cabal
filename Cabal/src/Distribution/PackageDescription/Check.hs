@@ -93,8 +93,7 @@ import qualified Distribution.Compat.Lens as L
 import qualified Distribution.Types.BuildInfo.Lens as L
 import qualified Distribution.Types.GenericPackageDescription.Lens as L
 
-import Control.Monad hiding (forM_, mapM, mapM_, sequence, sequence_)
-import Data.Foldable (forM_, mapM_, sequence_)
+import Data.Foldable (mapM_)
 
 -- $setup
 -- >>> import Control.Arrow ((&&&))

@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
 module Distribution.Backpack.ReadyComponent
   ( ReadyComponent (..)
@@ -40,8 +42,10 @@ import Distribution.Simple.Utils
 import Control.Monad hiding (mapM, sequence)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Distribution.Utils.LogProgress
 import Text.PrettyPrint
+#ifdef __MHS__
+import Distribution.Utils.LogProgress (hang)
+#endif
 
 import Distribution.Pretty
 import Distribution.Version

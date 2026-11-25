@@ -29,9 +29,6 @@ module Distribution.Simple.SetupHooks.HooksMain
 
 -- base
 
-import Control.Exception
-  ( Exception (..)
-  )
 import Control.Monad
   ( (>=>)
   )

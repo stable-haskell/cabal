@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
@@ -21,8 +22,10 @@ import qualified Distribution.Utils.UnionFind as UnionFind
 import Control.Monad hiding (mapM, sequence)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
-import Distribution.Utils.LogProgress
 import Text.PrettyPrint
+#ifdef __MHS__
+import Distribution.Utils.LogProgress (hang)
+#endif
 
 -----------------------------------------------------------------------
 -- Linking

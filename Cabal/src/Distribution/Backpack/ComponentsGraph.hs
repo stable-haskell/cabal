@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 -- | See <https://github.com/ezyang/ghc-proposals/blob/backpack/proposals/0000-backpack.rst>
 module Distribution.Backpack.ComponentsGraph
   ( ComponentsGraph
@@ -22,8 +24,10 @@ import Distribution.Types.ComponentRequestedSpec
 import Distribution.Utils.Generic
 
 import Distribution.Pretty (pretty)
-import Distribution.Utils.LogProgress
 import Text.PrettyPrint
+#ifdef __MHS__
+import Distribution.Utils.LogProgress (hang)
+#endif
 
 ------------------------------------------------------------------------------
 -- Components graph
