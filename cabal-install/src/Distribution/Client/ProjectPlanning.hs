@@ -3099,8 +3099,16 @@ elaborateInstallPlan
               -- Take the roots straight from the plan so each 'SolverId' carries
               -- the machine it was solved for; a local package used as a build
               -- tool then contributes both its host and build copies.
+              --
+              -- Only configured packages: a project package is built from its
+              -- source, never taken pre-existing.  A pre-existing package can
+              -- share the package id of a project package on the other
+              -- machine (the build compiler's own @system-cxx-std-lib-1.0@ and
+              -- a project that builds the target's from source), and as a
+              -- root it would put every package built on top of it into the
+              -- closure: inplace, and never reused from the store.
               [ Graph.nodeKey pkg
-              | pkg <- SolverInstallPlan.toList solverPlan
+              | pkg@SolverInstallPlan.Configured{} <- SolverInstallPlan.toList solverPlan
               , isLocalToProject pkg
               ]
 
