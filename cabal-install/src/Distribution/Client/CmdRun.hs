@@ -410,9 +410,9 @@ runAction flags targetAndArgs globalFlags = do
             , progInvokeEnv =
                 ("PATH", Just progPath')
                   : loaderEnv
-                    ++ dataDirsEnvironmentForPlan
-                      (distDirLayout baseCtx)
-                      elaboratedPlan
+                  ++ dataDirsEnvironmentForPlan
+                    (distDirLayout baseCtx)
+                    elaboratedPlan
             }
 
 -- | Build directories of inplace library dependencies. 'v2-run' executes the
