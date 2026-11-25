@@ -29,6 +29,12 @@ module Distribution.Simple.Compiler
   , compilerCompatFlavor
   , compilerCompatVersion
   , compilerInfo
+  , compilerTargetAbi
+  , compilerTargetName
+  , compilerTargetsProfiling
+  , TargetName
+  , parseTargetName
+  , renderTargetName
 
     -- * Support for package databases
   , PackageDB
@@ -74,6 +80,7 @@ module Distribution.Simple.Compiler
   , profilingDynamicSupportedOrUnknown
   , profilingVanillaSupported
   , profilingVanillaSupportedOrUnknown
+  , profilingDebugSupported
   , dynamicSupported
   , bytecodeArtifactsSupported
   , backpackSupported

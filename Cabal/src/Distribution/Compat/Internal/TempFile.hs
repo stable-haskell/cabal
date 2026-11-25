@@ -44,7 +44,11 @@ import Distribution.Compat.Directory
   )
 #else
 import System.Posix.Internals (c_getpid)
+#if defined(mingw32_HOST_OS) || defined(ghcjs_HOST_OS)
+import System.Directory (createDirectory)
+#else
 import qualified System.Posix
+#endif
 #endif
 
 openNewBinaryFile :: FilePath -> String -> IO (FilePath, Handle)
@@ -133,6 +137,8 @@ mkPrivateDir s = do
   if created
     then pure ()
     else ioError (mkIOError alreadyExistsErrorType "createDirectory" Nothing (Just s))
+#elif defined(mingw32_HOST_OS) || defined(ghcjs_HOST_OS)
+mkPrivateDir s = createDirectory s
 #else
 mkPrivateDir s = System.Posix.createDirectory s 0o700
 #endif
