@@ -71,17 +71,26 @@ preBuildRules (PreBuildComponentInputs { buildingWhat = what, localBuildInfo = l
         rewriteFileEx verbosity (getSymbolicPath $ hsDir </> modPath <.> "hs") $
           unlines $ ("module " ++ modName modNm ++ " where\n") :
             (map ( ( "import " ++ ) . modName ) importModNms ++ srcLines)
-        rewriteFileEx verbosity (getSymbolicPath $ chiDir </> unsafeCoerceSymbolicPath modPath <.> "myChi") ""
+        -- 'unsafeCoerceSymbolicPath' leaves the path's endpoint polymorphic.
+        -- '<.>' only has a 'File' instance, so pin it or GHC 9.8+ reports
+        -- an ambiguous type variable (GHC-39999).
+        let chiPath :: SymbolicPathX OnlyRelative Build File
+            chiPath = unsafeCoerceSymbolicPath modPath <.> "myChi"
+        rewriteFileEx verbosity (getSymbolicPath $ chiDir </> chiPath) ""
 
       mkRule modNm =
         dynamicRule (static Dict)
           (mkCommand (static Dict) (static computeC2HsDepsAction) $ C2HsDepsInput { ruleIds = modToRuleId, ..})
           (mkCommand (static Dict) (static runC2HsAction) $ C2HsInput {hsDir = autogenDir, chiDir = buildDir, ..})
           [ FileDependency $ Location inDir (modPath <.> "myChs") ]
-          ( Location autogenDir (modPath <.> "hs" ) NE.:| [ Location buildDir (unsafeCoerceSymbolicPath modPath <.> "myChi") ] )
+          ( Location autogenDir (modPath <.> "hs") NE.:| [ Location buildDir chiOut ] )
         where
           modPath = moduleNameSymbolicPath modNm
           inDir = sameDirectory
+          -- Pin the file endpoint. '<.>' has no polymorphic instance, and
+          -- 'unsafeCoerceSymbolicPath' leaves it ambiguous (GHC-39999).
+          chiOut :: SymbolicPathX OnlyRelative Build File
+          chiOut = unsafeCoerceSymbolicPath modPath <.> "myChi"
 
   -- NB: in practice, we would get the module names by looking at the .cabal
   -- file and performing a search for `.chs` files on disk, but for this test

@@ -433,8 +433,15 @@ remove shouldRemove plan =
 -- | Change a number of packages in the 'Configured' state to the 'Installed'
 -- state.
 --
--- To preserve invariants, the package must have all of its dependencies
--- already installed too (that is 'PreExisting' or 'Installed').
+-- A package is installed only when every dependency is already installed
+-- ('PreExisting' or 'Installed'). Dependencies are visited first, so a
+-- dependency selected by @shouldBeInstalled@ is installed before the packages
+-- that need it. A dependency that is still configured — a setup or build-tool
+-- package that is not in its own store — blocks reuse of this package. The
+-- package stays 'Configured' and is built. Skipping here, rather than
+-- asserting, keeps the invariant that a completed package does not depend on
+-- an unfinished one (see Note [Store reuse and cross-machine dependencies]
+-- in "Distribution.Client.Store").
 installed
   :: IsGraph k ipkg srcpkg
   => (srcpkg -> Bool)
@@ -449,11 +456,12 @@ installed shouldBeInstalled installPlan =
     , shouldBeInstalled pkg
     ]
   where
-    markInstalled plan pkg =
-      assert (all isInstalled (directDeps plan (nodeKey pkg))) $
-        plan
-          { planGraph = Graph.insert (Installed pkg) (planGraph plan)
-          }
+    markInstalled plan pkg
+      | all isInstalled (directDeps plan (nodeKey pkg)) =
+          plan
+            { planGraph = Graph.insert (Installed pkg) (planGraph plan)
+            }
+      | otherwise = plan
 
 -- | Lookup a package in the plan.
 lookup

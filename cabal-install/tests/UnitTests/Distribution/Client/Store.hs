@@ -185,7 +185,7 @@ assertNewStoreEntry
   copyFiles
   register
   expectedOutcome = do
-    entries <- runRebuild tmp $ getStoreEntries storeDirLayout Host tc
+    before <- runRebuild tmp $ getStoreEntries storeDirLayout Host tc
     outcome <-
       newStoreEntry
         verbosity
@@ -197,8 +197,7 @@ assertNewStoreEntry
         register
     assertEqual "newStoreEntry outcome" expectedOutcome outcome
     assertStoreEntryExists storeDirLayout tc unitid True
-    let expected = Set.insert unitid entries
-    assertStoreContent tmp storeDirLayout tc expected
+    assertStoreContent tmp storeDirLayout tc (Set.insert unitid before)
 
 assertStoreEntryExists
   :: StoreDirLayout
@@ -218,7 +217,7 @@ assertStoreContent
   -> Assertion
 assertStoreContent tmp storeDirLayout tc expected = do
   actual <- runRebuild tmp $ getStoreEntries storeDirLayout Host tc
-  assertEqual "store content" actual expected
+  assertEqual "store content" expected actual
 
 assertFileEqual :: FilePath -> String -> Assertion
 assertFileEqual path expected = do

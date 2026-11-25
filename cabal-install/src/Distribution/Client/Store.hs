@@ -21,6 +21,8 @@ module Distribution.Client.Store
 import Distribution.Client.Compat.Prelude
 import Prelude ()
 
+import Control.Monad.IO.Class (liftIO)
+
 import Distribution.Client.DistDirLayout
 import Distribution.Client.RebuildMonad
 import Distribution.Client.Toolchain (Machine, Toolchain)
@@ -122,40 +124,34 @@ doesStoreEntryExist StoreDirLayout{storePackageDirectory} machine toolchain unit
 -- store.
 getStoreEntries :: StoreDirLayout -> Machine -> Toolchain -> Rebuild (Set UnitId)
 getStoreEntries StoreDirLayout{storeDirectory} machine toolchain = do
-  paths <- getDirectoryContentsMonitored (storeDirectory machine toolchain)
-  return $! mkEntries paths
-  where
-    mkEntries =
-      Set.delete (mkUnitId "package.conf.d")
-        . Set.delete (mkUnitId "incoming")
-        . Set.fromList
-        . map mkUnitId
-        . filter valid
-    valid ('.' : _) = False
-    valid _ = True
+  -- Units live in @store/lib/<unitid>@ (see 'storePackageInstallDirs'').
+  -- The store root only has @lib@, @bin@, @incoming@ and @package.conf.d@,
+  -- and @lib@ also holds the shared objects directly, so only directories
+  -- are unit ids.
+  let libDir = storeDirectory machine toolchain </> "lib"
+  names <- getDirectoryContentsMonitored libDir
+  dirs <- filterM (liftIO . doesDirectoryExist . (libDir </>)) names
+  return $! Set.fromList (map mkUnitId dirs)
 
--- Note [Store reuse is disabled under this layout]
--- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
--- 'getStoreEntries' above reads the store directory expecting a directory per
--- unit. Since units moved into a shared @lib@ (see
--- 'storePackageInstallDirs''), what it actually finds is @lib@, @bin@ and the
--- incoming directory, so the set it returns never matches a real unit and
--- 'improveInstallPlanWithUpToDatePackages' never marks anything up to date
--- from the store. Every build therefore reinstalls what it already has.
+-- Note [Store reuse and cross-machine dependencies]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- 'getStoreEntries' lists @store/lib@. 'improveInstallPlanWithInstalledPackages'
+-- then marks a configured package installed when its unit is in that set.
 --
--- This is deliberately left as it is, because fixing it is not enough on its
--- own: reading @lib@, or reading the unit ids out of the package database,
--- both make the improvement start firing, and it then trips
--- @InstallPlan.installed@'s invariant ("the package must have all of its
--- dependencies already installed too") during stage2 of a GHC build. The
--- store is closed under library dependencies but not under /setup/ and
--- build-tool dependencies, which belong to the build machine and live in a
--- different store: the host store here holds 45 units and the build store 21,
--- so a host package can be present while the build-machine dependency that
--- 'directDeps' reports for it is not.
+-- That improvement used to trip @InstallPlan.installed@ during a GHC stage2
+-- build. The store is closed under library dependencies, but not under setup
+-- and build-tool dependencies: those belong to the build machine and live in
+-- a different store (one GHC build had 45 units in the host store and 21 in
+-- the build store). A host package can be present while the build-machine
+-- dependency 'directDeps' reports is still configured.
 --
--- So the improvement needs to be made machine-aware before the enumeration is
--- fixed, and the two have to land together.
+-- 'InstallPlan.installed' therefore skips a package whose dependencies are
+-- not all installed yet, instead of asserting. Dependencies are visited
+-- first, so a dependency that is itself in its own store is installed before
+-- the package that needs it. A dependency that is still configured blocks
+-- reuse of this package, and the package is built again. That keeps the
+-- plan's "completed packages do not depend on unfinished packages" invariant
+-- without refusing to reuse the packages whose dependencies are present.
 
 -- | The outcome of 'newStoreEntry': either the store entry was newly created
 -- or it existed already. The latter case happens if there was a race between

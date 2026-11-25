@@ -603,13 +603,17 @@ getRPaths pbci = do
   if supportRPaths hostOS
     then do
       libraryPaths <- liftIO $ depLibraryPaths False (relocatable lbi) lbi clbi
+      -- Inplace `v2-run` executes the artifact from the component build
+      -- directory. Install-relative rpaths only resolve after the file is
+      -- copied to 'ownDir', so also emit rpaths relative to the build dir.
+      inplacePaths <- liftIO $ depLibraryPaths True False lbi clbi
       let hostPref = case hostOS of
             OSX -> "@loader_path"
             _ -> "$ORIGIN"
-          -- The directory this artifact is installed to: a library goes to
-          -- the libdir, an executable to the bindir (the same split as
-          -- 'depLibraryPaths'). Absolute rpaths are re-expressed relative to
-          -- it below.
+          -- The directory this artifact is installed to. A foreign library
+          -- is copied to 'flibdir', not 'libdir'; using 'libdir' there bakes
+          -- @$ORIGIN/..@, which does not contain the Haskell dynlib once the
+          -- .so lives in 'flibdir'.
           installDirs =
             absoluteComponentInstallDirs
               (localPkgDescr lbi)
@@ -618,7 +622,10 @@ getRPaths pbci = do
               NoCopyDest
           ownDir = case clbi of
             ExeComponentLocalBuildInfo{} -> bindir installDirs
+            FLibComponentLocalBuildInfo{} -> flibdir installDirs
             _ -> libdir installDirs
+          buildOwnDir =
+            interpretSymbolicPathLBI lbi (componentBuildDir lbi clbi)
           -- Every rpath entry is loader-relative:
           --
           --  * a relative path gets the @$ORIGIN@ / @\@loader_path@ prefix, as
@@ -636,9 +643,9 @@ getRPaths pbci = do
           --    dependencies live in sibling prefixes, and changes how
           --    @library-dirs@ are registered, neither of which rpath
           --    generation needs.
-          relPath p
+          relTo origin p
             | isRelative p = hostPref </> p
-            | otherwise = hostPref </> shortRelativePath ownDir p
+            | otherwise = hostPref </> shortRelativePath origin p
           rpaths =
             -- The artifact's own directory comes first, so a library
             -- installed next to it is found: 'depLibraryPaths' can yield the
@@ -649,8 +656,13 @@ getRPaths pbci = do
             -- the missing self-rpath is fatal: a Backpack signature
             -- implementation installed next to the instantiated unit fails
             -- to load (GHC's testsuite T14304 on Alpine).
+            --
+            -- Build-dir rpaths are dangling once the artifact is copied into
+            -- the store. They stay relative, so a missing directory is skipped
+            -- rather than aborting dyld the way an absolute rpath would.
             toNubListR [hostPref]
-              <> toNubListR (map relPath libraryPaths)
+              <> toNubListR (map (relTo ownDir) libraryPaths)
+              <> toNubListR (map (relTo buildOwnDir) inplacePaths)
               <> toNubListR (map getSymbolicPath $ extraLibDirs bi)
       return rpaths
     else return mempty
