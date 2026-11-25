@@ -21,9 +21,6 @@ import Distribution.Solver.Compat.Prelude
 import Prelude ()
 
 import           Control.Exception        (handle)
-#ifndef __MHS__
-import           Control.Monad            (mapM)
-#endif
 import           Data.ByteString          (ByteString)
 import qualified Data.ByteString.Lazy     as LBS
 import qualified Data.Map                 as M

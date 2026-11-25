@@ -16,6 +16,7 @@ module Distribution.Solver.Types.Machine
 
 import Data.Foldable (Foldable)
 import Distribution.Compat.Prelude
+import Prelude ()
 
 -- | The machine whose toolchain a package is compiled with.
 --
