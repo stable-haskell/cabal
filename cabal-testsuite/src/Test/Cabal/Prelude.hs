@@ -1458,15 +1458,10 @@ findDependencyInStore pkgName = do
     -- name ("lib" matches "libHSlib-...so"), so only directories can match.
     packageDirs <-
       filterM (doesDirectoryExist . (storeLibDir </>)) =<< listDirectory storeLibDir
-    -- Ideally, we should call 'hashedInstalledPackageId' from 'Distribution.Client.PackageHash'.
-    -- But 'PackageHashInputs', especially 'PackageHashConfigInputs', is too hard to construct.
-    let pkgName' =
-          if buildOS == OSX
-            then filter (not . flip elem "aeiou") pkgName
-            else -- simulates the way 'hashedInstalledPackageId' uses to compress package name
-              pkgName
-    let libDir = case filter (pkgName' `isPrefixOf`) packageDirs of
-          [] -> error $ "Could not find " <> pkgName' <> " when searching for " <> pkgName' <> " in\n" <> show packageDirs
+    -- Long unit ids start with the package name, version, and hash.
+    -- macOS no longer strips vowels from that name, so the name is the prefix.
+    let libDir = case filter (pkgName `isPrefixOf`) packageDirs of
+          [] -> error $ "Could not find " <> pkgName <> " when searching for " <> pkgName <> " in\n" <> show packageDirs
           (dir : _) -> dir
     pure (storeLibDir </> libDir)
 
