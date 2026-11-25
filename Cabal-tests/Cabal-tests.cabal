@@ -22,7 +22,7 @@ source-repository head
 library
   hs-source-dirs: lib
   exposed-modules: Test.Utils.TempTestDir
-  build-depends: base, directory, Cabal, filepath, exceptions
+  build-depends: base, Cabal, filepath, exceptions
 
 -- Small, fast running tests.
 test-suite unit-tests
@@ -135,9 +135,7 @@ test-suite custom-setup-tests
     , base
     , Cabal
     , Cabal-syntax
-    , directory
     , filepath
-    , process
     , text
 
   default-language: GHC2021
